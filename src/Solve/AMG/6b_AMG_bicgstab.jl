@@ -70,9 +70,30 @@ produce silent nonsense:
 
 In both cases the HALF-STEP iterate (`x += alpha*y`, `r = s`) is kept, because it
 is a genuine improvement on the incoming `x`, and the solve reports the iteration
-count it actually reached. Restarting with a fresh shadow is the textbook remedy
-but changes the Krylov space mid-solve, which interacts badly with a nonlinear
-(scale-corrected) preconditioner.
+count it actually reached. A `rho` breakdown first tries a restart with a fresh
+shadow `rhat = r`, at most twice (a budget shared with the true-residual restart
+below).
+
+### Nonlinear (scale-corrected) preconditioner
+
+`scale_correction=true` makes the V-cycle `M^-1` depend on its input, so it can
+differ between the two applications within an iteration and between iterations.
+Unlike CG, BiCGStab needs no modified `beta` for this. It is RIGHT-preconditioned,
+and `x` and `r` are updated with the same `y = M^-1 p` and `z = M^-1 s` that were
+applied,
+
+    x_new = x + alpha*y + omega*z,    r_new = r - alpha*A*y - omega*A*z,
+
+so `r_new == b - A*x_new` holds for any `M^-1`. A varying preconditioner degrades
+the bi-orthogonality the recurrence relies on - which the stall guard and the
+restarts handle - but it cannot make the returned solution inconsistent with the
+residual reported for it.
+
+What can drift in finite precision is the recursive `r` against the true
+residual. Convergence is therefore CONFIRMED against `b - A*x` before it is
+accepted, with a restart from the true residual if the two disagree, and the
+residual reported on exit is always the true one. The same argument covers a
+nonlinear inner coarse solve such as `OnDeviceKrylov`.
 """
 function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
                              solver::AMG, A, b, x; itmax, atol, rtol)
@@ -115,19 +136,11 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
     broke = false
     restarts = 0
     max_restarts = 2
+    true_checked = false
     while k < itmax
         k += 1
         rho_new = dot(rhat, r)
         if !isfinite(rho_new) || abs(rho_new) <= eps(T)*bnorm
-            # RHO BREAKDOWN: the fixed shadow has gone orthogonal to the current
-            # residual. Near convergence this is the normal way BiCGStab ends, and
-            # giving up here left a solve at 6.54e-9 against a 6.32e-9 target -
-            # seven good iterations thrown away for want of an eighth.
-            #
-            # Restarting with `rhat = r` rebuilds a usable shadow. It DOES change
-            # the Krylov space mid-solve, which is why it is capped: two restarts,
-            # then accept the iterate. Unlimited restarts on a genuinely broken
-            # system would spin to itmax achieving nothing.
             if restarts < max_restarts && isfinite(rnorm)
                 restarts += 1
                 _copy_amg!(hierarchy, rhat, r)
@@ -202,7 +215,25 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
         if !isfinite(rnorm) || !isfinite(rel)
             break
         end
-        if rnorm <= eps_target; break; end
+        if rnorm <= eps_target
+            _residual!(hierarchy, r, A, x, b)
+            rnorm = norm(r)
+            rel = rnorm / bnorm
+            true_checked = true
+            rnorm <= eps_target && break
+            if restarts < max_restarts && isfinite(rnorm)
+                restarts += 1
+                true_checked = false
+                _copy_amg!(hierarchy, rhat, r)
+                _fill_amg!(hierarchy, p, zero(T))
+                _fill_amg!(hierarchy, v, zero(T))
+                rho = one(T); alpha = one(T); omega = one(T)
+                best_rnorm = rnorm
+                stall = 0
+                continue
+            end
+            break
+        end
 
         if rnorm < best_rnorm * (one(T) - T(1e-4))
             best_rnorm = rnorm
@@ -212,6 +243,12 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
             if stall >= stall_limit; break; end
         end
         rho = rho_new
+    end
+
+    if !true_checked
+        _residual!(hierarchy, r, A, x, b)
+        rnorm = norm(r)
+        rel = rnorm / bnorm
     end
 
     workspace.iterations = k

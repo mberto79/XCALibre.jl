@@ -31,12 +31,12 @@ initialise!
 ## AMG solver
 ---
 
-The `AMG` linear solver can be selected directly in `SolverSetup`. It supports `mode=:solver` for a standalone multigrid solve and `mode=:cg` for AMG-preconditioned conjugate gradient on symmetric systems such as pressure equations.
+The `AMG` linear solver can be selected directly in `SolverSetup`. It supports `mode=AMGSolver()` for a standalone multigrid solve and `mode=Cg()` for AMG-preconditioned conjugate gradient on symmetric systems such as pressure equations. `mode` takes an instance, not a symbol: `mode=:cg` throws an `ArgumentError`.
 
 ```julia
 SolverSetup(
     solver = AMG(
-        mode = :cg,
+        mode = Cg(),
         coarsening = SmoothAggregation(),
         smoother = AMGJacobi()
     ),
@@ -48,7 +48,11 @@ SolverSetup(
 )
 ```
 
-For non-symmetric systems, users should use `mode=bicgstab` for AMG-preconditioned stabilized biconjugate gradient such as pressure equations in compressible flow.
+For non-symmetric systems use `mode=Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix.
+
+Choice of coarsening for non-symmetric operators: `Bicgstab()` has been tested with the default `SmoothAggregation()`. `RugeStuben()` and `Geometric()` are accepted but have not been validated on non-symmetric operators - `RugeStuben()` builds its strength of connection from each row's entries only, not from the transpose - so prefer the default unless you have checked the alternative on your case.
+
+`scale_correction` (on by default) is supported. It makes the V-cycle preconditioner depend on its input, but the solver is right-preconditioned, so the solution and residual it carries stay consistent, and convergence is confirmed against the true residual `b - A*x`.
 
 ```julia
 SolverSetup(

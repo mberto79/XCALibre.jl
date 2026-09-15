@@ -526,6 +526,86 @@ XCALibre.Solve.amg_bicgstab_solve!(
     b_zerodiag, x_zd; itmax=20, atol=1e-8, rtol=1e-8)
 @test all(isfinite, Array(x_zd))
 
+# --- 9. a row with NO stored diagonal entry ------------------------------------
+#  A structurally missing (i,i) entry is not the same as a stored zero: the row
+#  has no diagonal position, and `_diag_inverse!` falls back to a non-zero
+#  diagonal for it, so a guard on `iszero(aii)` does not skip it. Each sweep is
+#  compared with a reference Gauss-Seidel that scans the row and skips `j == i`,
+#  which cannot depend on where - or whether - the diagonal is stored. The row
+#  missing its diagonal is row 2, not row 1: reading from the start of the CSR
+#  arrays only picks up another row's entries for a later row.
+A_md_dense = [ 4.0 -1.0  0.0  0.0;
+              -1.0  0.0 -1.0  0.0;
+               0.0 -1.0  4.0 -1.0;
+               0.0  0.0 -1.0  4.0]
+A_md = SparseXCSR(sparsecsr([1, 1, 2, 2, 3, 3, 3, 4, 4],
+                            [1, 2, 1, 3, 2, 3, 4, 3, 4],
+                            [4.0, -1.0, -1.0, -1.0, -1.0, 4.0, -1.0, -1.0, 4.0], 4, 4))
+b_md = [1.0, 2.0, 3.0, 4.0]
+function reference_gauss_seidel!(x, Ad, d, b, order)
+    for i in order
+        sigma = sum(Ad[i, j] * x[j] for j in eachindex(x) if j != i)
+        iszero(d[i]) || (x[i] = (b[i] - sigma) / d[i])
+    end
+    return x
+end
+for (sweep, orders) in ((AMGForwardSweep(),   (1:4,)),
+                        (AMGBackwardSweep(),  (4:-1:1,)),
+                        (AMGSymmetricSweep(), (1:4, 4:-1:1)))
+    smoother_md = AMGGaussSeidel(sweep=sweep, iterations=1)
+    solver_md = AMG(mode=AMGSolver(), smoother=smoother_md, max_coarse_rows=10)
+    ws_md = _workspace(solver_md, b_md)
+    ws_md = XCALibre.Solve.update!(ws_md, A_md, solver_md, config)
+    lvl_md = ws_md.hierarchy.levels[1]
+    @test XCALibre.Solve._diag_index(lvl_md.A)[2] == 0    # premise: no stored (2,2)
+    fill!(lvl_md.x, 0.0)
+    XCALibre.Solve._apply_level_smoother_impl!(ws_md.hierarchy, smoother_md, lvl_md, b_md, 1)
+    x_ref_md = zeros(4)
+    for order in orders
+        reference_gauss_seidel!(x_ref_md, A_md_dense, Array(lvl_md.diagonal), b_md, order)
+    end
+    @test Array(lvl_md.x) ≈ x_ref_md rtol=1e-12
+end
+
+# --- 10. BiCGStab with the nonlinear (scale-corrected) V-cycle -----------------
+#  `scale_correction=true` (the default) makes M^-1 depend on its input. The
+#  right-preconditioned recurrence still keeps r == b - A*x, because x and r are
+#  both updated with the SAME y = M^-1 p and z = M^-1 s that were applied; what
+#  can drift in finite precision is the recursive residual, so convergence is
+#  confirmed on the true residual. A 1D upwind convection-diffusion operator is
+#  non-symmetric and big enough for a multi-level hierarchy - on one level there
+#  is no coarse correction, so `scale_correction` would have nothing to act on.
+n_cd = 60
+I_cd = Int[]; J_cd = Int[]; V_cd = Float64[]
+for i in 1:n_cd
+    push!(I_cd, i); push!(J_cd, i); push!(V_cd, 3.0)
+    i > 1    && (push!(I_cd, i); push!(J_cd, i - 1); push!(V_cd, -2.0))   # upwind side
+    i < n_cd && (push!(I_cd, i); push!(J_cd, i + 1); push!(V_cd, -1.0))
+end
+A_cd = SparseXCSR(sparsecsr(I_cd, J_cd, V_cd, n_cd, n_cd))
+A_cd_dense = Array(parent(A_cd))
+@test A_cd_dense != transpose(A_cd_dense)
+b_cd = collect(range(1.0, 2.0, length=n_cd))
+x_cd_by_sc = Dict{Bool, Vector{Float64}}()
+for sc in (false, true)
+    solver_cd = AMG(mode=Bicgstab(), coarsening=SmoothAggregation(), smoother=AMGJacobi(),
+                    scale_correction=sc, max_coarse_rows=4)
+    ws_cd = _workspace(solver_cd, b_cd)
+    ws_cd = XCALibre.Solve.update!(ws_cd, A_cd, solver_cd, config)
+    @test length(ws_cd.hierarchy.levels) > 1
+    x_cd = zeros(n_cd)
+    XCALibre.Solve.amg_bicgstab_solve!(
+        ws_cd, ws_cd.hierarchy, solver_cd, ws_cd.hierarchy.levels[1].A,
+        b_cd, x_cd; itmax=200, atol=1e-10, rtol=1e-10)
+    true_rel_cd = norm(b_cd - A_cd_dense * x_cd) / norm(b_cd)
+    @test ws_cd.converged
+    @test true_rel_cd < 1e-8
+    # the reported residual is the TRUE residual, not the recurrence's estimate
+    @test abs(ws_cd.last_relative_residual - true_rel_cd) <= 1e-3 * true_rel_cd + 1e-14
+    x_cd_by_sc[sc] = x_cd
+end
+@test x_cd_by_sc[true] ≈ x_cd_by_sc[false] rtol=1e-6
+
 # NEW SECTION: mixed precision (coarse_storage=Float32) — API, type-stability, FP32 storage with
 # FP64 outer correction reaches the FP64 tolerance and matches FP64 iteration count.
 @test AMG(coarse_storage=Float32).coarse_storage === Float32

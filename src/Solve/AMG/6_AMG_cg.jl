@@ -27,7 +27,7 @@ function _cg_step_amg!(hierarchy::AbstractAMGHierarchy, x, r, p, q, alpha)
 end
 
 """
-    _is_symmetric(A; rtol=1e-9, atol=1e-14) -> Bool
+    _is_symmetric(A; rtol=1e-9, atol=1e-10) -> Bool
 
 Symmetry test for the `Cg()` gate, measured RELATIVE to the local matrix scale.
 
@@ -46,12 +46,6 @@ function _is_symmetric(A; rtol=1e-9, atol=1e-10)
             j = colval[p]
             q = spindex(rowptr, colval, j, i)
             q == 0 && return false
-            # `max`, NOT `+`: the relative term ADDS tolerance for a
-            # large-scaled matrix but must never REMOVE any. A first attempt used
-            # `atol + rtol*scale` with atol = 1e-14, which is far TIGHTER than the
-            # original absolute 1e-10 whenever the diagonal is small - and it
-            # promptly failed a case that had previously passed, at a LOWER heat
-            # flux than the one it was meant to fix.
             tol = max(atol, rtol*max(dg[i], dg[j]))
             abs(nzval[p] - nzval[q]) <= tol || return false
         end

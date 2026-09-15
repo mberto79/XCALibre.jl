@@ -6,7 +6,6 @@ export total_boundary_faces, boundary_index
 export norm_static
 export convert_mesh_float
 export validate_single_precision_mesh
-export compute_3d_geometry!, face_geometry
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 

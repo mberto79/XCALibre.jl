@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 * Added FixedHeatFlux boundary condition [#149]
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
+* Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
 
 ### Fixed
 * Fixed missing density term in set_production! needed for cases with non-unity density [#151]

@@ -29,9 +29,6 @@ known constant `-q*area` on the left-hand side, i.e. `+q*area` on the right.
 The coefficient is independent of `keff`: prescribing the flux prescribes the
 whole term. That also means `q = 0` reduces exactly to `Zerogradient`, which
 returns `(0, 0)` — a useful cross-check on the sign.
-
-Contrast with `FixedTemperature`, which prescribes the wall temperature and lets
-the flux follow.
 """
 struct FixedHeatFlux{I,V,R<:UnitRange} <: AbstractNeumann
     ID::I
@@ -44,16 +41,9 @@ Adapt.@adapt_structure FixedHeatFlux
 
 @define_boundary FixedHeatFlux Laplacian{Linear} begin
     (; area) = face
-    # No dependence on the cell value, so nothing on the diagonal; the whole
-    # term is a known source. `term.sign` is carried explicitly so the result
-    # stays correct if the Laplacian ever appears with a `+` sign (for the usual
-    # `- Laplacian` diffusion term, term.sign = -1 and this gives +q*area).
     0.0, -term.sign*bc.value*area
 end
 
-# Convection at a wall: there is no mass flux through it, so these only matter
-# for robustness. Treated as zero-gradient (face value = cell value), matching
-# `Zerogradient`.
 @define_boundary FixedHeatFlux Divergence{Linear} begin
     ap = term.sign*(term.flux[fID])
     ap, 0.0

@@ -15,8 +15,6 @@ end
         (; normal) = face
 
         psi_cell = psi[cID]
-        
-        psi_cell = psi[cID]
         psi_normal = (psi_cell⋅normal)*normal
 
         psif[fID] = psi_cell - psi_normal

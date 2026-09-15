@@ -37,30 +37,13 @@ end
 
     vc = term.phi[cellID]
     vp = vc - (vc⋅normal)*normal
+    # ac = ap (not ap*nc^2) buys diagonal dominance; the deferred source cancels exactly at convergence
     ap, ap*vp[component.value]
 end
 
-# Face value = tangential projection vp = vc - (vc⋅n)n. Split the same-component
-# term implicitly on outflow, defer cross-components and inflow to the source.
 @define_boundary Slip Divergence{Upwind} VectorField begin
-    (; normal) = face
-    phi = term.phi
-    ap = term.sign*(term.flux[fID])
-
-    vc = phi[cellID]
-    vn = (vc⋅normal)*normal
-    vp = vc - vn
-
-    nc = normal[component.value]
-    vc_c = vc[component.value]
-    vp_c = vp[component.value]
-    z = zero(ap)
-    one_minus_nc2 = one(nc) - nc^2
-
-    ac = max(ap, z) * one_minus_nc2
-    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
-    su_entering = -min(ap, z) * vp_c
-    ac, su_entering + su_leaving
+    ap = term.sign*term.flux[fID]
+    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
 end
 
 @define_boundary Slip Divergence{Upwind} ScalarField begin
@@ -106,53 +89,13 @@ end
 end
 
 @define_boundary Slip Divergence{Linear} VectorField begin
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux)       # = ϕ_b
-    
-    # Tangential projection
-    vc = phi[cellID]
-    vn = (vc ⋅ normal) * normal
-    vp = vc - vn
-    
-    nc = normal[component.value]
-    vc_c = vc[component.value]
-    vp_c = vp[component.value]
-    z = zero(ap)
-    one_minus_nc2 = one(nc) - nc^2
-    
-    # Outflow (ap > 0): implicit same-component, defer cross terms
-    ac = max(ap, z) * one_minus_nc2
-    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
-    
-    # Inflow (ap < 0): defer everything to source
-    su_entering = -min(ap, z) * vp_c
-    
-    ac, su_entering + su_leaving
+    ap = term.sign*term.flux[fID]
+    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
 end
 
 @define_boundary Slip Divergence{LUST} VectorField begin
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    
-    vc = phi[cellID]
-    vn = (vc ⋅ normal) * normal
-    vp = vc - vn
-    
-    nc = normal[component.value]
-    vc_c = vc[component.value]
-    vp_c = vp[component.value]
-    z = zero(ap)
-    one_minus_nc2 = one(nc) - nc^2
-    
-    ac = max(ap, z) * one_minus_nc2
-    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
-    su_entering = -min(ap, z) * vp_c
-    
-    ac, su_entering + su_leaving
+    ap = term.sign*term.flux[fID]
+    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
 end
 
 @define_boundary Slip Si begin

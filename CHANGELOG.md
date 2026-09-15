@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 * Fixed missing density term in set_production! needed for cases with non-unity density [#151]
+=======
 
 
 ## Version [v0.6.0] - 2026-07-17

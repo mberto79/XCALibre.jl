@@ -225,6 +225,7 @@ wall_shear_stress(patch::Symbol, model,config)  = begin
         cID = boundary_cellsID[fID]
         face = faces[fID]
         nueff = nu[cID]  + nut[fID] # nut is wall-face value νtf (wall funcs)
+        tauw.x[i] *= nueff
         tauw.y[i] *= nueff
         tauw.z[i] *= nueff
         pos[i] = face.centre

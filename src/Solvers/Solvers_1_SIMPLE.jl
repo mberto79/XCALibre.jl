@@ -134,6 +134,7 @@ function SIMPLE(
     n_cells = length(mesh.cells)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -198,7 +199,8 @@ function SIMPLE(
             discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             # setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rDf, config)
+            nonorthogonal_face_correction(
+                p_eqn, ∇p, rDf, config; correction=nonorthogonal_flux)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
         end
@@ -208,7 +210,8 @@ function SIMPLE(
         # relaxation is only for the momentum/velocity correction (OpenFOAM SIMPLE).
         correct_mass_flux!(
             mdotf, p_eqn, config;
-            previous=p_boundary_reference, time=time)
+            previous=p_boundary_reference, time=time,
+            nonorthogonal=nonorthogonal_flux)
 
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config)
@@ -269,7 +272,7 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function nonorthogonal_face_correction(eqn, grad, flux, config)
+function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothing)
     mesh = grad.mesh
     (; faces, cells, boundary_cellsID) = mesh
 
@@ -283,66 +286,60 @@ function nonorthogonal_face_correction(eqn, grad, flux, config)
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces
-    kernel! = _nonorthogonal_face_correction(_setup(backend, workgroup, ndrange)...)
-    kernel!(b, grad, flux, faces, cells, n_bfaces)
+    if isnothing(correction)
+        kernel! = _nonorthogonal_face_correction(
+            _setup(backend, workgroup, ndrange)...)
+        kernel!(b, grad, flux, faces, cells, n_bfaces)
+    else
+        kernel! = _nonorthogonal_face_correction_with_flux!(
+            _setup(backend, workgroup, ndrange)...)
+        kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
+    end
 end
 
 @kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
     face = faces[fID]
-    (; ownerCells, area, normal, e, delta) = face
+    (; ownerCells, area, normal, weight) = face
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
-    cell1 = cells[cID1]
-    cell2 = cells[cID2]
 
-    xf = face.centre
-    xC = cell1.centre
-    xN = cell2.centre
-    
-    # Calculate weights using normal functions
-    # weight = norm(xf - xC)/norm(xN - xC)
-    # weight = norm(xf - xN)/norm(xN - xC)
-
-    dPN = cell2.centre - cell1.centre
-
-    (; values) = grad.field
-    weight, df = correction_weight(cells, faces, fID)
-    # weight = face.weight
     gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
-    gradf = gradi + ((values[cID2] - values[cID1])/delta - (gradi⋅e))*e
-    # gradf = gradi
-
-    Sf = area*normal
-    # Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
-    Ef = dPN*(norm(normal)^2/(dPN⋅normal))*area
-    T_hat = Sf - Ef # original
-    faceCorrection = flux[fID]*gradf⋅T_hat
+    dPN = cells[cID2].centre - cells[cID1].centre
+    projected_delta = max(dPN⋅normal, oftype(area, 0.05)*norm(dPN))
+    correction_vector = normal - dPN/projected_delta
+    faceCorrection = flux[fID]*area*(gradi⋅correction_vector)
 
     Atomix.@atomic b[cID1] += faceCorrection
     Atomix.@atomic b[cID2] -= faceCorrection 
       
 end
 
-function correction_weight(cells, faces, fi)
-    (; ownerCells, centre) = faces[fi]
+@kernel function _nonorthogonal_face_correction_with_flux!(
+    b, correction, grad, flux, faces, cells, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    face = faces[fID]
+    (; ownerCells, area, normal, weight) = face
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
-    c1 = cells[cID1].centre
-    c2 = cells[cID2].centre
-    c1_f = centre - c1
-    c1_c2 = c2 - c1
-    q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)
-    f_prime = c1 - q*(c1 - c2)
-    w = norm(c2 - f_prime)/norm(c2 - c1)
-    df = centre - f_prime
-    return w, df
+
+    gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
+    dPN = cells[cID2].centre - cells[cID1].centre
+    projected_delta = max(dPN⋅normal, oftype(area, 0.05)*norm(dPN))
+    correction_vector = normal - dPN/projected_delta
+    face_correction = flux[fID]*area*(gradi⋅correction_vector)
+
+    correction[fID] = face_correction
+    Atomix.@atomic b[cID1] += face_correction
+    Atomix.@atomic b[cID2] -= face_correction
 end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
-function correct_mass_flux!(mdotf, p_eqn, config; previous, time=nothing)
+function correct_mass_flux!(
+    mdotf, p_eqn, config; previous, time=nothing, nonorthogonal=nothing)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
@@ -363,6 +360,8 @@ function correct_mass_flux!(mdotf, p_eqn, config; previous, time=nothing)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
+    correct_nonorthogonal_mass_flux!(mdotf, nonorthogonal, config)
+
     p_BCs = config.boundaries.p
     for BC ∈ p_BCs
         correct_mass_periodic(
@@ -372,6 +371,24 @@ function correct_mass_flux!(mdotf, p_eqn, config; previous, time=nothing)
 
     correct_boundary_mass_flux!(
         mdotf, p_eqn, p_BCs, config.boundaries.U, previous, time, config)
+end
+
+correct_nonorthogonal_mass_flux!(mdotf, ::Nothing, config) = nothing
+
+function correct_nonorthogonal_mass_flux!(mdotf, correction, config)
+    (; backend, workgroup) = config.hardware
+    n_bfaces = length(mdotf.mesh.boundary_cellsID)
+    ndrange = length(mdotf.mesh.faces) - n_bfaces
+    kernel! = _correct_nonorthogonal_mass_flux!(
+        _setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, correction, n_bfaces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _correct_nonorthogonal_mass_flux!(mdotf, correction, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    @inbounds mdotf[fID] -= correction[fID]
 end
 
 @kernel function _correct_mass_flux!(

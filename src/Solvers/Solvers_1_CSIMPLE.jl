@@ -172,6 +172,7 @@ function CSIMPLE(
     divmugradUTx = ScalarField(mesh)
     divmugradUTy = ScalarField(mesh)
     divmugradUTz = ScalarField(mesh)
+    nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
@@ -283,7 +284,8 @@ function CSIMPLE(
             discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
             setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
+            nonorthogonal_face_correction(
+                p_eqn, ∇p, rhorDf, config; correction=nonorthogonal_flux)
             update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
         end
@@ -301,7 +303,8 @@ function CSIMPLE(
         end
         correct_mass_flux!(
             mdotf, p_eqn, config;
-            previous=p_boundary_reference, time=time)
+            previous=p_boundary_reference, time=time,
+            nonorthogonal=nonorthogonal_flux)
 
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config)

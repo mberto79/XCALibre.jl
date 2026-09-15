@@ -64,8 +64,8 @@ boundaries = assign(
     )
 )
 
-atol = 1e-2
-rtol = 0.0
+atol = 1e-15
+rtol = 1e-1
 solvers = (
     U = SolverSetup(
         solver = Bicgstab(),
@@ -80,7 +80,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence = 1e-10,
         relax = 0.3,
-        limit = (0.5*pressure, 5*pressure),
+        limit = (0.1*pressure, 5*pressure),
         rtol = rtol,
         atol = atol
     ),

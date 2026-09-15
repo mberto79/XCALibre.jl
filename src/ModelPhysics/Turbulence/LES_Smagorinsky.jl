@@ -66,7 +66,7 @@ Returns a structure holding the fields and data needed for this model
 
 """
 function initialise(
-    turbulence::Smagorinsky, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::Smagorinsky, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config; kwargs...
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime, boundaries) = config
@@ -103,7 +103,7 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    les::SmagorinskyModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    les::SmagorinskyModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config; kwargs...
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain

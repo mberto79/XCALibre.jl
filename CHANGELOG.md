@@ -3,10 +3,24 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [Unreleased]
+## Version [v0.6.1-DEV] - 2026-09-11
+
+### Added
+* Added FixedHeatFlux boundary condition [#149]
 
 ### Fixed
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
+
+### Changed
+* No functionality changes
+
+### Breaking
+* No breaking changes
+
+### Deprecated
+* No functions deprecated
+
+### Removed
 
 ## Version [v0.6.0] - 2026-07-17
 

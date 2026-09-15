@@ -213,6 +213,39 @@ end
     end
 end
 
+@testset "OpenFOAM writer rewrites a mismatched mesh" begin
+    mktempdir() do directory
+        cd(directory) do
+            mesh_directory = joinpath("constant", "polyMesh")
+            mkpath(mesh_directory)
+            # the note holds the matching count, so a naive first-integer parser would pass
+            write(joinpath(mesh_directory, "points"), """
+            FoamFile
+            {
+                version     2.0;
+                format      ascii;
+                class       vectorField;
+                note        "nPoints: 216 nCells: 125";
+                object      points;
+            }
+
+            8
+            (
+            (0 0 0)
+            )
+            """)
+            for name in ("faces", "owner", "neighbour", "boundary")
+                write(joinpath(mesh_directory, name), "sentinel-$name")
+            end
+
+            @test_logs (:warn, r"does not match") (:info, r"Writing mesh") match_mode=:any XCALibre.initialise_writer(OpenFOAM(), foam3_mesh)
+            written_mesh = FOAM3D_mesh(mesh_directory)
+            @test length(written_mesh.nodes) == length(foam3_mesh.nodes)
+            @test length(written_mesh.faces) == length(foam3_mesh.faces)
+        end
+    end
+end
+
 precision_cases = (
     (Int32, Float32),
     (Int64, Float32),

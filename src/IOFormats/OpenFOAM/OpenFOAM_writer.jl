@@ -1,4 +1,37 @@
 
+function _foam_declared_count(file_path)
+    header = open(io -> String(read(io, 16384)), file_path) # counts sit just after the header
+    header = replace(header, r"(?s)/\*.*?\*/" => " ")
+    header = replace(header, r"//[^\r\n]*" => " ")
+    count = nothing
+    depth = 0
+    for token ∈ eachmatch(r"\"(?:\\.|[^\"])*\"|[{}();]|[^\s{}();]+", header)
+        text = token.match
+        if text == "{"
+            depth += 1
+        elseif text == "}"
+            depth -= 1
+        elseif depth == 0
+            # the count is the integer opening the list, not the first integer in the file
+            text == "(" && return count
+            count = tryparse(Int, text)
+        end
+    end
+    return nothing
+end
+
+function _polyMesh_mismatch(polyMeshDir, mesh)
+    npoints = _foam_declared_count(joinpath(polyMeshDir, "points"))
+    nfaces = _foam_declared_count(joinpath(polyMeshDir, "owner"))
+    if !isnothing(npoints) && npoints != length(mesh.nodes)
+        return "points declares $npoints points, the mesh has $(length(mesh.nodes)) nodes"
+    end
+    if !isnothing(nfaces) && nfaces != length(mesh.faces)
+        return "owner declares $nfaces faces, the mesh has $(length(mesh.faces)) faces"
+    end
+    return nothing
+end
+
 initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
     # create dummy file to load results in ParaView
     touch("XCALibre.foam")
@@ -6,188 +39,188 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
 
     mesh_files = ("points", "faces", "owner", "neighbour", "boundary")
     if all(name -> isfile(joinpath(default_dir, name)), mesh_files)
-        @info "Preserving existing mesh in constant/polyMesh."
-        return FOAMWriter(nothing, nothing)
+        mismatch = _polyMesh_mismatch(default_dir, mesh)
+        if isnothing(mismatch)
+            @info "Preserving existing mesh in constant/polyMesh."
+            return FOAMWriter(nothing, nothing)
+        end
+        @warn "Existing constant/polyMesh does not match the simulation mesh ($mismatch). Overwriting it."
     end
 
-    # if !isdir(default_dir)
-        @info "Writing mesh to constant/polyMesh..."
-        # Create constant directory and mesh files
-        polyMeshDir = mkpath(default_dir)
-        pointsFile = joinpath(polyMeshDir, "points")
-        facesFile = joinpath(polyMeshDir, "faces")
-        ownerFile = joinpath(polyMeshDir, "owner")
-        neighbourFile = joinpath(polyMeshDir, "neighbour")
-        boundaryFile = joinpath(polyMeshDir, "boundary")
-        backend = _get_backend(mesh)
+    @info "Writing mesh to constant/polyMesh..."
+    # Create constant directory and mesh files
+    polyMeshDir = mkpath(default_dir)
+    pointsFile = joinpath(polyMeshDir, "points")
+    facesFile = joinpath(polyMeshDir, "faces")
+    ownerFile = joinpath(polyMeshDir, "owner")
+    neighbourFile = joinpath(polyMeshDir, "neighbour")
+    boundaryFile = joinpath(polyMeshDir, "boundary")
+    backend = _get_backend(mesh)
 
-        # Copy mesh data and get basic SteadyState
-        nodes = get_data(mesh.nodes, backend) # get cpu copy
-        cells = get_data(mesh.cells, backend) # get cpu copy
-        faces = get_data(mesh.faces, backend) # get cpu copy
-        face_nodes = get_data(mesh.face_nodes, backend) # get cpu copy
-        boundaries = get_data(mesh.boundaries, backend) # get cpu copy
-        npoints = length(nodes)
-        ncells = length(cells)
-        nfaces = length(faces)
-        bfaces = length(mesh.boundary_cellsID)
-        ifaces = nfaces - bfaces
+    # Copy mesh data and get basic SteadyState
+    nodes = get_data(mesh.nodes, backend) # get cpu copy
+    cells = get_data(mesh.cells, backend) # get cpu copy
+    faces = get_data(mesh.faces, backend) # get cpu copy
+    face_nodes = get_data(mesh.face_nodes, backend) # get cpu copy
+    boundaries = get_data(mesh.boundaries, backend) # get cpu copy
+    npoints = length(nodes)
+    ncells = length(cells)
+    nfaces = length(faces)
+    bfaces = length(mesh.boundary_cellsID)
+    ifaces = nfaces - bfaces
 
-        # write points 
-        
-        open(pointsFile, "w") do io
-            println(io, 
-            """
-            FoamFile
-            {
-                version     2.0;
-                format      ascii;
-                class       vectorField;
-                location    "constant/polyMesh";
-                object      points;
-            }
-            """)
-            println(io, npoints)
-            println(io, "(")
-            for nodei ∈ eachindex(nodes)
-                coords = nodes[nodei].coords
-                # Julia's shortest round-trippable representation preserves the
-                # input mesh precision. `%g` only retained six significant digits.
-                println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
+    # write points 
+    
+    open(pointsFile, "w") do io
+        println(io, 
+        """
+        FoamFile
+        {
+            version     2.0;
+            format      ascii;
+            class       vectorField;
+            location    "constant/polyMesh";
+            object      points;
+        }
+        """)
+        println(io, npoints)
+        println(io, "(")
+        for nodei ∈ eachindex(nodes)
+            coords = nodes[nodei].coords
+            # Julia's shortest round-trippable representation preserves the
+            # input mesh precision. `%g` only retained six significant digits.
+            println(io, "($(coords[1]) $(coords[2]) $(coords[3]))")
+        end
+        println(io, ")")
+    end
+
+    # write faces 
+    open(facesFile, "w") do io
+        println(io, 
+        """
+        FoamFile
+        {
+            version     2.0;
+            format      ascii;
+            class       faceList;
+            location    "constant/polyMesh";
+            object      faces;
+        }
+        """)
+        println(io, length(faces))
+        println(io, "(")
+        # loop over internal faces first
+        for fID ∈ (bfaces + 1):nfaces
+            nrange = faces[fID].nodes_range
+            nodesID = @view face_nodes[nrange]
+            write(io, "$(length(nrange))(")
+            for nID ∈ nodesID
+                foam_nID = nID - 1 # FOAM is zero-indexed
+                write(io, "$foam_nID ")
             end
-            println(io, ")")
+            write(io, ")\n")
         end
 
-        # write faces 
-        open(facesFile, "w") do io
-            println(io, 
-            """
-            FoamFile
-            {
-                version     2.0;
-                format      ascii;
-                class       faceList;
-                location    "constant/polyMesh";
-                object      faces;
-            }
-            """)
-            println(io, length(faces))
-            println(io, "(")
-            # loop over internal faces first
-            for fID ∈ (bfaces + 1):nfaces
-                nrange = faces[fID].nodes_range
-                nodesID = @view face_nodes[nrange]
-                write(io, "$(length(nrange))(")
-                for nID ∈ nodesID
-                    foam_nID = nID - 1 # FOAM is zero-indexed
-                    write(io, "$foam_nID ")
-                end
-                write(io, ")\n")
+        # loop over boundary faces at the end
+        for fID ∈ 1:bfaces
+            nrange = faces[fID].nodes_range
+            nodesID = @view face_nodes[nrange]
+            write(io, "$(length(nrange))(")
+            for nID ∈ nodesID
+                foam_nID = nID - 1 # FOAM is zero-indexed
+                write(io, "$foam_nID ")
             end
+            write(io, ")\n")
+        end
+        println(io, ")")
+    end
 
-            # loop over boundary faces at the end
-            for fID ∈ 1:bfaces
-                nrange = faces[fID].nodes_range
-                nodesID = @view face_nodes[nrange]
-                write(io, "$(length(nrange))(")
-                for nID ∈ nodesID
-                    foam_nID = nID - 1 # FOAM is zero-indexed
-                    write(io, "$foam_nID ")
-                end
-                write(io, ")\n")
-            end
-            println(io, ")")
+    # write owners 
+    open(ownerFile, "w") do io
+        println(io, 
+        """
+        FoamFile
+        {
+            version     2.0;
+            format      ascii;
+            class       labelList;
+            note        "nPoints: $npoints nCells: $ncells nFaces: $nfaces nInternalFaces: $ifaces";
+            location    "constant/polyMesh";
+            object      owner;
+        }
+        """)
+        println(io, length(faces))
+        println(io, "(")
+        # loop over internal faces first
+        for fID ∈ (bfaces + 1):nfaces
+            owner = faces[fID].ownerCells[1] - 1 # OF uses zero index
+            write(io, "$owner\n")
         end
 
-        # write owners 
-        open(ownerFile, "w") do io
-            println(io, 
-            """
-            FoamFile
+        # loop over boundary faces at the end
+        for fID ∈ 1:bfaces
+            owner = faces[fID].ownerCells[1] - 1 # OF uses zero index
+            write(io, "$owner\n")
+        end
+        println(io, ")")
+    end
+
+    # write neighbours 
+    open(neighbourFile, "w") do io
+        println(io, 
+        """
+        FoamFile
+        {
+            version     2.0;
+            format      ascii;
+            class       labelList;
+            note        "nPoints: $npoints nCells: $ncells nFaces: $nfaces nInternalFaces: $ifaces";
+            location    "constant/polyMesh";
+            object      neighbour;
+        }
+        """)
+        println(io, ifaces)
+        println(io, "(")
+        # loop over internal faces only
+        for fID ∈ (bfaces + 1):nfaces
+            neighbour = faces[fID].ownerCells[2] - 1 # OF uses zero index
+            write(io, "$neighbour\n")
+        end
+        println(io, ")")
+    end
+
+    # write boundary 
+    open(boundaryFile, "w") do io
+        println(io, 
+        """
+        FoamFile
+        {
+            version     2.0;
+            format      ascii;
+            class       polyBoundaryMesh;
+            location    "constant/polyMesh";
+            object      boundary;
+        }
+        """)
+        println(io, length(boundaries))
+        println(io, "(")
+        # loop over boundaries
+        for boundary ∈ boundaries
+            name = boundary.name
+            IDs_range = boundary.IDs_range
+            patchFaces = length(IDs_range)
+            startFace = IDs_range[1] + ifaces - 1 # FOAM is zero-indexed
+            write(io, """
+            $name
             {
-                version     2.0;
-                format      ascii;
-                class       labelList;
-                note        "nPoints: $npoints nCells: $ncells nFaces: $nfaces nInternalFaces: $ifaces";
-                location    "constant/polyMesh";
-                object      owner;
+                type            patch;
+                nFaces          $patchFaces;
+                startFace       $startFace;
             }
             """)
-            println(io, length(faces))
-            println(io, "(")
-            # loop over internal faces first
-            for fID ∈ (bfaces + 1):nfaces
-                owner = faces[fID].ownerCells[1] - 1 # OF uses zero index
-                write(io, "$owner\n")
-            end
-
-            # loop over boundary faces at the end
-            for fID ∈ 1:bfaces
-                owner = faces[fID].ownerCells[1] - 1 # OF uses zero index
-                write(io, "$owner\n")
-            end
-            println(io, ")")
         end
-
-        # write neighbours 
-        open(neighbourFile, "w") do io
-            println(io, 
-            """
-            FoamFile
-            {
-                version     2.0;
-                format      ascii;
-                class       labelList;
-                note        "nPoints: $npoints nCells: $ncells nFaces: $nfaces nInternalFaces: $ifaces";
-                location    "constant/polyMesh";
-                object      neighbour;
-            }
-            """)
-            println(io, ifaces)
-            println(io, "(")
-            # loop over internal faces only
-            for fID ∈ (bfaces + 1):nfaces
-                neighbour = faces[fID].ownerCells[2] - 1 # OF uses zero index
-                write(io, "$neighbour\n")
-            end
-            println(io, ")")
-        end
-
-        # write boundary 
-        open(boundaryFile, "w") do io
-            println(io, 
-            """
-            FoamFile
-            {
-                version     2.0;
-                format      ascii;
-                class       polyBoundaryMesh;
-                location    "constant/polyMesh";
-                object      boundary;
-            }
-            """)
-            println(io, length(boundaries))
-            println(io, "(")
-            # loop over boundaries
-            for boundary ∈ boundaries
-                name = boundary.name
-                IDs_range = boundary.IDs_range
-                patchFaces = length(IDs_range)
-                startFace = IDs_range[1] + ifaces - 1 # FOAM is zero-indexed
-                write(io, """
-                $name
-                {
-                    type            patch;
-                    nFaces          $patchFaces;
-                    startFace       $startFace;
-                }
-                """)
-            end
-            println(io, ")")
-        end
-    # else
-    #     @info "Mesh file already exsists in constant/polyMesh..."
-    # end
+        println(io, ")")
+    end
 
     # return dummy structure for dispatch
     FOAMWriter(nothing, nothing)

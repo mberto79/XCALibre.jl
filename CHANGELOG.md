@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 * 3D mesh geometry is now computed by a single shared routine used by both the UNV3 and OpenFOAM readers, which previously disagreed on cell centroids and volumes for the same mesh [#153](@ref)
-* The OpenFOAM writer now preserves a complete existing `constant/polyMesh` instead of overwriting it, so results can be written alongside the original mesh. Re-running in a directory that holds a different mesh will keep the existing files [#153](@ref)
+* The OpenFOAM writer now preserves a complete existing `constant/polyMesh` instead of overwriting it, so results can be written alongside the original mesh [#153](@ref)
+* The OpenFOAM writer compares the point and face counts declared by an existing `constant/polyMesh` with the simulation mesh, and warns and rewrites the mesh files when they disagree [#153](@ref)
 
 ### Breaking
 * No breaking changes

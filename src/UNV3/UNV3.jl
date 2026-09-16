@@ -14,13 +14,13 @@ Face Ordered Tracking: The exact 3D spatial node ordering of faces provided by t
 
 2. Geometric Assumptions and Calculations
 
-True Geometric Centroids: Face Centroids are computed as area-weighted true geometric centers by sub-triangulating the face around an estimated arithmetic center. Cell Centroids are computed as volume-weighted true geometric centers by summing the centroids of the divergence pyramids formed by the cell's boundary faces and an estimated apex.
+True Geometric Centroids: UNV and OpenFOAM meshes use the same geometry pipeline. Face centroids use projected-area weights, and cell centroids use OpenFOAM-compatible volume-weighted face pyramids.
 
 Face Area and Normals: Computed by summing the cross products of consecutive edge sub-triangles.
 
 The Normal Vector Contract (Right-Hand Rule): The normal vector of a face must always point outward from Owner 1. During the geometry pipeline, if a parsed face sequence produces a normal pointing inward (towards Owner 1's center), the normal is flipped by multiplying by -1, and the ordered node array for that face is permanently reversed in memory to mathematically satisfy the Right-Hand Rule.
 
-Cell Volumes: Computed using the divergence theorem, specifically by summing the volumes of pyramids formed by the cell's true geometric centroid and its boundary faces.
+Cell Volumes: Computed using the divergence theorem, specifically by summing the volumes of pyramids formed by the average of the cell's face centres and its bounding faces. The volume is independent of the apex used.
 
 =#
 
@@ -28,7 +28,6 @@ module UNV3
 
 using StaticArrays
 using LinearAlgebra
-using Accessors
 using Adapt
 using Printf
 using Statistics

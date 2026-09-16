@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 
 ### Fixed
+* Fixed missing density term in set_production! needed for cases with non-unity density [#151]
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
 * Fixed OpenFOAM `boundary` file parsing so that patch groups (`inGroups`) no longer corrupt the patch list. The parser is now token based, ignores unknown dictionary entries, and reports malformed files with an `ArgumentError` [#153](@ref)
 * Fixed OpenFOAM mesh writer truncating point coordinates to six significant figures, which prevented a written mesh from round-tripping [#153](@ref)

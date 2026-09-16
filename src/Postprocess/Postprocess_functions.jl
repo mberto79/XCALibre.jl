@@ -33,7 +33,7 @@ function pressure_force(patch::Symbol, model, config)
 
     kernel! = _pressure_force!(backend)
     kernel!(fx, fy, fz, p, rhoref, faces, boundary_cellsID, IDs_range;
-        _patch_launch(backend, workgroup, n)...)
+        _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
     Fp = TF[sum(fx), sum(fy), sum(fz)]
@@ -87,7 +87,7 @@ function viscous_force(patch::Symbol, model, config)
 
     kernel! = _viscous_force!(backend)
     kernel!(fx, fy, fz, U, Uw, nu, nut, rho, faces, boundary_cellsID, IDs_range;
-        _patch_launch(backend, workgroup, n)...)
+        _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
     Fv = TF[sum(fx), sum(fy), sum(fz)]

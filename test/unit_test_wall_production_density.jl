@@ -1,7 +1,7 @@
 using XCALibre
 using Test
 
-# `set_production!` overwrites Pk in KWallFunction wall cells, so like the rest of the conservative
+# `correct_production!` overwrites Pk in KWallFunction wall cells, so like the rest of the conservative
 # k equation it must carry rho. Every CI case with a k wall function has rho = 1, so this calls the
 # kernel directly at two densities and checks the wall-cell production scales exactly with rho.
 
@@ -45,7 +45,7 @@ using Test
         initialise!(model.turbulence.k, k0)
         initialise!(model.turbulence.nut, k0/1000.0)
         P = ScalarField(mesh)
-        XCALibre.ModelPhysics.set_production!(P, kwall, model, nothing, config)
+        XCALibre.ModelPhysics.correct_production!(P, BCs.k, model, nothing, config)
         return P.values[wall_cells]
     end
 
@@ -61,7 +61,7 @@ using Test
     @test !(P_dense ≈ P_unit)
 end
 
-# `set_production!` takes the wall velocity from Uf, so a wall cell whose velocity matches the
+# `correct_production!` takes the wall velocity from Uf, so a wall cell whose velocity matches the
 # wall's own motion has no relative shear and must produce no k.
 @testset "KWallFunction production uses the moving-wall velocity" begin
     mesh = UNV2D_mesh(joinpath(pkgdir(XCALibre, "examples/0_GRIDS"),
@@ -101,7 +101,7 @@ end
         initialise!(model.turbulence.k, k0)
         initialise!(model.turbulence.nut, k0/1000.0)
         P = ScalarField(mesh)
-        XCALibre.ModelPhysics.set_production!(P, kwall, model, nothing, config)
+        XCALibre.ModelPhysics.correct_production!(P, BCs.k, model, nothing, config)
         return P.values[wall_cells]
     end
 

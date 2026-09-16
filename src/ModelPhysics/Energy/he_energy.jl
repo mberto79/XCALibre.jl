@@ -372,7 +372,7 @@ function zero_viscous_dissipation!(
     ndrange == 0 && return nothing
     kernel! = _zero_viscous_dissipation!(backend)
     kernel!(Phi.values, mesh.boundary_cellsID, IDs_range;
-        _patch_launch(backend, workgroup, ndrange)...)
+        _dynamic_setup(backend, workgroup, ndrange)...)
     KernelAbstractions.synchronize(backend)
 end
 

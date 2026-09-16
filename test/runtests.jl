@@ -55,6 +55,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Wall Production Density Unit Test" begin
         include("unit_test_wall_production_density.jl")
+        include("unit_test_wall_function_averaging.jl")
     end
 
     # @testset "setFields Function Unit Test" begin

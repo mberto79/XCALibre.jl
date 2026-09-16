@@ -420,7 +420,7 @@ function zero_explicit_stress!(
     ndrange == 0 && return nothing
     kernel! = _zero_explicit_stress!(backend)
     kernel!(mugradUTx, mugradUTy, mugradUTz, IDs_range;
-        _patch_launch(backend, workgroup, ndrange)...)
+        _dynamic_setup(backend, workgroup, ndrange)...)
     KernelAbstractions.synchronize(backend)
 end
 

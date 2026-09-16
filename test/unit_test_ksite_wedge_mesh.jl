@@ -130,6 +130,40 @@ end
     @test isapprox(A_wall, S*WEDGE_ANGLE/360; rtol=0.02)
 end
 
+@testset "K-Site wedge: flat, uniform layers at the interface" begin
+    # Both K-Site cases are 50% full, so the interface sits at z = 0. On the
+    # original O-grid the cell layer straddling z = 0 was 2 cm tall at the axis
+    # and 4 cm at the wall, and a VOF interface smeared across cells whose
+    # height varies along it drove a spurious ~0.3 m/s current along the
+    # interface of a tank at rest (see "Why the band" in make_ksite_wedge.jl).
+    # The generator now puts an equatorial band of flat, uniform layers there.
+    # Pin the two properties the fix relies on.
+    nb = length(mesh.boundary_cellsID)          # boundary faces come first
+    horizontal = [f for f in mesh.faces[nb+1:end] if abs(f.normal[3]) > 0.999]
+    radius(f) = hypot(f.centre[1], f.centre[2])
+
+    # (1) a face lies ON z = 0, from the axis all the way to the wall
+    at_zero = filter(f -> abs(f.centre[3]) < 1e-9, horizontal)
+    @test !isempty(at_zero)
+    if !isempty(at_zero)
+        @test minimum(radius, at_zero) < 0.05
+        @test maximum(radius, at_zero) > 0.95*A_SEMI
+    end
+
+    # (2) the next layer of faces above and below is flat to 1% of its height
+    # across the whole radius, i.e. the interface cells have the same height
+    # everywhere along the interface
+    for sgn in (+1, -1)
+        zs = [sgn*f.centre[3] for f in horizontal if sgn*f.centre[3] > 1e-9]
+        z1 = minimum(zs)
+        level = [f for f in horizontal if abs(sgn*f.centre[3] - z1) < 0.25*z1]
+        spread = maximum(f -> sgn*f.centre[3], level) - minimum(f -> sgn*f.centre[3], level)
+        @info "first layer off the interface" side=(sgn > 0 ? "above" : "below") z1 spread
+        @test spread < 0.01*z1
+        @test maximum(radius, level) > 0.95*A_SEMI
+    end
+end
+
 @testset "K-Site wedge: reconstruct! recovers a uniform field" begin
     # Exercises the real `reconstruct!` rather than a copy of its kernel.
     #

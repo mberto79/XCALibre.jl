@@ -859,6 +859,192 @@ end
 end
 
 """
+    VOFMassAudit
+
+Phase-change mass budget for the VOF path, enabled with `XCALIBRE_VOF_AUDIT=1`
+and printed every `XCALIBRE_VOF_AUDIT_EVERY` steps (default 50). Diagnostic
+only, off by default, with no effect on the solution.
+
+`_mass_audit` cannot be used here: it is built on the Mixture continuity
+equation and reads drift and dispersion fluxes that VOF never allocates.
+
+In a sealed tank, evaporation must move mass from liquid to vapour and create
+none, so over any interval
+
+    dM_l = -int(mdot)        dM_v = +int(mdot)
+
+A VOF step changes `alpha` in exactly two places, so the liquid volume change
+splits into terms that are accumulated separately:
+
+    dV_l = adv                 -dt*div(alpha*u)            (zero when sealed)
+         + alpha*div(u)        +dt*alpha_prev*div(u)       (advective-form term)
+         + phase change        applied sink, AFTER the clamp
+    clamp = applied - intended
+
+The pressure equation's own volume balance is accumulated alongside:
+`div(u) = expansion - psi*dp_rgh/dt` per cell, with `expansion` split into its
+thermal and phase-change parts.
+
+`M_v` uses the vapour density from the last `update_phase_state!`, which lags
+the pressure solve by one step. Over an interval of many steps that is a
+single-step error.
+"""
+mutable struct VOFMassAudit{S}
+    every::Int
+    n::Int
+    t0::Float64
+    M_l0::Float64
+    M_v0::Float64
+    V_l0::Float64
+    evap::Float64       # int mdot dV dt                  [kg]
+    adv::Float64        # liquid volume terms             [m^3]
+    dilat::Float64
+    pc_sink::Float64    # sign*mdot/rho_tracked part alone
+    pc_int::Float64
+    pc_act::Float64
+    cl_up_i::Float64    # clamp split: bound hit, interface/pure cell
+    cl_up_p::Float64
+    cl_lo_i::Float64
+    cl_lo_p::Float64
+    mules_hi::Float64   # alpha outside [0,1] as MULES left it
+    mules_lo::Float64
+    g_evap::Float64     # unlimited rate, split by sign   [kg]
+    g_cond::Float64
+    lim::Float64        # rate removed by the donor limit [kg]
+    exp_th::Float64     # volume balance terms            [m^3]
+    exp_pc::Float64
+    psidp::Float64
+    divu::Float64
+    vol_res::Float64
+    alpha_pre::Vector{Float64}
+    mdot_pre::Vector{Float64}
+    divu_field::S
+end
+
+function VOFMassAudit(mesh, time, alpha, rho_l, rho_v, tracked_is_liquid)
+    every = parse(Int, get(ENV, "XCALIBRE_VOF_AUDIT_EVERY", "50"))
+    M_l, M_v, V_l = _vof_audit_masses(alpha, rho_l, rho_v, mesh, tracked_is_liquid)
+    n = length(mesh.cells)
+    return VOFMassAudit(every, 0, Float64(time), M_l, M_v, V_l, zeros(20)...,
+                        zeros(n), zeros(n), ScalarField(mesh))
+end
+
+function _vof_audit_masses(alpha, rho_l, rho_v, mesh, tracked_is_liquid)
+    (; cells) = mesh
+    M_l = 0.0; M_v = 0.0; V_l = 0.0
+    for i in eachindex(cells)
+        v  = cells[i].volume
+        al = tracked_is_liquid ? alpha[i] : 1 - alpha[i]
+        M_l += al*rho_l[i]*v
+        M_v += (1 - al)*rho_v[i]*v
+        V_l += al*v
+    end
+    return M_l, M_v, V_l
+end
+
+# Right after `advance_alpha!`. `s` converts a tracked-phase change into a
+# liquid one.
+function _vof_audit_transport!(a, alpha_prev, div_alpha, div_mdotf, dt, mesh,
+                               tracked_is_liquid)
+    s = tracked_is_liquid ? 1.0 : -1.0
+    (; cells) = mesh
+    for i in eachindex(cells)
+        v = cells[i].volume
+        a.adv   += -s*dt*div_alpha[i]*v
+        a.dilat +=  s*dt*alpha_prev[i]*div_mdotf[i]*v
+    end
+    return nothing
+end
+
+# Right after `apply_phase_change_alpha!`; `a.alpha_pre` holds alpha before it.
+function _vof_audit_phase_change!(a, alpha, alpha_prev, mdot, rho_tracked, rho_other,
+                                  sign, dt, mesh, tracked_is_liquid)
+    s = tracked_is_liquid ? 1.0 : -1.0
+    (; cells) = mesh
+    for i in eachindex(cells)
+        v  = cells[i].volume
+        a0 = alpha_prev[i]
+        a.evap    += dt*mdot[i]*v
+        a.pc_sink += s*sign*dt*mdot[i]/rho_tracked[i]*v
+        a.pc_int  += s*sign*dt*mdot[i]*((1 - a0)/rho_tracked[i] + a0/rho_other[i])*v
+        a.pc_act  += s*(alpha[i] - a.alpha_pre[i])*v
+        # Where the clamp acts. `a_int` is what the kernel computed before
+        # clamping; `iface` uses the step-start alpha, as the coefficient does.
+        am    = a.alpha_pre[i]
+        mp    = a.mdot_pre[i]
+        a.g_evap += dt*max(mp, 0.0)*v
+        a.g_cond += dt*min(mp, 0.0)*v
+        a.lim    += dt*(mdot[i] - mp)*v
+        # Split on the UNLIMITED rate, so it shows where the limiter acted.
+        a_int = am + sign*dt*mp*((1 - a0)/rho_tracked[i] + a0/rho_other[i])
+        c     = s*(alpha[i] - a_int)*v
+        iface = 1e-6 < a0 < 1 - 1e-6
+        if a_int > 1
+            iface ? (a.cl_up_i += c) : (a.cl_up_p += c)
+        elseif a_int < 0
+            iface ? (a.cl_lo_i += c) : (a.cl_lo_p += c)
+        end
+        a.mules_hi += max(am - 1, 0.0)*v
+        a.mules_lo += min(am, 0.0)*v
+    end
+    return nothing
+end
+
+# After the pressure-velocity corrector loop: volume balance, then report.
+function _vof_audit_step!(a, iteration, time, mdotf, expansion, expansion_thermal,
+                          psi, p_rgh, p_rgh_start, alpha, rho_l, rho_v, dt, mesh,
+                          tracked_is_liquid, config)
+    div!(a.divu_field, mdotf, config)
+    (; cells) = mesh
+    for i in eachindex(cells)
+        v  = cells[i].volume
+        dp = psi === nothing ? 0.0 : psi[i]*(p_rgh[i] - p_rgh_start[i])/dt
+        e  = expansion[i]
+        et = expansion_thermal[i]
+        d  = a.divu_field[i]
+        a.exp_th  += dt*et*v
+        a.exp_pc  += dt*(e - et)*v
+        a.psidp   += dt*dp*v
+        a.divu    += dt*d*v
+        a.vol_res += dt*abs(d - e + dp)*v
+    end
+    a.n += 1
+    a.n % a.every == 0 || return nothing
+
+    M_l, M_v, V_l = _vof_audit_masses(alpha, rho_l, rho_v, mesh, tracked_is_liquid)
+    dMl = M_l - a.M_l0
+    dMv = M_v - a.M_v0
+    dVl = V_l - a.V_l0
+    rl  = M_l/V_l                       # mean liquid density, exact for ConstEos
+    f(x) = string(round(x, sigdigits=5))
+    println("[VOF audit] it=$iteration  t=$(round(a.t0, sigdigits=6))..$(round(time, sigdigits=6)) s")
+    println("  mass    dM_l ", f(dMl), "  dM_v ", f(dMv), "  dM_tot ", f(dMl + dMv),
+            "  evaporated ", f(a.evap), " kg")
+    println("          liquid error dM_l+evap ", f(dMl + a.evap),
+            "  vapour error dM_v-evap ", f(dMv - a.evap), " kg")
+    println("  liquid  dV_l ", f(dVl), " = adv ", f(a.adv), " + alpha*div(u) ", f(a.dilat),
+            " + phase change ", f(a.pc_act), "  (closure ", f(dVl - a.adv - a.dilat - a.pc_act), ") m^3")
+    println("   x rho_l      adv ", f(rl*a.adv), "  alpha*div(u) ", f(rl*a.dilat),
+            "  pc sink ", f(rl*a.pc_sink), "  pc cancel ", f(rl*(a.pc_int - a.pc_sink)),
+            "  clamp ", f(rl*(a.pc_act - a.pc_int)), " kg")
+    println("   clamp split  alpha>1: iface ", f(rl*a.cl_up_i), " pure ", f(rl*a.cl_up_p),
+            "   alpha<0: iface ", f(rl*a.cl_lo_i), " pure ", f(rl*a.cl_lo_p),
+            "   | MULES left (sum over steps) >1 ", f(rl*a.mules_hi), " <0 ", f(rl*a.mules_lo), " kg")
+    println("   rate         unlimited evap ", f(a.g_evap), "  cond ", f(a.g_cond),
+            "  removed by donor limit ", f(a.lim), " kg")
+    println("  volume  expansion_pc ", f(a.exp_pc), "  expansion_th ", f(a.exp_th),
+            "  psi*dp_rgh/dt ", f(a.psidp), "  div(u) ", f(a.divu),
+            "  |resid| ", f(a.vol_res), " m^3")
+
+    a.t0 = time; a.M_l0 = M_l; a.M_v0 = M_v; a.V_l0 = V_l
+    a.evap = a.adv = a.dilat = a.pc_sink = a.pc_int = a.pc_act = 0.0
+    a.cl_up_i = a.cl_up_p = a.cl_lo_i = a.cl_lo_p = a.mules_hi = a.mules_lo = 0.0
+    a.g_evap = a.g_cond = a.lim = 0.0
+    a.exp_th = a.exp_pc = a.psidp = a.divu = a.vol_res = 0.0
+    return nothing
+end
+
+"""
     _mass_audit(iteration, rho, rho_prev, expansion, dt)
 
 p99 magnitudes of the two sides of the mixture-continuity consistency relation,
@@ -1317,13 +1503,67 @@ end
 # of measuring it. The decomposition is the deviation, not the coefficient.
 
 """
-    apply_phase_change_alpha!(alpha, mdot, rho_l, dt, config)
+    apply_phase_change_alpha!(alpha, alpha_prev, mdot, rho_tracked, rho_other, dt, config; sign)
 
-Apply the phase change sink to the volume fraction after the MULES update:
+Apply the phase change source to the volume fraction after the MULES update,
 
-    alpha -= dt*mdot/rho_l
+    alpha += sign*dt*mdot*((1 - alpha_prev)/rho_tracked + alpha_prev/rho_other)
 
 and clamp to `[0, 1]`.
+
+### Why the coefficient is not `1/rho_tracked`
+
+The tracked phase's volume equation is conservative,
+`d(alpha)/dt + div(alpha*u) = sign*mdot/rho_tracked`, but `advance_alpha!` solves
+the ADVECTIVE form: it subtracts `alpha_prev*div(u)`, which is only exact when
+`div(u) = 0`. Phase change makes `div(u) = mdot*(1/rho_v - 1/rho_l)` at the
+interface, so the advective update hands the tracked phase an extra
+`alpha*mdot*(1/rho_v - 1/rho_l)` of volume. The source must take that back out:
+
+    sign*mdot/rho_tracked - alpha*mdot*(1/rho_v - 1/rho_l)
+        = sign*mdot*((1 - alpha)/rho_tracked + alpha/rho_other)
+
+for either choice of tracked phase. This is interPhaseChangeFoam's
+`vDotAlphal` coefficient `1/rho1 - alpha1*(1/rho1 - 1/rho2)`.
+
+MEASURED before this change (`XCALIBRE_VOF_AUDIT=1`, K-Site tank, first 2 s):
+with `1/rho_tracked` alone the uncancelled term created liquid at 17-36x the
+phase-change rate - the `alpha*rho_l/rho_v ~ 33` amplification this predicts -
+and the clamp then removed about half of it. The error follows the sign of
+`mdot`: a gain while the interface evaporates, a loss once the pressurised
+ullage condenses, which is the -0.28 kg liquid / +0.007 kg vapour seen over the
+long runs.
+
+`alpha_prev` is used, not the post-MULES `alpha`, because it is the value the
+advective term was built with. `div(u)` there is also one step old, so the
+cancellation carries a one-step lag in `mdot`.
+
+The phase-change dilatation is the only part of `alpha*div(u)` removed here. The
+ullage compressibility and thermal-expansion parts remain; they are weighted by
+`alpha*(1 - alpha)` and so act only across the interface.
+
+### Donor limit
+
+Where the update would leave `[0, 1]`, `mdot` itself is scaled down to the
+change that was actually applied, and written back. The pressure source
+(`add_phase_change_volume!`) and the latent heat both read `mdot` after this
+call, so all three see the same transfer and the step conserves mass. Clamping
+`alpha` alone would not: the volume source and the latent heat would still act
+on the full rate while the clamp discarded the liquid.
+
+It matters because `ResolvedInterface` scales the rate by `|grad(alpha)|`, which
+is non-zero in PURE cells next to the interface. Condensation in an `alpha = 1`
+cell destroys vapour that is not there. MEASURED (K-Site tank, first 2 s, after
+the coefficient fix above): the clamp was then the largest remaining liquid
+error, -3.6e-7 kg per 0.25 s and growing, and it acted almost entirely in pure
+cells at `alpha > 1`.
+
+The limit removes rate rather than redistributing it, so the interfacial transfer
+is slightly under-counted where the smeared interface reaches pure cells. The
+audit (`XCALIBRE_VOF_AUDIT=1`) reports how much.
+
+`wallBoiling.mdot_wall` is summed into `mdot` before this call but is not itself
+limited here.
 
 **Known simplification.** Strictly this source should enter before the MULES
 limiter computes its bounds, so that boundedness is guaranteed by construction
@@ -1333,48 +1573,62 @@ phase-change volume rate is minute for these cases (boil-off over hours, so
 That assumption breaks down for vigorous boiling, where the limiter would need
 to account for the source properly.
 """
-apply_phase_change_alpha!(alpha, ::Nothing, rho_tracked, dt, config; sign=-1.0) = nothing
+apply_phase_change_alpha!(alpha, alpha_prev, ::Nothing, rho_tracked, rho_other, dt,
+                          config; sign=-1.0) = nothing
 
-function apply_phase_change_alpha!(alpha, mdot, rho_tracked, dt, config; sign=-1.0)
+function apply_phase_change_alpha!(alpha, alpha_prev, mdot, rho_tracked, rho_other, dt,
+                                   config; sign=-1.0)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     ndrange = length(alpha)
     kernel! = _apply_phase_change_alpha!(_setup(backend, workgroup, ndrange)...)
-    kernel!(alpha, mdot, rho_tracked, dt, sign)
+    kernel!(alpha, alpha_prev, mdot, rho_tracked, rho_other, dt, sign)
     return nothing
 end
 
 # `rho_tracked`/`sign` as in `add_alpha_phase_change!`: evaporation destroys the
 # tracked phase when it is the liquid and creates it when it is the vapour.
-# KNOWN ISSUE, VOF / SHARP-INTERFACE ONLY - not investigated, deferred deliberately.
+# KNOWN ISSUE, VOF / SHARP-INTERFACE ONLY - Lee mass drift, cause not identified.
 #
 # `unit_test_phase_change.jl` runs all three rate models on the same VOF box, the
-# same alpha transport and the same sink, changing only the rate model:
+# same alpha transport and the same sink, changing only the rate model. Mass
+# drift after 50 steps:
 #
-#     ModifiedEnergyJump   5.3e-8      Schrage   9.2e-5      Lee   2.7e-2
+#                                  ModifiedEnergyJump   Schrage    Lee
+#     2026-08-19                   5.3e-8               9.2e-5     2.7e-2
+#     coefficient + donor limit    4.6e-9               4.5e-6     3.8e-3
 #
-# Lee drifts ~300x more than the others. The suspected mechanism is the `clamp`
-# below. `Schrage` and `ModifiedEnergyJump` are multiplied by the interfacial area
-# density `a_i`, which vanishes in a pure cell, so they generate nothing where
-# there is no interface. Lee's `r` is volumetric and does NOT vanish - a pure
-# liquid cell with superheat evaporates at `r*rho_l*dT/T_sat` with no interface
-# present - and the clamp then silently discards whatever it removes.
+# The earlier suspicion was the `clamp` below: Lee's `r` is volumetric and does
+# not vanish in a pure cell the way the area-scaled models do. The donor limit
+# removes exactly that loss and left Lee's drift unchanged to every printed
+# digit, so that is RULED OUT. Zeroing the liquid `beta` lowers it to 2.7e-3 -
+# a constant-density liquid is still given thermal expansion in the pressure
+# equation through `phase_betaT(::ConstEos, ...)` - and the remaining ~70% is
+# unexplained.
 #
 # This does NOT affect `Mixture`. Measured on rung 3.1 (dispersed, uniform alpha):
 # `alpha` runs 0.900 -> 0.892 and never approaches a bound, so the clamp never
 # fires and the mass budget closes to ~4%. The failure needs pure cells and a
 # resolved interface, i.e. the VOF path.
 #
-# If this is picked up: the clamp is the wrong instrument for a bounded update. A
-# limiter that redistributes the rejected source, or a rate that is switched off
-# where the receiving phase cannot accept it, would both conserve. See
-# `test/unit_test_phase_change.jl` for the standing `@test_broken`.
-@kernel inbounds=true function _apply_phase_change_alpha!(alpha, mdot, rho_tracked, dt, sign)
+# See `test/unit_test_phase_change.jl` for the standing `@test_broken`.
+@kernel inbounds=true function _apply_phase_change_alpha!(
+    alpha, alpha_prev, mdot, rho_tracked, rho_other, dt, sign)
     i = @index(Global)
     TF = eltype(alpha.values)
-    a = alpha[i] + TF(sign)*dt*mdot[i]/rho_tracked[i]
-    alpha[i] = clamp(a, zero(TF), one(TF))
+    a0 = alpha_prev[i]
+    coeff = (one(TF) - a0)/rho_tracked[i] + a0/rho_other[i]
+    da = TF(sign)*dt*mdot[i]*coeff
+    a  = alpha[i] + da
+    ac = clamp(a, zero(TF), one(TF))
+    # Donor limit - see the docstring. The factor is clamped to [0, 1] so an
+    # `alpha` that MULES already left outside the bounds zeroes the rate rather
+    # than reversing it.
+    if ac != a && da != zero(TF)
+        mdot[i] *= clamp((ac - alpha[i])/da, zero(TF), one(TF))
+    end
+    alpha[i] = ac
 end
 
 """
@@ -2645,6 +2899,30 @@ Ignored here.""" pressure_form=:volume
     # Allocated once: reconstruct! runs three times per time step.
     reconstruct_ws = ReconstructWorkspace(mesh, backend)
 
+    # FLUX-CONSISTENT VELOCITY - diagnostic and experiment, off by default.
+    #
+    # The cell velocity `Hv + rD*reconstruct(face terms)` and the face flux
+    # `interp(Hv) + face terms` are separate objects. A cell-to-cell alternating
+    # component of U cancels in `interp(Hv)`, so the pressure equation never sees
+    # it and only viscosity removes it. On the K-Site wedge this shows as vertical
+    # odd-even stripes in Uz wherever wall heating drives flow.
+    #
+    #   XCALIBRE_UFLUX=1        at each write, also write `U_flux =
+    #                           reconstruct(mdotf)` and `U - U_flux` to
+    #                           `time_N_uflux.vtu`
+    #   XCALIBRE_UFLUX_BLEND=w  after every velocity correction, relax U towards
+    #                           U_flux by the fraction w, 0 <= w <= 1
+    #
+    # ASSUMES zero flux through every boundary face: `reconstruct!` imposes
+    # u.n = psif/area there, which is only the right constraint for a sealed
+    # domain.
+    uflux_write = get(ENV, "XCALIBRE_UFLUX", "0") == "1"
+    uflux_blend = parse(Float64, get(ENV, "XCALIBRE_UFLUX_BLEND", "0"))
+    0.0 <= uflux_blend <= 1.0 || throw(ArgumentError(
+        "XCALIBRE_UFLUX_BLEND must lie in [0, 1], got $uflux_blend"))
+    U_flux  = (uflux_write || uflux_blend > 0) ? VectorField(mesh) : nothing
+    U_fluxd = uflux_write ? VectorField(mesh) : nothing
+
     R_ux    = ones(TF, iterations)
     R_uy    = ones(TF, iterations)
     R_uz    = ones(TF, iterations)
@@ -2666,6 +2944,12 @@ Ignored here.""" pressure_form=:volume
     @info "Starting multiphase solver..."
 
     progress = Progress(iterations; dt=1.0, showspeed=true)
+
+    # VOF MASS AUDIT - see `VOFMassAudit`. Diagnostic only, off by default.
+    vof_audit = (get(ENV, "XCALIBRE_VOF_AUDIT", "0") == "1" &&
+                 !(typeof(mp_model) <: Mixture)) ?
+        VOFMassAudit(mesh, time, alpha, phases[liq].rho, phases[vap].rho,
+                     tracked_is_liquid) : nothing
 
     @time for iteration ∈ 1:iterations
 
@@ -2943,6 +3227,9 @@ Ignored here.""" pressure_form=:volume
                            Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
                            alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time,
                            compressible, config)
+            vof_audit === nothing ||
+                _vof_audit_transport!(vof_audit, alpha_prev, div_alpha, div_mdotf,
+                                      dt_cpu[1], mesh, tracked_is_liquid)
         end
 
         # Post-solve drift flux, shared by the energy equation and the mass-form
@@ -3044,8 +3331,15 @@ Ignored here.""" pressure_form=:volume
             if typeof(mp_model) <: Mixture && implicit_alpha
                 @. mdot_lagged.values = mdot_pc.values
             else
-                apply_phase_change_alpha!(alpha, mdot_pc, phases[main].rho,
+                vof_audit === nothing || (copyto!(vof_audit.alpha_pre, alpha.values);
+                                          copyto!(vof_audit.mdot_pre, mdot_pc.values))
+                apply_phase_change_alpha!(alpha, alpha_prev, mdot_pc,
+                                          phases[main].rho, phases[secondary].rho,
                                           dt_cpu[1], config; sign=pc_sign)
+                vof_audit === nothing ||
+                    _vof_audit_phase_change!(vof_audit, alpha, alpha_prev, mdot_pc,
+                                             phases[main].rho, phases[secondary].rho,
+                                             pc_sign, dt_cpu[1], mesh, tracked_is_liquid)
             end
             # alpha has moved, so refresh its face values before the blend below
             interpolate_vanleer!(alphaf, alpha, ∇alpha, mdotf, config)
@@ -3425,7 +3719,22 @@ Ignored here.""" pressure_form=:volume
             reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config, reconstruct_ws)
 
             correct_velocity_rgh!(U, Hv, ∇p_rghf_reconstructed, rD, config)
+
+            # Relax towards the flux-reconstructed velocity - see `uflux_blend`.
+            if uflux_blend > 0
+                reconstruct!(U_flux, mdotf, config, reconstruct_ws)
+                @. U.x.values += uflux_blend*(U_flux.x.values - U.x.values)
+                @. U.y.values += uflux_blend*(U_flux.y.values - U.y.values)
+                @. U.z.values += uflux_blend*(U_flux.z.values - U.z.values)
+            end
         end
+
+        vof_audit === nothing ||
+            _vof_audit_step!(vof_audit, iteration, time, mdotf, expansion,
+                             expansion_thermal, compressible ? psi : nothing,
+                             p_rgh, p_rgh_start, alpha,
+                             phases[liq].rho, phases[vap].rho, dt_cpu[1], mesh,
+                             tracked_is_liquid, config)
 
         # `p` carries the operating datum so it is the absolute pressure for a
         # compressible run, and unchanged (gauge) when p_operating is zero.
@@ -3493,6 +3802,15 @@ Ignored here.""" pressure_form=:volume
             # `Ur` happens to be allocated.
             LAST_UR[] = @isdefined(Ur) ? Ur : nothing
             save_output(model, outputWriter, iteration, time, config)
+            if uflux_write
+                reconstruct!(U_flux, mdotf, config, reconstruct_ws)
+                @. U_fluxd.x.values = U.x.values - U_flux.x.values
+                @. U_fluxd.y.values = U.y.values - U_flux.y.values
+                @. U_fluxd.z.values = U.z.values - U_flux.z.values
+                write_results(iteration, time, mesh, outputWriter, config.boundaries,
+                              ("U", U), ("U_flux", U_flux), ("U_minus_Uflux", U_fluxd);
+                              suffix="_uflux")
+            end
             save_postprocessing(postprocess, iteration, time, mesh, outputWriter, config.boundaries)
             # Heated wall patches as a separate SURFACE file: the RPI partition
             # lives on boundary faces and has no cell-centred counterpart.
@@ -4000,6 +4318,12 @@ function advance_alpha!(model, mp_model, ∇alpha, ∇alphaf, mdotf,
     # restructure that `apply_phase_change_alpha!` already flags as necessary
     # for vigorous boiling. The two are the same piece of work and cannot be
     # done independently.
+    #
+    # PARTIAL FIX, in place: the PHASE-CHANGE part of `alpha*div(u)` is now
+    # cancelled by the coefficient in `apply_phase_change_alpha!` (see its
+    # docstring), which is how interPhaseChangeFoam keeps this same advective
+    # form. The compressibility and thermal parts are not, and the source is
+    # still applied after the limiter rather than inside it.
     @. alpha.values = alpha_prev.values -
         dt * (div_alpha.values - alpha_prev.values * div_mdotf.values)
 
@@ -4219,15 +4543,48 @@ end
     compute_ghf!(ghf, g, config)
 
 Computes `g . x` at face centres.
+
+EXPERIMENT (`XCALIBRE_GHF_MIDPOINT=1`, off by default): on internal faces, take
+`x` at the midpoint of the two cell centres instead of at the face centroid.
+
+Why. With the local-density split the face force is
+`-(snGrad(p_rgh) + ghf*snGrad(rho))`. For an exactly hydrostatic column with
+linear rho(z) this leaves a residual `-g*zeta*(rho_2 - rho_1)/delta`, where
+`zeta` is the vertical offset of the face centroid from the midpoint of the
+cell centres. It vanishes on uniform horizontal layers and nowhere else.
+MEASURED on the K-Site wedge for an ideal-gas column with dT/dz = 10 K/m
+(hydrostatic gradient ~6.9 Pa/m): max residual 2.9e-2 Pa/m with the centroid,
+8.2e-4 with the midpoint; linear interpolation of cell `gh` gives 2.7e-2. A
+still tank with that stratification developed 5.5 mm/s of spurious flow, the
+strongest along the core-block edge where `zeta` reaches 4.5 mm.
+
+Boundary faces (`ownerCells == [c, c]`) keep the centroid.
 """
 function compute_ghf!(ghf, g, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    faces = ghf.mesh.faces
+    mesh = ghf.mesh
+    faces = mesh.faces
 
     ndrange = length(ghf)
-    kernel! = _compute_ghf!(_setup(backend, workgroup, ndrange)...)
-    kernel!(ghf, g, faces)
+    if get(ENV, "XCALIBRE_GHF_MIDPOINT", "0") == "1"
+        kernel! = _compute_ghf_midpoint!(_setup(backend, workgroup, ndrange)...)
+        kernel!(ghf, g, faces, mesh.cells)
+    else
+        kernel! = _compute_ghf!(_setup(backend, workgroup, ndrange)...)
+        kernel!(ghf, g, faces)
+    end
+end
+@kernel inbounds=true function _compute_ghf_midpoint!(ghf, g, faces, cells)
+    i = @index(Global)
+    (; centre, ownerCells) = faces[i]
+    c1 = ownerCells[1]
+    c2 = ownerCells[2]
+    if c1 == c2
+        ghf[i] = (g ⋅ centre)
+    else
+        ghf[i] = (g ⋅ (cells[c1].centre + cells[c2].centre))/2
+    end
 end
 @kernel inbounds=true function _compute_ghf!(ghf, g, faces)
     i = @index(Global)

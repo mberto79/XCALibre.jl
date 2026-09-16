@@ -108,15 +108,48 @@ const MP = XCALibre.ModelPhysics
             @test table_lookup(lh2.rho.rho, p, T_sat) ≈ rho_l_exact rtol=0.02
             @test table_lookup(gh2.rho.rho, p, T_sat) ≈ rho_v_exact rtol=0.05
 
-            tau = constants.T_c/T_sat
-            cp_l_exact = MP.c_p(rho_l_mol/constants.rho_c, tau, constants, fluid)/constants.M
-            @test table_lookup(lh2.cp.cp, p, T_sat) ≈ cp_l_exact rtol=0.10
+            # cp diverges at the critical point (T_c = 33.1 K), and at 1.1 MPa
+            # T_sat is within ~1 K of it. A 25x25 bilinear table cannot follow
+            # that peak: the table error there measured 124% at 25x25, 1.6% at
+            # 81x81 and 0.3% at 161x161 - interpolation error that converges,
+            # not an EOS error - so the check is made away from the peak. It
+            # passed at 1.1 MPa only while `c_p` wrongly used the total Helmholtz
+            # derivatives, which kept its correction term bounded.
+            if p < 1.0e6
+                tau = constants.T_c/T_sat
+                cp_l_exact = MP.c_p(rho_l_mol/constants.rho_c, tau, constants, fluid)/constants.M
+                @test table_lookup(lh2.cp.cp, p, T_sat) ≈ cp_l_exact rtol=0.10
+            end
 
             # psi = (1/rho)(drho/dp)|_T, the coefficient the pressure equation
             # carries. Must be positive and finite everywhere.
             psi_v = table_lookup(gh2.rho.psi, p, T_sat)
             @test psi_v > 0
             @test isfinite(psi_v)
+        end
+    end
+
+    @testset "cp matches NIST reference data" begin
+        # The test above compares the table with `c_p` itself, so it cannot see
+        # an error in `c_p`. This one uses independent reference values:
+        # NIST Chemistry WebBook isobaric data (Leachman et al. 2009 EOS),
+        # retrieved 2026-09-15, cp in J/kg/K.
+        #
+        # `c_p` once used the TOTAL Helmholtz derivatives in its correction term
+        # instead of the residual ones. That adds exactly R_specific (4124 J/kg/K)
+        # in the ideal-gas limit, and was +25% on liquid at 20 K - so the 300 K
+        # point pins the ideal-gas limit and the 20 K points the liquid.
+        nist = (
+            (H2(),      1.03e5,  19.5, :liquid,  9295.5),
+            (H2(),      1.03e5,  20.0, :liquid,  9564.0),
+            (H2(),      1.03e5,  22.0, :vapour, 11602.0),
+            (H2(),      1.00e5, 100.0, :vapour, 11228.0),
+            (H2(),      1.00e5, 300.0, :vapour, 14313.0),
+            (H2_para(), 1.03e5,  20.0, :liquid,  9564.2),
+        )
+        for (fluid, p, T, branch, cp_ref) in nist
+            cp = MP.phase_properties_at(fluid, p, T; branch=branch).cp
+            @test cp ≈ cp_ref rtol=0.01
         end
     end
 

@@ -111,12 +111,23 @@ function c_v(δ::F, τ::F, constants, fluid) where F <: AbstractFloat
     return -R_univ * lambda_total_20(δ, τ, constants, fluid)
 end
 
-"""Computes the isobaric (constant pressure) heat capacity in J/(mol*K)."""
+"""
+Computes the isobaric (constant pressure) heat capacity in J/(mol*K).
+
+    cp = cv + R (1 + δ αr_δ - δτ αr_δτ)^2 / (1 + 2 δ αr_δ + δ^2 αr_δδ)
+
+The correction term takes the RESIDUAL derivatives only; the ideal-gas part is
+already carried by the leading `1`s. Using the total derivatives (as this
+function previously did) adds `δ α0_δ = 1` and `δ^2 α0_δδ = -1`, which turns the
+ideal-gas limit into `cv + 2R` - one R too many. Measured against NIST for
+normal hydrogen before the fix: +R exactly at 300 K / 1 bar, +35% for vapour at
+22 K and +25% for liquid at 20 K.
+"""
 function c_p(δ::F, τ::F, constants, fluid) where F <: AbstractFloat
     (; R_univ) = constants
     cv_term = c_v(δ, τ, constants, fluid)
-    numerator = (one(F) + lambda_total_01(δ, τ, constants, fluid) - lambda_total_11(δ, τ, constants, fluid))^2
-    denominator = one(F) + F(2) * lambda_total_01(δ, τ, constants, fluid) + lambda_total_02(δ, τ, constants, fluid)
+    numerator = (one(F) + lambda_r_01(δ, τ, constants, fluid) - lambda_r_11(δ, τ, constants, fluid))^2
+    denominator = one(F) + F(2) * lambda_r_01(δ, τ, constants, fluid) + lambda_r_02(δ, τ, constants, fluid)
     return cv_term + (R_univ * (numerator / denominator))
 end
 

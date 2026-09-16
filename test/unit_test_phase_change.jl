@@ -296,20 +296,22 @@ total_mass(m) = sum(m.fluid.rho.values[i]*m.domain.cells[i].volume
         # Measured 2026-08-19:  Schrage 9.2e-5,  ModifiedEnergyJump 5.3e-8,
         #                       Lee     2.7e-2   <- fails
         #
-        # Same mesh, same alpha transport, same sink: only the rate model differs.
-        # So this is NOT a generic transport defect - it is specific to Lee, and
-        # the likely reason is what makes Lee different since it stopped being
-        # area-scaled. `Schrage` and `ModifiedEnergyJump` are multiplied by `a_i`,
-        # which vanishes in a pure cell, so they generate nothing where there is
-        # no interface. Lee's volumetric `r` does not vanish: a pure liquid cell
-        # with superheat evaporates at `r*rho_l*dT/T_sat` with no interface
-        # present. That is correct Lee behaviour - it is a volumetric relaxation,
-        # and Fluent's Lee does the same - but the alpha update then runs into
+        # Measured 2026-09-15, after `apply_phase_change_alpha!` gained the
+        # `(1 - alpha)/rho_tracked + alpha/rho_other` coefficient and the donor
+        # limit (see its docstring):
         #
-        #     alpha[i] = clamp(a, 0, 1)        (`_apply_phase_change_alpha!`)
+        #                       Schrage 4.5e-6,  ModifiedEnergyJump 4.6e-9,
+        #                       Lee     3.8e-3   <- still fails
         #
-        # and a clamp silently discards whatever mass it removes. Hypothesis, not
-        # yet confirmed; rung 3.1 of the validation plan is the bench for it.
+        # The coefficient accounts for the improvement in all three.
+        #
+        # The earlier hypothesis for Lee was that the `clamp` in the alpha update
+        # discards mass, because Lee's volumetric `r` does not vanish in a pure
+        # cell the way the area-scaled models do. It is RULED OUT: the donor
+        # limit removes exactly that loss, and Lee's drift was unchanged by it to
+        # every printed digit. Setting the liquid `beta` to zero lowers it to
+        # 2.7e-3, so about 30% is the constant-density liquid being given thermal
+        # expansion in the pressure equation. The remaining ~70% is unexplained.
         if pc isa Lee
             @test_broken abs(m1 - m0)/m0 < 1e-4
         else

@@ -20,8 +20,28 @@
 #  Known deviations from the paper, each marked where it occurs below:
 #    - isothermal start instead of the measured initial profile   # TO OBTAIN
 #    - heat flux applied to the fluid, not through a conjugate wall # SIMPLIFICATION
+#    - vapour transport properties (mu, k, cp) held constant, where the paper
+#      uses temperature-dependent NIST values for both phases       # SIMPLIFICATION
 #    - 17.5 hr at dt = 0.01 s is ~6.3M steps, impractical with explicit MULES
 #  and no digitised experimental p(t) trace to compute the paper's MAPE against.
+#
+#  Mass conservation: `XCALIBRE_VOF_AUDIT=1` prints the phase-change mass budget
+#  every `XCALIBRE_VOF_AUDIT_EVERY` steps (default 50). Measured over the first
+#  10 s with Schrage, the tabulated liquid and dt = 0.01 s:
+#    - a one-off +1.2e-5 kg of liquid in the first second (~5e-6 of the liquid
+#      mass). The liquid density is seeded at a uniform p_operating and, being
+#      compressible, then densifies under the ~700 Pa hydrostatic head.
+#    - thereafter the liquid drifts by roughly -1e-7 to -2.5e-7 kg/s once the
+#      interface condenses, comparable to the net transfer. Not yet attributed;
+#      the likely candidate is the interface part of the liquid's thermal
+#      expansion, which the alpha update does not cancel (see
+#      `apply_phase_change_alpha!`). For comparison, the constant-density
+#      liquid this replaced was off by +2.1e-7 kg over 10 s with beta = 0, and
+#      by +6.2e-7 kg/s with beta = 0.0164.
+#
+#  KNOWN ISSUE: the vapour gains ~1.2e-7 kg/s beyond the transfer on this wedge
+#  with the default `thermo_acoustic = :implicit` (2-3x less with `:explicit`);
+#  cause not yet identified.
 # =============================================================================
 
 using XCALibre
@@ -67,6 +87,10 @@ elseif PHASE_CHANGE_MODEL === :lee
     # so the table's sigma = 1e-6 / 1e-7 / 1e-8 are not values of `r`.
     # XCALibre's `Lee` takes `r` directly as a volumetric relaxation rate [1/s];
     # `r = 100` is a numerical choice, not a value from the paper.
+    #
+    # KNOWN ISSUE: Lee does not conserve mass on the VOF path - drift 3.8e-3 over
+    # 50 steps in `test/unit_test_phase_change.jl`, against 4.5e-6 for Schrage -
+    # and the cause is not identified. Check the mass audit before trusting it.
     Lee(r=100.0)
 else
     error("Unknown PHASE_CHANGE_MODEL: $PHASE_CHANGE_MODEL")
@@ -130,6 +154,25 @@ gravity = Gravity([0.0, 0.0, -9.81])   # tank axis is z
 # commonly used RANS closures"); and surface tension is NEGLECTED, being
 # several orders of magnitude smaller than the other terms.
 
+# Liquid: tabulated from the Helmholtz EOS, so density, expansivity, cp, mu and k
+# all follow the local (p, T). This is what gives the liquid BUOYANCY - the
+# wall-heated boundary layer is lighter and rises towards the interface, the
+# mechanism behind thermal stratification - and it lets the liquid expand
+# without creating mass, because the density drop and the pressure equation's
+# volume source now describe the same expansion. (With the previous
+# constant-density liquid, `beta` had to be zero for exactly that reason.)
+#
+# Normal hydrogen, to be consistent with the saturation curve: the paper's
+# Antoine fit (the default `saturation`) gives T_sat = 20.43 K at 103 kPa, which
+# is normal hydrogen's value; parahydrogen's is 20.33 K (NIST).
+#
+# Range: p covers K(i)'s rise from 103 to ~207 kPa plus the ~700 Pa hydrostatic
+# head. T_max must stay within 5 K of T_sat at p_min, or the liquid branch falls
+# back to the saturation line part-way up a column; 25 K is inside that at 1 bar
+# (T_sat ~ 20.3 K). Hotter cells - the ullage - read the boundary value, which is
+# weighted by alpha ~ 0 there.
+lh2 = RealFluid(H2(), :liquid; p=(1.0e5, 2.5e5), T=(19.0, 25.0), np=61, nT=61)
+
 model = Physics(
     time = Transient(),
     fluid = Fluid{Multiphase}(
@@ -137,13 +180,8 @@ model = Physics(
 
         phases = (
             # --- liquid hydrogen (alpha = 1) --------------------------------
-            Phase(
-                rho  = 70.8,        # [kg/m^3] @ 20.3 K
-                mu   = 13.2e-6,     # [Pa s]
-                k    = 0.100,       # [W/m/K]
-                cp   = 9660.0,      # [J/kg/K]
-                beta = 0.0164,      # [1/K]
-            ),
+            # Tabulated real fluid - see `lh2` above.
+            Phase(lh2),
             # --- hydrogen vapour --------------------------------------------
             # Must be compressible for the tank to self-pressurise. The paper
             # (Sec. 3.2) treats the vapour as an ideal gas, so `IdealGas` rather
@@ -236,7 +274,9 @@ solvers = (
         solver=Bicgstab(), preconditioner=Jacobi(),
         convergence=1e-7, relax=1.0, rtol=0.0, atol=1.0e-6),
     p_rgh = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(),
+        solver = AMG(mode = Bicgstab(),
+        smoother = AMGGaussSeidel(sweep = AMGForwardSweep())), 
+        preconditioner=Jacobi(),
         convergence=1e-7, relax=1.0, rtol=0.0, atol=1.0e-8),
     alpha = SolverSetup(
         solver=Bicgstab(), preconditioner=Jacobi(),
@@ -250,7 +290,7 @@ solvers = (
 # 2nd-order implicit scheme and 5 inner iterations; XCALibre's alpha transport
 # is explicit MULES and Courant limited, so this is the run-length problem
 # flagged in the implementation plan.
-dt = 0.005
+dt = 0.02
 runtime = Runtime(
     iterations = round(Int, DURATION/dt),
     time_step  = dt,
@@ -278,7 +318,10 @@ setField_Box!(
 # -----------------------------------------------------------------------------
 # Run
 # -----------------------------------------------------------------------------
-residuals = run!(model, config)
+
+ENV["XCALIBRE_UFLUX_BLEND"] = "0.05"
+ENV["XCALIBRE_GHF_MIDPOINT"] = "1"
+residuals = run!(model, config, inner_loops=1)
 
 # -----------------------------------------------------------------------------
 # Validation

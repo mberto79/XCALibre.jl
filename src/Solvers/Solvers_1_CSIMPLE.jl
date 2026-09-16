@@ -418,8 +418,9 @@ function zero_explicit_stress!(
     (; IDs_range) = BC
     ndrange = length(IDs_range)
     ndrange == 0 && return nothing
-    kernel! = _zero_explicit_stress!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mugradUTx, mugradUTy, mugradUTz, IDs_range)
+    kernel! = _zero_explicit_stress!(backend)
+    kernel!(mugradUTx, mugradUTy, mugradUTz, IDs_range;
+        _patch_launch(backend, workgroup, ndrange)...)
     KernelAbstractions.synchronize(backend)
 end
 

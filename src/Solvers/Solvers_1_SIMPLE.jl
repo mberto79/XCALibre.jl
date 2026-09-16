@@ -419,8 +419,9 @@ function correct_mass_periodic(
     (; IDs_range, value) = BC
     (; face_map) = value
     ndrange = length(IDs_range)
-    kernel! = _correct_mass_periodic(_setup(backend, workgroup, ndrange)...)
-    kernel!(mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
+    kernel! = _correct_mass_periodic(backend)
+    kernel!(mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_mass_periodic(
@@ -467,8 +468,9 @@ function _correct_interpolation_periodic_dispatch(
     (; IDs_range, value) = BC
     (; face_map, transform) = value
     ndrange = length(IDs_range)
-    kernel! = _correct_interpolation_periodic(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, phi, cells, faces, IDs_range, face_map, transform)
+    kernel! = _correct_interpolation_periodic(backend)
+    kernel!(phif, phi, cells, faces, IDs_range, face_map, transform;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_interpolation_periodic(phif, phi, cells, faces, IDs_range, face_map, transform)

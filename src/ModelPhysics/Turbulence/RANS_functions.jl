@@ -101,9 +101,10 @@ function set_production!(P, BC::KWallFunction, model, gradU, config)
 
     # Execute apply boundary conditions kernel
     ndrange = length(facesID_range)
-    kernel! = _set_production!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _set_production!(backend)
     kernel!(
-        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU
+        P.values, BC, fluid, momentum, turbulence, faces, boundary_cellsID, start_ID, gradU;
+        _patch_launch(backend, workgroup, ndrange)...
     )
 end
 
@@ -169,8 +170,9 @@ function correct_nut_wall!(νtf, BC::NutWallFunction, model, config)
 
     # Execute apply boundary conditions kernel
     ndrange=length(facesID_range)
-    kernel! = _correct_nut_wall!(_setup(backend, workgroup, ndrange)...)
-    kernel!(νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID)
+    kernel! = _correct_nut_wall!(backend)
+    kernel!(νtf.values, fluid, turbulence, BC, faces, boundary_cellsID, start_ID;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_nut_wall!(
@@ -209,8 +211,9 @@ function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, model, config)
     start_ID = facesID_range[1]
 
     ndrange = length(facesID_range)
-    kernel! = _correct_nut_wall_mixing_length!(_setup(backend, workgroup, ndrange)...)
-    kernel!(νtf.values, fluid, momentum, turbulence, BC, faces, boundary_cellsID, start_ID)
+    kernel! = _correct_nut_wall_mixing_length!(backend)
+    kernel!(νtf.values, fluid, momentum, turbulence, BC, faces, boundary_cellsID, start_ID;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_nut_wall_mixing_length!(
@@ -301,9 +304,10 @@ function constrain!(eqn, BC::OmegaWallFunction, model, config)
 
     # Execute apply boundary conditions kernel
     ndrange = length(facesID_range)
-    kernel! = _constrain!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _constrain!(backend)
     kernel!(
-        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b
+        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, colval, rowptr, nzval, b;
+        _patch_launch(backend, workgroup, ndrange)...
     )
 end
 

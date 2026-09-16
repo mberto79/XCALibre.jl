@@ -16,11 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed OpenFOAM mesh writer truncating point coordinates to six significant figures, which prevented a written mesh from round-tripping [#153](@ref)
 * Fixed `reconstruct!` omitting boundary faces when rebuilding a cell vector from a face-normal flux. The accumulation looped over `cell_faces`, which holds internal faces only. A cell becomes genuinely rank deficient when a direction is spanned by no internal face at all, as on a one cell thick mesh with an `empty` patch: on `OF_pitzDaily` the through-thickness moment is zero for all 12225 cells and the reconstruction returns the zero vector everywhere. Boundary faces now contribute to the least-squares system [#155](@ref)
 * Fixed the invertibility test in `reconstruct!` comparing an area-cubed determinant against the absolute tolerance `eps(TF)`. The moments scale with face area, so on a millimetre-scale mesh the determinant of a perfectly conditioned interior cell is already below `eps` (`6.4e-29` on the 1 mm lid-driven cavity) and the reconstruction is silently zeroed everywhere, interior cells included, and at far coarser scales in `Float32`. The test is now scaled by the magnitude of the moments [#155](@ref)
+* Fixed `Wall` and `RotatingWall` diffusion imposing only the tangential part of the boundary velocity together with the cell's own normal component, which let the wall-normal velocity float instead of being held at the prescribed value. Both now impose the full boundary velocity, matching `Dirichlet` [#156](@ref)
+* Fixed `Slip` contributing nothing to vector diffusion. No `Laplacian{Linear}` method was defined for vector fields, so the unqualified method returned zero coefficients for a slip patch. `Slip` now projects onto the face tangent plane and matches `Symmetry` coefficient for coefficient, and gains the missing `Si` method [#156](@ref)
+* Fixed `Slip` `Divergence{BoundedUpwind}` dropping the face-normal component for vector fields [#156](@ref)
 
 ### Changed
 * 3D mesh geometry is now computed by a single shared routine used by both the UNV3 and OpenFOAM readers, which previously disagreed on cell centroids and volumes for the same mesh [#153](@ref)
 * The OpenFOAM writer now preserves a complete existing `constant/polyMesh` instead of overwriting it, so results can be written alongside the original mesh [#153](@ref)
 * The OpenFOAM writer compares the point and face counts declared by an existing `constant/polyMesh` with the simulation mesh, and warns and rewrites the mesh files when they disagree [#153](@ref)
+* `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` now use `Slip` on patches that are physically symmetry planes or inviscid walls, replacing `Zerogradient` [#156](@ref)
 
 ### Breaking
 * `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)

@@ -1,16 +1,20 @@
 export Slip
 
 """
-    Slip <: AbstractDirichlet
+    Slip <: AbstractPhysicalConstraint
 
-Slip boundary condition model for no-slip  or moving walls (linear motion). It should be applied to the velocity vector, and in most cases, its scalar variant should be applied to scalars.
+Slip boundary condition for vector and scalar fields. Vectors keep both
+tangential components and have the face-normal component removed, so the patch
+is impermeable but exerts no tangential shear. Scalars use an explicit
+zero-normal-gradient condition. Use `Wall` instead when the patch should apply
+no-slip.
 
-# Inputs
-- `ID` represents the name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
-- `value` should be given as a vector for the velocity e.g. [10,0,0]. For scalar fields such as the pressure the value entry can be omitted or set to zero explicitly.
+# Input
+- `ID` is the boundary name (for example, `:plate`). It is replaced by the
+  boundary index during boundary assignment.
 
-# Examples
-    Slip(:plate) # slip wall condition
+# Example
+    Slip(:plate)
 """
 struct Slip{I,V,R<:UnitRange} <: AbstractPhysicalConstraint
     ID::I 
@@ -21,31 +25,25 @@ Adapt.@adapt_structure Slip
 
 Slip(name::Symbol) = Slip(name, 0)
 
-@define_boundary Slip Laplacian{Linear} begin
+@define_boundary Slip Laplacian{Linear} ScalarField begin
     0.0, 0.0
 end
 
-# Face value = tangential projection vp = vc - (vc⋅n)n. Split the same-component
-# term implicitly on outflow, defer cross-components and inflow to the source.
+@define_boundary Slip Laplacian{Linear} VectorField begin
+    (; area, delta, normal) = face
+    J = term.flux[fID]
+    flux = J*area/delta
+    ap = term.sign[1]*(-flux)
+
+    vc = term.phi[cellID]
+    vp = vc - (vc⋅normal)*normal
+    # ac = ap (not ap*nc^2) buys diagonal dominance; the deferred source cancels exactly at convergence
+    ap, ap*vp[component.value]
+end
+
 @define_boundary Slip Divergence{Upwind} VectorField begin
-    (; normal) = face
-    phi = term.phi
-    ap = term.sign*(term.flux[fID])
-
-    vc = phi[cellID]
-    vn = (vc⋅normal)*normal
-    vp = vc - vn
-
-    nc = normal[component.value]
-    vc_c = vc[component.value]
-    vp_c = vp[component.value]
-    z = zero(ap)
-    one_minus_nc2 = one(nc) - nc^2
-
-    ac = max(ap, z) * one_minus_nc2
-    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
-    su_entering = -min(ap, z) * vp_c
-    ac, su_entering + su_leaving
+    ap = term.sign*term.flux[fID]
+    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
 end
 
 @define_boundary Slip Divergence{Upwind} ScalarField begin
@@ -57,9 +55,14 @@ end
     ac, su
 end
 
-# Impermeable wall: face value = cell value, so div (+ap) and bounding (-ap) cancel
+# Scalars cancel exactly. For vectors, the projected face value leaves the normal
+# component from div(phi,U) - Sp(div(phi),U).
 @define_boundary Slip Divergence{BoundedUpwind} VectorField begin
-    0.0, 0.0
+    (; normal) = face
+    ap = term.sign*term.flux[fID]
+    vc = term.phi[cellID]
+    vn = (vc⋅normal)*normal
+    0.0, ap*vn[component.value]
 end
 
 @define_boundary Slip Divergence{BoundedUpwind} ScalarField begin
@@ -86,51 +89,15 @@ end
 end
 
 @define_boundary Slip Divergence{Linear} VectorField begin
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux)       # = ϕ_b
-    
-    # Tangential projection
-    vc = phi[cellID]
-    vn = (vc ⋅ normal) * normal
-    vp = vc - vn
-    
-    nc = normal[component.value]
-    vc_c = vc[component.value]
-    vp_c = vp[component.value]
-    z = zero(ap)
-    one_minus_nc2 = one(nc) - nc^2
-    
-    # Outflow (ap > 0): implicit same-component, defer cross terms
-    ac = max(ap, z) * one_minus_nc2
-    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
-    
-    # Inflow (ap < 0): defer everything to source
-    su_entering = -min(ap, z) * vp_c
-    
-    ac, su_entering + su_leaving
+    ap = term.sign*term.flux[fID]
+    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
 end
 
 @define_boundary Slip Divergence{LUST} VectorField begin
-    (; normal) = face 
-    phi = term.phi
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    
-    vc = phi[cellID]
-    vn = (vc ⋅ normal) * normal
-    vp = vc - vn
-    
-    nc = normal[component.value]
-    vc_c = vc[component.value]
-    vp_c = vp[component.value]
-    z = zero(ap)
-    one_minus_nc2 = one(nc) - nc^2
-    
-    ac = max(ap, z) * one_minus_nc2
-    su_leaving = -max(ap, z) * (vp_c - vc_c * one_minus_nc2)
-    su_entering = -min(ap, z) * vp_c
-    
-    ac, su_entering + su_leaving
+    ap = term.sign*term.flux[fID]
+    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
+end
+
+@define_boundary Slip Si begin
+    0.0, 0.0
 end

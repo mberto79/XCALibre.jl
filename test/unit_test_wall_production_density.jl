@@ -1,24 +1,9 @@
 using XCALibre
 using Test
 
-# =============================================================================
-#  KWallFunction production must carry the density
-# =============================================================================
-#
-#  The k equation is assembled in conservative form, so every term carries rho:
-#
-#      Time(rho, k) + Divergence(mdotf, k) - Laplacian(mueffk, k) + Si(Dkf, k) == Source(Pk)
-#
-#  with Pk = rho*nut*S^2 and Dkf = rho*beta*omega. `set_production!` OVERWRITES
-#  Pk in the wall cells, so it must be density-weighted too - otherwise those
-#  cells alone get a kinematic production against a density-weighted sink.
-#
-#  No solver case can detect the missing factor: every CI case that uses
-#  `KWallFunction` is `Fluid{Incompressible}`, whose `rho` defaults to 1.0, and
-#  the compressible cases put `Dirichlet(:wall, 0.0)` on k rather than a wall
-#  function. So this calls the kernel directly at two densities and checks the
-#  wall-cell production scales exactly with rho.
-# =============================================================================
+# `set_production!` overwrites Pk in KWallFunction wall cells, so like the rest of the conservative
+# k equation it must carry rho. Every CI case with a k wall function has rho = 1, so this calls the
+# kernel directly at two densities and checks the wall-cell production scales exactly with rho.
 
 @testset "KWallFunction production is density-weighted" begin
     mesh = UNV2D_mesh(joinpath(pkgdir(XCALibre, "examples/0_GRIDS"),

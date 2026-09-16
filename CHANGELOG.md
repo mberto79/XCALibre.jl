@@ -7,12 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * Added FixedHeatFlux boundary condition [#149]
-* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations [#150]
+* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 
 ### Fixed
 * Fixed missing density term in set_production! needed for cases with non-unity density [#151]
-
-### Fixed
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
 * Fixed `reconstruct!` omitting boundary faces when rebuilding a cell vector from a face-normal flux. The accumulation looped over `cell_faces`, which holds internal faces only. A cell becomes genuinely rank deficient when a direction is spanned by no internal face at all, as on a one cell thick mesh with an `empty` patch: on `OF_pitzDaily` the through-thickness moment is zero for all 12225 cells and the reconstruction returns the zero vector everywhere. Boundary faces now contribute to the least-squares system [#155](@ref)
 * Fixed the invertibility test in `reconstruct!` comparing an area-cubed determinant against the absolute tolerance `eps(TF)`. The moments scale with face area, so on a millimetre-scale mesh the determinant of a perfectly conditioned interior cell is already below `eps` (`6.4e-29` on the 1 mm lid-driven cavity) and the reconstruction is silently zeroed everywhere, interior cells included, and at far coarser scales in `Float32`. The test is now scaled by the magnitude of the moments [#155](@ref)

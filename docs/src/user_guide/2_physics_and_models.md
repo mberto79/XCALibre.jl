@@ -435,6 +435,12 @@ Symmetry(name)
 ```
 - `name` is a symbol providing the boundary name
 
+`Slip` applies the same constraint as `Symmetry`: the patch is impermeable, so the face-normal component of a vector is removed, but both tangential components are retained and no tangential shear is exerted. Scalars receive an explicit zero-normal-gradient condition. Use it for symmetry planes, free-stream boundaries and inviscid walls. Use `Wall` instead when the patch should apply no-slip.
+```julia
+Slip(name)
+```
+- `name` is a symbol providing the boundary name
+
 `Periodic` boundaries consist of a pair of boundary patches that behave as if they are physically connected. The periodic boundary essentially provides a mapping between these patches and helps in calculating the face values at the interface. The construction of periodic boundaries is different to other boundary conditions because the addressing between each face for the patch pair needs to be calculated and stored. Periodic boundary can be constructed as follows:
 
 ```julia

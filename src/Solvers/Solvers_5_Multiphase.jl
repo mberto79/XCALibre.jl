@@ -732,7 +732,7 @@ function reconstruct!(phi::VectorField, psif::FaceScalarField, moments, config)
 
     n_boundary_faces = length(mesh.boundary_cellsID)
     if n_boundary_faces > 0
-        # psif ≡ 0 on boundary faces for all callers: this adds the constraint n_b⋅u = 0, not measured data
+        # psif is 0 on boundary faces for the multiphase callers, which makes this the constraint n_b⋅u = 0; potential_flow! passes a real boundary flux
         kernel! = _reconstruct_boundary_moments!(
             _setup(backend, workgroup, n_boundary_faces)...)
         kernel!(faces, psif, moments)

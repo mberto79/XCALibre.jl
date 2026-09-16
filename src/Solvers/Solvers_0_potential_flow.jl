@@ -23,6 +23,7 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
     mesh = model.domain
     (; U, Uf) = model.momentum
     (; schemes, solvers, boundaries) = config
+    (; backend) = config.hardware
     TF = _get_float(mesh)
     time_value = TF(time)
 
@@ -82,7 +83,8 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
         previous=previous, time=time_value,
         nonorthogonal=nonorthogonal_flux,
     )
-    reconstruct!(U, phif, potential_config)
+    moments = KernelAbstractions.allocate(backend, TF, length(mesh.cells), 9)
+    reconstruct!(U, phif, moments, potential_config)
     interpolate!(Uf, U, potential_config)
     correct_boundaries!(Uf, U, boundaries.U, time_value, potential_config)
 

@@ -289,10 +289,12 @@ _coarse_direct_eltype(::Type{T}) where {T} = T
 
 _amg_mode(mode::AMGSolver) = mode
 _amg_mode(mode::Cg) = mode
-_amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver() or Cg()"))
+_amg_mode(mode::Bicgstab) = mode
+_amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver(), Cg() or Bicgstab()"))
 
 _amg_mode_name(::AMGSolver) = "solve"
 _amg_mode_name(::Cg) = "cg"
+_amg_mode_name(::Bicgstab) = "bicgstab"
 _amg_mode_name(mode) = string(nameof(typeof(mode)))
 
 _amg_cycle(cycle::VCycle) = cycle

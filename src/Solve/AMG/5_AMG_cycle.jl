@@ -60,6 +60,10 @@ end
 function _use_device_coarse_cg(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel)
     hierarchy.backend isa CPU && return false
     _amg_device_coarse_solve_mode() == "cg" || return false
+    # `is_symmetric` is MEASURED only in `Cg()` mode - every other mode hardcodes it
+    # true (1_AMG_setup.jl), so without this gate a non-symmetric coarse operator
+    # would be handed to an unpreconditioned CG.
+    solver.mode isa Cg || return false
     hierarchy.is_symmetric || return false
     _m(level.A) == _n(level.A) || return false
     return true

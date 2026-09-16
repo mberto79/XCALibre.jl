@@ -1,0 +1,19 @@
+# Set the default behavior to handle all files as text and normalise to LF
+* text=auto eol=lf
+
+# Explicitly mark source code and configuration files as text with LF endings
+*.jl text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.csv text eol=lf
+*.gitignore text eol=lf
+
+# Explicitly declare binary assets so they are not normalized or diff-ed incorrectly
+*.png binary
+*.gif binary
+*.unv binary
+*.msh binary
+*.svg binary
+*.geo binary

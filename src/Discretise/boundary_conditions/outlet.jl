@@ -39,19 +39,19 @@ end
 @define_boundary Outlet Divergence{Upwind} begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
-    ap, 0.0
+    max(ap, 0.0), 0.0  # clip reversed flow — see Zerogradient comment
 end
 
 @define_boundary Outlet Divergence{LUST} begin
     flux = term.flux[fID]
     ap = term.sign*(flux)
-    ap, 0.0
+    max(ap, 0.0), 0.0
 end
 
+# Bounded: upwind max(ap,0) minus ap on diagonal -> -min(ap,0)
 @define_boundary Outlet Divergence{BoundedUpwind} begin
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ap-flux, 0.0
+    ap = term.sign*(term.flux[fID])
+    -min(ap, zero(ap)), 0.0
 end
 
 @define_boundary Outlet Si begin

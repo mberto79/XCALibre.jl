@@ -1,7 +1,7 @@
 export wall_distance!
 # export residual!
 
-function wall_distance!(model, walls, config)
+function wall_distance!(model, walls, config; iterations=1000)
     @info "Calculating wall distance..."
 
     mesh = model.domain
@@ -10,20 +10,7 @@ function wall_distance!(model, walls, config)
     (; solvers, schemes, runtime, hardware, postprocess) = config
 
     # set up boundary conditions
-    BCs = []
-    boundaries_cpu = get_boundaries(mesh.boundaries)
-    boundaries_user = config.boundaries[1] # take first one, a bit frail but should work
-    for boundary ∈ boundaries_user
-        boundary_name = boundaries_cpu[boundary.ID].name
-        if boundary_name ∈ walls
-            push!(BCs, Dirichlet(boundary_name, 0.0))
-        elseif typeof(boundary) <: Empty
-            push!(BCs, Empty(boundary_name))
-        else
-            push!(BCs, Extrapolated(boundary_name))
-        end
-    
-    end
+    BCs = wall_distance_BCs(mesh, walls, config)
     wallBCs = assign(
         region=mesh,
         (
@@ -65,7 +52,6 @@ function wall_distance!(model, walls, config)
     prev = similar(phi.values)
     # R_phi = ones(TF, iterations)
 
-    iterations = 1000
     for iteration ∈ 1:iterations
         @. prev = phi.values
         discretise!(phi_eqn, phi, config)
@@ -91,6 +77,9 @@ function wall_distance!(model, walls, config)
     normal_distance!(y, phi, phiGrad, config)
     # y.values .= phi.values
 
+    BCs = wallBCs = phi = phi_eqn = phiGrad = phif = prev = nothing
+    GC.gc()
+
     new_config
 end
 
@@ -101,12 +90,68 @@ function normal_distance!(y, phi, phiGrad, config)
     ndrange = length(phi.values)
     kernel! = _normal_distance!(_setup(backend, workgroup, ndrange)...)
     kernel!(y, phi, phiGrad)
-    # KernelAbstractions.synchronize(backend)
+    KernelAbstractions.synchronize(backend)
+end
+
+function wall_distance_BCs(mesh, walls, config)
+    boundaries_cpu = get_boundaries(mesh.boundaries)
+    boundary_names = map(boundary -> boundary.name, boundaries_cpu)
+    wall_names = collect(Symbol.(walls))
+    missing_walls = setdiff(wall_names, boundary_names)
+    isempty(missing_walls) || error("Wall distance patches not found in mesh: $(Tuple(missing_walls)). Available patches: $(Tuple(boundary_names))")
+
+    empty_names = empty_boundary_names(boundaries_cpu, config.boundaries)
+    matched_walls = intersect(wall_names, boundary_names)
+    isempty(matched_walls) && error("Wall distance needs at least one wall patch")
+    warn_omitted_velocity_walls(boundaries_cpu, config.boundaries, matched_walls)
+
+    BCs = []
+    for boundary ∈ boundaries_cpu
+        boundary_name = boundary.name
+        if boundary_name ∈ matched_walls
+            push!(BCs, Dirichlet(boundary_name, 0.0))
+        elseif boundary_name ∈ empty_names
+            push!(BCs, Empty(boundary_name))
+        else
+            push!(BCs, Extrapolated(boundary_name))
+        end
+    end
+    BCs
+end
+
+function empty_boundary_names(boundaries_cpu, boundaries)
+    empty_names = Symbol[]
+    for field_BCs ∈ boundaries
+        for BC ∈ field_BCs
+            if typeof(BC) <: Empty
+                push!(empty_names, boundaries_cpu[BC.ID].name)
+            end
+        end
+    end
+    unique(empty_names)
+end
+
+function warn_omitted_velocity_walls(boundaries_cpu, boundaries, wall_names)
+    hasproperty(boundaries, :U) || return nothing
+
+    omitted = Symbol[]
+    for BC ∈ boundaries.U
+        if typeof(BC) <: Union{Wall,RotatingWall}
+            name = boundaries_cpu[BC.ID].name
+            name ∈ wall_names || push!(omitted, name)
+        end
+    end
+
+    isempty(omitted) || @warn "Velocity wall patches omitted from wall distance calculation: $(Tuple(unique(omitted))). Add them to turbulence walls if they are physical walls."
+    nothing
 end
 
 @kernel function _normal_distance!(y, phi, phiGrad)
     i = @index(Global)
 
-    gradMag = norm(phiGrad.result[i])
-    y.values[i] = (-gradMag + sqrt(gradMag^2 + 2*phi.values[i]))
+    gradMag_raw = norm(phiGrad.result[i])
+    gradMag = isfinite(gradMag_raw) ? gradMag_raw : zero(gradMag_raw)
+    radicand_raw = gradMag^2 + 2*phi.values[i]
+    radicand = isfinite(radicand_raw) ? max(radicand_raw, zero(radicand_raw)) : zero(radicand_raw)
+    y.values[i] = max(-gradMag + sqrt(radicand), zero(gradMag))
 end

@@ -128,7 +128,9 @@ function CPISO(
 
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
-    (; rho, rhof, nu) = model.fluid
+    (; rho, rhof, nu, nuf) = model.fluid
+    (; nut) = model.turbulence
+
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
@@ -206,7 +208,8 @@ function CPISO(
 
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_viscosity!(model.fluid, model.energy, config)
+    update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values = rhof.values*nueff.values
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
@@ -219,10 +222,7 @@ function CPISO(
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
-        ## CHECK GRADU AND EXPLICIT STRESSES
-        # grad!(gradU, Uf, U, boundaries.U, time, config) # calculated in `turbulence!`
-
-        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
+        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, boundaries.U, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
@@ -236,7 +236,7 @@ function CPISO(
         @. model.energy.prevP = p.values
 
         # Set up and solve momentum equations
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho)
 
         # Energy after correctors so dp/dt = (p_corrected - prevP)/dt ≠ 0
         energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
@@ -311,11 +311,8 @@ function CPISO(
 
             if typeof(model.fluid) <: Compressible
                 @. mdotf.values += pconv.values*pf.values
-                correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
-            elseif typeof(model.fluid) <: WeaklyCompressible
-                # correct_mass_flux!(mdotf, p_eqn, config)
-                correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
             end
+            correct_mass_flux!(mdotf, p_eqn, config)
 
             # TO-DO: this needs to be exposed to users eventually
             @. rho.values = max.(Psi.values * p.values, 0.001)
@@ -328,8 +325,16 @@ function CPISO(
 
         # Turbulence outside corrector loop
         turbulence!(turbulenceModel, model, S, prev, time, config)
-        update_nueff!(nueff, nu, model.turbulence, config)
+        update_viscosity!(model.fluid, model.energy, config)
+        update_nueff!(nueff, nuf, model.turbulence, config)
+        
+        # update turbulent dynamic viscosity
         @. mueff.values = rhof.values*nueff.values
+        if model.turbulence isa Laminar 
+            @. model.energy.mueff_cell.values = rho.values*nu.values 
+        else
+            @. model.energy.mueff_cell.values = rho.values*(nu.values + nut.values)
+        end
 
         
         courant = max_courant_number!(cellsCourant, model, config)

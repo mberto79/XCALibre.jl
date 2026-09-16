@@ -12,7 +12,7 @@ function read_UNV2(meshFile, TI, TF)
     index = 0
     vertexCount = 0
     vertices = TI[]
-    newBoundary = UNV2.BoundaryLoader(0)
+    newBoundary = UNV2.BoundaryLoader(zero(TI))
     currentBC = 0
     
     @inbounds for (indx, line) in enumerate(eachline(meshFile))
@@ -98,11 +98,11 @@ function read_UNV2(meshFile, TI, TF)
         # Read boundary cells
         if processDataset2467
             if typeof(tryparse(TI, sline[1]))!= Nothing && tryparse(Int32, sline[2]) == 0
-                newBoundary = UNV2.BoundaryLoader(0)
+                newBoundary = UNV2.BoundaryLoader(zero(TI))
                 push!(boundaryElements, newBoundary)
                 # currentBC = tryparse(TI, sline[1])
                 currentBC += 1
-                boundaryElements[currentBC].groupNumber = currentBC 
+                boundaryElements[currentBC].groupNumber = TI(currentBC)
                 continue
             end
             if typeof(tryparse(TI, sline[1]))== Nothing

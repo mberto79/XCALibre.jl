@@ -40,6 +40,12 @@ end
 Adapt.@adapt_structure ConstantVector
 Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y, v.z)
 
+ConstantScalar(mesh::AbstractMesh) = ConstantScalar(zero(_get_float(mesh)))
+ConstantVector(mesh::AbstractMesh) = begin
+    z = zero(_get_float(mesh))
+    ConstantVector(z, z, z)
+end
+
 # Handle cases where `Nothing` is passed to the constructor (e.g. in Solid constructor)
 ConstantScalar(value::Nothing) = nothing
 ConstantVector(value::Nothing) = nothing
@@ -372,6 +378,9 @@ Note: in most cases the fields to be modified are stored within a physics model 
 initialise!(mymodel.momentum.U, [2.5, 0, 0])
 initialise!(mymodel.momentum.p, 1.25)
 ```
+
+
+`initialise!` also accepts a functions arguments and initialises a field by evaluating the function at each cell centre. The function should have the signature `f(x, y, z)` and it must return either a scalar or an SVector type (requirement to work on GPUs)
 """
 function initialise!(field, value) # dummy function for documentation
     throw("Arguments provided for field are not of type ScalarField nor VectorField")
@@ -391,7 +400,7 @@ function initialise!(v::AbstractVectorField, vec::AbstractVector)
     nothing
 end
 
-function initialise!(s::AbstractScalarField, value::V) where V
+function initialise!(s::AbstractScalarField, value::Number)
     s_type = eltype(s.values)
     if s_type <: Number
         s.values .= convert(s_type, value)
@@ -399,4 +408,48 @@ function initialise!(s::AbstractScalarField, value::V) where V
         throw("ScalarFields should be initialised with numbers. The value provided is of type $(typeof(value))")
     end
     nothing
+end
+
+function initialise!(v::FaceVectorField, value::AbstractVector)
+    @assert length(value) == 3 "Vectors should have 3 components"
+    initialise!(v.x, value[1])
+    initialise!(v.y, value[2])
+    initialise!(v.z, value[3])
+    nothing
+end
+
+function initialise!(s::ScalarField, func::Func) where Func<:Function
+    backend = KA.get_backend(s)
+    ndrange = length(s)
+    kernel! = _initialise_scalar!(_setup(backend, 64, ndrange)...)
+    kernel!(s, func)
+    KA.synchronize(backend)
+    nothing
+end
+
+@kernel function _initialise_scalar!(s, func::Func) where Func
+    i = @index(Global)
+    @uniform cells = s.mesh.cells
+    @inbounds begin
+        c = cells[i].centre
+        s[i] = func(c[1], c[2], c[3])
+    end
+end
+
+function initialise!(v::VectorField, func::Func) where Func<:Function
+    backend = KA.get_backend(v.x)
+    ndrange = length(v.x)
+    kernel! = _initialise_vector!(_setup(backend, 64, ndrange)...)
+    kernel!(v, func)
+    KA.synchronize(backend)
+    nothing
+end
+
+@kernel function _initialise_vector!(v, func::Func) where Func
+    i = @index(Global)
+    @uniform cells = v.mesh.cells
+    @inbounds begin
+        c = cells[i].centre
+        v[i] = func(c[1], c[2], c[3]) # func must return an SVector
+    end
 end

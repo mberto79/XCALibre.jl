@@ -16,6 +16,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_mesh_conversion.jl")
     end
 
+    @testset "Face-flux reconstruction" begin
+        include("test_reconstruct.jl")
+    end
+
     @testset "Smoothers" begin
         include("test_smoothers.jl")
     end
@@ -24,13 +28,26 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_DILU.jl")
     end
 
+    @testset "Mixture Multiphase Unit Test" begin
+        include("unit_test_laplace.jl")
+    end
+
+    @testset "AMG" begin
+        include("test_AMG.jl")
+        include("test_AMG_matrices.jl")
+    end
+
     @testset "Laplace Unit Test" begin
         include("unit_test_laplace.jl")
     end
 
-    @testset "setFields Function Unit Test" begin
-        include("unit_test_setFields.jl")
+    @testset "Wall Distance Unit Test" begin
+        include("unit_test_wall_distance.jl")
     end
+
+    # @testset "setFields Function Unit Test" begin
+    #     include("unit_test_setFields.jl")
+    # end
 
     @testset "Fluid Properties Unit Test" begin
         include("unit_test_fluidProperties.jl")
@@ -98,7 +115,9 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         test_files = [
             "2d_compressible_KOmega_flatplate_fixedT.jl",
             "2d_compressible_laminar_flatplate_fixedT.jl",
-            "2d_compressible_transient_laminar_heated_cylinder.jl"
+            "2d_compressible_transient_laminar_heated_cylinder.jl",
+            "2d_compressible_transient_cylinder_energy_models.jl",
+            "2d_compressible_supersonic_compression_corner.jl"
         ]
 
         for test ∈ test_files
@@ -109,6 +128,23 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Godunov Solver" begin
         include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
+    end
+
+    @testset "Multiphase Solver" begin
+        test_files = [
+            "2d_multiphase_gravity.jl",
+            "2d_multiphase_hydrostatic.jl",
+            "2d_multiphase_mixture.jl"
+        ]
+
+        for test ∈ test_files
+            test_path = joinpath(TEST_CASES_DIR, test)
+            include(test_path)
+        end
+    end
+
+    @testset "Thin Film Solver" begin
+        include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))
     end
 
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))

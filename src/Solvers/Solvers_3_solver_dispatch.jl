@@ -44,6 +44,22 @@ residuals.p
 """
 run!() = nothing # dummy function for providing general documentation
 
+
+run!(
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3
+    ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =
+begin
+    residuals = multiphase!(
+        model, config,
+        output=output,
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops,
+        )
+    return residuals
+end
+
 # Laplace solver (steady)
 """
     run!(
@@ -122,13 +138,15 @@ run!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
 begin
+    residuals=nothing
     residuals = simple!(
         model, config, 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
-        )
+    )
+
     return residuals
 end
 
@@ -207,9 +225,23 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
+    ) where{T<:Transient,F<:Incompressible,S,M<:EFM,Tu,E,D,BI} = 
+begin
+    
+    residuals=filmModel!(
+        model,config,
+        output=output,
+        inner_loops=inner_loops
+    )
+    return residuals
+end
+
+run!(
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} = 
 begin
     residuals = piso!(
         model, config, 
@@ -217,7 +249,7 @@ begin
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops
-        )
+    )
     return residuals
 end
 

@@ -45,18 +45,34 @@ When called, this functor will return two values `ap` and `an`, where `ap` is th
 """
 macro define_boundary(boundary, operator, definition)
     quote
-        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I} = 
+        @inline function (bc::$boundary)(
+            term::Operator{F,P,I,$operator}, colval, rowptr, nzval,
+            cellID::TI, zcellID::TZI, cell::Cell{TF}, face, fID::TFI, i::TBI,
+            component, time
+            ) where {F,P,I,TF,TI,TZI,TFI,TBI}
         @inbounds begin
-            $definition
+            ap, bp = begin
+                $definition
+            end
+            return TF(ap), TF(bp)
+        end
         end
     end |> esc
 end
 
 macro define_boundary(boundary, operator, FieldType, definition)
     quote
-        @inline (bc::$boundary)(term::Operator{F,P,I,$operator}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P<:$FieldType,I} = 
+        @inline function (bc::$boundary)(
+            term::Operator{F,P,I,$operator}, colval, rowptr, nzval,
+            cellID::TI, zcellID::TZI, cell::Cell{TF}, face, fID::TFI, i::TBI,
+            component, time
+            ) where {F,P<:$FieldType,I,TF,TI,TZI,TFI,TBI}
         @inbounds begin
-            $definition
+            ap, bp = begin
+                $definition
+            end
+            return TF(ap), TF(bp)
+        end
         end
     end |> esc
 end

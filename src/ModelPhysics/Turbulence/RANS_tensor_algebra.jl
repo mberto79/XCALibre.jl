@@ -71,9 +71,10 @@ function magnitude2!(
     (; hardware) = config
     (; backend, workgroup) = hardware
 
+    scale = eltype(magS)(scale_factor)
     ndrange = length(magS)
     kernel! = _magnitude2!(_setup(backend, workgroup, ndrange)...)
-    kernel!(magS, S, scale_factor)
+    kernel!(magS, S, scale)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -85,7 +86,7 @@ end
     @uniform values = magS.values
 
     @inbounds begin
-        sum = 0.0
+        sum = zero(eltype(values))
         Sjk = S[i]
         for j ∈ 1:3
             for k ∈ 1:3
@@ -113,8 +114,7 @@ end
                 res =   Si⋅Si
         #     end
         # end
-        # magS.values[i] = sum*scale_factor
-        magS.values[i] = res
+        magS.values[i] = res*scale_factor
     end
 end
 
@@ -122,8 +122,9 @@ function square!(psi2, psi, config; scale_factor=1.0)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
+    scale = eltype(psi2)(scale_factor)
     kernel! = _square!(backend, workgroup)
-    kernel!(psi2, psi, scale_factor, ndrange = length(psi2))
+    kernel!(psi2, psi, scale, ndrange = length(psi2))
     nothing
 end
 

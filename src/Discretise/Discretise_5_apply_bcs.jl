@@ -170,8 +170,9 @@ end
 
 # Apply generated function definition
 @generated function apply!(
-    model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
-    ) where {TN,SN,T,S}
+    model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval::AbstractArray{F},
+    cellID, zcellID, cell, face, fID, i, component, time
+    ) where {TN,SN,T,S,F}
 
     # Definition of main assignment loop (one per patch)
     func_calls = Expr[]
@@ -181,14 +182,15 @@ end
                 terms[$t], 
                 colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
                 )
-            AP += ap
-            BP += bp
+            AP += F(ap)
+            BP += F(bp)
         end
         push!(func_calls, call)
     end
     quote
-        AP = 0.0
-        BP = 0.0
+        z = zero(F)
+        AP = z
+        BP = z
         $(func_calls...)
         return AP, BP
     end
@@ -214,4 +216,3 @@ end
         return BC_indices
     end
 end
-

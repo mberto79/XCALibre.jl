@@ -35,7 +35,8 @@ end
     @inbounds begin
         (; volume, faces_range) = cells[i]
 
-        res = SVector{3}(0.0,0.0,0.0)
+        z = zero(volume)
+        res = SVector{3}(z,z,z)
 
         for fi ∈ faces_range
             fID = cell_faces[fi]

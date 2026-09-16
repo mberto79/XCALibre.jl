@@ -75,12 +75,12 @@ function read_UNV3(unv_mesh; scale=1.0, integer::Type{I}=Int64, float::Type{F}=F
                     
                     # 1. Edges (Counted strictly for global ID offsetting)
                     if num_nodes == 2 || elem_type == 11
-                        edge_counter += 1
+                        edge_counter += one(I)
                         readline(io) # Consume the edge nodes line
                         
                     # 2. Triangles (41) and Quadrilaterals (44)
                     elseif (elem_type == 41 && num_nodes == 3) || (elem_type == 44 && num_nodes == 4)
-                        face_counter += 1
+                        face_counter += one(I)
                         if element_id - edge_counter != face_counter
                             throw(ArgumentError("Face Index in UNV file are not in order! At UNV index = $element_id"))
                         end
@@ -96,7 +96,7 @@ function read_UNV3(unv_mesh; scale=1.0, integer::Type{I}=Int64, float::Type{F}=F
                         
                     # 3. Cells: Tetrahedra (111), Hexahedra (115), Prisms/Wedges (112)
                     elseif elem_type == 111 || elem_type == 115 || elem_type == 112
-                        cell_counter += 1
+                        cell_counter += one(I)
                         if element_id - face_counter - edge_counter != cell_counter
                             throw(ArgumentError("Cell Index in UNV file are not in order! At UNV index = $element_id"))
                         end
@@ -120,7 +120,7 @@ function read_UNV3(unv_mesh; scale=1.0, integer::Type{I}=Int64, float::Type{F}=F
             elseif dataset_id == "2467"
                 # Group Name detected (single non-numeric string)
                 if n_tokens == 1 && tryparse(I, sline_buffer[1]) === nothing
-                    currentBoundary += 1
+                    currentBoundary += one(I)
                     new_boundary = BoundaryElement(I(0))
                     new_boundary.index = I(currentBoundary)
                     new_boundary.name = String(sline_buffer[1])

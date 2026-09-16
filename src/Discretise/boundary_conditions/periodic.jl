@@ -254,7 +254,7 @@ function periodic_matrix_connectivity(BC::PeriodicParent, mesh)
 end
 
 @define_boundary Periodic Laplacian{Linear} begin
-    return 0.0, 0.0
+    zero(TF), zero(TF)
 end
 
 # @define_boundary Union{PeriodicParent,Periodic} Laplacian{Linear} begin
@@ -308,7 +308,7 @@ end
     PN = spindex(rowptr, colval, cellID, pcellID)
     Atomix.@atomic nzval[PN] += -gamma
 
-    return gamma, 0.0 # PP assigned first value returned
+    gamma, zero(gamma) # PP assigned first value returned
 end
 
 @define_boundary Periodic Divergence{Linear} begin
@@ -354,7 +354,7 @@ end
 
     # now handle master cell 
     Atomix.@atomic nzval[PN] += an
-    return ac, 0.0
+    ac, zero(ac)
 end
 
 @define_boundary Periodic Divergence{Upwind} begin
@@ -374,8 +374,9 @@ end
     pcellID = pface.ownerCells[1]
 
     mdot = term.sign*(term.flux[fID])
-    ap = max(mdot, 0.0) # flow leaves master
-    an = -max(-mdot, 0.0) # flow leaves shadow
+    z = zero(mdot)
+    ap = max(mdot, z) # flow leaves master
+    an = -max(-mdot, z) # flow leaves shadow
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     NP = spindex(rowptr, colval, pcellID, cellID)
@@ -387,7 +388,7 @@ end
 
     # now handle master cell 
     Atomix.@atomic nzval[PN] += an
-    return ap, 0.0
+    ap, zero(ap)
 end
 
 @define_boundary Periodic Divergence{LUST} begin
@@ -420,10 +421,13 @@ end
     mdot = term.sign*(term.flux[fID])
     acLinear = mdot*w 
     anLinear = mdot*wn
-    acUpwind = max(mdot, 0.0) 
-    anUpwind = -max(-mdot, 0.0)
-    ac = 0.75*acLinear + 0.25*acUpwind
-    an = 0.75*anLinear + 0.25*anUpwind
+    z = zero(mdot)
+    acUpwind = max(mdot, z)
+    anUpwind = -max(-mdot, z)
+    three_quarters = TF(0.75)
+    quarter = TF(0.25)
+    ac = three_quarters*acLinear + quarter*acUpwind
+    an = three_quarters*anLinear + quarter*anUpwind
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     NP = spindex(rowptr, colval, pcellID, cellID)
@@ -435,7 +439,7 @@ end
 
     # now handle master cell 
     Atomix.@atomic nzval[PN] += an
-    return ac, 0.0
+    ac, zero(ac)
 end
 
 @define_boundary Union{PeriodicParent,Periodic} Si begin

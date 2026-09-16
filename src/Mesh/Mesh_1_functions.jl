@@ -4,6 +4,8 @@ export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
+export convert_mesh_float
+export validate_single_precision_mesh
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 
@@ -17,10 +19,25 @@ _get_backend(mesh) = get_backend(mesh.cells)
 # C1C2 = distance vector from cell1 to cell2
 weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
     # weight = norm(C2F1)/(norm(C1F1) + norm(C2F1)) # face-distance based
-    wi = (C1F1⋅normal)/(C1C2⋅normal)
-    weight = one(wi) - wi # normal aligned interpolation weight
+    projection = C1C2⋅normal
+    if isfinite(projection) && abs(projection) > eps(projection)
+        wi = (C1F1⋅normal)/projection
+        weight = one(wi) - wi # normal aligned interpolation weight
+    else
+        d1 = norm(C1F1)
+        d2 = norm(C2F1)
+        dsum = d1 + d2
+        weight = dsum > zero(dsum) ? d2/dsum : oftype(dsum, 0.5)
+    end
     delta = norm(C1C2)
-    e = C1C2/delta
+    if delta > zero(delta)
+        e = C1C2/delta
+    else
+        delta = norm(C1F1) + norm(C2F1) # fallback when cell centres coincide (degenerate cell)
+        e = normal
+    end
+    delta = max(delta, eps(one(delta))) # keep delta > 0 for degenerate faces (area is 0 there)
+    weight = clamp(weight, zero(weight), one(weight)) # keep interpolation weight physical on skewed cells
     return weight, delta, e
 end
 
@@ -28,8 +45,143 @@ end
 weight_delta_e(C1F1, normal) = begin
     weight = one(eltype(C1F1))
     delta = norm(C1F1)
-    e = C1F1/delta
+    e = delta > zero(delta) ? C1F1/delta : normal
+    delta = max(delta, eps(one(delta))) # keep delta > 0 for degenerate faces (area is 0 there)
     return weight, delta, e
+end
+
+function face_geometry(nodes, nIDs, apex::SVector{3, TF}) where {TF<:AbstractFloat}
+    area_vector = SVector{3, TF}(0, 0, 0)
+    n_nodes = length(nIDs)
+    @inbounds for i in 1:n_nodes
+        inext = i == n_nodes ? 1 : i + 1
+        point = nodes[nIDs[i]].coords
+        next_point = nodes[nIDs[inext]].coords
+        area_vector += ((point - apex) × (next_point - apex))/TF(2)
+    end
+
+    area = norm(area_vector)
+    normal = area > zero(TF) ? area_vector/area : SVector{3, TF}(0, 0, 0)
+    centre_sum = SVector{3, TF}(0, 0, 0)
+    projected_area = zero(TF)
+    @inbounds for i in 1:n_nodes
+        inext = i == n_nodes ? 1 : i + 1
+        point = nodes[nIDs[i]].coords
+        next_point = nodes[nIDs[inext]].coords
+        triangle_vector = ((point - apex) × (next_point - apex))/TF(2)
+        weight = triangle_vector ⋅ normal
+        projected_area += weight
+        centre_sum += weight*(apex + point + next_point)/TF(3)
+    end
+    centre = projected_area > floatmin(TF) ? centre_sum/projected_area : apex
+    return normal, area, centre
+end
+
+function compute_3d_geometry!(mesh::Mesh3)
+    (; cells, faces, face_nodes, nodes, boundary_cellsID) = mesh
+    TF = _get_float(mesh)
+    n_cells = length(cells)
+    n_bfaces = length(boundary_cellsID)
+
+    for (fID, face) in enumerate(faces)
+        nIDs = @view face_nodes[face.nodes_range]
+        apex = sum(nodes[nID].coords for nID in nIDs)/TF(length(nIDs))
+        normal, area, centre = face_geometry(nodes, nIDs, apex)
+        faces[fID] = Face3D(
+            face.nodes_range, face.ownerCells, centre, normal, face.e,
+            area, face.delta, face.weight,
+        )
+    end
+
+    centre_estimates = fill(SVector{3, TF}(0, 0, 0), n_cells)
+    n_cell_faces = zeros(_get_int(mesh), n_cells)
+    for face in faces
+        owner = face.ownerCells[1]
+        centre_estimates[owner] += face.centre
+        n_cell_faces[owner] += one(eltype(n_cell_faces))
+    end
+    for fID in (n_bfaces + 1):length(faces)
+        face = faces[fID]
+        neighbour = face.ownerCells[2]
+        centre_estimates[neighbour] += face.centre
+        n_cell_faces[neighbour] += one(eltype(n_cell_faces))
+    end
+    for cID in eachindex(cells)
+        centre_estimates[cID] /= TF(n_cell_faces[cID])
+    end
+
+    for (fID, face) in enumerate(faces)
+        owner = face.ownerCells[1]
+        direction = fID <= n_bfaces ?
+            face.centre - centre_estimates[owner] :
+            centre_estimates[face.ownerCells[2]] - centre_estimates[owner]
+        direction ⋅ face.normal >= zero(TF) && continue
+        reverse!(@view face_nodes[face.nodes_range])
+        faces[fID] = Face3D(
+            face.nodes_range, face.ownerCells, face.centre, -face.normal, face.e,
+            face.area, face.delta, face.weight,
+        )
+    end
+
+    centre_sums = fill(SVector{3, TF}(0, 0, 0), n_cells)
+    triple_volumes = zeros(TF, n_cells)
+    max_areas = zeros(TF, n_cells)
+    for face in faces
+        owner = face.ownerCells[1]
+        area_vector = face.area*face.normal
+        triple_volume = area_vector ⋅ (face.centre - centre_estimates[owner])
+        pyramid_centre = TF(3/4)*face.centre + TF(1/4)*centre_estimates[owner]
+        centre_sums[owner] += triple_volume*pyramid_centre
+        triple_volumes[owner] += triple_volume
+        max_areas[owner] = max(max_areas[owner], face.area)
+    end
+    for fID in (n_bfaces + 1):length(faces)
+        face = faces[fID]
+        neighbour = face.ownerCells[2]
+        area_vector = face.area*face.normal
+        triple_volume = area_vector ⋅ (centre_estimates[neighbour] - face.centre)
+        pyramid_centre = TF(3/4)*face.centre + TF(1/4)*centre_estimates[neighbour]
+        centre_sums[neighbour] += triple_volume*pyramid_centre
+        triple_volumes[neighbour] += triple_volume
+        max_areas[neighbour] = max(max_areas[neighbour], face.area)
+    end
+
+    fixed = 0
+    for (cID, cell) in enumerate(cells)
+        triple_volume = triple_volumes[cID]
+        centre = abs(triple_volume) > floatmin(TF) ?
+            centre_sums[cID]/triple_volume : centre_estimates[cID]
+        volume = triple_volume/TF(3)
+        if !(isfinite(volume) && volume > zero(TF))
+            estimate = max_areas[cID]^TF(1.5)*TF(1e-3)
+            volume = max(isfinite(volume) ? abs(volume) : zero(TF), estimate)
+            fixed += 1
+        end
+        cells[cID] = Cell(centre, volume, cell.nodes_range, cell.faces_range)
+    end
+    fixed > 0 && @warn "compute_3d_geometry!: $fixed cell(s) had non-positive volume (degenerate/sliver cells); replaced with positive estimates."
+
+    for (fID, face) in enumerate(faces)
+        owner_centre = cells[face.ownerCells[1]].centre
+        if fID <= n_bfaces
+            weight, delta, direction = weight_delta_e(
+                face.centre - owner_centre, face.normal,
+            )
+        else
+            neighbour_centre = cells[face.ownerCells[2]].centre
+            weight, delta, direction = weight_delta_e(
+                face.centre - owner_centre,
+                face.centre - neighbour_centre,
+                neighbour_centre - owner_centre,
+                face.normal,
+            )
+        end
+        faces[fID] = Face3D(
+            face.nodes_range, face.ownerCells, face.centre, face.normal, direction,
+            face.area, delta, weight,
+        )
+    end
+    return mesh
 end
 
 function _convert_array!(arr, backend::CPU)
@@ -124,14 +276,78 @@ function boundary_index(
     end
 end
 
-function boundary_index(boundaries::Vector{Boundary{S, UR}}, name::S) where {S<:Symbol,UR}
-    # bci = zero(TI)
-    for index ∈ eachindex(boundaries)
-        # bci += 1
-        if boundaries[index].name == name
-            return index 
+# Accept boundaries on any backend; Symbols force a host-side search, so copy to CPU first
+function boundary_index(boundaries::AbstractArray{<:Boundary}, name::Symbol)
+    bs = get_boundaries(boundaries)
+    for index ∈ eachindex(bs)
+        if bs[index].name == name
+            return index
         end
     end
+end
+
+# Convert mesh to float type TF, but only after a cheap representability check.
+# Falls back to the original mesh (with a warning) if narrowing would be unsafe.
+function convert_mesh_float(mesh::AbstractMesh, ::Type{TF}) where {TF<:AbstractFloat}
+    _get_float(mesh) === TF && return mesh
+    if TF === Float32 && !float32_representable(mesh)
+        @warn "Mesh geometry is not reliably representable in Float32; keeping $(_get_float(mesh)) mesh."
+        return mesh
+    end
+    return _rebuild_mesh_float(mesh, TF)
+end
+
+function _rebuild_mesh_float(mesh::Mesh3, ::Type{TF}) where {TF<:AbstractFloat}
+    nodes = [Node(SVector{3,TF}(n.coords), n.cells_range) for n in mesh.nodes]
+    cells = [Cell(SVector{3,TF}(c.centre), TF(c.volume), c.nodes_range, c.faces_range) for c in mesh.cells]
+    faces = [Face3D(f.nodes_range, f.ownerCells, SVector{3,TF}(f.centre), SVector{3,TF}(f.normal),
+                    SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
+    Mesh3(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
+          faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
+          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+end
+
+function _rebuild_mesh_float(mesh::Mesh2, ::Type{TF}) where {TF<:AbstractFloat}
+    nodes = [Node(SVector{3,TF}(n.coords), n.cells_range) for n in mesh.nodes]
+    cells = [Cell(SVector{3,TF}(c.centre), TF(c.volume), c.nodes_range, c.faces_range) for c in mesh.cells]
+    faces = [Face2D(f.nodes_range, f.ownerCells, SVector{3,TF}(f.centre), SVector{3,TF}(f.normal),
+                    SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
+    Mesh2(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
+          faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
+          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+end
+
+# Cheap check: volumes/areas/deltas/weights finite & positive and length scales above Float32 spacing.
+function float32_representable(mesh::AbstractMesh)
+    _count_invalid_positive(c.volume for c in mesh.cells) == 0 || return false
+    _count_invalid_positive(f.area for f in mesh.faces) == 0 || return false
+    _count_invalid_positive(f.delta for f in mesh.faces) == 0 || return false
+    count(f -> !isfinite(f.weight), mesh.faces) == 0 || return false
+
+    max_coord = 0.0
+    for node in mesh.nodes, coord in node.coords
+        max_coord = max(max_coord, abs(Float64(coord)))
+    end
+    min_delta = Inf
+    for face in mesh.faces
+        delta = Float64(face.delta)
+        isfinite(delta) && delta > 0 && (min_delta = min(min_delta, delta))
+    end
+    spacing = Float64(eps(Float32)) * max(max_coord, 1.0)
+    return min_delta > 16 * spacing
+end
+
+# Used by the loaders/tests to reject a Float32 mesh that is not safely representable.
+function validate_single_precision_mesh(mesh::AbstractMesh; source="mesh conversion")
+    _get_float(mesh) === Float32 || return mesh
+    float32_representable(mesh) && return mesh
+    throw(ArgumentError("Single-precision mesh validation failed during $source: " *
+        "the Float32 mesh geometry is not reliable (non-positive volumes/areas/deltas, " *
+        "non-finite weights, or length scales below Float32 spacing). Use float_type=Float64."))
+end
+
+function _count_invalid_positive(values)
+    count(v -> !isfinite(v) || v <= zero(v), values)
 end
 
 # function x(mesh::Mesh2{I,F}) where {I,F}

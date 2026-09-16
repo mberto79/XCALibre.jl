@@ -25,21 +25,27 @@ Constructs a `Mesh3` object from a Universal (UNV) file format.
 - `Mesh3`: A fully constructed 3D mesh object containing nodes, cells, faces, boundaries, and populated geometric properties.
 """
 function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int64, float_type=Float64)
+    return _UNV3D_mesh(unv_mesh, scale, integer_type, float_type)
+end
+
+# Type-parameter barrier keeps the build type-stable for non-default integer/float types.
+function _UNV3D_mesh(unv_mesh, scale, ::Type{TI}, ::Type{TF}) where {TI<:Integer, TF<:AbstractFloat}
     local points, efaces, cells_UNV, boundaryElements
-    
+    # geometry is always built in Float64; conversion to float_type happens after a cheap check
     t_parse = @elapsed begin
-        points, efaces, cells_UNV, boundaryElements = read_UNV3( 
-            unv_mesh; scale=scale, integer=integer_type, float=float_type)
+        points, efaces, cells_UNV, boundaryElements = read_UNV3(
+            unv_mesh; scale=scale, integer=TI, float=Float64)
     end
     @info "UNV file parsed in $(round(t_parse, digits=3)) seconds."
-    
+
     @info "Generating mesh connectivity and geometry..."
     local mesh
-    
+
     t_build = @elapsed begin
-        mesh = _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, integer_type, float_type)
+        mesh = _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, TI, Float64)
     end
-    
+    mesh = Mesh.convert_mesh_float(mesh, TF)
+
     @info "Mesh constructed in $(round(t_build, digits=3)) seconds."
     @info "Mesh entities: $(length(mesh.nodes)) nodes | $(length(mesh.faces)) faces | $(length(mesh.cells)) cells."
     
@@ -69,10 +75,7 @@ function _build_UNV3D_mesh_core(points, efaces, cells_UNV, boundaryElements, ::T
         total_faces, n_points, n_cells, I, F
     )
 
-    # 2-Stage Geometry Pipeline
-    calculate_centres!(mesh, I, F)            # Stage 1: Estimated arithmetic means
-    calculate_face_properties!(mesh, I, F)    # Stage 2A: True area-weighted face centroids
-    calculate_area_and_volume!(mesh, I, F)    # Stage 2B: True volume-weighted cell centroids
+    Mesh.compute_3d_geometry!(mesh)
 
     return mesh
 end
@@ -321,178 +324,6 @@ function _construct_mesh_entities(points, cells_UNV, boundaryElements,
         faces, face_nodes, boundaries, nodes, node_cells,
         SVector{3, F}(zero(F),zero(F),zero(F)), I(0):I(0), boundary_cellsID
     )
-end
-
-# ==============================================================================
-# GEOMETRY KERNELS
-# ==============================================================================
-
-function calculate_centres!(mesh, ::Type{I}, ::Type{F}) where {I, F}
-    cells = mesh.cells
-    faces = mesh.faces
-    nodes = mesh.nodes
-    cell_nodes = mesh.cell_nodes
-    face_nodes = mesh.face_nodes
-
-    # Stage 1: Compute simple arithmetic means to serve as temporary anchors
-    # (These will be overwritten with true geometric centroids in the next stages)
-    @inbounds for i in eachindex(cells)
-        cell = cells[i]
-        rng = cell.nodes_range
-        sum_p = SVector{3, F}(zero(F), zero(F), zero(F))
-        for ptr in rng[1]:rng[end]
-            id = cell_nodes[ptr]
-            sum_p += nodes[id].coords
-        end
-        @reset cell.centre = sum_p / F(length(rng))
-        cells[i] = cell
-    end
-    
-    @inbounds for i in eachindex(faces)
-        face = faces[i]
-        rng = face.nodes_range
-        sum_p = SVector{3, F}(zero(F), zero(F), zero(F))
-        for ptr in rng[1]:rng[end]
-            id = face_nodes[ptr]
-            sum_p += nodes[id].coords
-        end
-        @reset face.centre = sum_p / F(length(rng))
-        faces[i] = face
-    end
-end
-
-function calculate_face_properties!(mesh, ::Type{I}, ::Type{F}) where {I, F}
-    cells = mesh.cells
-    faces = mesh.faces
-    nodes = mesh.nodes
-    face_nodes = mesh.face_nodes
-    n_bf = length(mesh.boundary_cellsID)
-    
-    @inbounds for i in eachindex(faces)
-        face = faces[i]
-        rng = face.nodes_range
-        len = length(rng)
-        C1 = cells[face.ownerCells[1]].centre
-        
-        # FC_est is the arithmetic mean calculated in calculate_centres!
-        FC_est = face.centre 
-        
-        area_vec = SVector{3, F}(zero(F), zero(F), zero(F))
-        true_FC = SVector{3, F}(zero(F), zero(F), zero(F))
-        sum_area = zero(F)
-        
-        # Stage 2A: Sub-triangulate to calculate TRUE Area-Weighted Face Centroid
-        for j in 1:len
-            id1 = face_nodes[rng[j]]
-            id2 = face_nodes[rng[mod1(j+1, len)]]
-            p1 = nodes[id1].coords
-            p2 = nodes[id2].coords
-            
-            a_vec = F(0.5) * cross(p1 - FC_est, p2 - FC_est)
-            a_mag = norm(a_vec)
-            
-            area_vec += a_vec
-            sum_area += a_mag
-            # Centroid of the sub-triangle
-            true_FC += a_mag * ((FC_est + p1 + p2) / F(3.0)) 
-        end
-        
-        area = norm(area_vec)
-        normal = area_vec / (area + F(1e-16))
-        FC = true_FC / (sum_area + F(1e-16)) # The true geometric face center
-
-        # IMPLEMENTATION NOTE: Enforce Right-Hand Rule (Mesh Contract)
-        # If the ordered node array produces a normal pointing inward, we physically 
-        # reverse the stored node array indices here so it permanently points outward.
-        check_vec = i <= n_bf ? (FC - C1) : (cells[face.ownerCells[2]].centre - C1)
-        if dot(check_vec, normal) < zero(F)
-            normal = -normal
-            for j in 1:(len ÷ 2)
-                idx1 = rng[j]
-                idx2 = rng[len - j + 1]
-                face_nodes[idx1], face_nodes[idx2] = face_nodes[idx2], face_nodes[idx1]
-            end
-        end
-
-        if i <= n_bf
-            w, d, e = Mesh.weight_delta_e(FC - C1, normal)
-        else
-            C2 = cells[face.ownerCells[2]].centre
-            w, d, e = Mesh.weight_delta_e(FC - C1, FC - C2, C2 - C1, normal)
-        end
-
-        @reset face.centre = FC # Overwrite arithmetic mean with true centroid
-        @reset face.normal = normal; @reset face.area = area; @reset face.weight = w
-        @reset face.delta = d; @reset face.e = e
-        faces[i] = face
-    end
-end
-
-function calculate_area_and_volume!(mesh, ::Type{I}, ::Type{F}) where {I, F}
-    cells = mesh.cells
-    faces = mesh.faces
-    n_cells = length(cells)
-    
-    map_counts = zeros(I, n_cells)
-    n_bf = length(mesh.boundary_cellsID)
-    for cID in mesh.boundary_cellsID
-        @inbounds map_counts[cID] += 1
-    end
-    for fID in (n_bf+1):length(faces)
-        o = faces[fID].ownerCells
-        @inbounds map_counts[o[1]] += 1
-        @inbounds map_counts[o[2]] += 1
-    end
-
-    all_map_range, cursors, total_maps = _compute_flat_offsets(map_counts)
-    all_map_flat = Vector{I}(undef, total_maps)
-    
-    for (fID, cID) in enumerate(mesh.boundary_cellsID)
-        @inbounds all_map_flat[cursors[cID]] = I(fID)
-        @inbounds cursors[cID] += 1
-    end
-    for fID in (n_bf+1):length(faces)
-        o = faces[fID].ownerCells
-        @inbounds all_map_flat[cursors[o[1]]] = I(fID); @inbounds cursors[o[1]] += 1
-        @inbounds all_map_flat[cursors[o[2]]] = I(fID); @inbounds cursors[o[2]] += 1
-    end
-
-    # Stage 2B: Calculate TRUE Volume-Weighted Cell Centroid using Divergence Pyramids
-    @inbounds for i in eachindex(cells)
-        cell = cells[i]
-        
-        # apex is the arithmetic mean calculated in calculate_centres!
-        apex = cell.centre 
-        
-        vol_total = zero(F)
-        true_CC = SVector{3, F}(zero(F), zero(F), zero(F))
-        
-        rng = all_map_range[i]
-        for ptr in rng[1]:rng[end]
-            fID = all_map_flat[ptr]
-            face = faces[fID]
-            FC = face.centre
-            h_vec = FC - apex
-            Sf = face.normal * face.area
-            
-            if dot(h_vec, Sf) < zero(F); Sf = -Sf; end
-            
-            # Volume of the pyramid formed by the face and the cell apex
-            vol_pyr = F(1/3) * dot(h_vec, Sf)
-            
-            # Centroid of a pyramid lies 1/4 of the way from the base (FC) to the apex
-            C_pyr = F(0.75) * FC + F(0.25) * apex
-            
-            vol_total += vol_pyr
-            true_CC += vol_pyr * C_pyr
-        end
-        
-        @reset cell.volume = abs(vol_total)
-        if vol_total > F(1e-16)
-            @reset cell.centre = true_CC / vol_total # Overwrite with true centroid
-        end
-        cells[i] = cell
-    end
 end
 
 # ==============================================================================

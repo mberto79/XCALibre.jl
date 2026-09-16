@@ -53,7 +53,14 @@ end
     kf = FaceScalarField(mesh)
     omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
-    coeffs = rans.args
+    scalar = ScalarFloat(mesh)
+    coeffs = (
+        β⁺=scalar(rans.args.β⁺),
+        α1=scalar(rans.args.α1),
+        β1=scalar(rans.args.β1),
+        σk=scalar(rans.args.σk),
+        σω=scalar(rans.args.σω),
+    )
     KOmega(k, omega, nut, kf, omegaf, nutf, coeffs)
 end
 

@@ -48,7 +48,8 @@ struct Cell{F<:AbstractFloat, SV3<:SVector{3,F},UR<:UnitRange{<:Integer}}
 end
 Adapt.@adapt_structure Cell
 
-Cell(TI::T, TF::T) where T<:DataType = begin
+# dispatch on ::Type{} so TI and TF may differ and the result type is inferable
+Cell(::Type{TI}, ::Type{TF}) where {TI<:Integer, TF<:AbstractFloat} = begin
     Cell(
         SVector{3,TF}(0.0,0.0,0.0),
         zero(TF),
@@ -115,7 +116,8 @@ struct Face3D{
 end
 Adapt.@adapt_structure Face3D
 
-Face3D(TI::T, TF::T) where T<:DataType = begin
+# dispatch on ::Type{} so TI and TF may differ and the result type is inferable
+Face3D(::Type{TI}, ::Type{TF}) where {TI<:Integer, TF<:AbstractFloat} = begin
     Face3D(
         UnitRange{TI}(0,0),
         SVector{2,TI}(0,0),

@@ -3,23 +3,59 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.5.3] - 2026-03-05
+## Version [v0.6.1-DEV] - 2026-09-11
 
 ### Added
-*  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
-* Added runtime calculation of Q-criterion [#107]
-*  Added explicit Godunov-type compressible solver (`godunov!`) for supersonic flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping [#112](@ref)
-*  Added experimental incompressible steady MFR solver [#114](@ref)
-*  Added runtime probe extraction [#115](@ref)
-*  Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
+* Added FixedHeatFlux boundary condition [#149]
+* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 
+### Fixed
+* Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
+* Fixed OpenFOAM `boundary` file parsing so that patch groups (`inGroups`) no longer corrupt the patch list. The parser is now token based, ignores unknown dictionary entries, and reports malformed files with an `ArgumentError` [#153](@ref)
+* Fixed OpenFOAM mesh writer truncating point coordinates to six significant figures, which prevented a written mesh from round-tripping [#153](@ref)
+* Fixed `reconstruct!` omitting boundary faces when rebuilding a cell vector from a face-normal flux. The accumulation looped over `cell_faces`, which holds internal faces only. A cell becomes genuinely rank deficient when a direction is spanned by no internal face at all, as on a one cell thick mesh with an `empty` patch: on `OF_pitzDaily` the through-thickness moment is zero for all 12225 cells and the reconstruction returns the zero vector everywhere. Boundary faces now contribute to the least-squares system [#155](@ref)
+* Fixed the invertibility test in `reconstruct!` comparing an area-cubed determinant against the absolute tolerance `eps(TF)`. The moments scale with face area, so on a millimetre-scale mesh the determinant of a perfectly conditioned interior cell is already below `eps` (`6.4e-29` on the 1 mm lid-driven cavity) and the reconstruction is silently zeroed everywhere, interior cells included, and at far coarser scales in `Float32`. The test is now scaled by the magnitude of the moments [#155](@ref)
+
+### Changed
+* 3D mesh geometry is now computed by a single shared routine used by both the UNV3 and OpenFOAM readers, which previously disagreed on cell centroids and volumes for the same mesh [#153](@ref)
+* The OpenFOAM writer now preserves a complete existing `constant/polyMesh` instead of overwriting it, so results can be written alongside the original mesh [#153](@ref)
+* The OpenFOAM writer compares the point and face counts declared by an existing `constant/polyMesh` with the simulation mesh, and warns and rewrites the mesh files when they disagree [#153](@ref)
+
+### Breaking
+* `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+
+## Version [v0.6.0] - 2026-07-17
+
+### Added
+* Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
+* Added runtime calculation of Q-criterion [#107]
+* Added explicit Godunov-type compressible solver (`godunov!`) for `Supersonic` flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping. This is the recommended solver for high-speed flows in the range 0.8 < M < 5 approximately [#112](@ref)
+* Added experimental incompressible steady MFR solver [#114](@ref)
+* Added runtime probe extraction [#115](@ref)
+* Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
+* New Eulerian Thin Film model solver (2D only) [#120](@ref)
+* Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
+* Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
+* Added multiphase solver (VOF model only) with two supporting functionality tests. [#132](@ref)
+* Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
+* Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`[#135](@ref)
+* Pressure-based compressible solvers have been extended to include `SensibleEnthalpy` and `InternalEnergy` formulations. The solver now correctly handles `Compressible` fluids, activating the transonic correction that allows shock capturing for moderate high-speed applications, typically in the range 0.8 < M < 2 [#145](@ref)
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)
 * Fixed implementation of implicit boundaries in [#96](@ref) which where missing atomics [#100](@ref)
-* Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#102](@ref)
+* Fixed calculation of the residuals to use the relative residual norm, norm(b - Ax)/norm(b), the numerator in this expression was calculated incorrectly previously, giving a 1/sqrt(n) relation (where n is the number of cells in the grid). whilst the operation of the solvers remains the same, user may find that convergence criteria may need to be increased (specially for larger grids)[#102](@ref). Move calculation to scale residuals in [#134](@ref)
 * UNV2: Fix calculation of cell volumes and centroid for boundary cells was incorrect and missing boundary face contributions (only for 2D UNV meshes)[#106](@ref)
 * Fixed implementation of k-omega LKE transition model and how wall distance field is calculated to ensure it is GPU compatible [#109](@ref)
+* Fixed mixed-precision mesh conversion to preserve user-selected integer and floating-point types [#125](@ref)
+* Fixed pressure boundary mass-flux correction [#125](@ref)
+* Fixed turbulent effective viscosity updates so turbulence models include eddy viscosity again, reverting a regression introduced in [#120](@ref) [#125](@ref)
+* Add missing constructor for LES{Laminar} supporting qDNS simulations [#144](@ref)
   
 ### Changed
 * Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
@@ -29,9 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * New method to enforce matrix symmetry of scalar model equations when the only term is a laplacian [#100](@ref)
 * Change calculation of face interpolation weights to use face normal aligned weights, this is more physical than the current method using face-based distances (in preparation for formal support for non-orthogonality correction)[#101](@ref)
 * 20x improvement loading and processing 3D UNV mesh files [#106](@ref)
+* Updated discretisation, boundary condition, turbulence, solver, and preconditioner paths to avoid unintended `Float64` promotion on `Float32` meshes [#125](@ref)
+* FOAM reader has been updated for robustness and speed (~4x faster) [#126](@ref)
+* Rewrote `pressure_force` and `viscous_force` as backend-agnostic (CPU/GPU) kernels, changed their signature to `(patch, model, config)`, and corrected the pressure force to scale by reference density only for incompressible (kinematic pressure) flows [#129](@ref)
+* Improved calculation of viscous force using wall eddy viscosity and perpendicular cell-to-face distance [#130](@ref)
 
 ### Breaking
-* No breaking changes
+* Pressure-based compressible solvers (for `WeaklyCompressible` and `Compressible` fluids) have been extended to work with `SensibleEnthalpy` and `InternalEnergy` formulations. Thus, to capture this change, the energy field has been renamed `he` instead of `h` [#145](@ref)
 
 ### Deprecated
 * No functions deprecated
@@ -57,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  Added capablity to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#87](@ref)
 *  Extended `DirichLetFunction` to accept functions defining boundary condition for `ScalarFields` [#89](@ref)
 *  Implemented `CrankNicolson` time scheme (second order implicit-explicit) [#90](@ref)
+*  Implementation of a new AMG solver for symmetric matrices [#141](@ref)
 
 
 ### Fixed
@@ -71,6 +112,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Internally, the calculation of interpolation weights and other geometric properties are calculated using the same function (defined in the `Mesh` module) [#69](@ref)
 * The default discretisation for laplacian terms uses the over-relaxed formulation by default. This will have no effect on orthogonal grids, but tends to be more robust in complex geometries at the expense of accuracy, which can be recovered by adding additional orthogonal correction loops (using the key word argument `ncorrectors` in the `run!` function) [#73](@ref)
 * Cleaned code for all solvers and improved stability of incompressible solver by removing the update of the mass flow based on the velocity field from the previous iteration. The mass flow is now corrected directly from the latest pressure solution [#76](@ref)
+* Improved calculation of wall distance for turbulence models to prevent negative square roots resulting in DomainErrors [#139](@ref)
+
 
 ### Breaking
 * No breaking changes

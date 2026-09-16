@@ -67,11 +67,12 @@ end
     0.0, ap*value
 end
 
+# Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary DirichletFunction Divergence{BoundedUpwind} VectorField begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)
     value = bc.value(face.centre, time, i)[component.value]
-    flux, ap*value
+    ap, ap*value
 end
 
 @define_boundary DirichletFunction Laplacian{Linear} begin
@@ -105,11 +106,12 @@ end
     0.0, ap*value
 end
 
+# Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary DirichletFunction Divergence{BoundedUpwind} begin
     flux = -term.flux[fID]
     ap = term.sign*(flux)
     value = bc.value(face.centre, time, i)
-    flux, ap*value
+    ap, ap*value
 end
 
 

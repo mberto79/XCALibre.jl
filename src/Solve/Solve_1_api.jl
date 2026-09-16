@@ -2,7 +2,6 @@ export SolverSetup, Runtime, Schemes
 export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
 export solve_equation!
-export residual!
 export AdaptiveTimeStepping
 
 struct SolverSetup{
@@ -56,7 +55,7 @@ This function is used to provide solver settings that will be used internally in
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
-- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000) 
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`)
 - `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9)
 - `rtol`: set relative tolerance for the solver (defaults to 1e-1)
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
@@ -69,7 +68,7 @@ SolverSetup(;
         convergence, 
         relax, 
         limit=nothing,
-        itmax::I=1000, 
+        itmax::I=(solver isa AMG ? 200 : 1000),
         atol=(eps(float_type))^0.9,
         rtol=1e-1 |> float_type
         ) where{S1,S2,PT,I} = 
@@ -84,6 +83,7 @@ SolverSetup(;
 
 struct AdaptiveTimeStepping{F<:AbstractFloat}
     maxCo::F
+    maxAlphaCo::F
     minShrink::F
     maxGrow::F
 end
@@ -94,6 +94,7 @@ Adapt.@adapt_structure AdaptiveTimeStepping
         # keyword arguments
 
         maxCo=0.75,
+        maxAlphaCo=0.5,
         minShrink=0.1,
         maxGrow=1.2
     )
@@ -108,6 +109,8 @@ simulations. If not provided, a fixed time step is used.
 
 - `maxCo::AbstractFloat`: target maximum Courant number. The time step will be adjusted
   such that the computed Courant number approaches this value.
+- `maxAlphaCo::AbstractFloat`: target maximum Alpha Courant number. The time step will be adjusted
+  such that the computed Courant number approaches this value.
 - `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
   current time step. Prevents excessively large reductions in a single update.
 - `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
@@ -115,9 +118,10 @@ simulations. If not provided, a fixed time step is used.
 """
 AdaptiveTimeStepping(;
     maxCo=0.75,
+    maxAlphaCo=0.5,
     minShrink=0.1,
     maxGrow=1.2
-) = AdaptiveTimeStepping(float(maxCo), float(minShrink), float(maxGrow))
+) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
 struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
     iterations::I
@@ -211,11 +215,12 @@ The `Schemes` struct is used at the top-level API to help users define discretis
 end
 
 
+# eqn.model.terms[1].flux implies that the time term must always be defined first when constructing an equation.
 function solve_equation!(
-    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; time=nothing, ref=nothing, irelax=nothing
+    eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=eqn.model.terms[1].flux, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    discretise!(eqn, phi, config)       
+    discretise!(eqn, phi, config, rho_prev=rho_prev)  
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
         make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
@@ -230,13 +235,14 @@ function solve_equation!(
     return res
 end
 
+# psiEqn.model.terms[1].flux implies that the time term must always be defined first when constructing an equation.
 function solve_equation!(
-    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; time=nothing
+    psiEqn::ModelEquation{T,M,E,S,P}, psi, psiBCs, solversetup, xdir, ydir, zdir, config; rho_prev=psiEqn.model.terms[1].flux, time=nothing
     ) where {T<:VectorModel,M,E,S,P}
 
     mesh = psi.mesh
 
-    discretise!(psiEqn, psi, config)
+    discretise!(psiEqn, psi, config, rho_prev=rho_prev)
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
@@ -285,7 +291,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     krylov_solve!(
         solver, opA, b, values; 
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon)
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
         )
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
@@ -299,9 +305,9 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
 
-    Krylov.iteration_count(solver) == itmax && @warn "Maximum number of iterations reached!"
+    iterations = Krylov.iteration_count(solver)
+    iterations == itmax && @warn "Maximum number of iterations reached!"
 
-    # println(statistics(solver).niter)
     res = residual(phiEqn, component, config)
     return res
 end
@@ -359,7 +365,7 @@ end
     @inbounds begin
         nIndex = spindex(rowptr, colval, i, i)
         nzval[nIndex] /= alpha
-        b[i] += (1.0 - alpha)*nzval[nIndex]*field[i]
+        b[i] += (one(alpha) - alpha)*nzval[nIndex]*field[i]
     end
 end
 
@@ -442,6 +448,18 @@ function residual(eqn, component, config)
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
     values = get_values(get_phi(eqn), component)
+    (; backend, workgroup) = config.hardware
+
+    rowptr = _rowptr(A)
+    colval = _colval(A)
+    nzval = _nzval(A)
+    ndrange = length(values)
+    kernel! = _scaled_residual!(_setup(backend, workgroup, ndrange)...)
+    kernel!(R, Fx, rowptr, colval, nzval, values, b)
+
+    denominator = sum(Fx)
+    denominator = ifelse(denominator > eps(denominator), denominator, one(denominator))
+    Residual = sum(R) / denominator
 
     # # Openfoam's residual definition (not optimised)
     # Fx .= A*values
@@ -453,14 +471,35 @@ function residual(eqn, component, config)
     # Residual = T1/(T2 + T3)
 
     # Previous definition
-    Fx .= A * values
-    xcal_foreach(R, config) do i 
-            @inbounds R[i] = (b[i] - Fx[i])^2
-    end
-    normb = norm(b)
-    denominator = ifelse(normb > eps(normb), normb, one(normb))
-    Residual = sqrt(sum(R)) / denominator
+    # Fx .= A * values
+    # xcal_foreach(R, config) do i
+    #         @inbounds R[i] = (b[i] - Fx[i])^2
+    # end
+    # normb = norm(b)
+    # denominator = ifelse(normb > eps(normb), normb, one(normb))
+    # Residual = sqrt(sum(R)) / denominator
     return Residual
+end
+
+@kernel function _scaled_residual!(R, Fx, @Const(rowptr), @Const(colval), @Const(nzval), @Const(values), @Const(b))
+    i = @index(Global)
+    Ax = zero(eltype(R))
+    Dx = zero(eltype(R))
+    xi = values[i]
+
+    @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
+        Aij = nzval[nzi]
+        j = colval[nzi]
+        Ax += Aij * values[j]
+        if j == i
+            Dx = Aij * xi
+        end
+    end
+
+    @inbounds begin
+        R[i] = abs(b[i] - Ax)
+        Fx[i] = abs(Dx)
+    end
 end
 
 function make_symmetric!(eqn, config)

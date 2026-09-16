@@ -1,0 +1,13 @@
+# AMG: materialised (0-6) + matrix-free (7-8) hierarchies, one update/solve seam (9), validation (10).
+include("0_AMG_types.jl")
+include("1_AMG_setup.jl")
+include("2_AMG_coarsening.jl")
+include("3_AMG_transfer.jl")
+include("4_AMG_smoothers.jl")
+include("5_AMG_cycle.jl")
+include("6_AMG_cg.jl")
+include("6b_AMG_bicgstab.jl")
+include("7_AMG_matrix_free_hierarchy.jl")
+include("8_AMG_matrix_free_refresh.jl")
+include("9_AMG_update.jl")
+include("10_AMG_validation.jl")

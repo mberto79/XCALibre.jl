@@ -113,7 +113,7 @@ end
     fID = i + start_ID - 1 # Redefine thread index to become face ID
 
     (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
-    (; nu) = fluid
+    (; nu, rho) = fluid
     (; U) = momentum
     (; k, nut) = turbulence
 
@@ -128,9 +128,8 @@ end
     yplus = y_plus(k[cID], nuc, delta, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
     mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
-    # mag_grad_U = mag(gradU[cID]*normal)
     if yplus > yPlusLam
-        values[cID] = (nu[cID] + nutw)*mag_grad_U*dUdy 
+        values[cID] = rho[cID]*(nu[cID] + nutw)*mag_grad_U*dUdy
     else
         values[cID] = 0.0
     end

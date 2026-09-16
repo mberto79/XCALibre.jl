@@ -215,6 +215,7 @@ function MULTIPHASE(
     ∇p_rghf_deconstructed = FaceScalarField(mesh)
     ∇p_rghf_reconstructed = VectorField(mesh)
     pressure_force_face   = FaceScalarField(mesh)
+    moments = KernelAbstractions.allocate(backend, TF, n_cells, 9)
 
     rho1_val = phases[main].rho[1]
     rho2_val = phases[secondary].rho[1]
@@ -344,7 +345,7 @@ function MULTIPHASE(
 
         well_balanced_pressure_grad!(
             ∇p_rgh.result, pressure_force_face,
-            p_rgh, rho, ghf, mesh, config;
+            p_rgh, rho, ghf, mesh, moments, config;
             sigma=sigma, kappaf=kappaf, alpha=alpha)
 
         rx, ry, rz = solve_equation!(
@@ -370,7 +371,7 @@ function MULTIPHASE(
                 surface_tension_flux!(rDf, sigma, kappaf, alpha, phi_gf, config)
             end
 
-            reconstruct!(phi_g, phi_gf, config)
+            reconstruct!(phi_g, phi_gf, moments, config)
 
             @. mdotf.values += phi_gf.values
 
@@ -386,7 +387,7 @@ function MULTIPHASE(
             correct_mass_flux_mp!(mdotf, p_eqn, config)
 
             pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
-            reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, config)
+            reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, moments, config)
 
             correct_velocity_rgh!(U, Hv, ∇p_rghf_reconstructed, rD, config)
         end
@@ -710,109 +711,115 @@ end
 end
 
 """
-    reconstruct!(phi::VectorField, psif::FaceScalarField, config)
+    reconstruct!(phi::VectorField, psif::FaceScalarField, moments, config)
 
 Least-squares reconstruction of a cell-centred vector field `phi` from a
-face-normal scalar field `psif`. Required for discretisation consistency.
+face-normal scalar field `psif`. Both internal and boundary faces contribute to
+the least-squares system. `moments` is a preallocated `(ncells, 9)` scratch
+array. Required for discretisation consistency.
 
 """
-function reconstruct!(phi::VectorField, psif::FaceScalarField, config)
+function reconstruct!(phi::VectorField, psif::FaceScalarField, moments, config)
     mesh = phi.mesh
-    (; cells, cell_nsign, cell_faces, faces) = mesh
+    (; cells, cell_faces, faces) = mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    F = _get_float(mesh)
     ndrange = length(cells)
+    kernel! = _reconstruct_internal_moments!(_setup(backend, workgroup, ndrange)...)
+    kernel!(cells, cell_faces, faces, psif, moments)
+
+    n_boundary_faces = length(mesh.boundary_cellsID)
+    if n_boundary_faces > 0
+        # psif ≡ 0 on boundary faces for all callers: this adds the constraint n_b⋅u = 0, not measured data
+        kernel! = _reconstruct_boundary_moments!(
+            _setup(backend, workgroup, n_boundary_faces)...)
+        kernel!(faces, psif, moments)
+    end
 
     if typeof(mesh) <: Mesh2
         kernel! = _reconstruct_operation_2D!(_setup(backend, workgroup, ndrange)...)
     else
         kernel! = _reconstruct_operation_3D!(_setup(backend, workgroup, ndrange)...)
     end
-    kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
+    kernel!(phi, moments)
 end
 
-@kernel function _reconstruct_operation_2D!(
-    cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_faces, cell_nsign, faces, phi, psif
+@kernel function _reconstruct_internal_moments!(
+    cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, faces, psif, moments
 ) where {TF,SV,UR}
     i = @index(Global)
     @inbounds begin
         (; faces_range) = cells[i]
 
-        m11 = zero(TF); m12 = zero(TF); m22 = zero(TF)
-        b1  = zero(TF); b2  = zero(TF)
+        M = zero(SMatrix{3,3,TF})
+        b = zero(SVector{3,TF})
 
         for fi ∈ faces_range
             fID = cell_faces[fi]
             (; area, normal) = faces[fID]
-            nx = normal[1]; ny = normal[2]
-
-            m11 += area * nx * nx
-            m12 += area * nx * ny
-            m22 += area * ny * ny
-
-            ssf = psif[fID]
-            b1 += nx * ssf
-            b2 += ny * ssf
+            M += area*(normal*normal')
+            b += psif[fID]*normal
         end
 
-        det = m11*m22 - m12*m12
-
-        is_invertible = abs(det) > eps(TF)
-        invdet = is_invertible ? one(TF)/det : zero(TF)
-
-        ux = ( m22*b1 - m12*b2) * invdet
-        uy = (-m12*b1 + m11*b2) * invdet
-
-        phi[i] = @SVector [ux, uy, zero(TF)]
+        moments[i,1] = M[1,1]; moments[i,2] = M[1,2]; moments[i,3] = M[1,3]
+        moments[i,4] = M[2,2]; moments[i,5] = M[2,3]; moments[i,6] = M[3,3]
+        moments[i,7] = b[1];   moments[i,8] = b[2];   moments[i,9] = b[3]
     end
 end
 
-@kernel function _reconstruct_operation_3D!(
-    cells::AbstractArray{Cell{TF,SV,UR}}, F, cell_faces, cell_nsign, faces, phi, psif
-) where {TF,SV,UR}
+@kernel function _reconstruct_boundary_moments!(faces, psif, moments)
+    fID = @index(Global)
+    @inbounds begin
+        face = faces[fID]
+        cID = face.ownerCells[1]
+        (; area, normal) = face
+        M = area*(normal*normal')
+        b = psif[fID]*normal
+
+        Atomix.@atomic moments[cID,1] += M[1,1]
+        Atomix.@atomic moments[cID,2] += M[1,2]
+        Atomix.@atomic moments[cID,3] += M[1,3]
+        Atomix.@atomic moments[cID,4] += M[2,2]
+        Atomix.@atomic moments[cID,5] += M[2,3]
+        Atomix.@atomic moments[cID,6] += M[3,3]
+        Atomix.@atomic moments[cID,7] += b[1]
+        Atomix.@atomic moments[cID,8] += b[2]
+        Atomix.@atomic moments[cID,9] += b[3]
+    end
+end
+
+@kernel function _reconstruct_operation_2D!(phi, moments)
     i = @index(Global)
     @inbounds begin
-        (; faces_range) = cells[i]
+        TF = eltype(moments)
+        m11 = moments[i,1]; m12 = moments[i,2]; m22 = moments[i,4]
 
-        m11 = zero(TF); m12 = zero(TF); m13 = zero(TF)
-                        m22 = zero(TF); m23 = zero(TF)
-                                        m33 = zero(TF)
-        b1 = zero(TF);  b2 = zero(TF);  b3 = zero(TF)
+        M = SMatrix{2,2,TF}(m11, m12, m12, m22)
+        b = SVector(moments[i,7], moments[i,8])
 
-        for fi ∈ faces_range
-            fID = cell_faces[fi]
-            (; area, normal) = faces[fID]
-            nx = normal[1]; ny = normal[2]; nz = normal[3]
+        d = det(M)
+        scale = max(abs(m11), abs(m22))
+        u = abs(d) > eps(TF)*scale^2 ? M\b : zero(SVector{2,TF})
 
-            m11 += area * nx * nx
-            m12 += area * nx * ny
-            m13 += area * nx * nz
-            m22 += area * ny * ny
-            m23 += area * ny * nz
-            m33 += area * nz * nz
+        phi[i] = SVector(u[1], u[2], zero(TF))
+    end
+end
 
-            ssf = psif[fID]
-            b1 += nx * ssf
-            b2 += ny * ssf
-            b3 += nz * ssf
-        end
+@kernel function _reconstruct_operation_3D!(phi, moments)
+    i = @index(Global)
+    @inbounds begin
+        TF = eltype(moments)
+        m11 = moments[i,1]; m12 = moments[i,2]; m13 = moments[i,3]
+        m22 = moments[i,4]; m23 = moments[i,5]; m33 = moments[i,6]
 
-        A11 = m22*m33 - m23*m23
-        A12 = m13*m23 - m12*m33
-        A13 = m12*m23 - m13*m22
+        M = SMatrix{3,3,TF}(m11, m12, m13, m12, m22, m23, m13, m23, m33)
+        b = SVector(moments[i,7], moments[i,8], moments[i,9])
 
-        det = m11*A11 + m12*A12 + m13*A13
+        d = det(M)
+        scale = max(abs(m11), abs(m22), abs(m33))
 
-        is_invertible = abs(det) > eps(TF)
-        invdet = is_invertible ? one(TF)/det : zero(TF)
-
-        ux = (A11*b1 + A12*b2 + A13*b3) * invdet
-        uy = (A12*b1 + (m11*m33 - m13*m13)*b2 + (m13*m12 - m11*m23)*b3) * invdet
-        uz = (A13*b1 + (m13*m12 - m11*m23)*b2 + (m11*m22 - m12*m12)*b3) * invdet
-
-        phi[i] = @SVector [ux, uy, uz]
+        phi[i] = abs(d) > eps(TF)*scale^3 ? M\b : zero(SVector{3,TF})
     end
 end
 
@@ -1234,7 +1241,7 @@ end
 
 """
     well_balanced_pressure_grad!(grad_field, face_buf, p_rgh, rho, ghf,
-                                  mesh, config; sigma=0, kappaf=nothing,
+                                  mesh, moments, config; sigma=0, kappaf=nothing,
                                   alpha=nothing)
 
 Overrides `grad_field.values` with a face-snGrad reconstruction of the predictor body force terms:
@@ -1244,7 +1251,7 @@ Overrides `grad_field.values` with a face-snGrad reconstruction of the predictor
 *Important for stability.
 """
 function well_balanced_pressure_grad!(
-    grad_field, face_buf, p_rgh, rho, ghf, mesh, config;
+    grad_field, face_buf, p_rgh, rho, ghf, mesh, moments, config;
     sigma=zero(eltype(p_rgh.values)),
     kappaf, alpha,
 )
@@ -1256,7 +1263,7 @@ function well_balanced_pressure_grad!(
     kernel! = _well_balanced_pressure_face!(_setup(backend, workgroup, ndrange)...)
     kernel!(face_buf, p_rgh, rho, alpha, ghf, kappaf, sigma, faces)
 
-    reconstruct!(grad_field, face_buf, config)
+    reconstruct!(grad_field, face_buf, moments, config)
 end
 
 @kernel inbounds=true function _well_balanced_pressure_face!(

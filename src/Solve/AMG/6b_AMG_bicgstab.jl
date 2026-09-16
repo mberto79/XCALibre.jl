@@ -1,25 +1,6 @@
-# =============================================================================
-#  AMG-preconditioned BiCGStab
-# =============================================================================
-#
-#  WHY THIS EXISTS
-#
-#  `AMG` previously offered two modes, and neither suits a NON-SYMMETRIC matrix:
-#
-#    Cg()          Krylov accelerated, but requires symmetry.
-#
-#    AMGSolver()   valid for any matrix, but a plain fixed-point iteration: apply
-#                  the V-cycle, add the correction, recompute the residual. NO
-#                  Krylov acceleration, so it needs far more cycles - measured
-#                  ~5x the cost of Cg-mode on the same problem.
-#
-#  The asymmetry is `Divergence(pconv, p_rgh)`, the implicit pressure convection.
-#
-#  BiCGStab is the standard answer: a short-recurrence Krylov method that makes no
-#  symmetry assumption, driven by the SAME V-cycle preconditioner. It recovers the
-#  acceleration `AMGSolver()` lacks while staying valid for the operator that is
-#  actually assembled.
-# =============================================================================
+# AMG-preconditioned BiCGStab: Krylov acceleration for the NON-SYMMETRIC operators
+# `Cg()` refuses and `AMGSolver()` solves without acceleration (~5x the cycles).
+# See "AMG solver" in the user guide for when to select it.
 
 @kernel function _amg_bicg_p_kernel!(p, r, v, beta, omega)
     i = @index(Global)
@@ -49,52 +30,9 @@ _bicg_update!(h, x, r, y, z, s, t, alpha, omega) =
     (_launch_amg_kernel!(h, _amg_bicg_update_kernel!, length(x), x, r, y, z, s, t,
                          alpha, omega); x)
 
-"""
-    amg_bicgstab_solve!(workspace, hierarchy, solver, A, b, x; itmax, atol, rtol)
-
-Preconditioned BiCGStab with the AMG V-cycle as `M^-1`. No symmetry requirement.
-
-The two solution updates (`x += alpha*y` then `x += omega*z`) and the residual
-update are FUSED into a single kernel launch, so an iteration costs 2
-preconditioner applies, 2 matvecs and 4 vector kernels rather than the 7 a
-literal transcription of the algorithm needs.
-
-### Breakdown handling
-
-BiCGStab can break down two ways, and both are detected rather than left to
-produce silent nonsense:
-
-  * `rho -> 0` - the shadow residual has gone orthogonal to the residual.
-  * `omega -> 0` - `t` has collapsed, so the stabilising minimisation is
-    undefined.
-
-In both cases the HALF-STEP iterate (`x += alpha*y`, `r = s`) is kept, because it
-is a genuine improvement on the incoming `x`, and the solve reports the iteration
-count it actually reached. A `rho` breakdown first tries a restart with a fresh
-shadow `rhat = r`, at most twice (a budget shared with the true-residual restart
-below).
-
-### Nonlinear (scale-corrected) preconditioner
-
-`scale_correction=true` makes the V-cycle `M^-1` depend on its input, so it can
-differ between the two applications within an iteration and between iterations.
-Unlike CG, BiCGStab needs no modified `beta` for this. It is RIGHT-preconditioned,
-and `x` and `r` are updated with the same `y = M^-1 p` and `z = M^-1 s` that were
-applied,
-
-    x_new = x + alpha*y + omega*z,    r_new = r - alpha*A*y - omega*A*z,
-
-so `r_new == b - A*x_new` holds for any `M^-1`. A varying preconditioner degrades
-the bi-orthogonality the recurrence relies on - which the stall guard and the
-restarts handle - but it cannot make the returned solution inconsistent with the
-residual reported for it.
-
-What can drift in finite precision is the recursive `r` against the true
-residual. Convergence is therefore CONFIRMED against `b - A*x` before it is
-accepted, with a restart from the true residual if the two disagree, and the
-residual reported on exit is always the true one. The same argument covers a
-nonlinear inner coarse solve such as `OnDeviceKrylov`.
-"""
+# Right-preconditioned: `x` and `r` take the same `y`/`z` that were applied, so `r == b - A*x`
+# survives a nonlinear `M^-1` (`scale_correction=true`). The recursion can still drift in
+# finite precision, so convergence is confirmed on the true residual.
 function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
                              solver::AMG, A, b, x; itmax, atol, rtol)
     T = eltype(x)
@@ -128,6 +66,7 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
     _fill_amg!(hierarchy, p, zero(T))
     _fill_amg!(hierarchy, v, zero(T))
     rho = one(T); alpha = one(T); omega = one(T)
+    rhatnorm = rnorm                        # rhat == r here; refreshed at every reset
 
     best_rnorm = rnorm
     stall = 0
@@ -140,13 +79,17 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
     while k < itmax
         k += 1
         rho_new = dot(rhat, r)
-        if !isfinite(rho_new) || abs(rho_new) <= eps(T)*bnorm
+        # Floor scales like `rho_new` itself (||rhat||*||r||), NOT like ||b||: a warm
+        # start has ||r|| << ||b||, so an ||b||-scaled floor trips on iteration 1 and
+        # returns `x` untouched with `iterations = 0` - a silent no-op solve.
+        if !isfinite(rho_new) || abs(rho_new) <= eps(T)*rhatnorm*rnorm
             if restarts < max_restarts && isfinite(rnorm)
                 restarts += 1
                 _copy_amg!(hierarchy, rhat, r)
                 _fill_amg!(hierarchy, p, zero(T))
                 _fill_amg!(hierarchy, v, zero(T))
                 rho = one(T); alpha = one(T); omega = one(T)
+                rhatnorm = rnorm
                 k -= 1
                 continue
             end
@@ -165,7 +108,9 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
         _matvec!(hierarchy, v, A, y)
 
         rhat_v = dot(rhat, v)
-        if !isfinite(rhat_v) || abs(rhat_v) <= eps(T)*bnorm
+        # No eps floor: this scales with ||v||, which nothing held here bounds. A
+        # genuinely tiny value blows `alpha` up, which the next guard catches.
+        if !isfinite(rhat_v) || iszero(rhat_v)
             k -= 1
             break
         end
@@ -228,6 +173,7 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
                 _fill_amg!(hierarchy, p, zero(T))
                 _fill_amg!(hierarchy, v, zero(T))
                 rho = one(T); alpha = one(T); omega = one(T)
+                rhatnorm = rnorm
                 best_rnorm = rnorm
                 stall = 0
                 continue

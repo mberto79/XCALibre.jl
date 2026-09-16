@@ -484,16 +484,11 @@ mutable struct AMGWorkspace{H,V,T,RH} <: AbstractAMGWorkspace
     search::V
     preconditioned::V
     q::V
-    # BiCGStab only: the fixed shadow residual and the second matvec target.
-    # CG reuses `residual`/`search`/`preconditioned`/`q`/`correction`, but the
-    # two-sided recurrence needs `r_hat` held fixed for the whole solve and a
-    # separate `t = A*M^-1*s`, so neither can alias.
+    # BiCGStab only, zero-length in other modes (see `_workspace`). None may alias:
+    # `shadow` is held fixed for the whole solve, `t = A*M^-1*s` is a second matvec
+    # target, and `svec` must not be `solution`, which `solve_system!` solves in place.
     shadow::V
     t::V
-    # `svec` is BiCGStab's intermediate residual. It CANNOT alias `solution`:
-    # `solve_system!` sets `x = workspace.solution` and solves in place, so
-    # writing scratch there destroys the solution mid-iteration. CG never touches
-    # `solution`, which is why the collision only appeared with BiCGStab.
     svec::V
     iterations::Int
     converged::Bool
@@ -590,6 +585,9 @@ function _workspace(solver::AMG, b)
     TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     backend = KernelAbstractions.get_backend(b)
     x = similar(b)
+    # Only `amg_bicgstab_solve!` reads these three; allocating them in every mode adds
+    # 50% to the workspace. `similar(x, 0)` keeps the field type concrete.
+    bicg_vec() = solver.mode isa Bicgstab ? similar(x) : similar(x, 0)
     return AMGWorkspace(
         _amg_empty_hierarchy(amg_hierarchy_kind(solver, backend), backend, T, TS),
         0,
@@ -599,9 +597,9 @@ function _workspace(solver::AMG, b)
         similar(x),
         similar(x),
         similar(x),
-        similar(x),   # shadow (BiCGStab)
-        similar(x),   # t      (BiCGStab)
-        similar(x),   # svec   (BiCGStab)
+        bicg_vec(),   # shadow (BiCGStab)
+        bicg_vec(),   # t      (BiCGStab)
+        bicg_vec(),   # svec   (BiCGStab)
         0,
         false,
         zero(T),

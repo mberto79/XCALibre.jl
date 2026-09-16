@@ -26,12 +26,8 @@ function _cg_step_amg!(hierarchy::AbstractAMGHierarchy, x, r, p, q, alpha)
     return x
 end
 
-"""
-    _is_symmetric(A; rtol=1e-9, atol=1e-10) -> Bool
-
-Symmetry test for the `Cg()` gate, measured RELATIVE to the local matrix scale.
-
-"""
+# Symmetry test for the `Cg()` gate, relative to the local matrix scale. HOST ONLY:
+# scalar-indexes the CSR arrays, which a device array forbids.
 function _is_symmetric(A; rtol=1e-9, atol=1e-10)
     rowptr = _rowptr(A); colval = _colval(A); nzval = _nzval(A)
     n = _m(A)
@@ -53,16 +49,9 @@ function _is_symmetric(A; rtol=1e-9, atol=1e-10)
     return true
 end
 
-"""
-    symmetry_report(A) -> NamedTuple
-
-Worst asymmetry in `A`, absolute and relative to the local diagonal, with the
-entry it occurred at and the diagonal magnitudes there.
-
-Exists because `AMG(mode=Cg())` used to fail with a bare "not symmetric" throw,
-which says nothing about whether the matrix is badly asymmetric or merely
-scaled such that a fixed threshold bites. Those need opposite responses.
-"""
+# Worst asymmetry in `A`, absolute and relative to the local diagonal: a bare "not
+# symmetric" throw cannot separate a badly asymmetric matrix from one merely scaled so
+# a fixed threshold bites, and those need opposite responses. HOST ONLY, as above.
 function symmetry_report(A)
     rowptr = _rowptr(A); colval = _colval(A); nzval = _nzval(A)
     n = _m(A)
@@ -101,25 +90,33 @@ _amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
 # scale_correction makes M nonlinear; flexible PR+ beta avoids the FR beta assumption
 _amg_cg_flexible(solver::AMG) = solver.scale_correction
 
+# The report scalar-indexes, so it needs the HOST operator: handed the device matrix a
+# GPU run throws a CUDA scalar-indexing error in place of this ArgumentError. A
+# matrix-free hierarchy keeps no host copy, so it gets the short form.
+_host_operator(hierarchy::AMGHierarchy) =
+    isempty(hierarchy.host_levels) ? nothing : hierarchy.host_levels[1].A
+_host_operator(::AbstractAMGHierarchy) = nothing
+
+_cg_symmetry_error(::Nothing) = ArgumentError(
+    "AMG(mode=Cg()) requires a symmetric matrix.\n" *
+    "Use AMG(mode=AMGSolver()) or Bicgstab() for a non-symmetric operator.")
+
+function _cg_symmetry_error(A)
+    r = symmetry_report(A)
+    return ArgumentError(string(
+        "AMG(mode=Cg()) requires a symmetric matrix.\n",
+        "  worst |A[i,j]-A[j,i]| = ", r.worst_abs, "  at (", r.i, ",", r.j, ")\n",
+        "  relative to local diagonal = ", r.worst_rel,
+        "   (diag there ", r.diag_i, " / ", r.diag_j, ", max diag ", r.diag_max, ")\n",
+        "  structurally missing transpose entries = ", r.structurally_missing, "\n\n",
+        "A relative value near machine precision means the matrix IS symmetric and the\n",
+        "test scale is wrong. A relative value of order 0.1-1 means it is genuinely\n",
+        "non-symmetric - use AMG(mode=AMGSolver()) or Bicgstab() instead."))
+end
+
 function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
     if !hierarchy.is_symmetric
-        r = symmetry_report(A)
-        throw(ArgumentError(string(
-            "AMG(mode=Cg()) requires a symmetric matrix.
-",
-            "  worst |A[i,j]-A[j,i]| = ", r.worst_abs, "  at (", r.i, ",", r.j, ")
-",
-            "  relative to local diagonal = ", r.worst_rel,
-            "   (diag there ", r.diag_i, " / ", r.diag_j, ", max diag ", r.diag_max, ")
-",
-            "  structurally missing transpose entries = ", r.structurally_missing, "
-
-",
-            "A relative value near machine precision means the matrix IS symmetric and the
-",
-            "test scale is wrong. A relative value of order 0.1-1 means it is genuinely
-",
-            "non-symmetric - use AMG(mode=AMGSolver()) or Bicgstab() instead.")))
+        throw(_cg_symmetry_error(_host_operator(hierarchy)))
     end
     T = eltype(x)
     r = workspace.residual

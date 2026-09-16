@@ -408,29 +408,15 @@ XCALibre.Solve.amg_solve!(
 )
 @test norm(b_bad - Array(parent(A_bad)) * x_bad) / norm(b_bad) < 1e-8
 
-# =============================================================================
-#  BiCGStab mode - the non-symmetric Krylov path
-# =============================================================================
-#
-#  `Cg()` throws on a non-symmetric matrix (asserted above) and `AMGSolver()`
-#  accepts one but is an unaccelerated fixed-point iteration. `Bicgstab()` is the
-#  mode that is both VALID for a non-symmetric operator and Krylov accelerated,
-#  so these pin the three things that distinguish it.
-#
-#  `A_bad` is reused deliberately: it is the same matrix the `Cg()` rejection is
-#  asserted on a few lines above, so the pair of tests reads as one statement -
-#  this operator is refused by one mode and solved by the other.
-
-# --- 1. the mode constructs and is accepted by the validator -----------------
+# ===== BiCGStab mode: valid for a non-symmetric operator AND Krylov accelerated =====
+# `A_bad` is reused on purpose: `Cg()` refuses it above, and this mode must solve it.
+# --- 1. the mode constructs and is accepted by the validator
 @test AMG(mode=Bicgstab()).mode isa Bicgstab
 @test XCALibre.Solve._amg_mode_name(Bicgstab()) == "bicgstab"
 
-# --- 2. workspace aliasing ---------------------------------------------------
-#  BiCGStab's two-sided recurrence needs three vectors CG does not, and none may
-#  alias. `svec` in particular must not be `solution`: `solve_system!` solves in
-#  place with `x = workspace.solution`, so using it as scratch overwrites the
-#  answer mid-iteration. That collision is invisible in CG, which never touches
-#  `solution`, so nothing else in this file would catch a regression.
+# --- 2. workspace aliasing: BiCGStab's three extra vectors may alias nothing, `svec`
+# above all not `solution`, which `solve_system!` solves in place. CG never touches
+# `solution`, so nothing else in this file would catch that collision.
 solver_bicg = AMG(mode=Bicgstab(), coarsening=SmoothAggregation(),
                   smoother=AMGJacobi(), max_coarse_rows=2)
 ws_bicg = _workspace(solver_bicg, b_bad)
@@ -443,11 +429,18 @@ ws_bicg = XCALibre.Solve.update!(ws_bicg, A_bad, solver_bicg, config)
 @test length(ws_bicg.shadow) == length(b_bad)
 @test length(ws_bicg.t) == length(b_bad)
 
-# --- 3. it SOLVES the matrix `Cg()` refuses ----------------------------------
-#  `is_symmetric` is computed ONLY for `Cg()` - `1_AMG_setup.jl` hardcodes it
-#  `true` for every other mode, because the flag gates CG's validity check rather
-#  than describing the matrix. So the SAME matrix reports differently depending
-#  on the mode, and the pair below says so explicitly.
+#  ...and they are allocated ONLY in this mode: three full-length vectors is +50%
+#  workspace memory for a solver that never reads them. Zero-length keeps the field
+#  type concrete, so the workspace stays type-stable either way.
+ws_cg_mem = _workspace(AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi()), b_bad)
+@test length(ws_cg_mem.shadow) == 0
+@test length(ws_cg_mem.t) == 0
+@test length(ws_cg_mem.svec) == 0
+@test typeof(ws_cg_mem.shadow) === typeof(ws_cg_mem.residual)
+
+# --- 3. it SOLVES the matrix `Cg()` refuses. `is_symmetric` is only MEASURED for `Cg()`
+# (hardcoded true otherwise), so the same matrix reports differently by mode, and any
+# other reader of the flag must gate on the mode too, as `_use_device_coarse_cg` does.
 @test ws_bicg.hierarchy.is_symmetric      # Bicgstab: not checked, hardcoded true
 @test !ws_bad.hierarchy.is_symmetric      # Cg on the same A_bad: actually checked
 x_bicg = zeros(eltype(b_bad), length(b_bad))
@@ -493,12 +486,9 @@ XCALibre.Solve.amg_bicgstab_solve!(
     ws_bicg_sym.hierarchy.levels[1].A, b, x_bicg_sym; itmax=100, atol=1e-10, rtol=1e-10)
 @test norm(b - Array(parent(A)) * x_bicg_sym) / norm(b) < 1e-8
 
-# --- 7. every Gauss-Seidel sweep direction works with it ---------------------
-#  `AMGGaussSeidel` sweeps were reworked to split each row at the STORED diagonal
-#  index instead of testing `j == i` per non-zero. That touches the innermost
-#  loop of all three directions, and a wrong split silently drops or
-#  double-counts the diagonal - which still converges, just to the wrong answer.
-#  The forward sweep is the combination used on the LH2 pipe.
+# ===== Gauss-Seidel smoother, reached through a mode (7-8 BiCGStab, 9 AMGSolver) =====
+# --- 7. every sweep direction converges. Sweeps scan the row and skip `j == i`, so a
+# mishandled diagonal - which still converges, to the wrong answer - is caught here.
 for sweep in (AMGForwardSweep(), AMGBackwardSweep(), AMGSymmetricSweep())
     solver_gs = AMG(mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=sweep))
     ws_gs = _workspace(solver_gs, b)
@@ -510,11 +500,8 @@ for sweep in (AMGForwardSweep(), AMGBackwardSweep(), AMGSymmetricSweep())
     @test norm(b - Array(parent(A)) * x_gs) / norm(b) < 1e-8
 end
 
-# --- 8. a zero diagonal row is skipped, not divided by ------------------------
-#  The rewritten sweeps guard with `iszero(aii) && continue` where the previous
-#  form wrapped the update in `if !iszero(aii)`. Same intent, different control
-#  flow - this pins that a singular row still yields a finite result rather than
-#  NaN propagating through the hierarchy.
+# --- 8. a zero diagonal row is skipped, not divided by: the update sits inside
+# `if !iszero(aii)`, so a singular row must stay finite rather than spread NaN.
 A_zerodiag = SparseXCSR(sparsecsr([1, 1, 2, 2], [1, 2, 1, 2], [0.0, 1.0, 1.0, 2.0], 2, 2))
 b_zerodiag = [1.0, 1.0]
 solver_zd = AMG(mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=AMGForwardSweep()), max_coarse_rows=2)
@@ -526,14 +513,9 @@ XCALibre.Solve.amg_bicgstab_solve!(
     b_zerodiag, x_zd; itmax=20, atol=1e-8, rtol=1e-8)
 @test all(isfinite, Array(x_zd))
 
-# --- 9. a row with NO stored diagonal entry ------------------------------------
-#  A structurally missing (i,i) entry is not the same as a stored zero: the row
-#  has no diagonal position, and `_diag_inverse!` falls back to a non-zero
-#  diagonal for it, so a guard on `iszero(aii)` does not skip it. Each sweep is
-#  compared with a reference Gauss-Seidel that scans the row and skips `j == i`,
-#  which cannot depend on where - or whether - the diagonal is stored. The row
-#  missing its diagonal is row 2, not row 1: reading from the start of the CSR
-#  arrays only picks up another row's entries for a later row.
+# --- 9. a row with NO stored diagonal: `_diag_inverse!` substitutes a non-zero one, so
+# `iszero(aii)` does not skip it. Sweeps are checked against a reference that skips
+# `j == i`; the gap is on row 2 because only a later row can misread the CSR arrays.
 A_md_dense = [ 4.0 -1.0  0.0  0.0;
               -1.0  0.0 -1.0  0.0;
                0.0 -1.0  4.0 -1.0;
@@ -567,14 +549,9 @@ for (sweep, orders) in ((AMGForwardSweep(),   (1:4,)),
     @test Array(lvl_md.x) ≈ x_ref_md rtol=1e-12
 end
 
-# --- 10. BiCGStab with the nonlinear (scale-corrected) V-cycle -----------------
-#  `scale_correction=true` (the default) makes M^-1 depend on its input. The
-#  right-preconditioned recurrence still keeps r == b - A*x, because x and r are
-#  both updated with the SAME y = M^-1 p and z = M^-1 s that were applied; what
-#  can drift in finite precision is the recursive residual, so convergence is
-#  confirmed on the true residual. A 1D upwind convection-diffusion operator is
-#  non-symmetric and big enough for a multi-level hierarchy - on one level there
-#  is no coarse correction, so `scale_correction` would have nothing to act on.
+# --- 10. BiCGStab with the nonlinear (scale-corrected, default) V-cycle converges on the
+# TRUE residual. The 1D upwind convection-diffusion operator is non-symmetric and yields
+# several levels; on one level `scale_correction` would have nothing to act on.
 n_cd = 60
 I_cd = Int[]; J_cd = Int[]; V_cd = Float64[]
 for i in 1:n_cd
@@ -605,6 +582,25 @@ for sc in (false, true)
     x_cd_by_sc[sc] = x_cd
 end
 @test x_cd_by_sc[true] ≈ x_cd_by_sc[false] rtol=1e-6
+
+# --- 11. a warm start under a large ||b|| still iterates. A floor scaled by ||b|| saw
+# ||r|| << ||b||, declared breakdown and returned `x` untouched with iterations = 0.
+# The asserts pin both halves: r0^2 < eps*||b|| (the old floor tripped) and r0 > atol.
+solver_ws = AMG(mode=Bicgstab(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
+b_ws = b_cd .* 1e5
+ws_ws = _workspace(solver_ws, b_ws)
+ws_ws = XCALibre.Solve.update!(ws_ws, A_cd, solver_ws, config)
+x_ws = A_cd_dense \ b_ws                            # exact, then perturbed off it
+x_ws .+= 1e-5 .* sin.(range(0, 3pi, length=n_cd))
+r0_ws = norm(b_ws - A_cd_dense * x_ws)
+@test r0_ws > 2e-6                                  # premise: not already converged
+@test r0_ws^2 < eps(Float64) * norm(b_ws)           # ...and inside the old floor
+XCALibre.Solve.amg_bicgstab_solve!(
+    ws_ws, ws_ws.hierarchy, solver_ws, ws_ws.hierarchy.levels[1].A,
+    b_ws, x_ws; itmax=200, atol=2e-6, rtol=0.0)
+@test ws_ws.iterations >= 1                         # the solve actually ran
+@test norm(b_ws - A_cd_dense * x_ws) <= 2e-6        # and reached atol
+@test ws_ws.converged
 
 # NEW SECTION: mixed precision (coarse_storage=Float32) — API, type-stability, FP32 storage with
 # FP64 outer correction reaches the FP64 tolerance and matches FP64 iteration count.

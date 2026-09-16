@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 * Added FixedHeatFlux boundary condition [#149]
+* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 
 ### Fixed
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)

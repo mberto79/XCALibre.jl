@@ -48,9 +48,11 @@ SolverSetup(
 )
 ```
 
-For non-symmetric systems use `mode=Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix.
+For non-symmetric systems use `mode=Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix. `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` uses it for the pressure equation of a transonic RANS case.
 
 Choice of coarsening for non-symmetric operators: `Bicgstab()` has been tested with the default `SmoothAggregation()`. `RugeStuben()` and `Geometric()` are accepted but have not been validated on non-symmetric operators - `RugeStuben()` builds its strength of connection from each row's entries only, not from the transpose - so prefer the default unless you have checked the alternative on your case.
+
+If `Bicgstab()` breaks down - the shadow residual going orthogonal, or the stabilising step collapsing - the half-step iterate is kept and the solve restarts with a fresh shadow residual, at most twice.
 
 `scale_correction` (on by default) is supported. It makes the V-cycle preconditioner depend on its input, but the solver is right-preconditioned, so the solution and residual it carries stay consistent, and convergence is confirmed against the true residual `b - A*x`.
 

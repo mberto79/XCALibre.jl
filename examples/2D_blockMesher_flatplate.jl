@@ -64,7 +64,7 @@ BCs = assign(
             Extrapolated(:top)
         ],
         p = [
-            Zerogradient(:outlet),
+            Zerogradient(:inlet),
             Dirichlet(:outlet, 0.0),
             Wall(:wall),
             Extrapolated(:top)

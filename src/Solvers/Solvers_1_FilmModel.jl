@@ -758,8 +758,9 @@ function apply_film_boundary_flux_policy!(faceFlux, hBC::Union{Wall,Symmetry}, c
     (; backend, workgroup) = hardware
 
     ndrange = length(hBC.IDs_range)
-    kernel! = _apply_film_noflux_boundary_flux_policy!(_setup(backend, workgroup, ndrange)...)
-    kernel!(faceFlux, hBC.IDs_range)
+    kernel! = _apply_film_noflux_boundary_flux_policy!(backend)
+    kernel!(faceFlux, hBC.IDs_range;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 function apply_film_boundary_flux_policy!(faceFlux, hBC, config)
@@ -767,8 +768,9 @@ function apply_film_boundary_flux_policy!(faceFlux, hBC, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(hBC.IDs_range)
-    kernel! = _apply_film_outflow_boundary_flux_policy!(_setup(backend, workgroup, ndrange)...)
-    kernel!(faceFlux, hBC.IDs_range)
+    kernel! = _apply_film_outflow_boundary_flux_policy!(backend)
+    kernel!(faceFlux, hBC.IDs_range;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _apply_film_noflux_boundary_flux_policy!(faceFlux, IDs_range)
@@ -945,8 +947,9 @@ function limit_dirichlet_correction_flux!(correctionFlux, referenceFlux, hBC::Ab
     (; backend, workgroup) = hardware
 
     ndrange = length(hBC.IDs_range)
-    kernel! = _limit_dirichlet_correction_flux!(_setup(backend, workgroup, ndrange)...)
-    kernel!(correctionFlux, referenceFlux, hBC.IDs_range)
+    kernel! = _limit_dirichlet_correction_flux!(backend)
+    kernel!(correctionFlux, referenceFlux, hBC.IDs_range;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _limit_dirichlet_correction_flux!(correctionFlux, referenceFlux, IDs_range)
@@ -977,8 +980,9 @@ function limit_dirichlet_total_flux!(totalFlux, referenceFlux, hBC::AbstractDiri
     (; backend, workgroup) = hardware
 
     ndrange = length(hBC.IDs_range)
-    kernel! = _limit_dirichlet_total_flux!(_setup(backend, workgroup, ndrange)...)
-    kernel!(totalFlux, referenceFlux, hBC.IDs_range)
+    kernel! = _limit_dirichlet_total_flux!(backend)
+    kernel!(totalFlux, referenceFlux, hBC.IDs_range;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _limit_dirichlet_total_flux!(totalFlux, referenceFlux, IDs_range)
@@ -1382,8 +1386,9 @@ function correct_film_flux_boundary!(phif, hf, h, Df, hBC::AbstractDirichlet, ti
     (; backend, workgroup) = hardware
 
     ndrange = length(hBC.IDs_range)
-    kernel! = _correct_film_flux_dirichlet_boundary!(_setup(backend, workgroup, ndrange)...)
-    kernel!(phif, hf, h, Df, faces, boundary_cellsID, hBC.IDs_range)
+    kernel! = _correct_film_flux_dirichlet_boundary!(backend)
+    kernel!(phif, hf, h, Df, faces, boundary_cellsID, hBC.IDs_range;
+        _patch_launch(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_film_flux_dirichlet_boundary!(

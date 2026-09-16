@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 
 ### Fixed
+* Fixed boundary-patch kernels being recompiled once per patch. Patch sizes were passed to the `KernelAbstractions` kernel constructor, where they become `StaticSize` type parameters, so `set_production!`, `correct_nut_wall!`, `constrain!` and the other per-patch kernels compiled a separate kernel for every patch. Startup therefore scaled with patch count rather than mesh size: on the OpenFOAM `motorBike` case (354k cells, 72 patches) the first SIMPLE iteration spent 259 s compiling, against 51 s for a 1.68M cell case with 6 patches. Sizes are now passed at launch through `_patch_launch`, so all patches share one compiled kernel and the same first iteration takes 71 s
 * Fixed missing density term in set_production! needed for cases with non-unity density [#151]
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
 * Fixed OpenFOAM `boundary` file parsing so that patch groups (`inGroups`) no longer corrupt the patch list. The parser is now token based, ignores unknown dictionary entries, and reports malformed files with an `ArgumentError` [#153](@ref)

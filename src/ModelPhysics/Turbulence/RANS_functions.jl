@@ -64,10 +64,9 @@ nut_wall(nu, yplus, kappa, E::T) where T = begin
     max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
 end
 
-# A wall cell can own several faces of the same patch and faces on several patches.
-# Wall functions therefore sum over the contributing faces and divide by their number, so
-# each face carries equal weight. Assigning the cell value directly instead made the result
-# depend on which face won the race, both within a patch and across patches.
+# A wall cell can own several faces of one patch and faces on several patches. Summing
+# over them and dividing by their number weights each face equally; assigning the cell
+# value directly instead left the result decided by whichever face won the race.
 wall_cell_accumulators(mesh, config) = begin
     (; backend) = config.hardware
     n = length(mesh.cells)

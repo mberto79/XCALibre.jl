@@ -28,27 +28,6 @@ The last (optional) step before running the simulation is to provide an initial 
 initialise!
 ```
 
-A uniform initial guess leaves a velocity field that does not satisfy continuity, which the first few solver iterations must work off before making physical progress. For external and internal flows around bodies, a potential-flow field is a much better starting point: it already satisfies continuity and carries the shape of the geometry.
-
-`potential_flow!` solves a velocity-potential equation on the current mesh and projects the velocity field onto the resulting divergence-free field. Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
-
-```@docs; canonical=false
-potential_flow!
-```
-
-Call it after `initialise!` and before `run!`:
-
-```julia
-initialise!(model.momentum.U, velocity)
-initialise!(model.momentum.p, 0.0)
-
-potential_flow!(model, config; ncorrectors=5)
-
-residuals = run!(model, config)
-```
-
-On meshes with appreciable non-orthogonality, pass `ncorrectors` to run non-orthogonal correctors on the potential equation. Set it to zero for orthogonal meshes.
-
 ## AMG solver
 ---
 

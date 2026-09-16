@@ -16,10 +16,6 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_mesh_conversion.jl")
     end
 
-    @testset "Potential-flow initialisation" begin
-        include("test_potential_flow.jl")
-    end
-
     @testset "Smoothers" begin
         include("test_smoothers.jl")
     end

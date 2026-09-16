@@ -207,7 +207,7 @@ function SIMPLE(
 
         # Flux correction must use the unrelaxed pressure solution so that the
         # pressure equation removes the full predicted continuity error. Pressure
-        # relaxation is only for the momentum/velocity correction (OpenFOAM SIMPLE).
+        # relaxation applies only to the momentum/velocity correction.
         correct_mass_flux!(
             mdotf, p_eqn, config;
             previous=p_boundary_reference, time=time,

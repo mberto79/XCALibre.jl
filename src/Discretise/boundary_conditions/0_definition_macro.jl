@@ -82,3 +82,19 @@ end
 #         @inline (bc::AbstractBoundary)(term::Operator{F,P,I,Op}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I,Op<:$operator} = $definition
 #     end |> esc
 # end
+
+# SHARED PHYSICAL CONSTRAINT ASSEMBLY
+
+# Tangential face projection vc - (vc⋅n)n: same-component implicit on outflow, cross-components and inflow deferred to the source
+@inline function _tangential_divergence(ap, vc, normal, component)
+    vp = vc - (vc⋅normal)*normal
+    nc = normal[component.value]
+    vc_c = vc[component.value]
+    vp_c = vp[component.value]
+    z = zero(ap)
+    one_minus_nc2 = one(nc) - nc^2
+    ac = max(ap, z)*one_minus_nc2
+    su_leaving = -max(ap, z)*(vp_c - vc_c*one_minus_nc2)
+    su_entering = -min(ap, z)*vp_c
+    ac, su_entering + su_leaving
+end

@@ -51,7 +51,7 @@ boundaries = assign(
             Dirichlet(:inlet, pressure),
             Zerogradient(:outlet),
             Zerogradient(:top),
-            Zerogradient(:wall)
+            Slip(:wall)
         ],
         he = [
             # Use IEnergy(cv=cv, ...) below when energy = Energy{InternalEnergy}
@@ -59,7 +59,7 @@ boundaries = assign(
             # FixedTemperature(:inlet, T=temp, IEnergy(cv=cv, Tref=Tref)),
             Zerogradient(:outlet),
             Zerogradient(:top),
-            Zerogradient(:wall)
+            Slip(:wall)
         ]
     )
 )

@@ -10,30 +10,26 @@ function assign(args; region)
         push!(BCs, updatedBCs)
     end
     assignedBCs = NamedTuple{names}(Tuple.(BCs))
+    boundaries = get_boundaries(region.boundaries)
     for (name, assignedBC) ∈ zip(names, assignedBCs)
-        validate_boundary_coverage(name, assignedBC, region)
+        validate_boundary_coverage(name, assignedBC, boundaries)
     end
     return assignedBCs
 end
 
-function validate_boundary_coverage(field_name, assigned_bcs, region)
-    boundaries = get_boundaries(region.boundaries)
+function validate_boundary_coverage(field_name, assigned_bcs, boundaries)
     counts = zeros(Int, length(boundaries))
     for bc in assigned_bcs
-        id = Int(bc.ID)
-        1 <= id <= length(boundaries) || throw(ArgumentError(
-            "boundary ID $id assigned to field '$field_name' is outside the mesh boundary range",
-        ))
-        counts[id] += 1
+        counts[Int(bc.ID)] += 1
     end
 
-    missing = [boundaries[id].name for id in eachindex(boundaries) if counts[id] == 0]
-    duplicate = [boundaries[id].name for id in eachindex(boundaries) if counts[id] > 1]
-    isempty(missing) && isempty(duplicate) && return nothing
+    unassigned = [boundaries[id].name for id in eachindex(boundaries) if counts[id] == 0]
+    repeated = [boundaries[id].name for id in eachindex(boundaries) if counts[id] > 1]
+    isempty(unassigned) && isempty(repeated) && return nothing
 
     details = String[]
-    isempty(missing) || push!(details, "missing $(join(string.(missing), ", "))")
-    isempty(duplicate) || push!(details, "assigned more than once $(join(string.(duplicate), ", "))")
+    isempty(unassigned) || push!(details, "missing $(join(unassigned, ", "))")
+    isempty(repeated) || push!(details, "assigned more than once $(join(repeated, ", "))")
     throw(ArgumentError(
         "incomplete boundary assignment for field '$field_name': $(join(details, "; "))",
     ))

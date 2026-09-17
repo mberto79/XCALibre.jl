@@ -91,6 +91,31 @@ SolverSetup(
 )
 ```
 
+### Solving the coarsest level
+
+The coarsest level of the hierarchy is small but is visited on every V-cycle, so on a GPU the
+default host round trip can dominate. `coarse_solve` selects how it is solved:
+
+- `OnDevice(; max_rows = 512)` (default) — device-resident factorisation, no host round trip.
+  A coarsest level with more rows than `max_rows` falls back to the host, since the factor is
+  rebuilt on every coarse refresh.
+- `OnHost()` — always copy the coarsest right-hand side to the host and solve there. Also
+  written `coarse_solve = CPU()`.
+- `OnDeviceJacobi(; omega, iterations)` and `OnDeviceChebyshev(; degree, eig_ratio, lambda_scale)` — apply a
+  fixed number of smoother sweeps on the device instead of solving. Both are constant linear
+  operators, so they are valid with `mode = Cg()` as well as `mode = AMGSolver()`.
+- `OnDeviceKrylov(; solver, rtol, atol, itmax)` — run an inner Krylov solve on the device. An
+  inner Krylov solve is nonlinear in its right-hand side, which breaks the fixed-operator
+  assumption of preconditioned CG, so this one requires `mode = AMGSolver()` and is rejected with
+  `mode = Cg()`. Passing a GPU backend, as in `coarse_solve = CUDABackend()`, selects it.
+
+```julia
+AMG(mode = AMGSolver(), coarsening = SmoothAggregation(), smoother = AMGJacobi(),
+    coarse_solve = OnDeviceChebyshev(degree = 8))
+```
+
+On a CPU backend every `OnDevice*` option behaves as `OnHost()`.
+
 ## Launching flow solvers
 ---
 

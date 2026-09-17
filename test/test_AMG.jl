@@ -440,7 +440,7 @@ ws_cg_mem = _workspace(AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=A
 
 # --- 3. it SOLVES the matrix `Cg()` refuses. `is_symmetric` is only MEASURED for `Cg()`
 # (hardcoded true otherwise), so the same matrix reports differently by mode, and any
-# other reader of the flag must gate on the mode too, as `_use_device_coarse_cg` does.
+# other reader of the flag must gate on the mode too.
 @test ws_bicg.hierarchy.is_symmetric      # Bicgstab: not checked, hardcoded true
 @test !ws_bad.hierarchy.is_symmetric      # Cg on the same A_bad: actually checked
 x_bicg = zeros(eltype(b_bad), length(b_bad))

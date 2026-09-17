@@ -1,5 +1,5 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m4-distributed-setup-interface.md
 updated: 2026-09-17T19:40:00+01:00
 STATE: BUILDING
 STEP: P1-M2-S1 - wire a fast distributed gate into the prescribed test command

@@ -1,0 +1,7 @@
+- 2026-07-08 run! stays single entry for distributed; no prun! — why: run! already routes via is_distributed_mesh seams, prun! would duplicate working dispatch
+- 2026-07-08 D1 launch: thin XCALibre helpers (MPI init + distribute root-only-read overload) — why: cut script to ~2 distributed lines without a second entry point
+- 2026-07-08 D2 convergence: fallback map convergence->PETSc atol when atol=rtol=0, always echo resolved KSP/PC/tol on rank 0 — why: serial-style scripts still converge + kill "is it even configured?" doubt
+- 2026-07-08 D3 HYPRE: add curated BoomerAMG(; kwargs) expanding to petsc options (keep petsc_options passthrough too) — why: user wants discoverable HYPRE tuning, not only raw strings
+- 2026-07-08 D4 logging: non-root ranks get Warn+-only global logger at MPI init/distribute; no per-solver guards — why: one-message output without burdening solver code
+- 2026-07-08 D5 turbulence: include KOmegaSST distributed in this round (Phase 5) — why: SST is common; production readiness needs it. LKE/LES still deferred
+- 2026-07-08 out of scope this round: multi-GPU scaling validation, CUDA-aware MPI, AMD parity verify, AD add-on — why: need lab hardware

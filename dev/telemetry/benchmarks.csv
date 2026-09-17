@@ -1,0 +1,9 @@
+metric_key,value
+bfs4mm_cells,1320368
+bfs4mm_n1_s_per_iter,2.692
+bfs4mm_n2_s_per_iter,1.592
+bfs4mm_n4_s_per_iter,1.010
+bfs4mm_n6_s_per_iter,0.818
+bfs4mm_n2_efficiency_pct,85
+bfs4mm_n4_efficiency_pct,67
+bfs4mm_n6_efficiency_pct,55

@@ -7,7 +7,6 @@ data/fields.jld2
 unv_sample_meshes/*
 constant/
 /[0-9]*/
-dev/
 
 *.csv
 *.unv
@@ -30,4 +29,11 @@ AGENTS.md
 .agents
 .claude
 .vscode
-dev/
+
+# dev/ is the tracked development record; machine-specific state inside it is not
+dev/petscenv*/
+dev/local_stack.sh
+dev/setup_petscenv_system.jl
+dev/verify_stack.jl
+dev/telemetry/logs/
+!dev/telemetry/*.csv

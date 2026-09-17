@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-17T19:40:00+01:00
 STATE: BUILDING
 STEP: P1-M2-S1 - wire a fast distributed gate into the prescribed test command
-HEAD: 123ffab3
+HEAD: b0d475bc
 BRANCH: HM/distributed-draft
 GATE: julia --project=dev/petscenv_stock test/distributed/gate.jl
 resume: run the distributed gate once the scaling probe releases the cores, time it against Q2, then commit and push P1-M2

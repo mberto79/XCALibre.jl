@@ -384,7 +384,8 @@ function MULTIPHASE(
             grad!(∇p_rgh, p_rghf, p_rgh, boundaries.p_rgh, time, config)
             limit_gradient!(schemes.p_rgh.limiter, ∇p_rgh, p_rgh, config)
 
-            correct_mass_flux_mp!(mdotf, p_eqn, config)
+            correct_mass_flux_mp!(
+                mdotf, p_eqn, config; previous=prev, time=time)
 
             pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
             reconstruct!(∇p_rghf_reconstructed, ∇p_rghf_deconstructed, moments, config)
@@ -731,7 +732,7 @@ function reconstruct!(phi::VectorField, psif::FaceScalarField, moments, config)
 
     n_boundary_faces = length(mesh.boundary_cellsID)
     if n_boundary_faces > 0
-        # psif ≡ 0 on boundary faces for all callers: this adds the constraint n_b⋅u = 0, not measured data
+        # psif is 0 on boundary faces for the multiphase callers, which makes this the constraint n_b⋅u = 0; potential_flow! passes a real boundary flux
         kernel! = _reconstruct_boundary_moments!(
             _setup(backend, workgroup, n_boundary_faces)...)
         kernel!(faces, psif, moments)
@@ -1283,7 +1284,7 @@ end
 end
 
 
-function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
+function correct_mass_flux_mp!(mdotf, p_eqn, config; previous, time=nothing)
     # sngrad = FaceScalarField(mesh)
     (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
@@ -1304,14 +1305,15 @@ function correct_mass_flux_mp!(mdotf, p_eqn, config; time=nothing)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
-    BCs = config.boundaries.p_rgh # this line had to be changed from ".p"
-    for BC ∈ BCs
+    p_BCs = config.boundaries.p_rgh # this line had to be changed from ".p"
+    for BC ∈ p_BCs
         correct_mass_periodic(
             BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
 
-    correct_boundary_mass_flux!(mdotf, p_eqn, BCs, time, config)
+    correct_boundary_mass_flux!(
+        mdotf, p_eqn, p_BCs, config.boundaries.U, previous, time, config)
 end
 
 

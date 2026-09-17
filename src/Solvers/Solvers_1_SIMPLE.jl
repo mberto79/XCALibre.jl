@@ -272,6 +272,18 @@ end
 
 ### TEMP LOCATION FOR PROTOTYPING
 
+# Floor on the projection of dPN onto the face normal. Past it the correction is clamped
+# and stops complementing the unclamped implicit coefficient in Discretise_1_schemes.jl,
+# trading the exact face gradient for a bounded explicit source.
+const MIN_PROJECTED_DELTA_RATIO = 0.05
+
+@inline store_face_correction!(::Nothing, fID, value) = nothing
+
+@inline function store_face_correction!(correction, fID, value)
+    @inbounds correction[fID] = value
+    nothing
+end
+
 function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothing)
     mesh = grad.mesh
     (; faces, cells, boundary_cellsID) = mesh
@@ -280,43 +292,17 @@ function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothi
     (; backend, workgroup) = hardware
 
     (; b) = eqn.equation
-    
+
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces
-    if isnothing(correction)
-        kernel! = _nonorthogonal_face_correction(
-            _setup(backend, workgroup, ndrange)...)
-        kernel!(b, grad, flux, faces, cells, n_bfaces)
-    else
-        kernel! = _nonorthogonal_face_correction_with_flux!(
-            _setup(backend, workgroup, ndrange)...)
-        kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
-    end
+    kernel! = _nonorthogonal_face_correction(_setup(backend, workgroup, ndrange)...)
+    kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
 end
 
-@kernel function _nonorthogonal_face_correction(b, grad, flux, faces, cells, n_bfaces)
-    i = @index(Global)
-    fID = i + n_bfaces
-    face = faces[fID]
-    (; ownerCells, area, normal, weight) = face
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
-
-    gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
-    dPN = cells[cID2].centre - cells[cID1].centre
-    projected_delta = max(dPN⋅normal, oftype(area, 0.05)*norm(dPN))
-    correction_vector = normal - dPN/projected_delta
-    faceCorrection = flux[fID]*area*(gradi⋅correction_vector)
-
-    Atomix.@atomic b[cID1] += faceCorrection
-    Atomix.@atomic b[cID2] -= faceCorrection 
-      
-end
-
-@kernel function _nonorthogonal_face_correction_with_flux!(
+@kernel function _nonorthogonal_face_correction(
     b, correction, grad, flux, faces, cells, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
@@ -327,11 +313,12 @@ end
 
     gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
     dPN = cells[cID2].centre - cells[cID1].centre
-    projected_delta = max(dPN⋅normal, oftype(area, 0.05)*norm(dPN))
+    projected_delta = max(
+        dPN⋅normal, oftype(area, MIN_PROJECTED_DELTA_RATIO)*norm(dPN))
     correction_vector = normal - dPN/projected_delta
     face_correction = flux[fID]*area*(gradi⋅correction_vector)
 
-    correction[fID] = face_correction
+    store_face_correction!(correction, fID, face_correction)
     Atomix.@atomic b[cID1] += face_correction
     Atomix.@atomic b[cID2] -= face_correction
 end

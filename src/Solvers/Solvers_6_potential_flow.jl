@@ -66,6 +66,8 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
     for _ in 1:ncorrectors
         grad!(gradPhi, Phi_face, Phi, potential_BCs, time_value, potential_config)
         limit_gradient!(schemes.p.limiter, gradPhi, Phi, potential_config)
+        # The flux correction reads the owner value this assembly was built from.
+        @. previous = Phi.values
         discretise!(Phi_eqn, Phi, potential_config)
         apply_boundary_conditions!(
             Phi_eqn, potential_BCs, nothing, time_value, potential_config)

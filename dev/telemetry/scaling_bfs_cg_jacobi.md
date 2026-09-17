@@ -149,3 +149,48 @@ Cell counts are equal to three decimal places at every rank count, while one ran
 times the halo of another at eight ranks: the 3.566 PETSc measured. Metis is being asked for
 `:KWAY` with the default edge-cut objective, which balances vertices and minimises TOTAL cut
 without balancing per-rank communication volume.
+
+## The ceiling is memory bandwidth, not communication
+
+`VecAXPY` is the control: it performs no communication at all, and PETSc reports it balanced
+across ranks (imbalance 1.0 at two, 1.1 at eight). Its work per rank falls exactly fourfold from
+two ranks to eight, from 2.27 to 0.568 Gflop.
+
+| event | communication | n=2 time | n=8 time | speedup on 4x the ranks | n=8 imbalance |
+|---|---|---:|---:|---:|---:|
+| `VecAXPY` | none | 0.520 s | 0.207 s | 2.51x (63%) | 1.1 |
+| `MatMult` | halo scatter | 4.773 s | 2.927 s | 1.63x (41%) | 1.8 |
+| `VecNorm` | all-reduce | 0.136 s | 2.731 s | 0.05x | 38.2 |
+
+An embarrassingly parallel, perfectly balanced, communication-free vector update achieves 63%.
+That is the machine's memory bandwidth saturating as eight performance cores contend for one
+DDR5 controller, and it is a ceiling on everything above it. `MatMult` sits below that ceiling
+because it also carries the halo scatter, and `VecNorm` measures the arrival spread that
+bandwidth jitter produces, which is why its imbalance is 38 while its own arithmetic is trivial.
+
+### Partition objective does not move it
+
+Repartitioning the same mesh under each Metis objective, counting ghost cells per rank:
+
+| ranks | objective | ghost max/min | total ghosts |
+|---:|---|---:|---:|
+| 4 | cut (default) | 2.11 | 7066 |
+| 4 | volume | 2.06 | 6216 |
+| 4 | cut + minconn | 2.11 | 7066 |
+| 8 | cut (default) | 3.63 | 15199 |
+| 8 | volume | 3.66 | 13495 |
+| 8 | cut + minconn | 3.63 | 15199 |
+| 8 | cut + ufactor 1 | 3.77 | 15394 |
+
+The volume objective cuts TOTAL communication by 11% and leaves the IMBALANCE untouched. The
+imbalance is a property of the domain: a channel gives its end subdomains few neighbours and its
+interior ones many, whatever the objective. It is also far too small to be the mechanism — 2373
+against 654 ghost cells is about 19 kB against 5 kB an exchange, which cannot produce a
+millisecond of all-reduce wait. It correlates with the loss; it does not cause it.
+
+### Approximation in the split above
+
+`-log_view` totals cover the whole process, which is warm-up plus the three-iteration and
+thirty-iteration timed runs, while the probe's per-iteration figure covers the long run only.
+The shares are therefore good to about five points; the 4.45x against 1.35x ratio that the
+conclusion rests on is not sensitive to it.

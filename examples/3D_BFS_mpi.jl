@@ -25,21 +25,18 @@ comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
 nranks = MPI.Comm_size(comm)
 
-# rank 0 reads the global mesh; distribute partitions and scatters it
-partdir = if rank == 0
-    grids_dir = "/home/humberto/Desktop/BFS_GRIDS"
-    mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_5mm.unv"), scale=0.001)
-    
-    partdir = joinpath(pwd(), "parts")
+# rank 0 partitions the global mesh offline; every rank then loads only its own part.
+# partdir must be a String on ALL ranks: passing `nothing` on non-root dispatches to
+# distribute(mesh; ...), which blocks in MPI.recv waiting for a scatter the offline path
+# never sends. Override the mesh with XCAL_BFS_GRIDS/XCAL_BFS_MESH.
+grids_dir = get(ENV, "XCAL_BFS_GRIDS", pkgdir(XCALibre, "examples/0_GRIDS"))
+meshfile = get(ENV, "XCAL_BFS_MESH", "bfs_unv_tet_10mm.unv")
+partdir = joinpath(pwd(), "parts_n$nranks")
+if rank == 0 && !isdir(partdir) # reuse an existing decomposition for the same rank count
+    mesh = UNV3D_mesh(joinpath(grids_dir, meshfile), scale=0.001)
     partition_mesh(mesh, nranks; dir=partdir)
-    partdir
-
-    # grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
-    # UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_10mm.unv"), scale=0.001)
-else
-    nothing
 end
-# mesh_dist = distribute(mesh; comm=comm)
+MPI.Barrier(comm)
 mesh_dist = distribute(partdir; comm=comm)
 
 backend = CPU(); workgroup = AutoTune()

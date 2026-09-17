@@ -79,9 +79,10 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     dev = device_solve ? Distribute.petsc_device_info(_nzval(A)) : nothing
     device_solve && !_petsc_has_pkg(petsclib, dev.pkg) && error(
         "PETScSolver: fields live on the GPU but this PETSc build has no $(dev.pkg) support. " *
-        "Fixes: MPIPreferences.use_system_binary() + a $(dev.pkg)-enabled system PETSc " *
-        "(JULIA_PETSC_LIBRARY), or opt into host-side solves with solve_on=CPU() " *
-        "(A/b copied to host each solve).")
+        "PETSc_jll ships no GPU-enabled library, so this needs a $(dev.pkg)-enabled PETSc " *
+        "selected through MPIPreferences and PETSc's own preferences in this project " *
+        "environment, or host-side solves with solve_on=CPU() (A and b copied each solve). " *
+        "See the distributed simulations page of the documentation.")
     rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
     n = part.n_owned
     N = MPI.Allreduce(n, +, comm)
@@ -111,9 +112,10 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     opts = merge(curated, raw)
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
-        error("PETScSolver: hypre requested but this PETSc build has no hypre support. " *
-            "Rebuild PETSc with --download-hypre (see build_cuda_ucx_openmpi_petsc.sh) " *
-            "or pick another preconditioner.")
+        error("PETScSolver: hypre requested but this PETSc build ($(petsclib.PetscScalar)) has " *
+            "no hypre support. PETSc_jll carries hypre for Float64 only; other precisions need " *
+            "a PETSc configured with --download-hypre. Use GAMG(), which needs no extra build, " *
+            "or see the distributed simulations page of the documentation.")
     end
     ksp = PETSc.KSP(Amat; opts...)
     # atol/rtol/itmax are the live PETSc knobs; setting both tols to 0 defers to `convergence`

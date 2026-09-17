@@ -8,44 +8,91 @@ differently for parallel execution.
 
 ## Requirements
 
-- `PETSc` and `MPI` added to your project environment.
-- PETSc built (or configured) with MPI support. For the `BoomerAMG` preconditioner PETSc must
-  additionally be configured with `--download-hypre`.
-- For multi-GPU runs, a CUDA/ROCm-enabled PETSc build.
+`PETSc` and `MPI` in your project environment. Nothing else: the binaries that `PETSc_jll` and
+`MPI.jl` install are enough for a Float64 CPU run, with no preferences file and no shell
+configuration. Two cases need more:
+
+- `BoomerAMG()` needs a PETSc built with `--download-hypre`. The stock `Float64` libraries do
+  carry hypre, so it works out of the box at the default precision; `Float32` builds do not.
+- GPU-native solves need a CUDA- or ROCm-enabled PETSc, which `PETSc_jll` does not ship. Without
+  one, pass `solve_on=CPU()` to `run!` and the linear solves are staged through the host.
+
+A custom PETSc or system MPI is selected through `MPIPreferences` and PETSc's own preferences.
+Julia resolves preferences per project environment and PETSc.jl generates its low-level wrappers
+at precompilation for the configured library, so the scalar precision and the library path are a
+property of the environment you run in, not something that can be switched at run time. Use a
+separate project environment per PETSc build.
 
 ## Distributing the mesh
 
-Wrap the mesh read in [`distribute`](@ref). The reader runs **only on rank 0**; the global
-mesh is then partitioned (Metis) and scattered as one rank-local `DistributedMesh` per rank.
-No manual `rank == 0` guard or `MPI.Init()` is required — `distribute` handles both:
+Wrap the mesh read in [`distribute`](@ref). Every rank makes the same call; the reader runs only
+on rank 0 and the partitioned mesh is scattered, one rank-local `DistributedMesh` each. There is
+no `MPI.Init()` and no `rank == 0` guard to write:
 
 ```julia
 using XCALibre, PETSc, MPI
 
-comm = MPI.COMM_WORLD
-
-mesh_dist = distribute(comm=comm) do
-    UNV2D_mesh("path/to/mesh.unv", scale=0.001)
+mesh_dist = distribute() do
+    UNV3D_mesh("path/to/mesh.unv", scale=0.001)
 end
 ```
+
+!!! warning
+    Do not assign the mesh, or any value that selects a method, inside a `rank == 0` branch of
+    your own. A rank holding `nothing` where the others hold a mesh dispatches to a different
+    method, and the run blocks forever waiting for a message that is never sent. Passing the
+    reader to `distribute` is what makes that impossible.
+
+For a large mesh, give `dir` as well. Rank 0 decomposes into that directory once and every rank
+then loads only its own part, so no rank ever holds the global mesh after the first run:
+
+```julia
+mesh_dist = distribute(dir="parts") do
+    UNV3D_mesh("path/to/mesh.unv", scale=0.001)
+end
+```
+
+A decomposition already in `dir` for the same number of ranks is reused and the reader is never
+called; one written for a different number of ranks is replaced. [`partition_mesh`](@ref) writes
+the same layout from a standalone process if you would rather decompose ahead of time, and
+`distribute(dir; comm)` loads it.
 
 Pass `mesh_dist` as the model `domain` and assign boundary conditions against it exactly as in
 serial. The rest of the script — `Physics`, `assign`, `SolverSetup`, `Schemes`, `Runtime`,
 `run!` — is unchanged.
 
-For very large meshes, partition once offline with [`partition_mesh`](@ref) and load per-rank
-with `distribute(dir; comm)` to avoid the rank-0 memory bottleneck.
+Two helpers cover what a parallel script still needs. [`is_root`](@ref) is true on rank 0 and
+also true in a serial run where MPI was never initialised, so one guard works in both:
+
+```julia
+is_root() && println("final residual ", residuals.p[end])
+```
+
+and `bind_device!(backend)` binds the calling rank to its GPU without your script querying the
+communicator.
 
 ## Launching
 
-Run the script under `mpiexec` with one process per rank, e.g. for 4 ranks:
+Install MPI.jl's launcher once. It resolves the same MPI binary the package itself uses:
 
 ```bash
-julia --project=<env> -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 $(Base.julia_cmd()) --project=<env> your_case.jl`)'
+julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
 ```
 
-Threads per rank are controlled with Julia's usual `-t` / `JULIA_NUM_THREADS`. See
-`examples/2D_cylinder_U_mpi.jl` for a complete, runnable case including core-pinning notes.
+Then a run is one command:
+
+```bash
+mpiexecjl -n 4 julia --project=<env> your_case.jl
+```
+
+`mpiexecjl` lives in `~/.julia/bin`; add that to your `PATH`. Threads per rank use Julia's usual
+`-t`, but one thread per rank is the right default: the CPU kernel backend is already serial, so
+extra threads add overhead rather than removing it. Call `activate_multithread(backend)` in the
+script — despite the name it pins BLAS to a single thread, which is what stops each rank taking
+every core. On a machine with hyperthreading, bind one rank per physical core, for example
+`mpiexecjl -n 4 --bind-to core --map-by core julia ...`.
+
+See `examples/3D_BFS_mpi.jl` for a complete runnable case.
 
 ## Configuring the linear solvers
 
@@ -69,7 +116,10 @@ so you can confirm what PETSc actually received:
 
 Any solver or preconditioner not in the curated list, or any extra PETSc option, can be passed
 through as a raw options string via the `petsc_options` keyword of `run!`, e.g.
-`run!(model, config; petsc_options="-ksp_monitor -pc_type gamg")`.
+`run!(model, config; petsc_options="-ksp_monitor -pc_type gamg")`. The same string is given to
+PETSc at start-up, so options that must be set before PETSc initialises — `-log_view`,
+`-use_gpu_aware_mpi 0` — go there too and need no environment variable. Start-up options take
+effect on the first solver built, since PETSc initialises once per process.
 
 ## Algebraic multigrid for pressure (BoomerAMG and GAMG)
 
@@ -102,8 +152,11 @@ time):
 | 0.5M  | 393 ms    | 464 ms  | 465 ms       |
 | 2.7M  | 2194 ms   | 2117 ms | 2089 ms      |
 
-Jacobi scales super-linearly while AMG scales sub-linearly, so AMG overtakes Jacobi around ~1M
-cells and its lead widens beyond. AMG also drives the pressure residual far deeper per outer
+Jacobi scales super-linearly while AMG scales sub-linearly, so AMG overtakes Jacobi somewhere
+around a million cells on that machine and its lead widens beyond. Where the crossing falls
+depends on the mesh, the rank count and the memory system, so measure it on your own case rather
+than assuming the figure above: on a laptop at 1.3M tetrahedra we have since seen Jacobi still
+ahead. AMG also drives the pressure residual far deeper per outer
 iteration (6–8× here), which can cut the number of outer SIMPLE iterations needed to reach a
 steady state (a further gain not visible in the per-iteration figure above). Rule of thumb: use
 Jacobi for small/medium cases, AMG for large ones (especially when the pressure solve dominates).

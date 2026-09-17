@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 * Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
 
+### Changed
+* Removed the undocumented `XCALIBRE_AMG_DEVICE_COARSE_SOLVE`, `XCALIBRE_AMG_DEVICE_COARSE_MAXITER` and `XCALIBRE_AMG_DEVICE_COARSE_RTOL` environment variables. They enabled a second, parallel device coarse-solve path that duplicated `coarse_solve = OnDeviceKrylov()` and reached it only with `mode = Cg()`, the one combination the `AMG` constructor rejects because an inner Krylov solve is nonlinear in its right-hand side and breaks the fixed-operator assumption of preconditioned CG. The documented `coarse_solve` keyword is now the only way to choose how the coarsest level is solved, and it is described in the user guide [#159](@ref)
+* Removed the `coarse_tmp` scratch vector from `AMGLevel`. It was written only by the removed path, so every level allocated a full-length vector on the device that nothing read [#159](@ref)
+
 ### Fixed
 * Fixed missing density term in set_production! needed for cases with non-unity density [#151]
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)

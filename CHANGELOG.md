@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The OpenFOAM writer compares the point and face counts declared by an existing `constant/polyMesh` with the simulation mesh, and warns and rewrites the mesh files when they disagree [#153](@ref)
 * `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` now use `Slip` on patches that are physically symmetry planes or inviscid walls, replacing `Zerogradient` [#156](@ref)
 * `_nonorthogonal_face_correction` now builds the correction from a projected-delta correction vector rather than the over-relaxed `Ef`/`T_hat` decomposition, and `correction_weight` is no longer needed [#158](@ref)
+* `CSIMPLE` now relaxes pressure explicitly for `Compressible` fluids, as it already did for `WeaklyCompressible` ones, instead of relaxing the pressure equation implicitly through `irelax`. Relaxation had to move after the mass-flux correction so that the flux is built from the unrelaxed solution, and implicit relaxation cannot be deferred in the same way because it alters the matrix the flux is reconstructed from. Compressible cases converge along a different path and may need their pressure relaxation factor retuned [#158](@ref)
 * `2D_bump_NASA_kwSST.jl`, `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` solver tolerances and relaxation factors retuned for the corrected fluxes [#158](@ref)
 
 ### Breaking

@@ -16,6 +16,18 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_mesh_conversion.jl")
     end
 
+    @testset "Face-flux reconstruction" begin
+        include("test_reconstruct.jl")
+    end
+
+    @testset "Physical boundary conditions" begin
+        include("test_physical_boundary_conditions.jl")
+    end
+
+    @testset "Potential-flow initialisation" begin
+        include("test_potential_flow.jl")
+    end
+
     @testset "Smoothers" begin
         include("test_smoothers.jl")
     end
@@ -39,6 +51,11 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
+    end
+
+    @testset "Wall Production Density Unit Test" begin
+        include("unit_test_wall_production_density.jl")
+        include("unit_test_wall_function_averaging.jl")
     end
 
     # @testset "setFields Function Unit Test" begin
@@ -111,7 +128,9 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         test_files = [
             "2d_compressible_KOmega_flatplate_fixedT.jl",
             "2d_compressible_laminar_flatplate_fixedT.jl",
-            "2d_compressible_transient_laminar_heated_cylinder.jl"
+            "2d_compressible_transient_laminar_heated_cylinder.jl",
+            "2d_compressible_transient_cylinder_energy_models.jl",
+            "2d_compressible_supersonic_compression_corner.jl"
         ]
 
         for test ∈ test_files

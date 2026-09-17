@@ -68,30 +68,15 @@ end
     0.0, ap*bc.value[component.value]
 end
 
+# Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary Dirichlet Divergence{BoundedUpwind} VectorField begin
-    # ap = term.sign*(term.flux[fID])
-    # ac = max(-ap, 0.0)
-    # phic = get_values(term.phi, component)[cellID]
-    # 0.0, -ap*bc.value[component.value]
-
     ap = term.sign*(term.flux[fID])
-    z = zero(ap)
-    ac = max(-ap, z)
-    an = -max(-ap, z)
-    ac, -an*bc.value[component.value]
+    -ap, -ap*bc.value[component.value]
 end
 
 @define_boundary Dirichlet Divergence{BoundedUpwind} begin
-    # ap = term.sign*(term.flux[fID])
-    # ac = max(-ap, 0.0)
-    # phic = get_values(term.phi, component)[cellID]
-    # 0.0, -ap*bc.value
-
     ap = term.sign*(term.flux[fID])
-    z = zero(ap)
-    ac = max(-ap, z)
-    an = -max(-ap, z)
-    ac, -an*bc.value
+    -ap, -ap*bc.value
 end
 
 @define_boundary Dirichlet Si begin

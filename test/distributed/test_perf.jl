@@ -84,14 +84,17 @@ usolve!() = solve_equation!(U_deqn, U, bcs2.U, config2.solvers.U, xdir, ydir, zd
 psolve_eqn!() = solve_equation!(p_deqn, p, bcs2.p, config2.solvers.p, config2; ref=nothing)
 
 usolve!(); usolve!(); psolve_eqn!(); psolve_eqn!() # warmup
-make_symmetric!(p_eqn, config2); correct_mass_flux!(mdotf, p_eqn, config2; time=1)
+p_prev = similar(p.values)
+copyto!(p_prev, p.values)
+make_symmetric!(p_eqn, config2)
+correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
 cCo = KernelAbstractions.zeros(backend, Float64, length(dm2.cells))
 max_courant_number!(cCo, model2, config2)
 
 a_ueqn = @allocated usolve!()
 a_peqn = @allocated psolve_eqn!()
 a_sym = @allocated make_symmetric!(p_eqn, config2)
-a_cmf = @allocated correct_mass_flux!(mdotf, p_eqn, config2; time=1)
+a_cmf = @allocated correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
 a_halo3 = @allocated sync!(U, dm2, config2)
 a_cour = @allocated max_courant_number!(cCo, model2, config2)
 

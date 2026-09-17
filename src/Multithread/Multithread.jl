@@ -1,7 +1,7 @@
 module Multithread
 
 export AutoTune
-export _setup, xcal_foreach
+export _setup, _dynamic_setup, xcal_foreach
 
 using KernelAbstractions
 import AcceleratedKernels as AK
@@ -24,6 +24,14 @@ end
 
 _setup(backend, workgroup::I, ndrange::I) where {I<: Integer} = begin
     (backend, workgroup, ndrange)
+end
+
+# Counterpart to _setup for kernels whose size changes between launches. Sizes given to a
+# kernel constructor become type parameters, recompiling the kernel for every distinct
+# size, so these are returned as launch keywords and the kernel is built from the backend.
+_dynamic_setup(backend, workgroup, ndrange) = begin
+    _, wg, nd = _setup(backend, workgroup, ndrange)
+    (workgroupsize=wg, ndrange=nd)
 end
 
 xcal_foreach(func, arr, config) = begin

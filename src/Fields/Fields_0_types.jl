@@ -40,6 +40,12 @@ end
 Adapt.@adapt_structure ConstantVector
 Base.getindex(v::ConstantVector, i::Integer) = SVector{3, eltype(v.x)}(v.x, v.y, v.z)
 
+ConstantScalar(mesh::AbstractMesh) = ConstantScalar(zero(_get_float(mesh)))
+ConstantVector(mesh::AbstractMesh) = begin
+    z = zero(_get_float(mesh))
+    ConstantVector(z, z, z)
+end
+
 # Handle cases where `Nothing` is passed to the constructor (e.g. in Solid constructor)
 ConstantScalar(value::Nothing) = nothing
 ConstantVector(value::Nothing) = nothing

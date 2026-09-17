@@ -3,21 +3,64 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.5.3] - 2026-03-05
+## Version [v0.6.1-DEV] - 2026-09-11
 
 ### Added
-*  Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
+* Added FixedHeatFlux boundary condition [#149]
+* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
+* Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
+
+### Fixed
+* Fixed missing density term in set_production! needed for cases with non-unity density [#151]
+* Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
+* Fixed OpenFOAM `boundary` file parsing so that patch groups (`inGroups`) no longer corrupt the patch list. The parser is now token based, ignores unknown dictionary entries, and reports malformed files with an `ArgumentError` [#153](@ref)
+* Fixed OpenFOAM mesh writer truncating point coordinates to six significant figures, which prevented a written mesh from round-tripping [#153](@ref)
+* Fixed `reconstruct!` omitting boundary faces when rebuilding a cell vector from a face-normal flux. The accumulation looped over `cell_faces`, which holds internal faces only. A cell becomes genuinely rank deficient when a direction is spanned by no internal face at all, as on a one cell thick mesh with an `empty` patch: on `OF_pitzDaily` the through-thickness moment is zero for all 12225 cells and the reconstruction returns the zero vector everywhere. Boundary faces now contribute to the least-squares system [#155](@ref)
+* Fixed the invertibility test in `reconstruct!` comparing an area-cubed determinant against the absolute tolerance `eps(TF)`. The moments scale with face area, so on a millimetre-scale mesh the determinant of a perfectly conditioned interior cell is already below `eps` (`6.4e-29` on the 1 mm lid-driven cavity) and the reconstruction is silently zeroed everywhere, interior cells included, and at far coarser scales in `Float32`. The test is now scaled by the magnitude of the moments [#155](@ref)
+* Fixed `Wall` and `RotatingWall` diffusion imposing only the tangential part of the boundary velocity together with the cell's own normal component, which let the wall-normal velocity float instead of being held at the prescribed value. Both now impose the full boundary velocity, matching `Dirichlet` [#156](@ref)
+* Fixed `Slip` contributing nothing to vector diffusion. No `Laplacian{Linear}` method was defined for vector fields, so the unqualified method returned zero coefficients for a slip patch. `Slip` now projects onto the face tangent plane and matches `Symmetry` coefficient for coefficient, and gains the missing `Si` method [#156](@ref)
+* Fixed `Slip` `Divergence{BoundedUpwind}` dropping the face-normal component for vector fields [#156](@ref)
+* Fixed simulation start-up scaling with the number of boundary patches instead of mesh size. Patch sizes were passed to the `KernelAbstractions` kernel constructor, where they become `StaticSize` type parameters, so every kernel launched once per patch was compiled again for each distinct patch size. On the `motorBike` case (354k cells, 72 patches) the first SIMPLE iteration spent 259 s in compilation, against 51 s for a 1.68M cell case with 6 patches, which presents as the solver hanging after `Starting SIMPLE loops...`. Sizes are now passed at launch through `_dynamic_setup`, so all patches share one compiled kernel and the same first iteration takes 73 s [#158](@ref)
+* Fixed wall functions racing on cells that own more than one wall face. `set_production!`, `constrain!` and the mixing-length `correct_nut_wall!` assigned the cell value directly, so with several faces writing the same cell the result depended on which face won, both within a patch and across patches, and varied from run to run. They now sum the contributions of every face that touches the cell and divide by their number, so each face carries equal weight and the result no longer depends on the order the faces are processed in. On the `motorBike` case 3220 of 45454 wall cells own 2 or 3 wall faces; single-face cells are unchanged and residuals are now reproducible run to run [#158](@ref)
+* Fixed the mass flux correction using the relaxed pressure field. The pressure equation is solved for the full predicted continuity error, so correcting the flux with a relaxed pressure removes only a fraction of it and leaves a residual imbalance that does not vanish as the solution converges. The flux is now corrected from the unrelaxed solution and relaxation is applied afterwards, to the momentum correction only [#158](@ref)
+* Fixed `Wall` and `RotatingWall` `Divergence{BoundedUpwind}` returning a zero source for vector fields. The bounded scheme subtracts `ap` from the diagonal, so a zero source implicitly convects the cell's own velocity through the wall face instead of the prescribed boundary velocity. Both now carry the boundary velocity on the right-hand side [#158](@ref)
+* Fixed `set_production!` evaluating the `KWallFunction` production against a hard-coded zero wall velocity, which overpredicts the shear at a moving or rotating wall. The wall velocity is now taken from `Uf` [#158](@ref)
+* Fixed the pressure flux at `Extrapolated` pressure patches not being propagated to the boundary mass flux. The patch's Laplacian contribution is assembled from the owner-cell pressure available at assembly time, so once the pressure equation is solved the boundary flux is stale. The correction is now deferred and applied for patches whose velocity boundary condition is pressure-adjustable [#158](@ref)
+* Fixed the non-orthogonal face correction being applied to the pressure equation but not to the mass flux, so continuity did not close on non-orthogonal meshes. The correction is now stored per face and subtracted from the mass flux [#158](@ref)
+
+### Changed
+* 3D mesh geometry is now computed by a single shared routine used by both the UNV3 and OpenFOAM readers, which previously disagreed on cell centroids and volumes for the same mesh [#153](@ref)
+* The OpenFOAM writer now preserves a complete existing `constant/polyMesh` instead of overwriting it, so results can be written alongside the original mesh [#153](@ref)
+* The OpenFOAM writer compares the point and face counts declared by an existing `constant/polyMesh` with the simulation mesh, and warns and rewrites the mesh files when they disagree [#153](@ref)
+* `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` now use `Slip` on patches that are physically symmetry planes or inviscid walls, replacing `Zerogradient` [#156](@ref)
+* `_nonorthogonal_face_correction` now builds the correction from a projected-delta correction vector rather than the over-relaxed `Ef`/`T_hat` decomposition, and `correction_weight` is no longer needed [#158](@ref)
+* `CSIMPLE` now relaxes pressure explicitly for `Compressible` fluids, as it already did for `WeaklyCompressible` ones, instead of relaxing the pressure equation implicitly through `irelax`. Relaxation had to move after the mass-flux correction so that the flux is built from the unrelaxed solution, and implicit relaxation cannot be deferred in the same way because it alters the matrix the flux is reconstructed from. Compressible cases converge along a different path and may need their pressure relaxation factor retuned [#158](@ref)
+* `2D_bump_NASA_kwSST.jl`, `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` solver tolerances and relaxation factors retuned for the corrected fluxes [#158](@ref)
+
+### Breaking
+* `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+
+## Version [v0.6.0] - 2026-07-17
+
+### Added
+* Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
 * Added runtime calculation of Q-criterion [#107]
-*  Added explicit Godunov-type compressible solver (`godunov!`) for supersonic flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping [#112](@ref)
-*  Added experimental incompressible steady MFR solver [#114](@ref)
-*  Added runtime probe extraction [#115](@ref)
-*  Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
-*  New Eulerian Thin Film model solver (2D only) [#120](@ref)
-*  Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
-*  Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
-*  Added multiphase solver (VOF model only) with two supporting functionality tests. [#132](@ref)
-*  Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
-*  Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`[#135](@ref)
+* Added explicit Godunov-type compressible solver (`godunov!`) for `Supersonic` flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping. This is the recommended solver for high-speed flows in the range 0.8 < M < 5 approximately [#112](@ref)
+* Added experimental incompressible steady MFR solver [#114](@ref)
+* Added runtime probe extraction [#115](@ref)
+* Added initialisation logic for new Multiphase solver user-level API [#117](@ref)
+* New Eulerian Thin Film model solver (2D only) [#120](@ref)
+* Added `setField_Expression!` to `SetFields` utility to initialise function-based fields. [#124](@ref)
+* Added VanLeer, upwind, and gradient interpolation schemes for scalar and vector face fields [#124](@ref)
+* Added multiphase solver (VOF model only) with two supporting functionality tests. [#132](@ref)
+* Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
+* Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`[#135](@ref)
+* Pressure-based compressible solvers have been extended to include `SensibleEnthalpy` and `InternalEnergy` formulations. The solver now correctly handles `Compressible` fluids, activating the transonic correction that allows shock capturing for moderate high-speed applications, typically in the range 0.8 < M < 2 [#145](@ref)
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)
@@ -28,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed mixed-precision mesh conversion to preserve user-selected integer and floating-point types [#125](@ref)
 * Fixed pressure boundary mass-flux correction [#125](@ref)
 * Fixed turbulent effective viscosity updates so turbulence models include eddy viscosity again, reverting a regression introduced in [#120](@ref) [#125](@ref)
+* Add missing constructor for LES{Laminar} supporting qDNS simulations [#144](@ref)
   
 ### Changed
 * Improved stability of `Periodic` boundaries by making the implementation fully implicit [#96](@ref)
@@ -43,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Improved calculation of viscous force using wall eddy viscosity and perpendicular cell-to-face distance [#130](@ref)
 
 ### Breaking
-* No breaking changes
+* Pressure-based compressible solvers (for `WeaklyCompressible` and `Compressible` fluids) have been extended to work with `SensibleEnthalpy` and `InternalEnergy` formulations. Thus, to capture this change, the energy field has been renamed `he` instead of `h` [#145](@ref)
 
 ### Deprecated
 * No functions deprecated

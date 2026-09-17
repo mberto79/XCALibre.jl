@@ -38,8 +38,9 @@ Re = velocity[1]*0.1/nu
 model = Physics(
     time = Transient(),
     fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = LES{Laminar}(),
     # turbulence = LES{Smagorinsky}(),
-    turbulence = LES{KEquation}(),
+    # turbulence = LES{KEquation}(),
     energy = Energy{Isothermal}(),
     domain = mesh_dev
 )
@@ -124,8 +125,10 @@ config = Configuration(
 initial_velocity = [0.0, 0.0, 0.0]
 initialise!(model.momentum.U, initial_velocity)
 initialise!(model.momentum.p, 0.0)
-initialise!(model.turbulence.k, k_inlet)
-initialise!(model.turbulence.nut, 0.0)
+if !(model.turbulence isa Laminar)
+    initialise!(model.turbulence.k, k_inlet)
+    initialise!(model.turbulence.nut, 0.0)
+end
 
 # Step 11. Run simulation to compile
 residuals = run!(model, config, inner_loops=2, ncorrectors=0, output=OpenFOAM());

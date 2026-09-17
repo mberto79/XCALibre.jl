@@ -7,7 +7,6 @@ export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
 export solve_equation!
-export residual!
 export AdaptiveTimeStepping
 
 struct SolverSetup{

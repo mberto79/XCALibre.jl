@@ -126,6 +126,7 @@ function CSIMPLE(
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; nu, nuf, rho, rhof) = model.fluid
+    (; nut) = model.turbulence
 
     mesh = model.domain
     p_model = p_eqn.model
@@ -171,10 +172,12 @@ function CSIMPLE(
     divmugradUTx = ScalarField(mesh)
     divmugradUTy = ScalarField(mesh)
     divmugradUTz = ScalarField(mesh)
+    nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    p_boundary_reference = similar(prev)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -185,14 +188,15 @@ function CSIMPLE(
     
     # Initial calculations
     time = zero(TF) # assuming time=0
-    interpolate!(Uf, U, config)   
-    correct_boundaries!(Uf, U, boundaries.U, time, config) 
+    interpolate!(Uf, U, config)
+    correct_boundaries!(Uf, U, boundaries.U, time, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
-    update_nueff!(nueff, nu, model.turbulence, config)
+    update_viscosity!(model.fluid, model.energy, config)
+    update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
 
 
@@ -206,7 +210,8 @@ function CSIMPLE(
         time = iteration
 
         # gradU is updated in turbulence! function
-        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, config)
+        explicit_shear_stress!(
+            mugradUTx, mugradUTy, mugradUTz, mueff, gradU, boundaries.U, config)
         div!(divmugradUTx, mugradUTx, config)
         div!(divmugradUTy, mugradUTy, config)
         div!(divmugradUTz, mugradUTz, config)
@@ -262,12 +267,27 @@ function CSIMPLE(
         # Pressure calculations
         rp = 0.0
         @. prev = p.values
+        @. p_boundary_reference = p.values
         if typeof(model.fluid) <: Compressible
             rp = solve_equation!(
                 p_eqn, p, boundaries.p, solvers.p, config; 
-                ref=nothing, irelax=solvers.p.relax) # perform implicit relaxation
+                ref=nothing)
         elseif typeof(model.fluid) <: WeaklyCompressible
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+        end
+
+        # non-orthogonal correction
+        for i ∈ 1:ncorrectors
+            grad!(∇p, pf, p, boundaries.p, time, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            @. p_boundary_reference = p.values
+            discretise!(p_eqn, p, config)
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+            setReference!(p_eqn, pref, 1, config)
+            nonorthogonal_face_correction(
+                p_eqn, ∇p, rhorDf, config; correction=nonorthogonal_flux)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
         end
 
         if !isnothing(solvers.p.limit)
@@ -275,38 +295,28 @@ function CSIMPLE(
             clamp!(p.values, pmin, pmax)
         end
 
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
-        grad!(∇p, pf, p, boundaries.p, time, config) 
+        # Correct pressure-dependent fluxes before under-relaxing cell pressure.
+        grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
-
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
-            discretise!(p_eqn, p, config)       
-            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
-            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-            
-            grad!(∇p, pf, p, boundaries.p, time, config) 
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        end
-
-        # Correct mass flux and cell velocity
-
         if typeof(model.fluid) <: Compressible
-            @. mdotf.values += pconv.values*(pf.values) 
-            correct_mass_flux!(model, mdotf, p, pconv, rhorDf, config)
-        elseif typeof(model.fluid) <: WeaklyCompressible
-            correct_mass_flux!(mdotf, p_eqn, config) 
+            @. mdotf.values += pconv.values*(pf.values)
         end
+        correct_mass_flux!(
+            mdotf, p_eqn, config;
+            previous=p_boundary_reference, time=time,
+            nonorthogonal=nonorthogonal_flux)
 
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        grad!(∇p, pf, p, boundaries.p, time, config)
+        limit_gradient!(schemes.p.limiter, ∇p, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
+        # interpolate!(Uf, U, config) # Careful: reusing Uf for interpolation
+        # correct_boundaries!(Uf, U, boundaries.U, time, config)
         
         # Perform turbulence calculations and update eddy viscosity
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
+        turbulence!(turbulenceModel, model, S, prev, time, config)
+        update_viscosity!(model.fluid, model.energy, config)
+        update_nueff!(nueff, nuf, model.turbulence, config)
 
         if typeof(model.fluid) <: WeaklyCompressible
             rhorelax = solvers.p.relax
@@ -317,8 +327,15 @@ function CSIMPLE(
             @. rhof.values = Psif.values * pf.values
         end
 
-        # update dynamic viscosity
+        # update turbulent dynamic viscosity
         @. mueff.values = rhof.values*nueff.values
+        if model.turbulence isa Laminar 
+            @. model.energy.mueff_cell.values = rho.values*nu.values 
+        else
+            @. model.energy.mueff_cell.values = rho.values*(nu.values + nut.values)
+        end
+
+
 
         # stor residuals and check for convergence
         R_ux[iteration] = rx
@@ -369,53 +386,7 @@ function CSIMPLE(
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, e=R_e)
 end
 
-### AUXILIARY FUNCTION HERE FOR DEVELOPMENT. NEED RELOCATING
-
-function correct_mass_flux!(model, mdotf, p, pconv, gamma_f, config)
-    (; faces, boundary_cellsID) = mdotf.mesh
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
-
-    kernel! = _correct_mass_flux_compressible(_setup(backend, workgroup, n_ifaces)...)
-    # Notice we completely dropped the sparse matrix arguments
-    kernel!(model.fluid, mdotf, p.values, pconv, gamma_f.values, faces, n_bfaces)
-    KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _correct_mass_flux_compressible(
-    fluid, mdotf, p, pconv, gamma_f, faces, n_bfaces)
-    
-    i = @index(Global)
-    fID = i + n_bfaces
-
-    @inbounds begin 
-        face = faces[fID]
-        # Unpack the geometric properties
-        (; ownerCells, area, delta) = face 
-        
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        
-        p1 = p[cID1]
-        p2 = p[cID2]
-        
-        if typeof(fluid) <: WeaklyCompressible
-            minus_Df = -gamma_f[fID] * (area / delta)
-            mdotf[fID] += minus_Df * (p2 - p1)
-        else
-            minus_Df = -gamma_f[fID] * (area / delta)
-            # Add ONLY the implicit Rhie-Chow diffusion correction
-            # (Convection was already added globally via pconv * pf)
-            mdotf[fID] += minus_Df * (p2 - p1)
-        end
-    end
-end
-
-function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU, config)
+function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU, U_BCs, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -434,6 +405,31 @@ function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScala
     kernel! = _explicit_shear_stress_boundaries!(_setup(backend, workgroup, ndrange)...)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
     KernelAbstractions.synchronize(backend)
+
+    for BC ∈ U_BCs
+        zero_explicit_stress!(BC, mugradUTx, mugradUTy, mugradUTz, backend, workgroup)
+    end
+end
+
+zero_explicit_stress!(BC, mugradUTx, mugradUTy, mugradUTz, backend, workgroup) = nothing
+
+function zero_explicit_stress!(
+    BC::Union{Slip,Symmetry}, mugradUTx, mugradUTy, mugradUTz, backend, workgroup)
+    (; IDs_range) = BC
+    ndrange = length(IDs_range)
+    ndrange == 0 && return nothing
+    kernel! = _zero_explicit_stress!(backend)
+    kernel!(mugradUTx, mugradUTy, mugradUTz, IDs_range;
+        _dynamic_setup(backend, workgroup, ndrange)...)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel function _zero_explicit_stress!(mugradUTx, mugradUTy, mugradUTz, IDs_range)
+    i = @index(Global)
+    fID = IDs_range[i]
+    mugradUTx[fID] = 0
+    mugradUTy[fID] = 0
+    mugradUTz[fID] = 0
 end
 
 @kernel function _explicit_shear_stress_internal!(

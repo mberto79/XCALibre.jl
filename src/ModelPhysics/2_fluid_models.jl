@@ -126,7 +126,7 @@ Weakly compressible fluid model containing fluid field parameters for weakly com
 - `Fluid{WeaklyCompressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructor with 
 default values.
 """
-struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
+struct WeaklyCompressible{S1, S2, F1, F2, T, VM} <: AbstractCompressible
     nu::S1
     rho::S2
     nuf::F1
@@ -135,6 +135,7 @@ struct WeaklyCompressible{S1, S2, F1, F2, T} <: AbstractCompressible
     gamma::T
     Pr::T
     R::T
+    visc_model::VM
 end
 Adapt.@adapt_structure WeaklyCompressible
 
@@ -151,12 +152,10 @@ end
     gamma = ConstantScalar(gamma)
     Pr = ConstantScalar(Pr)
     R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
-
-    nu = ConstantScalar(nu)
+    nu, nuf, visc_model = initialise_viscosity(nu, mesh)
     rho = ScalarField(mesh)
-    nuf = nu
     rhof = FaceScalarField(mesh)
-    WeaklyCompressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+    WeaklyCompressible(nu, rho, nuf, rhof, cp, gamma, Pr, R, visc_model)
 end
 
 """
@@ -174,7 +173,7 @@ Compressible fluid model containing fluid field parameters for compressible flow
 ### Examples
 - `Fluid{Compressible}(; nu=1E-5, cp=1005.0, gamma=1.4, Pr=0.7)` - Constructur with default values.
 """
-@kwdef struct Compressible{S1, S2, F1, F2, T} <: AbstractCompressible
+@kwdef struct Compressible{S1, S2, F1, F2, T, VM} <: AbstractCompressible
     nu::S1
     rho::S2
     nuf::F1
@@ -183,6 +182,7 @@ Compressible fluid model containing fluid field parameters for compressible flow
     gamma::T
     Pr::T
     R::T
+    visc_model::VM
 end
 Adapt.@adapt_structure Compressible
 
@@ -199,12 +199,10 @@ end
     gamma = ConstantScalar(gamma)
     Pr = ConstantScalar(Pr)
     R = ConstantScalar(cp.values*(1.0 - (1.0/gamma.values)))
-
-    nu = ConstantScalar(nu)
+    nu, nuf, visc_model = initialise_viscosity(nu, mesh)
     rho = ScalarField(mesh)
-    nuf = nu
     rhof = FaceScalarField(mesh)
-    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R)
+    Compressible(nu, rho, nuf, rhof, cp, gamma, Pr, R, visc_model)
 end
 
 

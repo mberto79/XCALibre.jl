@@ -65,10 +65,9 @@ end
     # 0.0, -ap*values[cellID] # try this
 end
 
+# Bounded: upwind (ap,0) minus ap on diagonal -> (0,0)
 @define_boundary Zerogradient Divergence{BoundedUpwind} begin
-    flux = term.flux[fID]
-    ap = term.sign*(flux)
-    ap-flux, 0.0
+    0.0, 0.0
 end
 
 @define_boundary Zerogradient Si begin

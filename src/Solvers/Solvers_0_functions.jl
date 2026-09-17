@@ -1,6 +1,6 @@
 export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
-## UPDATE VISCOSITY
+## UPDATE EFFECTIVE VISCOSITY
 
 function update_nueff!(nueff, nu, turb_model, config)
     (; mesh) = nueff

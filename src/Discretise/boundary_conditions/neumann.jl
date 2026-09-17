@@ -51,11 +51,11 @@ end
     ap, -bc.value*ap*delta
 end
 
+# Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary Neumann Divergence{BoundedUpwind} ScalarField begin
-    flux = term.flux[fID]
-    (; area, delta) = face 
-    ap = term.sign*(flux) 
-    ap, -bc.value*ap*delta
+    (; delta) = face
+    ap = term.sign*(term.flux[fID])
+    0.0, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Si ScalarField begin

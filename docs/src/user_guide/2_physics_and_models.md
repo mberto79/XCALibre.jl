@@ -129,6 +129,64 @@ Physics(
 )
 ```
 
+### Viscosity models
+
+For the compressible fluid types (`WeaklyCompressible` and `Compressible`), the `nu` keyword argument accepted by the `Fluid` constructor can be given either as a plain number or as a `Viscosity` model. This allows viscosity to be treated as fixed, or modelled as a function of the local temperature field. The viscosity models currently available, `ConstantViscosity` and `SutherlandViscosity`, are subtypes of `AbstractViscosityModel`:
+
+- `ConstantViscosity` - kinematic viscosity remains fixed at the value provided by the user (this is also what happens implicitly when `nu` is given as a plain number)
+- `SutherlandViscosity` - kinematic viscosity is recalculated every iteration from the local cell temperature `T` using Sutherland's law
+
+Below are three equivalent-in-spirit ways of specifying `nu`, illustrating each option.
+
+`nu` given as a `Float64` (simplest option, equivalent to a constant viscosity model)
+```julia
+Physics(
+    time = Steady(),
+    fluid = Fluid{WeaklyCompressible}(nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{SensibleEnthalpy}(Tref=300),
+    ...
+)
+```
+
+`nu` given explicitly as a `ConstantViscosity` model (using the `Viscosity` wrapper type)
+```julia
+Physics(
+    time = Steady(),
+    fluid = Fluid{WeaklyCompressible}(
+        nu = Viscosity{ConstantViscosity}(nu=1e-5),
+        cp = 1005.0, gamma = 1.4, Pr = 0.7
+        ),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{SensibleEnthalpy}(Tref=300),
+    ...
+)
+```
+
+`nu` given as a `SutherlandViscosity` model, where viscosity is updated every iteration as a function of temperature
+```julia
+Physics(
+    time = Steady(),
+    fluid = Fluid{WeaklyCompressible}(
+        nu = Viscosity{SutherlandViscosity}(mu_ref=1.8e-5, T_ref=288.15, S=110.4),
+        cp = 1005.0, gamma = 1.4, Pr = 0.7
+        ),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{SensibleEnthalpy}(Tref=300),
+    ...
+)
+```
+
+where the `SutherlandViscosity` coefficients are:
+
+- `mu_ref` - reference dynamic viscosity
+- `T_ref` - reference temperature
+- `S` - Sutherland constant
+
+!!! note
+
+    `SutherlandViscosity` depends on the local temperature field, therefore an active energy model (e.g. `Energy{SensibleEnthalpy}`) must be used alongside it.
+
 ## Turbulence models
 ---
 
@@ -310,11 +368,53 @@ DirichletFunction(name, func)
 ### `AbstractNeumann` conditions
 
 ```julia
-Extrapolated(name, value)
+Extrapolated(name)
 ```
 
 - `name` is a symbol providing the boundary name
-- `value` is a scalar defining the gradient normal to the boundary
+
+Assigns a zero-gradient condition semi-implicitly, using the cell-centre unknown
+together with the cell-centre value from the previous iteration.
+
+```julia
+Zerogradient(name)
+```
+
+- `name` is a symbol providing the boundary name
+
+Also assigns a zero-gradient condition, but explicitly: the gradient is set on
+the boundary faces directly. `Extrapolated` and `Zerogradient` therefore impose
+the same physical condition through different numerical routes.
+
+```julia
+FixedHeatFlux(name, value)
+```
+
+- `name` is a symbol providing the boundary name
+- `value` is the wall heat flux in W/m^2, **positive into the domain**
+
+Prescribes a wall heat flux on an energy field, for example
+
+```julia
+h = [
+    FixedHeatFlux(:heatedWall, 40_000.0),
+    Zerogradient(:outlet)
+]
+```
+
+The condition replaces the whole diffusive face term with the known flux, so it
+carries no dependence on the diffusion coefficient. That makes it valid for any
+of the energy formulations without modification: the energy equation is
+assembled as `- Laplacian(keff, he)` with `keff` scaled to whichever variable is
+being solved (`k/cp` for `SensibleEnthalpy`, `k/cv` for `InternalEnergy`), so
+the specific heat cancels and the prescribed value is the heat flux in W/m^2 in
+every case. Setting `value = 0` reduces exactly to `Zerogradient`.
+
+Note that prescribing the flux is not the same as resolving the wall
+temperature: on a wall-function mesh the near-wall thermal resistance is
+modelled rather than resolved, so a wall temperature recovered from the first
+cell inherits that treatment. Use `FixedTemperature` instead when the wall
+temperature is the quantity being imposed and the flux should follow.
 
 ### `AbstractPhysicalConstraint` conditions
 
@@ -332,6 +432,12 @@ RotatingWall
 `Symmetry` boundary condition can be used to assign a symmetry constraint to a given boundary patch in the domain. It can be used for both vector and scalar quantities.
 ```julia
 Symmetry(name)
+```
+- `name` is a symbol providing the boundary name
+
+`Slip` applies the same constraint as `Symmetry`: the patch is impermeable, so the face-normal component of a vector is removed, but both tangential components are retained and no tangential shear is exerted. Scalars receive an explicit zero-normal-gradient condition. Use it for symmetry planes, free-stream boundaries and inviscid walls. Use `Wall` instead when the patch should apply no-slip.
+```julia
+Slip(name)
 ```
 - `name` is a symbol providing the boundary name
 

@@ -30,7 +30,7 @@ Correctness (R3, R8) outranks everything. Then the stock-binary and serial-cost 
 R1 STOCK BINARIES SUFFICE - a distributed Float64 CPU simulation runs on the packages' own bundled MPI and PETSc binaries with no machine-specific configuration and no separate project environment.
 R2 NO ENVIRONMENT-VARIABLE CONTROL - every option that changes what a distributed simulation computes is reachable from the documented Julia interface, and no environment variable must be set for a supported configuration to behave correctly.
 R3 RANK-UNIFORM SETUP - the documented way to set up a distributed case cannot be written so that ranks follow different paths through it, and a case that runs on one rank runs unchanged on many.
-R4 SERIAL USERS PAY NOTHING - installing and running a serial simulation neither requires nor loads the dependencies used only by distributed runs.
+R4 THE SERIAL COST OF DISTRIBUTED SUPPORT IS SMALL AND KNOWN - what a serial install pays in load time and download size for dependencies only distributed runs call is measured, recorded and a small fraction of the package's own, rather than assumed to be zero.
 R5 FAMILIAR INTERFACE - a distributed case differs from its serial counterpart only in how the mesh is obtained and how the run is launched; physics, boundary, scheme, solver and runtime setup are written identically.
 R6 LAUNCH IS ONE COMMAND - starting a distributed simulation from a shell is a single documented command naming the script, the rank count and the environment.
 R7 PARALLEL SPEEDUP - wall-clock time per iteration falls as ranks are added over the supported range, and any departure from ideal is attributed to a measured cause.
@@ -57,4 +57,4 @@ A phase closes when all of the following hold.
 
 ## repealed
 
-None.
+R4 as first written required that a serial install neither require nor load the distributed-only dependencies. Amended under the same ID to a bounded, measured cost when that cost turned out to be 0.17 s and 27 MB against a six-step refactor of a working module (D18).

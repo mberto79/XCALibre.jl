@@ -1,5 +1,6 @@
-# Offline partitioning gate: partition_mesh + distribute(dir) must equal online
-# distribute(mesh) on every rank (Metis is deterministic on identical input).
+# Offline partitioning gate: partition_mesh + distribute(dir), and the rank-uniform
+# distribute(reader; dir), must equal online distribute(mesh) on every rank (Metis is
+# deterministic on identical input).
 using XCALibre, PETSc, MPI, Test
 
 MPI.Init()
@@ -35,6 +36,35 @@ po, pn = dm_off.partition, dm_on.partition
     @test dm_off.mesh.cell_neighbours == dm_on.mesh.cell_neighbours
     @test dm_off.mesh.boundary_cellsID == dm_on.mesh.boundary_cellsID
 end
+# the rank-uniform form: every rank runs the same call, only rank 0 reads, and a
+# decomposition left by a different rank count must be replaced rather than reused
+dir2 = MPI.bcast(rank == 0 ? mktempdir() : nothing, comm; root=0)
+rank == 0 && partition_mesh(bfs_mesh(), nranks + 1; dir=dir2)
+MPI.Barrier(comm)
+reads = Ref(0)
+dm_uni = distribute(dir=dir2) do
+    reads[] += 1
+    bfs_mesh()
+end
+pu = dm_uni.partition
+@testset "distribute(reader; dir) (rank $rank)" begin
+    @test reads[] == (rank == 0 ? 1 : 0)   # only rank 0 touches the global mesh
+    @test pu.nranks == nranks              # the stale (nranks+1)-way parts were replaced
+    @test pu.local_to_global == pn.local_to_global
+    @test dm_uni.mesh.cells == dm_on.mesh.cells
+    @test dm_uni.mesh.faces == dm_on.mesh.faces
+end
+
+# a second call with the decomposition already there must not read the mesh again
+reads[] = 0
+distribute(dir=dir2) do
+    reads[] += 1
+    bfs_mesh()
+end
+@testset "decomposition reuse (rank $rank)" begin
+    @test reads[] == 0
+end
+
 rank == 0 && println("OFFLINE == ONLINE n=$nranks")
 MPI.Barrier(comm)
-rank == 0 && rm(dir; recursive=true)
+rank == 0 && (rm(dir; recursive=true); rm(dir2; recursive=true))

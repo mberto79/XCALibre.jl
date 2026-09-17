@@ -107,3 +107,45 @@ at 1 / 2 / 4 / 8 ranks from TOTAL `ExecutionTime` over 500 iterations, with no e
 Both differences matter: total time includes a tail where the pressure solve gets cheaper as the
 case converges, which is why the same run is 3.03 s/iter over iterations 3 to 100 but 1.70 s/iter
 averaged over 500. Kept for context, not comparable with the table above.
+
+## Where the loss is: PETSc stage split, bfs_tet_5mm, 2026-09-17
+
+`petsc_options="-log_view"` through `run!`, 34 SIMPLE iterations (`KSPSolve` count 136 = 34 x 4
+solves, three velocity components plus pressure), same binding as above.
+
+| quantity | n=2 | n=8 | speedup on 4x the ranks |
+|---|---:|---:|---:|
+| total, s/iter | 0.456 | 0.2075 | 2.20x (55%) |
+| `KSPSolve`, s/iter | 0.203 | 0.151 | 1.35x (34%) |
+| everything else, s/iter | 0.253 | 0.057 | 4.45x (111%) |
+
+**XCALibre's own discretisation, gradient, interpolation and halo work scales superlinearly.**
+All of the parallel efficiency loss is inside the PETSc Krylov solve, whose share of an iteration
+rises from 45% to 73% between two and eight ranks.
+
+Inside the solve, the two events that grow are global synchronisation, not arithmetic:
+
+| event | n=2 time | n=2 imbalance | n=8 time | n=8 imbalance |
+|---|---:|---:|---:|---:|
+| `VecNorm` | 0.136 s | 1.1 | 2.731 s | 38.2 |
+| `VecScatterEnd` | 0.390 s | 7.5 | 1.386 s | 16.9 |
+| `MatMult` | 4.773 s | 1.1 | 2.927 s | 1.8 |
+
+`VecNorm` is an all-reduce: a 38x imbalance there is ranks ARRIVING at the reduction at different
+times, not the reduction being slow. `VecScatterEnd` is the wait for halo data. Both point at the
+same upstream cause, and PETSc names it directly: `MPI Msg Len` imbalance 3.566 at eight ranks.
+
+### The partition is balanced by cell count and not by communication
+
+Read back from the decompositions themselves:
+
+| ranks | owned cells max/min | ghost cells max/min | halo as share of owned |
+|---:|---:|---:|---:|
+| 2 | 1.00 | 1.02 | 0.5% |
+| 4 | 1.00 | 2.11 | 1.4% |
+| 8 | 1.00 | 3.63 | 3.0% |
+
+Cell counts are equal to three decimal places at every rank count, while one rank carries 3.63
+times the halo of another at eight ranks: the 3.566 PETSc measured. Metis is being asked for
+`:KWAY` with the default edge-cut objective, which balances vertices and minimises TOTAL cut
+without balancing per-rank communication volume.

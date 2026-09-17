@@ -12,7 +12,7 @@ function core_mhz()
     isempty(mhz) ? 0.0 : round(maximum(mhz), digits=1)
 end
 
-function bfs_case(domain, iters)
+function bfs_case(domain, iters; petsc_options="")
     velocity = [0.5, 0.0, 0.0]
     nu = 1e-3
     model = Physics(
@@ -39,7 +39,7 @@ function bfs_case(domain, iters)
         hardware=hardware, boundaries=BCs)
     initialise!(model.momentum.U, velocity)
     initialise!(model.momentum.p, 0.0)
-    model, config
+    model, config, petsc_options
 end
 
 report(n, ncells, t_short, t_long, short, long, res, mhz) = println(
@@ -55,12 +55,12 @@ if MODE == "serial"
     activate_multithread(CPU())
     mesh = UNV3D_mesh(ARGS[2], scale=0.001)
     function run_iters(k)
-        m, c = bfs_case(mesh, k)
+        m, c, _ = bfs_case(mesh, k)
         @elapsed run!(m, c)
     end
     run_iters(1) # absorb compilation before either timed run
     t_short = run_iters(SHORT)
-    m, c = bfs_case(mesh, LONG)
+    m, c, _ = bfs_case(mesh, LONG)
     t_long = @elapsed res = run!(m, c)
     mhz = core_mhz()
     report(0, length(mesh.cells), t_short, t_long, SHORT, LONG, res, mhz)
@@ -72,11 +72,12 @@ elseif MODE == "worker"
     dm = distribute(ARGS[2]; comm=comm)
     activate_multithread(CPU())
     ncells = MPI.Allreduce(dm.partition.n_owned, +, comm)
+    opts = length(ARGS) >= 4 ? ARGS[3] : ""
     function run_iters(k)
-        m, c = bfs_case(dm, k)
+        m, c, o = bfs_case(dm, k; petsc_options=opts)
         MPI.Barrier(comm)
         t0 = MPI.Wtime()
-        res = run!(m, c)
+        res = run!(m, c; petsc_options=o)
         MPI.Barrier(comm)
         MPI.Wtime() - t0, res
     end

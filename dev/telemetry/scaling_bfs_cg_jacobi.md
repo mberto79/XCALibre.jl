@@ -68,3 +68,42 @@ no memory bandwidth, so the remaining 30% still mixes halo exchange with bandwid
 The heated run also ended at a lower clock than the six-rank run (2900 against 3200 MHz), so 70%
 is approximate. Splitting the residual needs PETSc `-log_view` at two and six ranks; PETSc.jl
 registers an `atexit` finalize, so the report prints without extra code.
+
+## XCALibre against OpenFOAM, bfs_tet_5mm, 499,503 cells, 2026-09-17
+
+Same mesh, same session, same binding (`--bind-to core --map-by core`, the serial OpenFOAM run
+pinned with `taskset` to match), same `(t100 - t3) / 97` window, and the same solver settings:
+pressure relative tolerance 0.01 under-relaxed 0.2, velocity relative tolerance 0.1 under-relaxed
+0.8. OpenFOAM 12 `foamRun`, PCG with diagonal preconditioning and PBiCGStab with diagonal;
+XCALibre `Cg` with `Jacobi` and `Bicgstab` with `Jacobi` through PETSc.
+
+| ranks | OpenFOAM s/iter | efficiency | XCALibre s/iter | efficiency | XCALibre speed advantage |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 3.186 | 100% | 0.650 | 100% | 4.9x |
+| 2 | 1.936 | 82% | 0.372 | 87% | 5.2x |
+| 4 | 1.001 | 80% | 0.223 | 73% | 4.5x |
+| 8 | 0.526 | 76% | 0.174 | 47% | 3.0x |
+
+XCALibre is faster in absolute terms at every rank count, and at eight ranks it is still three
+times faster than OpenFOAM. Its parallel EFFICIENCY is better at two ranks and worse at four and
+eight, and the gap at eight ranks is 29 points.
+
+Part of that is arithmetic rather than a defect: efficiency is measured against a single-rank
+baseline that is five times faster, so a fixed per-iteration communication cost is a far larger
+share of XCALibre's 174 ms iteration than of OpenFOAM's 526 ms one at the same subdomain size of
+62,438 cells. That cannot be the whole story at a 29-point gap, so a real excess remains to be
+found; splitting it needs `-log_view` at two and eight ranks.
+
+Clock readings are not comparable between the two codes here: the OpenFOAM sample is taken after
+the run exits while XCALibre's is taken inside the timed run, so only within-code trends mean
+anything.
+
+Final residuals again agree across all four rank counts to sixteen significant figures.
+
+### Context: earlier unbound OpenFOAM runs
+
+`log.PCG_diagonal_PBiCGStab_diagonal*` in the benchmark case, 2026-08-14, gave 100 / 83 / 76 / 69%
+at 1 / 2 / 4 / 8 ranks from TOTAL `ExecutionTime` over 500 iterations, with no explicit binding.
+Both differences matter: total time includes a tail where the pressure solve gets cheaper as the
+case converges, which is why the same run is 3.03 s/iter over iterations 3 to 100 but 1.70 s/iter
+averaged over 500. Kept for context, not comparable with the table above.

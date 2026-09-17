@@ -17,8 +17,8 @@ foamDictionary system/fvSolution -entry solvers/U/solver -set PBiCGStab > /dev/n
 foamDictionary system/fvSolution -entry solvers/U/preconditioner -set diagonal > /dev/null
 
 per_iter() { awk '
-    /^Time = / { t = $3 }
-    /^ExecutionTime = / { if (t == 3) t3 = $3; if (t == 100) t100 = $3 }
+    /^Time = / { t = $3 }                 # OpenFOAM prints the step as "3s", not "3"
+    /^ExecutionTime = / { if (t == "3s") t3 = $3; if (t == "100s") t100 = $3 }
     END { printf "%.4f %s %s", (t100 - t3) / 97, t3, t100 }' "$1"; }
 max_mhz() { awk -F: '/cpu MHz/ {if ($2+0 > m) m = $2+0} END {printf "%.0f", m}' /proc/cpuinfo; }
 

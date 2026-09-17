@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-17T19:40:00+01:00
 STATE: BUILDING
 STEP: P1-M4-S5 - bring the remaining examples and the documentation onto the new interface
-HEAD: b0d475bc
+HEAD: 99d03e04
 BRANCH: HM/distributed-draft
 GATE: julia --project=dev/petscenv_stock test/distributed/gate.jl
 resume: rewrite the cylinder and cascade examples on `distribute(reader; dir)` and `is_root`, then run the distributed gate and time it against Q2

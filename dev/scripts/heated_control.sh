@@ -1,5 +1,5 @@
 #!/bin/bash
-# Heated single-rank control (P1-M3): run one rank on core 0 while the other five
+# Heated single-rank control: run one rank on core 0 while the other five
 # performance cores are loaded, so rank count and thermal state stop co-varying.
 #   dev/scripts/heated_control.sh <partdir_n1> <iters> <env>
 set -u

@@ -1,12 +1,6 @@
 #!/bin/bash
-# OpenFOAM strong-scaling reference for the same backward-facing-step case (P1-M3).
-# Copies the benchmark case to a scratch directory, runs PCG+diagonal / PBiCGStab+diagonal at
-# each rank count with the same core binding XCALibre is measured under, and reports the
-# per-iteration cost as (T100 - T3) / 97 so start-up and mesh loading cancel.
-#   dev/scripts/openfoam_scaling.sh <n>...
-# the case is OpenFOAM 12 (foamRun, constant/momentumTransport); the shell here usually has
-# the ESI build sourced, so re-enter from a clean environment before using this script:
-#   env -i HOME=$HOME PATH=/usr/bin:/bin bash -lc 'source $HOME/OpenFOAM/OpenFOAM-12/etc/bashrc; dev/scripts/openfoam_scaling.sh 1 2 4 8'
+# OpenFOAM strong-scaling reference for the backward-facing-step case; see dev/scripts/INDEX.md.
+# Per-iteration cost is (T100 - T3) / 97, so start-up and mesh loading cancel.
 set -euo pipefail
 SRC=/home/humberto/casesXCALibre/XCALibre_benchmarks/3D_BFS_laminar/OpenFOAM
 WORK=$HOME/.cache/xcal_of_scaling
@@ -31,7 +25,8 @@ max_mhz() { awk -F: '/cpu MHz/ {if ($2+0 > m) m = $2+0} END {printf "%.0f", m}' 
 for n in "$@"; do
     rm -rf processor* [1-9]* 0.*
     if [ "$n" -eq 1 ]; then
-        foamRun > "log.n$n" 2>&1
+        # pinned to one physical core, matching what mpiexec gives every other rank count
+        taskset -c 0-1 foamRun > "log.n$n" 2>&1
     else
         foamDictionary system/decomposeParDict -entry numberOfSubdomains -set "$n" > /dev/null
         decomposePar > /dev/null 2>&1

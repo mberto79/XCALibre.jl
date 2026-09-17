@@ -1,9 +1,5 @@
-# Strong-scaling probe for the distributed backward-facing-step case (P1-M3).
-# Mesh partitions are cached per rank count so repeated runs measure the solver only.
-#   julia --project=<env> dev/scripts/scaling_probe.jl serial <mesh.unv> <iters>
-#   julia --project=<env> dev/scripts/scaling_probe.jl drive  <mesh.unv> <iters> <n>...
-#   mpiexec -n <n> julia --project=<env> dev/scripts/scaling_probe.jl worker <partdir> <iters>
-
+# Strong-scaling probe for the distributed backward-facing-step case; see dev/scripts/INDEX.md.
+# Partitions are cached per rank count so repeated runs measure the solver only.
 const MODE = ARGS[1]
 const CACHE = joinpath(homedir(), ".cache", "xcal_scaling_probe")
 

@@ -220,3 +220,42 @@ exposed as a keyword can still be supplied through the `petsc_options` keyword o
 Informational `@info` messages are printed once (from rank 0) rather than once per rank;
 warnings and errors still surface from every rank so rank-local failures remain visible. This
 is handled automatically when the mesh is distributed — nothing is required in your script.
+
+## What is and is not supported
+
+Distributed today:
+
+- Steady and transient incompressible flow through the SIMPLE and PISO families.
+- `Laminar`, `KOmega` and `KOmegaSST` turbulence, including wall distance.
+- CPU and GPU backends, periodic patches, and writing results in OpenFOAM's decomposed layout
+  for reconstruction with the usual tools.
+
+Not distributed, and these error or fall back rather than silently giving a wrong answer:
+
+- The `KOmegaLKE` transition model and the LES models. They need the same synchronisation audit
+  `KOmegaSST` received and have not had it.
+- Float32 with `BoomerAMG`: the stock PETSc libraries carry hypre at Float64 only.
+- GPU-native linear solves without a CUDA- or ROCm-enabled PETSc build. Use `solve_on=CPU()`.
+
+Two behaviours to know about:
+
+- `convergence` in a `SolverSetup` is not a distributed control. PETSc converges on `atol`,
+  `rtol` and `itmax`; `convergence` is used only as the absolute tolerance when both `atol` and
+  `rtol` are zero.
+- `wall_distance!` can report that it did not converge while the residual is perfectly
+  acceptable. It compares against a fixed threshold that predates the distributed path and the
+  message is harmless.
+
+## What to expect from parallel performance
+
+The pressure and momentum solves are bandwidth-bound, so the useful rank count is set by memory
+channels rather than cores. On a single-socket laptop with one memory controller, a
+communication-free, perfectly balanced vector update already scales at only 63% from two ranks
+to eight, which puts a ceiling on everything above it: on a 500k-cell tetrahedral
+backward-facing step, parallel efficiency there was 87% at two ranks and 47% at eight. A machine
+with more memory channels per core should do considerably better, and the figures above are not
+a property of the solver.
+
+Measure your own case before choosing a rank count, and prefer fewer, larger subdomains: each
+Krylov iteration ends in a global reduction, so small subdomains spend a growing share of the
+iteration synchronising rather than computing.

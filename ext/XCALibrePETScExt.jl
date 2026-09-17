@@ -67,7 +67,10 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     part = dmesh.partition
     TF = _get_float(dmesh)
     petsclib = _petsclib(TF)
-    PETSc.initialize(petsclib)
+    # the same string configures PETSc's start-up and the Krylov solve; entries PETSc does not
+    # recognise at one stage are consumed at the other. Start-up options apply on the FIRST call
+    # only, since PETSc is initialised once per process.
+    PETSc.initialize(petsclib; options=String.(split(petsc_options)))
     PI = petsclib.PetscInt
     A = _A(eqn)
     # device fields + host PETSc = hard error unless solves are explicitly opted onto host

@@ -83,11 +83,15 @@ Adapt.adapt_structure(to, dm::DistributedMesh) = DistributedMesh(
     getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), HaloCache())
 
 """
+    bind_device!(backend)
     bind_device!(backend, rank)
 
 Bind this MPI rank to GPU `rank % ndevices` (one rank per device). No-op on CPU. Call
-before `adapt(backend, dmesh)` or building fields/`HaloExchange` on a GPU backend.
+before `adapt(backend, dmesh)` or building fields/`HaloExchange` on a GPU backend. Without
+`rank` the calling rank's own id is used, so no script needs to query the communicator.
 """
+bind_device!(backend) =
+    (MPI.Initialized() || MPI.Init(); bind_device!(backend, MPI.Comm_rank(MPI.COMM_WORLD)))
 bind_device!(::KernelAbstractions.CPU, rank::Integer) = nothing
 bind_device!(backend, rank::Integer) =
     error("bind_device!: no GPU extension loaded for $(typeof(backend)) — e.g. `using CUDA`")

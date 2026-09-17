@@ -1,5 +1,5 @@
 export build_dual_graph, partition_cells, extract_subdomain, decompose, distribute
-export partition_mesh
+export partition_mesh, is_root
 
 # NEW SECTION: partitioning
 
@@ -248,6 +248,25 @@ function decompose(mesh, nparts::Integer; periodic_patches=())
 end
 
 """
+    is_root()
+    is_root(comm)
+
+True on the rank that owns terminal output and result writing, and true in a serial run where
+MPI was never initialised, so one guard serves both:
+
+    is_root() && println("final residual ", residuals.p[end])
+"""
+is_root() = !(MPI.Initialized() && !MPI.Finalized()) || is_root(MPI.COMM_WORLD)
+is_root(comm) = MPI.Comm_rank(comm) == 0
+
+# non-root ranks: silence @info/@debug, keep @warn/@error so crashes still surface from any rank
+function quiet_nonroot!(comm)
+    (MPI.Comm_size(comm) > 1 && MPI.Comm_rank(comm) != 0) &&
+        global_logger(ConsoleLogger(stderr, Logging.Warn))
+    nothing
+end
+
+"""
     distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
 
 Online mesh distribution: rank 0 partitions `mesh` (Metis k-way) and scatters one
@@ -258,13 +277,6 @@ periodic boundaries: matched owner cells are contracted in the partition graph s
 periodic pair lands on one rank, and `construct_periodic` on the `DistributedMesh` then
 works per rank exactly as in serial.
 """
-# non-root ranks: silence @info/@debug, keep @warn/@error so crashes still surface from any rank
-function quiet_nonroot!(comm)
-    (MPI.Comm_size(comm) > 1 && MPI.Comm_rank(comm) != 0) &&
-        global_logger(ConsoleLogger(stderr, Logging.Warn))
-    nothing
-end
-
 function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     MPI.Initialized() || MPI.Init()
     quiet_nonroot!(comm)
@@ -284,20 +296,47 @@ function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
 end
 
 """
-    distribute(reader::Function; comm=MPI.COMM_WORLD, periodic_patches=())
+    distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
 
-Root-only read + online distribution: rank 0 calls `reader()` to build the global mesh, other
-ranks skip it. Lets a script read a mesh under MPI without a manual `rank == 0` guard, e.g.
+Read and distribute a mesh from a call every rank makes identically. Rank 0 runs `reader()` to
+build the global mesh and the other ranks skip it, so no `rank == 0` guard appears in the script
+and no value can differ in type between ranks:
 
-    mesh = distribute(comm=comm) do
-        UNV2D_mesh(path, scale=0.001)
+    mesh = distribute() do
+        UNV3D_mesh(path, scale=0.001)
     end
+
+With `dir`, the decomposition is written there once and every rank then loads only its own part,
+which removes rank 0's global-mesh memory ceiling from later runs. A decomposition already in
+`dir` for the same number of ranks is reused and `reader()` is never called; one for a different
+number of ranks is replaced:
+
+    mesh = distribute(dir="parts") do
+        UNV3D_mesh(path, scale=0.001)
+    end
+
+MPI is initialised if it is not already.
 """
-function distribute(reader::Function; comm=MPI.COMM_WORLD, periodic_patches=())
+function distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
     MPI.Initialized() || MPI.Init()
-    mesh = MPI.Comm_rank(comm) == 0 ? reader() : nothing
-    distribute(mesh; comm, periodic_patches)
+    if dir === nothing
+        mesh = MPI.Comm_rank(comm) == 0 ? reader() : nothing
+        return distribute(mesh; comm, periodic_patches)
+    end
+    nranks = MPI.Comm_size(comm)
+    if MPI.Comm_rank(comm) == 0 && !_parts_match(dir, nranks)
+        foreach(f -> rm(joinpath(dir, f)), _part_files(dir)) # a stale part count would be reused
+        partition_mesh(reader(), nranks; dir, periodic_patches)
+        GC.gc(true) # drop the global mesh before the ranks claim memory for their own parts
+    end
+    MPI.Barrier(comm) # every part must be on disk before any rank reads
+    distribute(dir; comm)
 end
+
+_part_files(dir) = isdir(dir) ?
+    filter(f -> startswith(f, "rank_") && endswith(f, ".jls"), readdir(dir)) : String[]
+
+_parts_match(dir, nranks) = length(_part_files(dir)) == nranks
 
 # NEW SECTION: offline partitioning
 

@@ -1,43 +1,22 @@
-# Distributed (MPI) version of TO_UPDATE_WONT_RUN/3D_BFS.jl. Needs an environment with
-# XCALibre, PETSc and MPI. Run over 4 ranks with:
-#   julia --project=<env> -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 $(Base.julia_cmd()) --project=<env> examples/3D_BFS_mpi.jl`)'
-
-# To control multithreading per rank, use julia default mechanism
-
-#= source dev/local_stack.sh   # optional here, required for GPU examples
-julia --project=dev/petscenv -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 --bind-to core --map-by socket:PE=2 $(Base.julia_cmd()) -t 2 --project=dev/petscenv examples/3D_BFS_mpi.jl`)'
-
-=#
-
-# To test core pinning works
-#=
-julia --project=dev/petscenv -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 --bind-to core --map-by socket:PE=2 $(Base.julia_cmd()) --project=dev/petscenv -e "using MPI; MPI.Init(); r = MPI.Comm_rank(MPI.COMM_WORLD); println(r, \"  \", only(filter(l->startswith(l, \"Cpus_allowed_list\"), readlines(\"/proc/self/status\"))))"`)'
-
-=#
+# Distributed (MPI) backward-facing step. Needs XCALibre, PETSc and MPI in the environment;
+# the binaries shipped by PETSc_jll and MPI.jl are enough for this Float64 CPU case.
+#
+# Install the launcher once:
+#   julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
+# then run over four ranks with:
+#   mpiexecjl -n 4 julia --project=<env> examples/3D_BFS_mpi.jl [mesh.unv]
+#
+# Threads per rank use Julia's own -t; one thread per rank is the right default here.
 using XCALibre, PETSc, MPI
 
-# CUDA-configured PETSc (built for hypre/BoomerAMG) errors at init unless GPU-aware MPI is
-# confirmed. This is a CPU run, so skip the check. Must be set before PetscInitialize.
-get!(ENV, "PETSC_OPTIONS", "-use_gpu_aware_mpi 0")
+mesh_file = isempty(ARGS) ?
+    joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), "bfs_unv_tet_10mm.unv") : ARGS[1]
 
-MPI.Init()
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-nranks = MPI.Comm_size(comm)
-
-# rank 0 partitions the global mesh offline; every rank then loads only its own part.
-# partdir must be a String on ALL ranks: passing `nothing` on non-root dispatches to
-# distribute(mesh; ...), which blocks in MPI.recv waiting for a scatter the offline path
-# never sends. Override the mesh with XCAL_BFS_GRIDS/XCAL_BFS_MESH.
-grids_dir = get(ENV, "XCAL_BFS_GRIDS", pkgdir(XCALibre, "examples/0_GRIDS"))
-meshfile = get(ENV, "XCAL_BFS_MESH", "bfs_unv_tet_10mm.unv")
-partdir = joinpath(pwd(), "parts_n$nranks")
-if rank == 0 && !isdir(partdir) # reuse an existing decomposition for the same rank count
-    mesh = UNV3D_mesh(joinpath(grids_dir, meshfile), scale=0.001)
-    partition_mesh(mesh, nranks; dir=partdir)
+# every rank makes this identical call: rank 0 decomposes into `dir` the first time, the rest
+# wait, and each then loads only its own part. A decomposition already there is reused.
+mesh_dist = distribute(dir=joinpath(pwd(), "parts")) do
+    UNV3D_mesh(mesh_file, scale=0.001)
 end
-MPI.Barrier(comm)
-mesh_dist = distribute(partdir; comm=comm)
 
 backend = CPU(); workgroup = AutoTune()
 activate_multithread(backend)
@@ -87,9 +66,7 @@ solvers = (
     ),
     p = SolverSetup(
         solver      = Cg(),
-        # preconditioner = Jacobi(),
-        # preconditioner = BoomerAMG(),
-        preconditioner = GAMG(),
+        preconditioner = Jacobi(), # GAMG() needs no extra build; BoomerAMG() needs hypre
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 0.01,
@@ -109,13 +86,10 @@ runtime = Runtime(iterations=100, write_interval=100, time_step=1)
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
 
-GC.gc(true)
-
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-MPI.Barrier(comm)
 t = @elapsed residuals = run!(model, config, output=OpenFOAM())
 
-rank == 0 && println("done in ", t, " s: final residuals Ux=", residuals.Ux[end],
+is_root() && println("done in ", t, " s: final residuals Ux=", residuals.Ux[end],
     " Uy=", residuals.Uy[end], " Uz=", residuals.Uz[end], " p=", residuals.p[end])

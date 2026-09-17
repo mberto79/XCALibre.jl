@@ -1,25 +1,16 @@
-# Distributed (MPI) version of 2D_cylinder_U.jl. Needs an environment with XCALibre,
-# PETSc and MPI. Run over 4 ranks with:
-#   julia --project=<env> -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 $(Base.julia_cmd()) --project=<env> examples/2D_cylinder_U_mpi.jl`)'
-
-# To control multithreading per rank, use julia default mechanism
-
-#= source dev/local_stack.sh   # optional here, required for GPU examples
-julia --project=dev/petscenv -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 --bind-to core --map-by socket:PE=2 $(Base.julia_cmd()) -t 2 --project=dev/petscenv examples/2D_cylinder_U_mpi.jl`)'
-
-=#
-
-# To test core pinning works
-#=
-julia --project=dev/petscenv -e 'using MPI; run(`$(MPI.mpiexec()) -n 4 --bind-to core --map-by socket:PE=2 $(Base.julia_cmd()) --project=dev/petscenv -e "using MPI; MPI.Init(); r = MPI.Comm_rank(MPI.COMM_WORLD); println(r, \"  \", only(filter(l->startswith(l, \"Cpus_allowed_list\"), readlines(\"/proc/self/status\"))))"`)'
-
-=#
+# Distributed (MPI) version of 2D_cylinder_U.jl. Needs XCALibre, PETSc and MPI in the
+# environment; the binaries shipped by PETSc_jll and MPI.jl are enough for this case.
+#
+# Install the launcher once:
+#   julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
+# then run over four ranks with:
+#   mpiexecjl -n 4 julia --project=<env> examples/2D_cylinder_U_mpi.jl
+#
+# Threads per rank use Julia's own -t; one thread per rank is the right default here.
 using XCALibre, PETSc, MPI
 
-comm = MPI.COMM_WORLD
-
-# rank 0 reads the global mesh; distribute partitions and scatters it (read only on root)
-mesh_dist = distribute(comm=comm) do
+# every rank makes this identical call: rank 0 reads and partitions, the others receive
+mesh_dist = distribute() do
     grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
     UNV2D_mesh(joinpath(grids_dir, "cylinder_d10mm_5mm.unv"), scale=0.001)
 end
@@ -100,5 +91,5 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config)
 
-MPI.Comm_rank(comm) == 0 && println("done: final residuals Ux=", residuals.Ux[end],
+is_root() && println("done: final residuals Ux=", residuals.Ux[end],
     " Uy=", residuals.Uy[end], " p=", residuals.p[end])

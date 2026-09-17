@@ -2,27 +2,23 @@
 # OpenFOAM writer (processor<rank>/ dirs; open XCALibre.foam in ParaView).
 # Periodic :top/:bottom: distribute(periodic_patches=...) colocates matched cell pairs
 # per rank, then construct_periodic on the DistributedMesh works exactly as in serial.
-# Needs an env with XCALibre, PETSc, MPI, CUDA and a CUDA-enabled MPI/PETSc stack
-# (locally: `source dev/local_stack.sh`; without a CUDA PETSc pass solve_on=CPU()).
-# Run over 2 ranks with:
-#   julia --project=<env> -e 'using MPI; run(`$(MPI.mpiexec()) -n 2 $(Base.julia_cmd()) --project=<env> examples/3D_cascade_mpi_GPU.jl`)'
+# Needs XCALibre, PETSc, MPI and CUDA, plus a CUDA-enabled MPI and PETSc build: PETSc_jll
+# ships no CUDA, so without one pass solve_on=CPU() to run the solves on the host.
+#
+# Install the launcher once:
+#   julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
+# then run over two ranks with:
+#   mpiexecjl -n 2 julia --project=<env> examples/3D_cascade_mpi_GPU.jl
 using XCALibre, PETSc, MPI, CUDA
 
-MPI.Init()
-comm = MPI.COMM_WORLD
-rank = MPI.Comm_rank(comm)
-
-# rank 0 reads the global mesh; distribute partitions and scatters it
-mesh = if rank == 0
+# every rank makes this identical call: rank 0 reads and partitions, the others receive
+mesh_dist = distribute(periodic_patches=[(:top, :bottom)]) do
     grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
     UNV3D_mesh(joinpath(grids_dir, "cascade_3D_periodic_2p5mm.unv"), scale=0.001)
-else
-    nothing
 end
-mesh_dist = distribute(mesh; comm=comm, periodic_patches=[(:top, :bottom)])
 
 backend = CUDABackend(); workgroup = 32
-bind_device!(backend, rank) # ranks pick/share the local GPU(s)
+bind_device!(backend) # ranks pick/share the local GPU(s)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 periodic = construct_periodic(mesh_dist, backend, :top, :bottom)
 mesh_dev = adapt(backend, mesh_dist)
@@ -94,5 +90,5 @@ initialise!(model.momentum.p, 0.0)
 # native GPU solve needs a CUDA PETSc; on a host-only PETSc add solve_on=CPU()
 residuals = run!(model, config, output=OpenFOAM())
 
-rank == 0 && println("done: final residuals Ux=", residuals.Ux[end],
+is_root() && println("done: final residuals Ux=", residuals.Ux[end],
     " Uy=", residuals.Uy[end], " p=", residuals.p[end])

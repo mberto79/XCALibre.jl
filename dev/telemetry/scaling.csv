@@ -59,3 +59,9 @@ XCALibre,Cg,BoomerAMG_reuse5,bfs_tet_5mm,499503,4,pinned_2200,2200,0.4671,
 XCALibre,Cg,BoomerAMG_reuse10,bfs_tet_5mm,499503,4,pinned_2200,2200,0.4216,
 XCALibre,Cg,BoomerAMG_reuse25,bfs_tet_5mm,499503,4,pinned_2200,2200,0.3951,
 XCALibre,Cg,BoomerAMG_reuse50,bfs_tet_5mm,499503,4,pinned_2200,2200,0.4260,
+XCALibre,Cg,GAMG_reuse25,bfs_tet_5mm,499503,1,pinned_2200,2200,1.1065,100.0
+XCALibre,Cg,GAMG_reuse25,bfs_tet_5mm,499503,4,pinned_2200,2200,0.3023,91.5
+XCALibre,Cg,GAMG_reuse25,bfs_tet_5mm,499503,8,pinned_2200,2200,0.2115,65.4
+XCALibre,Cg,GAMG_reuse10,bfs_tet_5mm,499503,1,pinned_2200,2200,1.1174,100.0
+XCALibre,Cg,GAMG_reuse10,bfs_tet_5mm,499503,4,pinned_2200,2200,0.3054,91.5
+XCALibre,Cg,GAMG_reuse10,bfs_tet_5mm,499503,8,pinned_2200,2200,0.2128,65.6

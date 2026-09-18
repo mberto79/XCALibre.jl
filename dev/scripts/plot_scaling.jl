@@ -56,6 +56,7 @@ jac5  = pick(t, "code"=>"XCALibre", "solver"=>"Cg", "preconditioner"=>"Jacobi", 
 jac4  = pick(t, "code"=>"XCALibre", "solver"=>"Cg", "preconditioner"=>"Jacobi", "mesh"=>"bfs_unv_tet_4mm", "clock_policy"=>P)
 amg5  = pick(t, "code"=>"XCALibre", "preconditioner"=>"BoomerAMG", "clock_policy"=>P)
 gam5  = pick(t, "code"=>"XCALibre", "preconditioner"=>"GAMG", "clock_policy"=>P)
+gamf  = pick(t, "code"=>"XCALibre", "preconditioner"=>"GAMG_reuse25", "clock_policy"=>P)
 ofg   = pick(t, "code"=>"OpenFOAM", "solver"=>"GAMG", "clock_policy"=>P)
 ofp   = pick(t, "code"=>"OpenFOAM", "solver"=>"PCG", "clock_policy"=>P)
 free5 = pick(t, "code"=>"XCALibre", "solver"=>"Cg", "preconditioner"=>"Jacobi", "mesh"=>"bfs_tet_5mm", "clock_policy"=>"free")
@@ -76,6 +77,7 @@ end
 # 2. efficiency, every configuration, clock pinned
 p2 = plot_curves((("XCALibre Cg+Jacobi 500k", jac5), ("XCALibre Cg+Jacobi 1.32M", jac4),
                   ("XCALibre Cg+BoomerAMG 500k", amg5), ("XCALibre Cg+GAMG 500k", gam5),
+                  ("XCALibre Cg+GAMG reuse=25", gamf),
                   ("OpenFOAM GAMG 500k", ofg), ("OpenFOAM PCG+diagonal 500k", ofp)),
                  "efficiency_pct", "parallel efficiency (%)",
                  "Efficiency at a pinned clock"; legend=:bottomleft, ylims=(0, 145))
@@ -87,6 +89,7 @@ p3 = plot(xlabel="MPI ranks", ylabel="speedup", legend=:topleft,
 plot!(p3, [1, 8], [1, 8], ls=:dash, c=:black, lw=1, label="ideal")
 for (lab, idx) ∈ (("XCALibre Cg+Jacobi 500k", jac5), ("XCALibre Cg+Jacobi 1.32M", jac4),
                   ("XCALibre Cg+BoomerAMG 500k", amg5), ("XCALibre Cg+GAMG 500k", gam5),
+                  ("XCALibre Cg+GAMG reuse=25", gamf),
                   ("OpenFOAM GAMG 500k", ofg), ("OpenFOAM PCG+diagonal 500k", ofp))
     plot!(p3, series(t, idx, "ranks"), speedup(idx), m=:circle, ms=4, lw=2, label=lab)
 end
@@ -96,7 +99,8 @@ p4 = plot(xlabel="MPI ranks", ylabel="s / iteration (log)", yscale=:log10, legen
           title="Absolute cost, same mesh and clock",
           xticks=([1,2,4,6,8], ["1","2","4","6","8"]))
 for (lab, idx) ∈ (("XCALibre Cg+Jacobi", jac5), ("XCALibre Cg+BoomerAMG", amg5),
-                  ("XCALibre Cg+GAMG", gam5), ("OpenFOAM GAMG", ofg), ("OpenFOAM PCG+diagonal", ofp))
+                  ("XCALibre Cg+GAMG", gam5), ("XCALibre Cg+GAMG reuse=25", gamf),
+                  ("OpenFOAM GAMG", ofg), ("OpenFOAM PCG+diagonal", ofp))
     plot!(p4, series(t, idx, "ranks"), series(t, idx, "s_per_iter"), m=:circle, ms=4, lw=2, label=lab)
 end
 

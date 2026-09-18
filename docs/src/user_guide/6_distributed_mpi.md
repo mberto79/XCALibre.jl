@@ -161,21 +161,23 @@ iteration (6–8× here), which can cut the number of outer SIMPLE iterations ne
 steady state (a further gain not visible in the per-iteration figure above). Rule of thumb: use
 Jacobi for small/medium cases, AMG for large ones (especially when the pressure solve dominates).
 
-### Rebuilding vs reusing the hierarchy
+### Rebuilding vs freezing the hierarchy
 
 In SIMPLE the pressure matrix keeps a **fixed sparsity pattern** (no mesh refinement) but its
 coefficients change slightly each outer iteration. Rebuilding the whole AMG hierarchy on every
 solve is expensive, so both preconditioners avoid it — differently:
 
-- `BoomerAMG(reuse = N)` freezes the hierarchy and rebuilds it only every `N` solves (default
-  `10`; `reuse = 1` rebuilds every solve). HYPRE cannot partially reuse a hierarchy, so this
+- `BoomerAMG(freeze = N)` holds the whole preconditioner fixed for `N` solves and rebuilds it
+  from the current matrix on the `N`th (default `10`; `freeze = 1` rebuilds every solve). HYPRE cannot partially reuse a hierarchy, so this
   all-or-nothing freeze is the only option; the frozen hierarchy remains a good preconditioner
   in cases where the matrix changes gently between rebuilds.
 - `GAMG()` sets `reuse_interpolation = true` by default: it builds the aggregation and
   interpolation operators once and recomputes only the (cheap) coarse operators and smoothers
   each solve, so the hierarchy stays numerically current at a fraction of a full setup. This is
-  valid precisely because the sparsity pattern never changes. `GAMG(reuse = N)` can additionally
-  freeze the whole preconditioner for `N` solves if wanted (default `1`).
+  valid precisely because the sparsity pattern never changes. `GAMG(freeze = N)` can additionally
+  hold the whole preconditioner fixed for `N` solves, skipping even that update (default `1`).
+
+`freeze` was called `reuse` before; `reuse = N` is still accepted with a deprecation warning.
 
 ### Tuning keywords
 
@@ -193,7 +195,7 @@ defaults are 2D-oriented and build an over-complex, memory-heavy hierarchy in 3D
 - `grid_sweeps_all` — smoother sweeps per level.
 
 ```julia
-BoomerAMG(strong_threshold = 0.6, coarsen_type = "PMIS", relax_type_all = "Chebyshev", reuse = 20)
+BoomerAMG(strong_threshold = 0.6, coarsen_type = "PMIS", relax_type_all = "Chebyshev", freeze = 20)
 ```
 
 **GAMG** → `-pc_gamg_<k> v`. Common knobs:

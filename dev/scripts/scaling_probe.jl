@@ -39,9 +39,9 @@ function bfs_case(domain, iters; petsc_options="", pc=PCNAME)
                         convergence=1e-7, relax=0.8, rtol=0.1),
         p = SolverSetup(solver=Cg(),
                         preconditioner = pc == "boomeramg" ?
-                                           (PCREUSE === nothing ? BoomerAMG() : BoomerAMG(reuse=PCREUSE)) :
+                                           (PCREUSE === nothing ? BoomerAMG() : BoomerAMG(freeze=PCREUSE)) :
                                          pc == "gamg" ?
-                                           (PCREUSE === nothing ? GAMG() : GAMG(reuse=PCREUSE)) : Jacobi(),
+                                           (PCREUSE === nothing ? GAMG() : GAMG(freeze=PCREUSE)) : Jacobi(),
                         convergence=1e-7, relax=0.2, rtol=0.01, itmax=1000))
     schemes = (U = Schemes(time=SteadyState, divergence=Upwind, gradient=Gauss),
                p = Schemes(time=SteadyState, gradient=Gauss))

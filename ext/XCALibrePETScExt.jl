@@ -26,9 +26,9 @@ _pc_options(p::BoomerAMG) =
 _pc_options(p::GAMG) =
     NamedTuple(Symbol("pc_gamg_$k") => v for (k, v) ∈ pairs(p.opts))
 
-# PCs that manage their own hierarchy across solves carry a `reuse` count (freeze every N solves)
-_pc_reuse(p) = 1
-_pc_reuse(p::Union{BoomerAMG,GAMG}) = p.reuse
+# PCs that manage their own hierarchy across solves carry a `freeze` count (rebuild every N solves)
+_pc_freeze(p) = 1
+_pc_freeze(p::Union{BoomerAMG,GAMG}) = p.freeze
 
 # NEW SECTION: solver type
 
@@ -128,7 +128,7 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
-    setup_every = _pc_reuse(setup.preconditioner)
+    setup_every = _pc_freeze(setup.preconditioner)
     XPETScSolver(petsclib, Amat, b, x, ksp, n, nnz_owned, vals,
         Vector{TF}(undef, n), Vector{TF}(undef, n), setup_every, Ref(0))
 end
@@ -159,9 +159,9 @@ _copy_owned_out!(s, x) = begin
     copyto!(view(x, 1:s.n_owned), s.xhost)
 end
 
-# rebuild the PC every `setup_every` solves; reuse the (cheap-to-apply) hierarchy in between.
+# rebuild the PC every `setup_every` solves; apply the frozen (cheap-to-apply) hierarchy in between.
 # Krylov still uses the updated matrix, so it converges to the current system's solution.
-function _maybe_reuse_pc!(s::XPETScSolver)
+function _maybe_freeze_pc!(s::XPETScSolver)
     s.setup_every <= 1 && return
     n = s.nsolve[]; s.nsolve[] = n + 1
     flag = (n % s.setup_every == 0) ? LibPETSc.PETSC_FALSE : LibPETSc.PETSC_TRUE
@@ -169,7 +169,7 @@ function _maybe_reuse_pc!(s::XPETScSolver)
 end
 
 function psolve!(s::XPETScSolver, x::AbstractVector)
-    _maybe_reuse_pc!(s)
+    _maybe_freeze_pc!(s)
     _copy_owned_in!(s, x)
     PETSc.solve!(s.x, s.ksp, s.b)
     _copy_owned_out!(s, x)

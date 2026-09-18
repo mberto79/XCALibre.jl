@@ -36,6 +36,12 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_DILU.jl")
     end
 
+    @testset "AMG preconditioner freeze" begin
+        @test BoomerAMG(freeze=7).freeze == 7 && GAMG(freeze=7).freeze == 7
+        @test (@test_deprecated BoomerAMG(reuse=3)).freeze == 3
+        @test (@test_deprecated GAMG(reuse=3)).freeze == 3
+    end
+
     @testset "Mixture Multiphase Unit Test" begin
         include("unit_test_laplace.jl")
     end

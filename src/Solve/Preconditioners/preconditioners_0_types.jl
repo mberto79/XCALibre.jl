@@ -34,9 +34,11 @@ pressure). Recommended pressure preconditioner for distributed runs.
 Defaults are tuned for 3D (`BOOMERAMG_3D_DEFAULTS`): hypre's own defaults are 2D-tuned and
 build a high-complexity hierarchy in 3D that degrades as the mesh grows.
 
-`reuse` rebuilds the AMG hierarchy only every `reuse` solves (default 10). In SIMPLE the
-pressure matrix changes VALUES only, so a hierarchy stays a good preconditioner for many
-iterations; rebuilding it every solve otherwise dominates runtime. `reuse=1` rebuilds every solve.
+`freeze=N` holds the whole preconditioner fixed for `N` solves and rebuilds it from the current
+matrix on the `N`th (default 10); in between, Krylov iterates on the current matrix with a
+hierarchy built from an older one. In SIMPLE the pressure matrix changes VALUES only, so a stale
+hierarchy stays a good preconditioner, and a full hypre rebuild every solve otherwise dominates
+runtime. `freeze=1` rebuilds every solve. `reuse` is a deprecated alias of `freeze`.
 
 Each other keyword `k=v` overrides a default and is passed to PETSc as `-pc_hypre_boomeramg_<k> v`.
 Common knobs: `strong_threshold` (0.5-0.7 in 3D), `coarsen_type` ("HMIS"/"PMIS"/"Falgout"),
@@ -46,14 +48,18 @@ Common knobs: `strong_threshold` (0.5-0.7 in 3D), `coarsen_type` ("HMIS"/"PMIS"/
 """
 struct BoomerAMG{NT<:NamedTuple} <: PreconditionerType
     opts::NT
-    reuse::Int
+    freeze::Int
 end
 
 # 3D CFD-Poisson defaults: low operator complexity that scales with mesh size
 const BOOMERAMG_3D_DEFAULTS = (
     strong_threshold = 0.7, coarsen_type = "HMIS", interp_type = "ext+i",
     agg_nl = 1, agg_num_paths = 2)
-BoomerAMG(; reuse=10, kwargs...) = BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), reuse)
+BoomerAMG(; freeze=10, reuse=nothing, kwargs...) =
+    BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), _freeze(freeze, reuse, :BoomerAMG))
+
+_freeze(freeze, ::Nothing, _) = freeze
+_freeze(_, reuse, T) = (Base.depwarn("`$T(reuse=N)` is deprecated, use `$T(freeze=N)`", T); reuse)
 
 """
     GAMG(; kwargs...) <: PreconditionerType
@@ -64,20 +70,22 @@ PETSc native aggregation AMG (`-pc_type gamg`). Distributed meshes only; needs `
 Defaults set `reuse_interpolation=true`: because the mesh never refines, the pressure matrix
 keeps a FIXED sparsity pattern, so GAMG builds the aggregation + prolongation P once and
 recomputes only the coarse operators (RAP) and smoothers each solve — the hierarchy stays
-numerically current at a fraction of a full setup. `reuse` additionally freezes the whole PC
-for `reuse` solves via KSPSetReusePreconditioner (default 1 = let GAMG's cheap per-solve rebuild run).
+numerically current at a fraction of a full setup. `freeze=N` additionally holds the whole
+preconditioner fixed for `N` solves, skipping even that update, and rebuilds it on the `N`th
+(default 1 = update every solve). `reuse` is a deprecated alias of `freeze`.
 
 Each keyword `k=v` overrides a default and is passed as `-pc_gamg_<k> v`, e.g.
 `GAMG(threshold=0.02, square_graph=1)`. See the PETSc `-pc_gamg_*` options.
 """
 struct GAMG{NT<:NamedTuple} <: PreconditionerType
     opts::NT
-    reuse::Int
+    freeze::Int
 end
 
 # reuse_interpolation valid only for SAME_NONZERO_PATTERN — guaranteed here (no mesh refinement)
 const GAMG_DEFAULTS = (reuse_interpolation = true,)
-GAMG(; reuse=1, kwargs...) = GAMG(merge(GAMG_DEFAULTS, NamedTuple(kwargs)), reuse)
+GAMG(; freeze=1, reuse=nothing, kwargs...) =
+    GAMG(merge(GAMG_DEFAULTS, NamedTuple(kwargs)), _freeze(freeze, reuse, :GAMG))
 
 struct IC0GPU <: MULPreconditioner end
 Adapt.@adapt_structure IC0GPU

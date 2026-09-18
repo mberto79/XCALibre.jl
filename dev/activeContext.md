@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
-updated: 2026-09-18T02:40:00+01:00
+updated: 2026-09-18T03:05:00+01:00
 STATE: BUILDING
 STEP: P1-M7 preconditioner API, opened on the scaling findings (D25-D30)
 HEAD: e67b898f
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: read the GAMG sweep in the scratchpad gamg.log, fold it into scaling.csv and SCALING_SUMMARY.md, then take P1-M7; the serial suite still needs one green rerun after the `Random` fix (D24); do NOT open a PR or close the phase
+resume: take P1-M7 step 1, the `reuse` rename, on the measured recommendation that GAMG is the AMG to document (D31-D33); the serial suite still needs one green rerun after the `Random` fix (D24); do NOT open a PR or close the phase
 ## position
 M1-M6 closed; M3 was reopened and its attribution corrected (D19-D23). M7 is OPEN: the
 preconditioner API, opened because the measurements exposed that `reuse` freezes rather than

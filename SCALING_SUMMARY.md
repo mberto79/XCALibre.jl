@@ -122,32 +122,72 @@ meaningless.
 
 ![efficiency](dev/telemetry/plots/efficiency.png)
 
-## 7. Remedies tested
+## 7. Preconditioners and remedies tested
 
-| change | n=8 s/iter | verdict |
+All at 499,503 cells, clock pinned. Efficiency in brackets.
+
+| n | Cg+Jacobi | Cg+BoomerAMG | Cg+GAMG | OpenFOAM GAMG |
+|---|---:|---:|---:|---:|
+| 1 | 1.0665 (100%) | 1.5359 (100%) | 1.6000 (100%) | 1.0620 (100%) |
+| 2 | 0.5251 (102%) | 0.7945 (97%) | 0.7797 (**103%**) | 0.5567 (95%) |
+| 4 | 0.2822 (94%) | 0.4146 (93%) | 0.4108 (**97%**) | 0.3354 (79%) |
+| 6 | 0.2152 (83%) | 0.3385 (76%) | 0.3116 (**86%**) | 0.2511 (71%) |
+| 8 | **0.1877** (71%) | 0.2744 (70%) | 0.2749 (**73%**) | 0.2127 (62%) |
+
+**Cg+Jacobi is the fastest configuration on this case; GAMG has the flattest scaling curve.**
+GAMG beats BoomerAMG at every rank count on efficiency at identical cost, and beats Jacobi's
+curve too — but is still 1.46x slower in absolute terms, because 500k cells of laminar BFS is
+small and well conditioned enough that no AMG setup amortises.
+
+### Hierarchy reuse: freeze versus coefficient update
+
+The two AMG options differ fundamentally in what "reuse" means, and the difference is measurable.
+
+| configuration | n=4 s/iter | what happens between solves |
 |---|---:|---|
-| Cg + Jacobi (baseline) | 0.1877 | - |
-| Cg + BoomerAMG (hypre) | 0.2744 | **46% slower**, scaling no flatter (70.0% vs 71.0%) |
-| PipeCG + Jacobi | 0.2200 | **17% slower** |
+| GAMG, `reuse_interpolation=true` (default) | **0.4108** | aggregation and P kept; RAP and smoothers recomputed from the current matrix |
+| GAMG, `reuse_interpolation=false` | 1.1060 | full hierarchy rebuild every solve |
+| BoomerAMG, `reuse=1` | 0.8416 | full hypre rebuild every solve |
+| BoomerAMG, `reuse=5` | 0.4671 | frozen 4 solves in 5 |
+| BoomerAMG, `reuse=10` (default) | 0.4216 | frozen 9 solves in 10 |
+| BoomerAMG, `reuse=25` | **0.3951** | frozen 24 solves in 25 |
+| BoomerAMG, `reuse=50` | 0.4260 | staleness now costs more than the rebuild saves |
 
-Neither remedy helps on this case.
+**The coefficient-only update is worth 2.69x** and is the better mechanism: it beats BoomerAMG's
+freeze (2.0x) while never applying a stale preconditioner. `BoomerAMG(reuse=N)` calls
+`KSPSetReusePreconditioner`, which skips `PCSetUp` entirely — those N-1 solves use operators
+built from an older matrix. PETSc's `PCHYPRE` exposes no numeric-only re-setup, so freeze or
+rebuild is all that is reachable for hypre. The BoomerAMG default of 10 leaves about 6% against 25.
 
-**BoomerAMG** is slower at every rank count (1.5359 vs 1.0665 s/iter at n=1) because 500k cells
-of laminar BFS is small and well-conditioned enough that the setup never pays for itself. Its
-incremental 6->8 efficiency is better (93% against 86%), consistent with fewer Krylov iterations
-meaning fewer reductions, but not nearly enough to overcome the per-iteration cost. AMG should be
-revisited on a stiffer problem, not dismissed.
+### Rank invariance
 
-**Pipelined CG** overlaps the reduction with computation via non-blocking `MPI_Iallreduce`. It
-took effect (`KSP=pipecg` confirmed in the solver log) and cost 17%: the extra work per iteration
-needed to enable the overlap exceeds the barrier wait it hides at this scale.
+| preconditioner | pressure residual after 100 iterations, n=1 to n=8 |
+|---|---|
+| Jacobi | identical to 15 significant figures |
+| GAMG | 0.3% spread |
+| BoomerAMG | **2.4x spread** (7.85e-5 to 1.89e-4) |
+
+An AMG hierarchy is built from the local partition, so it changes with rank count; the answer
+converges to the same place but by a different path. This is why the scaling attribution work
+used Cg+Jacobi throughout. It is a property to document, not a defect — but it does mean AMG
+runs are not reproducible across rank counts, and BoomerAMG's freeze schedule compounds it.
+
+### Pipelined CG
+
+`PipeCG` + Jacobi costs 0.2200 s/iter at eight ranks against `Cg`'s 0.1877, 17% slower, with
+`KSP=pipecg` confirmed in the solver log. The extra per-iteration work needed to enable the
+reduction overlap exceeds the barrier wait it hides at this scale.
 
 ![absolute cost](dev/telemetry/plots/absolute_cost.png)
 
 ## 8. Correctness
 
-Residuals are identical across every rank count to 15 significant figures on both meshes, in
-every configuration tested. Partitioning changes nothing about the answer.
+With `Jacobi`, residuals are identical across every rank count to 15 significant figures on both
+meshes. Partitioning changes nothing about the answer.
+
+With either AMG preconditioner this no longer holds exactly, because the hierarchy is built from
+the local partition (see section 7). The solutions converge to the same place by different paths;
+the spread is 0.3% for GAMG and 2.4x for BoomerAMG after a fixed 100 iterations.
 
 ## 9. What this means in practice
 
@@ -159,6 +199,11 @@ every configuration tested. Partitioning changes nothing about the answer.
   its clock under full load.
 - The open optimisation is the reduction count, not bandwidth and not halo exchange: the Krylov
   solves issue roughly 75 reductions per outer iteration.
+- Use `Cg() + Jacobi()` on cases of this size and conditioning. Reach for `GAMG()` rather than
+  `BoomerAMG()` when AMG is warranted: same cost, better scaling, a real coefficient-only update
+  instead of a freeze, and far better rank invariance.
+- Our AMG is the weak component, not the distributed module: OpenFOAM's GAMG beats our BoomerAMG
+  by 1.24x to 1.45x, while our Cg+Jacobi beats OpenFOAM's GAMG by 6% to 16% above one rank.
 
 ## 10. Corrections to earlier findings
 

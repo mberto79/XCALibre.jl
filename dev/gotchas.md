@@ -25,6 +25,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 ## machine
 
 - `/tmp` is memory-backed on this box: never write mesh partitions there.
+- This box has 14 GB: the 4 mm BFS (1.32M cells) at eight ranks with AMG ran it out of memory and the kernel OOM-killed Chrome and VS Code. Run large-mesh sweeps under `dev/scripts/memguard.sh`.
 - The memory ceiling is rank zero holding the global mesh, not the rank count, at roughly 1.6 KB per cell. Partitioning offline in a separate process removes it.
 - This laptop has EIGHT performance cores (CPUs 0-15, hyperthread siblings paired adjacently, so 0,1 = core 0) and sixteen efficiency cores at 4.1 GHz (CPUs 16-31). More than eight ranks crosses onto the slower cores and any scaling number past that measures core heterogeneity.
 

@@ -1,14 +1,14 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m13-preconditioner-guidance.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
 updated: 2026-09-18T18:00:00+01:00
-STATE: BUILDING
-STEP: P1-M13 - preconditioner guidance and defaults
+STATE: IDLE
+STEP: none - P1-M9 to P1-M14 closed
 HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: P1-M13-S1 (MAT_SPD for GAMG/BoomerAMG, BoomerAMG P_max=4) per dev/plans/p1-m13-preconditioner-guidance.md; user owes a ruling on which extra PCs join P1 (ICC/ILU mappings, ASM/SOR/HPDDM recipes, GPU AMG via AmgX or GPU hypre); before close run the three examples/*_mpi*.jl
+resume: pre-close checks: run examples/2D_cylinder_U_mpi.jl, 3D_BFS_mpi.jl (CPU, stock env, n=2, under dev/scripts/memguard.sh) and 3D_cascade_mpi_GPU.jl (dev/petscenv, local_stack); then the phase close (xcalibre-close) and PR only when the user asks
 ## position
-M1-M8 closed. User ruled P1 defers nothing (D48) and GPU runs never fall back to host (D47): M9-M12 opened in `dev/phaseRoadmap.md`.
+M1-M14 closed (M12 superseded by M13). This session: M9 no host fallback, M10 device-resident PETSc, M11 tolerances match Krylov.jl, M13 preconditioner guidance, M14 Int32 PETSc (D47-D66).
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

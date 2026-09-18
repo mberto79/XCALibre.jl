@@ -29,10 +29,10 @@ mesh {BFS 5 mm 499,503 cells; BFS 4 mm 1,320,368 cells} x ranks {2, 8} x pc {jac
 ## Steps
 
 - [x] **P1-M13-S1** declare MAT_SPD on matrices solved with GAMG or BoomerAMG, add `P_max=4` to the BoomerAMG defaults - mechanism: both PCs are documented SPD-only; the SPD flag selects PETSc's CG eigenvalue estimator; P_max bounds interpolation stencil growth with ext+i - cost: none per solve - verdict: accepted if the 5 mm n=2 per-iteration time and residual at 30 iterations are no worse than a 5% band. LANDED as P_max only; MAT_SPD withdrawn, no measurable effect (D63).
-- [ ] **P1-M13-S2** the configuration table above, post-D53 semantics - mechanism: measurement only - cost: about 14 runs - verdict: a table that confirms or contradicts each literature claim on our case.
+- [x] **P1-M13-S2** the configuration table above, post-D53 semantics - mechanism: measurement only - cost: about 14 runs - verdict: a table that confirms or contradicts each literature claim on our case. DONE (D65): confirms h-dependence of Jacobi, small-partition erosion, AMG memory cost; 4 mm n=8 AMG does not fit this 14 GB box, replaced by n=4.
 - [x] **P1-M13-S4** map `IC0GPU` to bjacobi+icc and `ILU0GPU` to bjacobi+ilu, each warning once that it is a substitute (D62) - mechanism: the serial types' closest per-rank PETSc relatives, as for DILU (D50) - cost: none - verdict: suite green and a distributed run with each type completes. LANDED (D64).
-- [ ] **P1-M13-S5** GPU AMG on the local CUDA-hypre PETSc: 5 mm n=1 GPU with jacobi, gamg, boomeramg - mechanism: measurement only; PETSc switches BoomerAMG to PMIS/ext+i/l1-Jacobi on device - cost: 3 runs - verdict: each runs with residuals matching the CPU run of the same PC to solver tolerance, timings recorded for the guide.
-- [ ] **P1-M13-S3** docstrings and the distributed guide gain a when-to-use / when-not table per preconditioner (plus ASM, SOR and HPDDM as `petsc_options` recipes), and defaults follow S2 and S5 - mechanism: documentation - verdict: docs build with doctests green.
+- [x] **P1-M13-S5** GPU AMG on the local CUDA-hypre PETSc: 5 mm n=1 GPU with jacobi, gamg, boomeramg - mechanism: measurement only; PETSc switches BoomerAMG to PMIS/ext+i/l1-Jacobi on device - cost: 3 runs - verdict: each runs with residuals matching the CPU run of the same PC to solver tolerance, timings recorded for the guide. DONE (D65): Jacobi and GAMG match CPU to 12-13 digits, BoomerAMG differs by the documented device switch.
+- [x] **P1-M13-S3** docstrings and the distributed guide gain a when-to-use / when-not table per preconditioner (plus ASM, SOR and HPDDM as `petsc_options` recipes), and defaults follow S2 and S5 - mechanism: documentation - verdict: docs build with doctests green. Adds per-equation `petsc_options` (D66).
 
 ## Exit criterion
 
@@ -40,4 +40,4 @@ Telemetry for both meshes and both rank counts, per-preconditioner guidance in t
 
 ## Open questions
 
-- Should freeze defaults change now that D53 makes the pressure solves tighter? Settled by S2.
+- Settled: freeze defaults unchanged (D65).

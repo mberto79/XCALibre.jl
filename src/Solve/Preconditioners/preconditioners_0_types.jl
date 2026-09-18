@@ -27,13 +27,15 @@ Adapt.@adapt_structure DILU
 """
     BoomerAMG(; kwargs...) <: PreconditionerType
 
-HYPRE BoomerAMG via PETSc (`-pc_type hypre`). Distributed meshes only; requires a PETSc
-build configured with `--download-hypre`. No transpose solve (use on SPD systems, e.g.
-pressure). Prefer [`GAMG`](@ref) for distributed pressure solves: it was measured faster at every
-rank count and needs no hypre build. Like any AMG, results vary slightly with the rank count.
+HYPRE BoomerAMG via PETSc (`-pc_type hypre`). Distributed meshes only; needs a PETSc with hypre,
+which the stock Float64 libraries include (Float32 ones do not). SPD systems only (e.g. pressure).
+Use it where [`GAMG`](@ref) converges poorly or the strongest reduction per solve matters; GAMG
+is the default recommendation, since it needs no special build and is the better AMG on the GPU.
+Like any AMG, results vary slightly with the rank count, and it needs more memory than `Jacobi`.
 
-Defaults are tuned for 3D (`BOOMERAMG_3D_DEFAULTS`): hypre's own defaults are 2D-tuned and
-build a high-complexity hierarchy in 3D that degrades as the mesh grows.
+Defaults are tuned for 3D (`BOOMERAMG_3D_DEFAULTS`): PETSc's own BoomerAMG defaults build a
+high-complexity hierarchy in 3D that degrades as the mesh grows. On a GPU with a CUDA-built hypre,
+PETSc switches to PMIS coarsening and l1-Jacobi smoothing, so GPU and CPU residuals differ.
 
 `freeze=N` holds the whole preconditioner fixed for `N` solves and rebuilds it from the current
 matrix on the `N`th (default 10); in between, Krylov iterates on the current matrix with a
@@ -44,7 +46,7 @@ stale hierarchy degrade the pressure residual.
 
 Each other keyword `k=v` overrides a default and is passed to PETSc as `-pc_hypre_boomeramg_<k> v`.
 Common knobs: `strong_threshold` (0.5-0.7 in 3D), `coarsen_type` ("HMIS"/"PMIS"/"Falgout"),
-`interp_type` ("ext+i"/"classical"), `agg_nl` (aggressive-coarsening levels), `relax_type_all`
+`interp_type` ("ext+i"/"classical"), `P_max` (interpolation entries per row), `agg_nl` (aggressive-coarsening levels), `relax_type_all`
 (smoother, e.g. "SOR/Jacobi"/"Chebyshev"), `grid_sweeps_all` (smoother sweeps). See the PETSc
 `-pc_hypre_boomeramg_*` options for the full list; anything else can go through `petsc_options`.
 """
@@ -64,8 +66,9 @@ BoomerAMG(; freeze=10, kwargs...) = BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, Named
 
 PETSc native aggregation AMG (`-pc_type gamg`). Distributed meshes only; needs `using PETSc`
 (no hypre build required). SPD systems only (e.g. pressure). The recommended AMG for distributed
-pressure solves. The hierarchy is built per partition, so residuals vary slightly with the rank
-count; use `Jacobi` where results must match across rank counts exactly.
+pressure solves on large meshes, on CPU and GPU. It needs more memory than `Jacobi` and pays off
+only when each rank holds a large partition. The hierarchy is built per partition, so residuals
+vary slightly with the rank count; use `Jacobi` where results must match across rank counts exactly.
 
 Defaults set `reuse_interpolation=true`: because the mesh never refines, the pressure matrix
 keeps a FIXED sparsity pattern, so GAMG builds the aggregation + prolongation P once and

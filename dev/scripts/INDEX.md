@@ -22,3 +22,4 @@ Every helper here is specific to this project. One entry per script: what it ans
   the power state from `dev/gotchas.md` applied first.
 - `equal_thermal.sh <tag> <iters>` (env `ENVDIR`, `NS`, `OPTS`, `EXTRA` override the project, rank counts, petsc_options and extra probe args such as `pc=gamg`) - the no-root substitute: spin loops occupy every P-core the
   solver is not using, so every rank count runs at the same sustained power limit.
+- `memguard.sh <cmd...>` - runs a command and kills its process group when MemAvailable falls below `MIN_MB` (default 1500); wrap any large-mesh run with it.

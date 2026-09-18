@@ -69,8 +69,20 @@ function _petsclib(TF, nnz_global)
     fits[argmin(map(l -> sizeof(l.PetscInt), fits))]
 end
 
+# a String reaches every solve; a NamedTuple keyed by equation label adds per-equation options
+# after `all`. Labels are the ones the solvers pass to `wrap_eqn`.
+const _OPTION_KEYS = (:all, :U, :p, :k, :omega, :T, :y)
+_options_for(o::AbstractString, label) = String(o)
+function _options_for(o::NamedTuple, label)
+    bad = setdiff(keys(o), _OPTION_KEYS)
+    isempty(bad) || error("petsc_options: unknown equation key(s) $(Tuple(bad)); " *
+        "use $(_OPTION_KEYS)")
+    strip(string(get(o, :all, ""), " ", isempty(label) ? "" : get(o, Symbol(label), "")))
+end
+
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         comm=MPI.COMM_WORLD, petsc_options="", label="")
+    petsc_options = _options_for(petsc_options, label)
     part = dmesh.partition
     TF = _get_float(dmesh)
     A = _A(eqn)
@@ -125,7 +137,8 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     sub = _substitute(setup.preconditioner)
     !isnothing(sub) && opts.pc_type == "bjacobi" && MPI.Comm_rank(comm) == 0 &&
         @warn "$(nameof(typeof(setup.preconditioner))) has no PETSc equivalent; substituting " *
-            "$sub (-pc_type bjacobi). Name another with petsc_options=\"-pc_type ...\"" maxlog=1 _id=nameof(typeof(setup.preconditioner))
+            "$sub (-pc_type bjacobi). Name another with petsc_options=\"-pc_type ...\"" maxlog=1 _id=
+            nameof(typeof(setup.preconditioner))
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
         error("PETScSolver: hypre requested but this PETSc build ($(petsclib.PetscScalar)) has " *

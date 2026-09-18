@@ -26,3 +26,4 @@
 - 2026-09-18 P1-M11-S1: distributed suite 12/12 at n=2 (stock), test_gpu n=1,2 (CUDA PETSc), test_f32 n=2 pass.
 - 2026-09-18 P1-M14: distributed suite 12/12 at n=2 (stock, Int32 library selected).
 - 2026-09-18 P1-M13-S1/S4: distributed suite 12/12 at n=2 (stock).
+- 2026-09-18 P1-M13: distributed suite 12/12 at n=2 (stock); docs build with doctests green.

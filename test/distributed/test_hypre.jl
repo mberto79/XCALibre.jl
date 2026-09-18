@@ -18,6 +18,15 @@ has_hypre = ext._petsc_has_pkg(petsclib, "hypre")
     @test_throws ErrorException Preconditioner{BoomerAMG}(nothing)
 end
 
+@testset "per-equation petsc_options (rank $rank)" begin
+    @test ext._options_for("-ksp_monitor", "p") == "-ksp_monitor"
+    o = (all = "-log_view", U = "-pc_type asm")
+    @test ext._options_for(o, "U") == "-log_view -pc_type asm"
+    @test ext._options_for(o, "p") == "-log_view"
+    @test ext._options_for((p = "-pc_type sor",), "p") == "-pc_type sor"
+    @test_throws ErrorException ext._options_for((P = "-pc_type sor",), "p")
+end
+
 gmesh = rank == 0 ? cavity_mesh() : nothing
 
 if !has_hypre

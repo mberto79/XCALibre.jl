@@ -180,9 +180,10 @@ meaning:
 
 - `solver`: `Cg()` → `cg`, `Cgs()` → `cgs`, `Bicgstab()` → `bcgs`, `Gmres()` → `gmres` (PETSc
   `KSP` type).
-- `preconditioner`: `Jacobi()` → `jacobi`, `DILU()` → `bjacobi`, `GAMG()` → `gamg`, `BoomerAMG()`
-  → `hypre` (PETSc `PC` type). PETSc has no DILU, so `DILU()` maps to its closest relative, block
-  Jacobi with an ILU(0) factorisation of each rank's block, and warns once that it has done so.
+- `preconditioner`: `Jacobi()` → `jacobi`, `GAMG()` → `gamg`, `BoomerAMG()` → `hypre` (PETSc
+  `PC` type). `DILU()`, `ILU0GPU()` and `IC0GPU()` have no PETSc equivalent and map to their
+  closest relative, block Jacobi with an ILU(0) (`DILU`, `ILU0GPU`) or ICC(0) (`IC0GPU`)
+  factorisation of each rank's block. Each warns once that it is a substitute.
 - `atol`, `rtol`, `itmax`: the stopping tolerances and iteration limit of each linear solve, as in
   serial.
 - `convergence`: the residual target that stops the outer iteration, as in serial. It does not
@@ -202,10 +203,30 @@ also names a type for a solver or preconditioner that has no mapping:
 run!(model, config; petsc_options="-pc_type sor -ksp_monitor")
 ```
 
-PETSc also reads this string at start-up, so options that must be set before PETSc initialises,
-such as `-log_view` or `-use_gpu_aware_mpi 0`, go there too and need no environment variable.
-Start-up options take effect with the first solver built, since PETSc initialises once per
-process.
+To configure one equation differently, pass a named tuple keyed by the equation's label instead:
+`all` applies to every solve, and `U`, `p`, `k`, `omega`, `T` or `y` (wall distance) apply to that
+equation only, after `all`:
+
+```julia
+run!(model, config; petsc_options = (all = "-log_view", U = "-pc_type asm -sub_pc_type ilu"))
+```
+
+PETSc also reads these options at start-up, so options that must be set before PETSc initialises,
+such as `-log_view` or `-use_gpu_aware_mpi 0`, go there too and need no environment variable. Put
+them in the plain string or in `all`: start-up options take effect with the first solver built,
+since PETSc initialises once per process.
+
+## Choosing a preconditioner
+
+| Preconditioner | Use it for | Avoid it when |
+|---|---|---|
+| `Jacobi()` | momentum and turbulence; pressure on small partitions; comparing runs across rank counts, since its results do not depend on the partition | the pressure mesh is large: its iteration count grows with mesh size |
+| `GAMG()` | pressure on large meshes; the default AMG, since it needs no special build | the operator is not symmetric positive definite (momentum, turbulence), or each rank holds a small partition, where setup is not repaid |
+| `BoomerAMG()` | pressure where GAMG converges poorly, or when the strongest reduction per solve matters | Float32 or builds without hypre; small partitions; you need results that match across rank counts |
+| `DILU()`, `ILU0GPU()`, `IC0GPU()` | running serial scripts unchanged; each becomes a per-rank incomplete factorisation and warns once | you expect the serial method itself: the substitute weakens as ranks are added, because each block ignores its neighbours |
+
+For momentum and turbulence, `Bicgstab()` with `Jacobi()` is the usual choice. For pressure, start
+with `Cg()` and `Jacobi()` on small cases and `Cg()` and `GAMG()` on large ones.
 
 ## Algebraic multigrid for pressure (GAMG and BoomerAMG)
 
@@ -217,7 +238,8 @@ are for symmetric positive-definite systems only (they have no transpose apply),
 through PETSc:
 
 - `GAMG()`: PETSc's native aggregation AMG (`-pc_type gamg`). It needs no extra build flags.
-- `BoomerAMG()`: HYPRE BoomerAMG (`-pc_type hypre`). It needs a PETSc built with hypre.
+- `BoomerAMG()`: HYPRE BoomerAMG (`-pc_type hypre`). It needs a PETSc built with hypre; the stock
+  Float64 libraries include it.
 
 ```julia
 p = SolverSetup(solver = Cg(), preconditioner = GAMG(), convergence = 1e-7, relax = 0.3, rtol = 0.01)
@@ -238,8 +260,11 @@ suits better.
 
 AMG adds a cost to every solve that Jacobi does not have: building or refreshing the hierarchy,
 then applying a V-cycle. On small partitions this can make AMG *slower* than Jacobi. Jacobi's
-iteration count grows with mesh size while AMG's does not, so AMG overtakes Jacobi above some
-problem size. That crossover depends on the mesh, the rank count and the memory system, so measure
+iteration count grows with mesh size, roughly as the cube root of the cell count in 3D, while AMG's
+stays nearly constant, so AMG overtakes Jacobi above some problem size. Adding ranks shrinks each
+partition and erodes AMG's advantage, because its coarse levels become communication-bound. AMG also stores
+its hierarchy of coarse operators, so each rank needs noticeably more memory than with Jacobi; on
+a memory-limited machine this, not time, can set how many ranks a large mesh can use. That crossover depends on the mesh, the rank count and the memory system, so measure
 it on your own case. AMG also reduces the pressure residual much further in each outer iteration,
 which can cut the number of outer iterations needed to reach a steady state. As a rule of thumb,
 use Jacobi for small and medium cases and AMG for large ones, especially when the pressure solve
@@ -282,13 +307,15 @@ GAMG(threshold = 0.02, agg_nsmooths = 0)
 ```
 
 **BoomerAMG** → `-pc_hypre_boomeramg_<k> v`. The defaults are tuned for 3D (`strong_threshold =
-0.7`, `coarsen_type = "HMIS"`, `interp_type = "ext+i"`, `agg_nl = 1`, `agg_num_paths = 2`). HYPRE's
-own defaults are 2D-oriented and build an overly complex, memory-heavy hierarchy in 3D. Common
+0.7`, `coarsen_type = "HMIS"`, `interp_type = "ext+i"`, `P_max = 4`, `agg_nl = 1`,
+`agg_num_paths = 2`). PETSc's own BoomerAMG defaults (Falgout coarsening, classical interpolation,
+unlimited interpolation stencil) build an overly complex, memory-heavy hierarchy in 3D. Common
 options:
 
 - `strong_threshold`: strength-of-connection threshold; 0.5–0.7 for 3D.
 - `coarsen_type`: coarsening algorithm, such as `"HMIS"`, `"PMIS"` or `"Falgout"`.
 - `interp_type`: interpolation, such as `"ext+i"` or `"classical"`.
+- `P_max`: maximum interpolation entries per row, which bounds operator complexity.
 - `agg_nl`: number of aggressive-coarsening levels, which lowers operator complexity and memory.
 - `relax_type_all`: smoother, such as `"SOR/Jacobi"`, `"Chebyshev"` or `"l1scaled-Jacobi"`.
 - `grid_sweeps_all`: smoother sweeps per level.
@@ -301,9 +328,30 @@ See PETSc's `-pc_gamg_*` and `-pc_hypre_boomeramg_*` option lists for the full s
 exposed as a keyword can still be passed through `petsc_options`.
 
 !!! note
-    Do not hard-code `BoomerAMG` as a default in shared scripts: a PETSc build without hypre
-    raises an error when the solver is constructed. `GAMG` needs no special build and is a safe
-    default AMG.
+    `BoomerAMG` needs a PETSc with hypre. The stock Float64 libraries have it, but Float32 and many
+    custom builds do not, and there the solver raises an error when it is constructed. `GAMG`
+    needs no special build and is the safer default in shared scripts.
+
+### On the GPU
+
+With a CUDA-enabled PETSc, `Jacobi()` and `GAMG()` run on the device and give the same residuals
+as on the CPU; GAMG builds part of its hierarchy on the host, which its `freeze` count amortises.
+`BoomerAMG()` runs on the device only if PETSc's hypre was itself built with CUDA. There PETSc
+switches it to the GPU-capable variants (PMIS coarsening, `ext+i` interpolation, l1-Jacobi
+smoothing), so its residuals differ from a CPU run with the same keywords. `GAMG()` is the
+recommended AMG on the GPU.
+
+### Other PETSc preconditioners
+
+Any PETSc preconditioner can be named through `petsc_options`, for every solve or, with a named
+tuple, for one equation. Three are worth knowing:
+
+- Additive Schwarz with ILU subdomains, the robust general-purpose choice for non-symmetric
+  systems such as momentum and turbulence: `-pc_type asm -pc_asm_overlap 1 -sub_pc_type ilu`.
+- Local SOR/SSOR sweeps, cheap and often adequate for momentum: `-pc_type sor`.
+- HPDDM, a multilevel domain-decomposition method for hard, strongly anisotropic problems at large
+  rank counts. It needs a PETSc built with HPDDM: `-pc_type hpddm`.
+
 
 ## Terminal output
 

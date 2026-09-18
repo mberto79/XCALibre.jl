@@ -1,9 +1,11 @@
 export PETScSolver, passemble!, psolve!, psolve_transpose!
 
 """
-    PETScSolver(eqn, dmesh::DistributedMesh, setup; comm=MPI.COMM_WORLD, petsc_options="")
+    PETScSolver(eqn, dmesh::DistributedMesh, setup; comm=MPI.COMM_WORLD, petsc_options="", label="")
 
-Create a distributed PETSc solver (matrix, vectors and KSP) for `eqn` on `dmesh`.
+Create a distributed PETSc solver (matrix, vectors and KSP) for `eqn` on `dmesh`. `petsc_options`
+is a PETSc options string for every solve, or a named tuple of strings keyed by `all` and the
+equation labels (`U`, `p`, `k`, `omega`, `T`, `y`); the entry for `label` follows `all`.
 Implemented in the `XCALibrePETScExt` extension — requires `using PETSc`.
 """
 PETScSolver(args...; kwargs...) =

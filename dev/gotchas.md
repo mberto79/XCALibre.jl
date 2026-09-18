@@ -17,6 +17,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - `--heap-size-hint` changes the precompilation cache-flags hash, so a child precompiling the PETSc extension asks for an image built under different flags and fails with a message that reads exactly like cache corruption; clearing the compiled cache does not fix it. Use `--startup-file=no` and no heap hint.
 - Stock `PETSc_jll` ships hypre for Float64 only and no CUDA in any of its libraries, so GPU-native solves need a custom PETSc build and Float32 users have no hypre.
 - `activate_multithread(backend::CPU)` pins BLAS to one thread despite its name; without it BLAS takes every core and oversubscribes the ranks.
+- Any keyword `BoomerAMG`/`GAMG` does not know, including a removed `reuse=` or a typo, is forwarded to PETSc as `-pc_<prefix>_<k>` and silently ignored unless `-options_left` is set; it never errors.
 - Julia threads default to one, so the CPU kernel backend is already serial under MPI; passing more threads per rank adds overhead rather than removing it.
 
 ## machine

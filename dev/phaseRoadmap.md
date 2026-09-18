@@ -22,6 +22,8 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 - BoomerAMG and pipelined CG were both tested as remedies for the high-rank loss and both are slower here (D26, D27). AMG deserves a retest on a stiffer, larger problem, where its setup can amortise; that needs a case this phase does not have.
 - Above four ranks the residual loss is `VecNorm` reduction cost: 53% of the eight-rank solve, 38.2x rank imbalance, roughly seventy-five reductions per outer iteration (D23). Cutting that count is a real optimisation and belongs to a later phase.
 
+- The AMG freeze optimum was swept on 499,503 cells only; whether it moves with mesh size, and so whether the interval should be adaptive, is open (`dev/archive/plans/p1/p1-m7-preconditioner-api.md`, open questions).
+
 ## Exit gate
 
 PASSED 2026-09-18 for M1-M6, at commit 2374a1e7. M7 closed 2026-09-18 on serial suite 1555/1555 (incl. distributed gate 5/5) and documentation build 0 errors; `dev/telemetry/gate_results.md`. Evidence in `dev/telemetry/gate_results.md`: serial suite 1549/1549, distributed gate 5/5 in 187 s, documentation build 0 errors, example at n=2 and n=4 on stock binaries from clean directories, rank invariance to 15 significant figures under Jacobi, scaling telemetry in `scaling_attribution.md`.

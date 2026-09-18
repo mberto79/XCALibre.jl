@@ -13,6 +13,6 @@
 
 ## P1-M7 close, 2026-09-18
 
-- Serial suite `julia --project=. -e 'using Pkg; Pkg.test()'`: 1555/1555 (1549 + new freeze-constructor checks), distributed gate 5/5 in 88 s. Run before D41 removed the `reuse` alias; the post-D41 constructor change was re-checked by a direct serial smoke test.
+- Serial suite `julia --project=. -e 'using Pkg; Pkg.test()'`: 1555/1555 (1549 + new freeze-constructor checks), distributed gate 5/5 in 88 s. Run before D41 removed the `reuse` alias; the post-D41 constructor change was re-checked by a direct serial smoke test: 3/4, the failure being a wrong expectation (`GAMG(reuse=3)` does not throw; unknown keywords forward to PETSc).
 - `test/distributed/runtests_mpi.jl --ranks=1,2 test_hypre.jl` on `dev/petscenv_stock`: pass at n=1 and n=2 after the rename.
 - `julia --project=docs docs/make.jl`: 0 errors; 2 warnings (reference page size, deploy detection), both pre-existing.

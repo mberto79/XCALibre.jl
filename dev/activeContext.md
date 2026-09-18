@@ -1,5 +1,5 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m13-preconditioner-guidance.md
 updated: 2026-09-18T18:00:00+01:00
 STATE: BUILDING
 STEP: P1-M11 - reduction count above four ranks

@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-18T02:40:00+01:00
 STATE: BUILDING
 STEP: P1-M7 preconditioner API, opened on the scaling findings (D25-D30)
-HEAD: 5229a5c6
+HEAD: e67b898f
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: read the GAMG sweep in the scratchpad gamg.log, fold it into scaling.csv and SCALING_SUMMARY.md, then take P1-M7; the serial suite still needs one green rerun after the `Random` fix (D24); do NOT open a PR or close the phase

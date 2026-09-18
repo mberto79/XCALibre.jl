@@ -145,19 +145,19 @@ The two AMG options differ fundamentally in what "reuse" means, and the differen
 
 | configuration | n=4 s/iter | what happens between solves |
 |---|---:|---|
-| GAMG, `reuse_interpolation=true` (default) | **0.4108** | aggregation and P kept; RAP and smoothers recomputed from the current matrix |
+| GAMG, `reuse_interpolation=true`, `freeze=1` | **0.4108** | aggregation and P kept; RAP and smoothers recomputed from the current matrix |
 | GAMG, `reuse_interpolation=false` | 1.1060 | full hierarchy rebuild every solve |
-| BoomerAMG, `reuse=1` | 0.8416 | full hypre rebuild every solve |
-| BoomerAMG, `reuse=5` | 0.4671 | frozen 4 solves in 5 |
-| BoomerAMG, `reuse=10` (default) | 0.4216 | frozen 9 solves in 10 |
-| BoomerAMG, `reuse=25` | **0.3951** | frozen 24 solves in 25 |
-| BoomerAMG, `reuse=50` | 0.4260 | staleness now costs more than the rebuild saves |
+| BoomerAMG, `freeze=1` | 0.8416 | full hypre rebuild every solve |
+| BoomerAMG, `freeze=5` | 0.4671 | frozen 4 solves in 5 |
+| BoomerAMG, `freeze=10` (default) | 0.4216 | frozen 9 solves in 10 |
+| BoomerAMG, `freeze=25` | **0.3951** | frozen 24 solves in 25 |
+| BoomerAMG, `freeze=50` | 0.4260 | staleness now costs more than the rebuild saves |
 
 **The coefficient-only update is worth 2.69x** and is the better mechanism: it beats BoomerAMG's
-freeze (2.0x) while never applying a stale preconditioner. `BoomerAMG(reuse=N)` calls
+freeze (2.0x) while never applying a stale preconditioner. `BoomerAMG(freeze=N)` calls
 `KSPSetReusePreconditioner`, which skips `PCSetUp` entirely — those N-1 solves use operators
 built from an older matrix. PETSc's `PCHYPRE` exposes no numeric-only re-setup, so freeze or
-rebuild is all that is reachable for hypre. The BoomerAMG default of 10 leaves about 6% against 25.
+rebuild is all that is reachable for hypre. The BoomerAMG default of 10 leaves about 6% against 25 in time but ends with a 2.4x smaller pressure residual, so it stays (D39).
 
 ### Rank invariance
 

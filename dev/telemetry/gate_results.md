@@ -10,3 +10,9 @@
 | 2026-09-18 | 3 | serial suite (full, Pkg.test) | all pass, no reduction on 1544 | 1549/1549 pass, exit 0, 21m15s | PASS | 2374a1e7 |
 | 2026-09-18 | 3 | distributed gate n=2 (under Pkg.test) | 5 files pass within 300 s | 5/5 pass, 186.7 s at a pinned 2200 MHz | PASS | 2374a1e7 |
 | 2026-09-18 | 3 | example on stock binaries, clean dir | runs at n=2 and n=4, writes decomposed output | parts/, processor0-3/, XCALibre.foam at both | PASS | 101c5b4b |
+
+## P1-M7 close, 2026-09-18
+
+- Serial suite `julia --project=. -e 'using Pkg; Pkg.test()'`: 1555/1555 (1549 + new freeze-constructor checks), distributed gate 5/5 in 88 s. Run before D41 removed the `reuse` alias; the post-D41 constructor change was re-checked by a direct serial smoke test.
+- `test/distributed/runtests_mpi.jl --ranks=1,2 test_hypre.jl` on `dev/petscenv_stock`: pass at n=1 and n=2 after the rename.
+- `julia --project=docs docs/make.jl`: 0 errors; 2 warnings (reference page size, deploy detection), both pre-existing.

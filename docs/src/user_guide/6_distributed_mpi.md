@@ -140,6 +140,20 @@ p = SolverSetup(solver = Cg(), preconditioner = BoomerAMG(), rtol = 0.01, itmax 
 p = SolverSetup(solver = Cg(), preconditioner = GAMG(), rtol = 0.01, itmax = 1000, ...)
 ```
 
+**Use `GAMG()` when you want AMG.** On a 0.5M-cell 3D backward-facing step with the clock
+pinned, `GAMG()` was faster than `BoomerAMG()` at every rank count measured (one, four and
+eight), scaled more evenly, and needs no hypre build. At four ranks, with each at its best
+freeze, it took 0.3023 s/iter against 0.3951. `BoomerAMG()` remains available for cases where its classical coarsening suits
+the operator better.
+
+!!! note "AMG results depend on the rank count"
+    An AMG hierarchy is built from each rank's local partition, so it changes when the rank
+    count changes, and runs at different rank counts converge to the same solution along
+    slightly different paths. On the case above the pressure residual after 100 iterations
+    varied by 0.5% across one to eight ranks with `GAMG()` and by 2.4x with `BoomerAMG()`.
+    `Jacobi()` does not depend on the partition and gives identical residuals at every rank
+    count. Use `Jacobi()` when you need bit-for-bit comparisons across rank counts.
+
 ### When AMG helps
 
 AMG carries a per-solve overhead (building/refreshing the hierarchy plus applying a V-cycle)
@@ -174,10 +188,14 @@ solve is expensive, so both preconditioners avoid it — differently:
 - `GAMG()` sets `reuse_interpolation = true` by default: it builds the aggregation and
   interpolation operators once and recomputes only the (cheap) coarse operators and smoothers
   each solve, so the hierarchy stays numerically current at a fraction of a full setup. This is
-  valid precisely because the sparsity pattern never changes. `GAMG(freeze = N)` can additionally
-  hold the whole preconditioner fixed for `N` solves, skipping even that update (default `1`).
-
-`freeze` was called `reuse` before; `reuse = N` is still accepted with a deprecation warning.
+  valid precisely because the sparsity pattern never changes. `GAMG(freeze = N)` additionally
+  holds the whole preconditioner fixed for `N` solves, skipping even that update (default `25`;
+  `freeze = 1` updates every solve). Measured on a 0.5M-cell 3D backward-facing step at four
+  ranks, the freeze cuts the time per iteration by about 26% (1.36x) and leaves the pressure residual
+  unchanged to within 0.1%.
+- For `BoomerAMG`, freezing longer than the default trades residual quality for setup time: at
+  `freeze = 25` the same case ran about 6% faster but finished with a 2.4x larger pressure
+  residual, so the default stays at `10`.
 
 ### Tuning keywords
 

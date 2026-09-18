@@ -1,14 +1,14 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m7-preconditioner-api.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
 updated: 2026-09-18T12:00:00+01:00
 STATE: IDLE
-STEP: P1-M7-S2 retune the freeze defaults (S1 rename landed, D38)
+STEP: none - P1-M7 closed; every P1 milestone is closed
 HEAD: 863906e5
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: take P1-M7-S2 per `dev/plans/p1-m7-preconditioner-api.md`; first check whether the probe logs record a final pressure residual for GAMG freeze=1 vs 25, since s/iter cannot see outer-convergence cost of a stale hierarchy; any new row needs the clock pinned; do NOT open a PR or close the phase
+resume: every P1 milestone is closed and gated; the next action is the user's call on closing the phase (xcalibre-close) and opening the PR - do neither without being asked
 ## position
-M1-M6 are closed and their exit gate PASSED on 2026-09-18 at 2374a1e7; the evidence rows are in `dev/telemetry/gate_results.md` and need no rerun. M3 was reopened during the phase and its attribution corrected (D19-D23). M7 is the only open milestone, with its scope measured rather than speculative (D34-D37) and its own exit criterion in its plan.
+M1-M7 are closed. The M1-M6 exit gate PASSED at 2374a1e7; M7 closed on serial 1555/1555, distributed 5/5 and a clean docs build (`dev/phaseRoadmap.md`, `dev/telemetry/gate_results.md`).
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

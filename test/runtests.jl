@@ -38,8 +38,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "AMG preconditioner freeze" begin
         @test BoomerAMG(freeze=7).freeze == 7 && GAMG(freeze=7).freeze == 7
-        @test (@test_deprecated BoomerAMG(reuse=3)).freeze == 3
-        @test (@test_deprecated GAMG(reuse=3)).freeze == 3
+        @test BoomerAMG().freeze == 10 && GAMG().freeze == 25
     end
 
     @testset "Mixture Multiphase Unit Test" begin

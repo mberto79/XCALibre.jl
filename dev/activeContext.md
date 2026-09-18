@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-18T12:00:00+01:00
 STATE: IDLE
 STEP: none - P1-M8 closed; every P1 milestone is closed
-HEAD: 5d658f19
+HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: every P1 milestone is closed and gated; the next action is the user's call on closing the phase (xcalibre-close) and opening the PR - do neither without being asked

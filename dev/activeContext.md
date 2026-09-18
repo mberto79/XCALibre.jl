@@ -3,12 +3,12 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-18T04:00:00+01:00
 STATE: BUILDING
 STEP: P1-M7 preconditioner API, opened on the scaling findings (D25-D37)
-HEAD: 713ab065
+HEAD: c61338d6
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: take P1-M7-S1, the `reuse` rename, per `dev/plans/p1-m7-preconditioner-api.md`; the M1-M6 exit gate PASSED at 2374a1e7 and needs no rerun; do NOT open a PR or close the phase
 ## position
-M1-M6 closed; M3 was reopened and its attribution corrected (D19-D23). M7 is OPEN with its scope now measured rather than speculative (D34-D37). Exit gate otherwise green: distributed gate 89 s, documentation build, example acceptance at n=2 and n=4 on stock binaries from clean directories. The M1-M6 exit gate PASSED on 2026-09-18 (serial suite 1549/1549 after the D24 fix); M7 carries its own exit criterion.
+M1-M6 are closed and their exit gate PASSED on 2026-09-18 at 2374a1e7; the evidence rows are in `dev/telemetry/gate_results.md` and need no rerun. M3 was reopened during the phase and its attribution corrected (D19-D23). M7 is the only open milestone, with its scope measured rather than speculative (D34-D37) and its own exit criterion in its plan.
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

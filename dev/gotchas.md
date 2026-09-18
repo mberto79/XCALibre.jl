@@ -51,3 +51,4 @@ echo powersave | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 echo balance_performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
 powerprofilesctl set balanced
 ```
+- conda CUDA PETSc envs: micromamba at `~/.local/micromamba` (envs `petsc-cuda` mpich, `petsc-cuda-ompi` openmpi); Julia envs `dev/petscenv_conda*`; openmpi runs need `OMPI_MCA_opal_cuda_support=true` (D69).

@@ -17,7 +17,7 @@ The distributed page says only that a custom PETSc or system MPI "is selected th
 
 ## Steps
 
-- [ ] **P1-M17-S1** try the conda-forge CUDA PETSc on this machine: install into a conda env, point a fresh project env at its libpetsc and libmpi, run `test/distributed/test_gpu.jl` at n=1,2 - mechanism: measurement only - cost: one install plus one test run - verdict: if it passes, the guide presents it as the no-compile GPU route; if it fails, the guide records the failure and the compile route leads.
+- [x] **P1-M17-S1** try the conda-forge CUDA PETSc on this machine: install into a conda env, point a fresh project env at its libpetsc and libmpi, run `test/distributed/test_gpu.jl` at n=1,2 - mechanism: measurement only - cost: one install plus one test run - verdict: if it passes, the guide presents it as the no-compile GPU route; if it fails, the guide records the failure and the compile route leads. DONE (D69): both conda variants pass n=1,2 native; mpich needs `-use_gpu_aware_mpi 0`, openmpi is CUDA-aware.
 - [ ] **P1-M17-S2** write the setup section (overview, choosing MPI, pointing PETSc.jl at a library, GPU routes in order of effort, CUDA-aware MPI flags and checks, troubleshooting) and fix the run-on paragraph in "When AMG helps" - mechanism: documentation - verdict: every procedure run here or cited, docs build green.
 
 ## Exit criterion
@@ -26,4 +26,4 @@ The setup section exists, its GPU route is the one S1 verified (or states plainl
 
 ## Open questions
 
-- Does the conda-forge library load alongside Julia's own runtime libraries without clashes? Settled by S1.
+- [x] Does the conda-forge library load alongside Julia's own runtime libraries without clashes? Yes, CUDA 12.9 libs beside CUDA.jl 13.4 (D69).

@@ -27,3 +27,4 @@
 - 2026-09-18 P1-M14: distributed suite 12/12 at n=2 (stock, Int32 library selected).
 - 2026-09-18 P1-M13-S1/S4: distributed suite 12/12 at n=2 (stock).
 - 2026-09-18 P1-M13: distributed suite 12/12 at n=2 (stock); docs build with doctests green.
+- 2026-09-18 pre-close: examples at n=2 complete - 2D_cylinder_U_mpi (stock, 26 s wall, final p 1.45e-6), 3D_BFS_mpi (stock, 57 s wall, solve 16.1 s, final p 7.19e-5), 3D_cascade_mpi_GPU (CUDA PETSc, 167 s wall, final p 3.37e-10).

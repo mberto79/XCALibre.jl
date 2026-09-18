@@ -6,7 +6,7 @@ STEP: none - P1-M9 to P1-M14 closed
 HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: pre-close checks: run examples/2D_cylinder_U_mpi.jl, 3D_BFS_mpi.jl (CPU, stock env, n=2, under dev/scripts/memguard.sh) and 3D_cascade_mpi_GPU.jl (dev/petscenv, local_stack); then the phase close (xcalibre-close) and PR only when the user asks
+resume: pre-close checks done (examples pass, gate_results.md); next is the phase close (xcalibre-close) and PR, only when the user asks
 ## position
 M1-M14 closed (M12 superseded by M13). This session: M9 no host fallback, M10 device-resident PETSc, M11 tolerances match Krylov.jl, M13 preconditioner guidance, M14 Int32 PETSc (D47-D66).
 ## evidence

@@ -10,14 +10,17 @@ import XCALibre.Mesh: _get_float
 
 # NEW SECTION: KSP/PC mapping (curated; anything else via petsc_options passthrough)
 
+# unmapped types return nothing and must be named through petsc_options
 _ksp_type(::Cg) = "cg"
+_ksp_type(::Cgs) = "cgs"
 _ksp_type(::Bicgstab) = "bcgs"
 _ksp_type(::Gmres) = "gmres"
-_ksp_type(s) = error("no PETSc mapping for solver $(typeof(s)); use petsc_options=\"-ksp_type ...\"")
+_ksp_type(s) = nothing
 _pc_type(::Jacobi) = "jacobi"
+_pc_type(::DILU) = "bjacobi" # per-rank ILU(0) blocks: closest PETSc relative of DILU
 _pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply (SPD only)
 _pc_type(::GAMG) = "gamg" # PETSc native aggregation AMG (SPD only)
-_pc_type(p) = error("no PETSc mapping for preconditioner $(typeof(p)); use petsc_options=\"-pc_type ...\"")
+_pc_type(p) = nothing
 
 # curated PC kwargs -> PETSc options; each kwarg k=v becomes -pc_<prefix>_<k> v
 _pc_options(p) = (;)
@@ -110,6 +113,10 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         _pc_options(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
+    isnothing(opts.ksp_type) && error("no PETSc mapping for solver $(typeof(setup.solver)); " *
+        "name one with petsc_options=\"-ksp_type ...\"")
+    isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
+        "$(typeof(setup.preconditioner)); name one with petsc_options=\"-pc_type ...\"")
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
         error("PETScSolver: hypre requested but this PETSc build ($(petsclib.PetscScalar)) has " *
@@ -118,9 +125,8 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
             "or see the distributed simulations page of the documentation.")
     end
     ksp = PETSc.KSP(Amat; opts...)
-    # atol/rtol/itmax are the live PETSc knobs; setting both tols to 0 defers to `convergence`
-    atol, rtol = setup.atol, setup.rtol
-    (iszero(atol) && iszero(rtol)) && (atol = setup.convergence)
+    # tolerances mean what they mean to Krylov; `convergence` is the outer-loop target only
+    (; atol, rtol) = setup
     LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol),
         TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
     LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)

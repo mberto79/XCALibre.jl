@@ -17,4 +17,3 @@ Active phase and its exit gate: `dev/phaseRoadmap.md`. Current step and state: `
 
 - [P1] `archive/dev_distributed/` and `archive/dev_motorbike/` are the only copies of the pre-P1 record; `dev/` was gitignored until P1-M1 (D1).
 - [P1] Distributed LKE and LES remain unwired and inherit the SST synchronisation audit; spec lists them as documented gaps, not defects.
-- [P1] `wall_distance!` reports a spurious non-convergence; it is a pre-existing serial artefact of comparing a residual to a fixed 1e-15 threshold.

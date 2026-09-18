@@ -2,13 +2,13 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
 updated: 2026-09-18T12:00:00+01:00
 STATE: IDLE
-STEP: none - P1-M7 closed; every P1 milestone is closed
-HEAD: a9da4e36
+STEP: none - P1-M8 closed; every P1 milestone is closed
+HEAD: 5d658f19
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: every P1 milestone is closed and gated; the next action is the user's call on closing the phase (xcalibre-close) and opening the PR - do neither without being asked
 ## position
-M1-M7 are closed. The M1-M6 exit gate PASSED at 2374a1e7; M7 closed on serial 1555/1555, distributed 5/5 and a clean docs build (`dev/phaseRoadmap.md`, `dev/telemetry/gate_results.md`).
+M1-M8 are closed; M8 (D42-D46) reconciled `convergence`, extended the PETSc mapping and made the distributed page generic with doctests. The M1-M6 exit gate PASSED at 2374a1e7; M7 closed on serial 1555/1555, distributed 5/5 and a clean docs build (`dev/phaseRoadmap.md`, `dev/telemetry/gate_results.md`).
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

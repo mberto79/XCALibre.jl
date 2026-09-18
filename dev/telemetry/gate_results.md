@@ -16,3 +16,8 @@
 - Serial suite `julia --project=. -e 'using Pkg; Pkg.test()'`: 1555/1555 (1549 + new freeze-constructor checks), distributed gate 5/5 in 88 s. Run before D41 removed the `reuse` alias; the post-D41 constructor change was re-checked by a direct serial smoke test: 3/4, the failure being a wrong expectation (`GAMG(reuse=3)` does not throw; unknown keywords forward to PETSc).
 - `test/distributed/runtests_mpi.jl --ranks=1,2 test_hypre.jl` on `dev/petscenv_stock`: pass at n=1 and n=2 after the rename.
 - `julia --project=docs docs/make.jl`: 0 errors; 2 warnings (reference page size, deploy detection), both pre-existing.
+
+## P1-M8 close 2026-09-18
+- distributed gate (2 ranks, petscenv_stock): 5/5 in 97.7 s.
+- docs build (docs/makeLocal.jl) with new distributed-page doctests at 1 rank: exit 0, doctests green.
+- probes: 1-process PETSc 2D BFS 20 iters Jacobi/GAMG OK; itmax=1 no throw; DILU->bjacobi, Cgs->cgs, NormDiagonal via `-pc_type sor` OK.

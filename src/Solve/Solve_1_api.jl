@@ -56,13 +56,13 @@ This function is used to provide solver settings that will be used internally in
 
 - `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
 - `preconditioner`: instance of preconditioner to be used e.g. Jacobi()
-- `convergence` sets the stopping criteria of this field. Serial: outer-loop residual target. Distributed (PETSc): used as the PETSc absolute tolerance only when both `atol` and `rtol` are set to 0, otherwise ignored (set `atol`/`rtol` instead).
+- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`.
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
-- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`). Distributed: passed to PETSc as the max KSP iterations.
-- `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9). Distributed: passed to PETSc `KSPSetTolerances`.
-- `rtol`: set relative tolerance for the solver (defaults to 1e-1). Distributed: passed to PETSc `KSPSetTolerances`.
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`). Also applies to PETSc solves.
+- `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9). Also applies to PETSc solves.
+- `rtol`: set relative tolerance for the solver (defaults to 1e-1). Also applies to PETSc solves.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
 """
 SolverSetup(;

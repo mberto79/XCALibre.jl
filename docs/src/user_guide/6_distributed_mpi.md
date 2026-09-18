@@ -1,245 +1,316 @@
 # Distributed (MPI) simulations
 
-XCALibre.jl can run a simulation across multiple MPI ranks (multi-core, multi-node, or
-multi-GPU) using PETSc for the distributed linear solves. The physics setup, boundary
-conditions, schemes and `run!` call are **identical** to a serial script — only the mesh is
-partitioned and distributed. You do not write a solver, model, or boundary condition any
-differently for parallel execution.
+XCALibre.jl can run a simulation across several MPI ranks (multi-core, multi-node or multi-GPU),
+using PETSc for the distributed linear solves. The physics setup, boundary conditions, schemes and
+`run!` call are the same as in a serial script. Only the mesh is partitioned and distributed, so
+you do not write a solver, model or boundary condition any differently for parallel execution.
 
 ## Requirements
 
-`PETSc` and `MPI` in your project environment. Nothing else: the binaries that `PETSc_jll` and
-`MPI.jl` install are enough for a Float64 CPU run, with no preferences file and no shell
-configuration. Two cases need more:
+You need `PETSc` and `MPI` in your project environment, and nothing else. The binaries that
+`PETSc_jll` and `MPI.jl` install are enough for a Float64 CPU run, with no preferences file and no
+shell configuration. Two cases need more:
 
-- `BoomerAMG()` needs a PETSc built with `--download-hypre`. The stock `Float64` libraries do
-  carry hypre, so it works out of the box at the default precision; `Float32` builds do not.
+- `BoomerAMG()` needs a PETSc built with hypre. The stock `Float64` libraries include hypre, so it
+  works out of the box at the default precision. `Float32` builds do not include it.
 - GPU-native solves need a CUDA- or ROCm-enabled PETSc, which `PETSc_jll` does not ship. Without
   one, pass `solve_on=CPU()` to `run!` and the linear solves are staged through the host.
 
 A custom PETSc or system MPI is selected through `MPIPreferences` and PETSc's own preferences.
-Julia resolves preferences per project environment and PETSc.jl generates its low-level wrappers
-at precompilation for the configured library, so the scalar precision and the library path are a
-property of the environment you run in, not something that can be switched at run time. Use a
-separate project environment per PETSc build.
+Julia resolves preferences per project environment, and PETSc.jl generates its low-level wrappers
+at precompilation for the configured library. The scalar precision and the library path are
+therefore fixed by the environment you run in and cannot be switched at run time. Use a separate
+project environment for each PETSc build.
 
 ## Distributing the mesh
 
-Wrap the mesh read in [`distribute`](@ref). Every rank makes the same call; the reader runs only
-on rank 0 and the partitioned mesh is scattered, one rank-local `DistributedMesh` each. There is
-no `MPI.Init()` and no `rank == 0` guard to write:
+Wrap the mesh read in [`distribute`](@ref). Every rank makes the same call. The reader runs only on
+rank 0, and the partitioned mesh is scattered so that each rank gets its own `DistributedMesh`.
+You do not need to call `MPI.Init()` or write a `rank == 0` guard:
 
-```julia
-using XCALibre, PETSc, MPI
+```jldoctest distributed; filter = r".*"s => s"", output = false
+using XCALibre, PETSc
 
-mesh_dist = distribute() do
-    UNV3D_mesh("path/to/mesh.unv", scale=0.001)
+grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
+mesh_file = joinpath(grids_dir, "backwardFacingStep_10mm.unv")
+
+mesh = distribute() do
+    UNV2D_mesh(mesh_file, scale=0.001)
 end
+
+# output
+
 ```
 
 !!! warning
     Do not assign the mesh, or any value that selects a method, inside a `rank == 0` branch of
     your own. A rank holding `nothing` where the others hold a mesh dispatches to a different
-    method, and the run blocks forever waiting for a message that is never sent. Passing the
-    reader to `distribute` is what makes that impossible.
+    method, and the run then blocks forever waiting for a message that is never sent. Passing the
+    reader to `distribute` rules this out.
 
-For a large mesh, give `dir` as well. Rank 0 decomposes into that directory once and every rank
-then loads only its own part, so no rank ever holds the global mesh after the first run:
+For a large mesh, also give `dir`. Rank 0 decomposes the mesh into that directory once, and every
+rank then loads only its own part, so after the first run no rank ever holds the global mesh:
 
 ```julia
-mesh_dist = distribute(dir="parts") do
+mesh = distribute(dir="parts") do
     UNV3D_mesh("path/to/mesh.unv", scale=0.001)
 end
 ```
 
-A decomposition already in `dir` for the same number of ranks is reused and the reader is never
-called; one written for a different number of ranks is replaced. [`partition_mesh`](@ref) writes
-the same layout from a standalone process if you would rather decompose ahead of time, and
-`distribute(dir; comm)` loads it.
+If `dir` already holds a decomposition for the same number of ranks, it is reused and the reader
+is never called. A decomposition for a different number of ranks is replaced.
+[`partition_mesh`](@ref) writes the same layout from a standalone process if you want to decompose
+ahead of time, and `distribute(dir; comm)` loads it.
 
-Pass `mesh_dist` as the model `domain` and assign boundary conditions against it exactly as in
-serial. The rest of the script — `Physics`, `assign`, `SolverSetup`, `Schemes`, `Runtime`,
-`run!` — is unchanged.
+## Setting up and running a case
 
-Two helpers cover what a parallel script still needs. [`is_root`](@ref) is true on rank 0 and
-also true in a serial run where MPI was never initialised, so one guard works in both:
+Pass the distributed mesh as the model `domain` and assign boundary conditions against it, exactly
+as in serial. The rest of the script is unchanged:
 
-```julia
-is_root() && println("final residual ", residuals.p[end])
+```jldoctest distributed; filter = r".*"s => s"", output = false
+velocity = [0.5, 0.0, 0.0]
+nu = 1e-3
+
+model = Physics(
+    time = Steady(),
+    fluid = Fluid{Incompressible}(nu = nu),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{Isothermal}(),
+    domain = mesh
+    )
+
+BCs = assign(
+    region = mesh,
+    (
+        U = [
+            Dirichlet(:inlet, velocity),
+            Extrapolated(:outlet),
+            Wall(:wall, [0.0, 0.0, 0.0]),
+            Symmetry(:top)
+        ],
+        p = [
+            Extrapolated(:inlet),
+            Dirichlet(:outlet, 0.0),
+            Extrapolated(:wall),
+            Symmetry(:top)
+        ]
+    )
+)
+
+solvers = (
+    U = SolverSetup(
+        solver = Bicgstab(),
+        preconditioner = Jacobi(),
+        convergence = 1e-7,
+        relax = 0.7,
+        rtol = 1e-1
+    ),
+    p = SolverSetup(
+        solver = Cg(),
+        preconditioner = GAMG(),
+        convergence = 1e-7,
+        relax = 0.3,
+        rtol = 1e-2
+    )
+)
+
+schemes = (
+    U = Schemes(divergence = Linear),
+    p = Schemes()
+)
+
+runtime = Runtime(iterations = 5, write_interval = -1, time_step = 1)
+hardware = Hardware(backend = CPU(), workgroup = 1024)
+
+config = Configuration(
+    solvers = solvers, schemes = schemes, runtime = runtime, hardware = hardware, boundaries = BCs)
+
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
+
+residuals = run!(model, config)
+
+is_root() && println("final pressure residual ", residuals.p[end])
+
+# output
+
 ```
 
-and `bind_device!(backend)` binds the calling rank to its GPU without your script querying the
+Two helpers cover what a parallel script still needs. [`is_root`](@ref), used above, is true on
+rank 0. It is also true in a serial run where MPI was never initialised, so the same guard works in
+both. `bind_device!(backend)` binds the calling rank to its GPU without your script querying the
 communicator.
 
 ## Launching
 
-Install MPI.jl's launcher once. It resolves the same MPI binary the package itself uses:
+Install MPI.jl's launcher once. It resolves the same MPI binary that the package itself uses:
 
 ```bash
 julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
 ```
 
-Then a run is one command:
+After that, a run is one command:
 
 ```bash
 mpiexecjl -n 4 julia --project=<env> your_case.jl
 ```
 
-`mpiexecjl` lives in `~/.julia/bin`; add that to your `PATH`. Threads per rank use Julia's usual
-`-t`, but one thread per rank is the right default: the CPU kernel backend is already serial, so
-extra threads add overhead rather than removing it. Call `activate_multithread(backend)` in the
-script — despite the name it pins BLAS to a single thread, which is what stops each rank taking
-every core. On a machine with hyperthreading, bind one rank per physical core, for example
-`mpiexecjl -n 4 --bind-to core --map-by core julia ...`.
+`mpiexecjl` lives in `~/.julia/bin`, so add that directory to your `PATH`. You can set threads per
+rank with Julia's usual `-t` flag, but one thread per rank is the right default. The CPU kernel
+backend is already serial, so extra threads add overhead rather than saving time. Call
+`activate_multithread(backend)` in the script. Despite its name, it pins BLAS to a single thread,
+which stops each rank from taking every core. On a machine with hyperthreading, bind one rank per
+physical core, for example `mpiexecjl -n 4 --bind-to core --map-by core julia ...`.
 
-See `examples/3D_BFS_mpi.jl` for a complete runnable case.
+## PETSc solvers in a single process
+
+The same script runs without `mpiexecjl`. Started with plain `julia your_case.jl`, `distribute`
+initialises MPI with a single rank and every linear solve goes through PETSc. This is how you use
+PETSc's solvers and preconditioners, such as `GAMG()`, in an ordinary serial run, as an alternative
+to the Krylov.jl solvers used on a serial mesh. Your script does not need `using MPI`, since
+XCALibre depends on it already.
+
+On a GPU backend, the fields stay on the device. The linear solves need either a GPU-enabled PETSc
+or `run!(model, config; solve_on=CPU())`, which copies the matrix and right-hand side to the host
+for each solve.
 
 ## Configuring the linear solvers
 
-On a distributed mesh the solves go through PETSc. The `SolverSetup` fields map onto PETSc as
-follows:
+On a distributed mesh the solves go through PETSc. The `SolverSetup` fields keep their serial
+meaning:
 
-- `solver`: `Cg()` → `cg`, `Bicgstab()` → `bcgs`, `Gmres()` → `gmres` (PETSc `KSP` type).
-- `preconditioner`: `Jacobi()` → `jacobi`, `BoomerAMG()` → `hypre`, `GAMG()` → `gamg` (PETSc
-  `PC` type).
-- `atol`, `rtol`, `itmax`: passed to PETSc `KSPSetTolerances` (absolute/relative residual
-  tolerance and maximum iterations). These are the live convergence controls.
-- `convergence`: used **only** as the PETSc absolute tolerance when both `atol` and `rtol` are
-  set to `0`; otherwise it is ignored (set `atol`/`rtol` instead).
+- `solver`: `Cg()` → `cg`, `Cgs()` → `cgs`, `Bicgstab()` → `bcgs`, `Gmres()` → `gmres` (PETSc
+  `KSP` type).
+- `preconditioner`: `Jacobi()` → `jacobi`, `DILU()` → `bjacobi`, `GAMG()` → `gamg`, `BoomerAMG()`
+  → `hypre` (PETSc `PC` type). PETSc has no DILU, so `DILU()` maps to its closest relative, block
+  Jacobi with an ILU(0) factorisation of each rank's block.
+- `atol`, `rtol`, `itmax`: the stopping tolerances and iteration limit of each linear solve, as in
+  serial.
+- `convergence`: the residual target that stops the outer iteration, as in serial. It does not
+  affect the linear solver.
 
-At solver construction each field prints the effective PETSc configuration once (from rank 0),
-so you can confirm what PETSc actually received:
+When each solver is built, rank 0 prints the configuration PETSc received:
 
 ```
-[ Info: PETSc solve [p]: KSP=cg PC=jacobi atol=1.0e-6 rtol=0.0 itmax=2000
+[ Info: PETSc solve [p]: KSP=cg PC=gamg atol=1.0e-6 rtol=0.01 itmax=1000 reuse_interpolation=true
 ```
 
-Any solver or preconditioner not in the curated list, or any extra PETSc option, can be passed
-through as a raw options string via the `petsc_options` keyword of `run!`, e.g.
-`run!(model, config; petsc_options="-ksp_monitor -pc_type gamg")`. The same string is given to
-PETSc at start-up, so options that must be set before PETSc initialises — `-log_view`,
-`-use_gpu_aware_mpi 0` — go there too and need no environment variable. Start-up options take
-effect on the first solver built, since PETSc initialises once per process.
-
-## Algebraic multigrid for pressure (BoomerAMG and GAMG)
-
-The pressure Poisson solve dominates incompressible runs, and its condition number worsens as
-the mesh grows, so Jacobi-preconditioned CG needs more iterations at larger sizes. Algebraic
-multigrid (AMG) builds a hierarchy of coarser problems and converges the pressure in a roughly constant number of
-Krylov iterations independent of size. XCALibre exposes two AMG preconditioners, both SPD-only
-(no transpose apply) and distributed-only (they error on a serial mesh):
-
-- `BoomerAMG()` — HYPRE BoomerAMG (`-pc_type hypre`). Requires a PETSc build configured with
-  `--download-hypre`.
-- `GAMG()` — PETSc's native aggregation AMG (`-pc_type gamg`). No extra build flags; always
-  available with PETSc.
+The `petsc_options` keyword of `run!` passes a raw PETSc options string, which reaches every
+solve. Use it for anything the list above does not cover. It overrides the mapped types, and it
+also names a type for a solver or preconditioner that has no mapping:
 
 ```julia
-p = SolverSetup(solver = Cg(), preconditioner = BoomerAMG(), rtol = 0.01, itmax = 1000, ...)
-# or, needing no hypre build:
-p = SolverSetup(solver = Cg(), preconditioner = GAMG(), rtol = 0.01, itmax = 1000, ...)
+run!(model, config; petsc_options="-pc_type sor -ksp_monitor")
 ```
 
-**Use `GAMG()` when you want AMG.** On a 0.5M-cell 3D backward-facing step with the clock
-pinned, `GAMG()` was faster than `BoomerAMG()` at every rank count measured (one, four and
-eight), scaled more evenly, and needs no hypre build. At four ranks, with each at its best
-freeze, it took 0.3023 s/iter against 0.3951. `BoomerAMG()` remains available for cases where its classical coarsening suits
-the operator better.
+PETSc also reads this string at start-up, so options that must be set before PETSc initialises,
+such as `-log_view` or `-use_gpu_aware_mpi 0`, go there too and need no environment variable.
+Start-up options take effect with the first solver built, since PETSc initialises once per
+process.
+
+## Algebraic multigrid for pressure (GAMG and BoomerAMG)
+
+The pressure Poisson solve dominates incompressible runs. Its condition number worsens as the mesh
+grows, so Jacobi-preconditioned CG needs more iterations on larger meshes. Algebraic multigrid
+(AMG) builds a hierarchy of coarser problems and converges the pressure in a number of Krylov
+iterations that is roughly independent of mesh size. Two AMG preconditioners are available. Both
+are for symmetric positive-definite systems only (they have no transpose apply), and both run only
+through PETSc:
+
+- `GAMG()`: PETSc's native aggregation AMG (`-pc_type gamg`). It needs no extra build flags.
+- `BoomerAMG()`: HYPRE BoomerAMG (`-pc_type hypre`). It needs a PETSc built with hypre.
+
+```julia
+p = SolverSetup(solver = Cg(), preconditioner = GAMG(), convergence = 1e-7, relax = 0.3, rtol = 0.01)
+```
+
+**Prefer `GAMG()` when you want AMG.** It needs no special build, and on the cases measured so far
+it was faster than `BoomerAMG()` at every rank count and scaled more evenly (see
+[Benchmarks](@ref)). `BoomerAMG()` remains available for operators where classical coarsening
+suits better.
 
 !!! note "AMG results depend on the rank count"
-    An AMG hierarchy is built from each rank's local partition, so it changes when the rank
-    count changes, and runs at different rank counts converge to the same solution along
-    slightly different paths. On the case above the pressure residual after 100 iterations
-    varied by 0.5% across one to eight ranks with `GAMG()` and by 2.4x with `BoomerAMG()`.
-    `Jacobi()` does not depend on the partition and gives identical residuals at every rank
-    count. Use `Jacobi()` when you need bit-for-bit comparisons across rank counts.
+    An AMG hierarchy is built from each rank's local partition. It therefore changes with the rank
+    count, and runs at different rank counts converge to the same solution along slightly
+    different paths. `Jacobi()` does not depend on the partition and gives identical residuals at
+    every rank count, so use it when you need to compare runs at different rank counts exactly.
 
 ### When AMG helps
 
-AMG carries a per-solve overhead (building/refreshing the hierarchy plus applying a V-cycle)
-that Jacobi does not, so on small partitions it can be *slower* than Jacobi. The benefit grows
-with problem size. On a tetrahedral backward-facing-step benchmark (8 ranks, per-iteration wall
-time):
-
-| cells | CG+Jacobi | CG+GAMG | CG+BoomerAMG |
-|------:|----------:|--------:|-------------:|
-| 0.5M  | 393 ms    | 464 ms  | 465 ms       |
-| 2.7M  | 2194 ms   | 2117 ms | 2089 ms      |
-
-Jacobi scales super-linearly while AMG scales sub-linearly, so AMG overtakes Jacobi somewhere
-around a million cells on that machine and its lead widens beyond. Where the crossing falls
-depends on the mesh, the rank count and the memory system, so measure it on your own case rather
-than assuming the figure above: on a laptop at 1.3M tetrahedra we have since seen Jacobi still
-ahead. AMG also drives the pressure residual far deeper per outer
-iteration (6–8× here), which can cut the number of outer SIMPLE iterations needed to reach a
-steady state (a further gain not visible in the per-iteration figure above). Rule of thumb: use
-Jacobi for small/medium cases, AMG for large ones (especially when the pressure solve dominates).
+AMG adds a cost to every solve that Jacobi does not have: building or refreshing the hierarchy,
+then applying a V-cycle. On small partitions this can make AMG *slower* than Jacobi. Jacobi's
+iteration count grows with mesh size while AMG's does not, so AMG overtakes Jacobi above some
+problem size. That crossover depends on the mesh, the rank count and the memory system, so measure
+it on your own case. AMG also reduces the pressure residual much further in each outer iteration,
+which can cut the number of outer iterations needed to reach a steady state. As a rule of thumb,
+use Jacobi for small and medium cases and AMG for large ones, especially when the pressure solve
+dominates.
 
 ### Rebuilding vs freezing the hierarchy
 
-In SIMPLE the pressure matrix keeps a **fixed sparsity pattern** (no mesh refinement) but its
-coefficients change slightly each outer iteration. Rebuilding the whole AMG hierarchy on every
-solve is expensive, so both preconditioners avoid it — differently:
+In SIMPLE, the pressure matrix keeps a fixed sparsity pattern while its coefficients change
+slightly from one outer iteration to the next. Rebuilding the whole AMG hierarchy for every solve
+is expensive, so both preconditioners avoid it, in different ways:
 
-- `BoomerAMG(freeze = N)` holds the whole preconditioner fixed for `N` solves and rebuilds it
-  from the current matrix on the `N`th (default `10`; `freeze = 1` rebuilds every solve). HYPRE cannot partially reuse a hierarchy, so this
-  all-or-nothing freeze is the only option; the frozen hierarchy remains a good preconditioner
-  in cases where the matrix changes gently between rebuilds.
-- `GAMG()` sets `reuse_interpolation = true` by default: it builds the aggregation and
-  interpolation operators once and recomputes only the (cheap) coarse operators and smoothers
-  each solve, so the hierarchy stays numerically current at a fraction of a full setup. This is
-  valid precisely because the sparsity pattern never changes. `GAMG(freeze = N)` additionally
-  holds the whole preconditioner fixed for `N` solves, skipping even that update (default `25`;
-  `freeze = 1` updates every solve). Measured on a 0.5M-cell 3D backward-facing step at four
-  ranks, the freeze cuts the time per iteration by about 26% (1.36x) and leaves the pressure residual
-  unchanged to within 0.1%.
-- For `BoomerAMG`, freezing longer than the default trades residual quality for setup time: at
-  `freeze = 25` the same case ran about 6% faster but finished with a 2.4x larger pressure
-  residual, so the default stays at `10`.
+- `GAMG()` sets `reuse_interpolation = true` by default. It builds the aggregation and
+  interpolation operators once and then, for each solve, recomputes only the coarse operators and
+  smoothers, which is cheap. The hierarchy stays numerically current at a fraction of the cost of
+  a full setup. This is valid only because the sparsity pattern never changes. `GAMG(freeze = N)`
+  goes further and holds the whole preconditioner fixed for `N` solves, skipping even that update
+  (default `25`; `freeze = 1` updates for every solve).
+- `BoomerAMG(freeze = N)` holds the whole preconditioner fixed for `N` solves and rebuilds it from
+  the current matrix on the `N`th (default `10`; `freeze = 1` rebuilds for every solve). HYPRE
+  cannot partially reuse a hierarchy, so this all-or-nothing freeze is the only option.
+
+The Krylov solver always uses the current matrix, so a frozen preconditioner changes how fast each
+solve converges but not the solution it converges to. A longer freeze saves setup time and can cost
+residual reduction per outer iteration. The defaults balance the two.
 
 ### Tuning keywords
 
 Each keyword `k = v` is forwarded to PETSc and overrides a default.
 
-**BoomerAMG** → `-pc_hypre_boomeramg_<k> v`. Defaults are tuned for 3D (`strong_threshold = 0.7`,
-`coarsen_type = "HMIS"`, `interp_type = "ext+i"`, `agg_nl = 1`, `agg_num_paths = 2`) — HYPRE's own
-defaults are 2D-oriented and build an over-complex, memory-heavy hierarchy in 3D. Common knobs:
+**GAMG** → `-pc_gamg_<k> v`. Common options:
 
-- `strong_threshold` — strength-of-connection threshold; 0.5–0.7 for 3D.
-- `coarsen_type` — coarsening algorithm: `"HMIS"`, `"PMIS"`, `"Falgout"`, ...
-- `interp_type` — interpolation: `"ext+i"`, `"classical"`, ...
-- `agg_nl` — number of aggressive-coarsening levels (lower operator complexity and memory).
-- `relax_type_all` — smoother, e.g. `"SOR/Jacobi"`, `"Chebyshev"`, `"l1scaled-Jacobi"`.
-- `grid_sweeps_all` — smoother sweeps per level.
-
-```julia
-BoomerAMG(strong_threshold = 0.6, coarsen_type = "PMIS", relax_type_all = "Chebyshev", freeze = 20)
-```
-
-**GAMG** → `-pc_gamg_<k> v`. Common knobs:
-
-- `threshold` — aggregation strength threshold (e.g. `0.01`–`0.05`).
-- `agg_nsmooths` — prolongator smoothing steps; `0` = unsmoothed aggregation (cheaper, often good
-  for Poisson).
-- `reuse_interpolation` — reuse aggregation/interpolation across solves (default `true` here).
-- `coarse_eq_limit` — size at which the coarsest level is solved directly.
+- `threshold`: aggregation strength threshold (e.g. `0.01`–`0.05`).
+- `agg_nsmooths`: prolongator smoothing steps; `0` gives unsmoothed aggregation, which is cheaper
+  and often good for Poisson problems.
+- `reuse_interpolation`: reuse aggregation and interpolation across solves (default `true` here).
+- `coarse_eq_limit`: the size at which the coarsest level is solved directly.
 
 ```julia
 GAMG(threshold = 0.02, agg_nsmooths = 0)
 ```
 
-See PETSc's `-pc_hypre_boomeramg_*` and `-pc_gamg_*` option lists for the full set; anything not
-exposed as a keyword can still be supplied through the `petsc_options` keyword of `run!`.
+**BoomerAMG** → `-pc_hypre_boomeramg_<k> v`. The defaults are tuned for 3D (`strong_threshold =
+0.7`, `coarsen_type = "HMIS"`, `interp_type = "ext+i"`, `agg_nl = 1`, `agg_num_paths = 2`). HYPRE's
+own defaults are 2D-oriented and build an overly complex, memory-heavy hierarchy in 3D. Common
+options:
+
+- `strong_threshold`: strength-of-connection threshold; 0.5–0.7 for 3D.
+- `coarsen_type`: coarsening algorithm, such as `"HMIS"`, `"PMIS"` or `"Falgout"`.
+- `interp_type`: interpolation, such as `"ext+i"` or `"classical"`.
+- `agg_nl`: number of aggressive-coarsening levels, which lowers operator complexity and memory.
+- `relax_type_all`: smoother, such as `"SOR/Jacobi"`, `"Chebyshev"` or `"l1scaled-Jacobi"`.
+- `grid_sweeps_all`: smoother sweeps per level.
+
+```julia
+BoomerAMG(strong_threshold = 0.6, coarsen_type = "PMIS", relax_type_all = "Chebyshev", freeze = 20)
+```
+
+See PETSc's `-pc_gamg_*` and `-pc_hypre_boomeramg_*` option lists for the full set. Anything not
+exposed as a keyword can still be passed through `petsc_options`.
 
 !!! note
     Do not hard-code `BoomerAMG` as a default in shared scripts: a PETSc build without hypre
-    errors at solver construction. `GAMG` needs no special build and is a safe default AMG.
+    raises an error when the solver is constructed. `GAMG` needs no special build and is a safe
+    default AMG.
 
 ## Terminal output
 
-Informational `@info` messages are printed once (from rank 0) rather than once per rank;
-warnings and errors still surface from every rank so rank-local failures remain visible. This
-is handled automatically when the mesh is distributed — nothing is required in your script.
+Informational `@info` messages are printed once, from rank 0, rather than once per rank. Warnings
+and errors still come from every rank, so failures on a single rank remain visible. This happens
+automatically when the mesh is distributed, and your script needs nothing extra.
 
 ## What is and is not supported
 
@@ -247,40 +318,22 @@ Distributed today:
 
 - Steady and transient incompressible flow through the SIMPLE and PISO families.
 - `Laminar`, `KOmega` and `KOmegaSST` turbulence, including wall distance.
-- CPU and GPU backends, periodic patches, and writing results in OpenFOAM's decomposed layout
-  for reconstruction with the usual tools.
+- CPU and GPU backends, periodic patches, and writing results in OpenFOAM's decomposed layout so
+  that the usual tools can reconstruct them.
 
-Not distributed, and these error or fall back rather than silently giving a wrong answer:
+Not distributed yet. These raise an error or fall back, rather than silently giving a wrong answer:
 
-- The `KOmegaLKE` transition model and the LES models. They need the same synchronisation audit
-  `KOmegaSST` received and have not had it.
-- Float32 with `BoomerAMG`: the stock PETSc libraries carry hypre at Float64 only.
+- The `KOmegaLKE` transition model and the LES models.
+- Float32 with `BoomerAMG`, because the stock PETSc libraries include hypre at Float64 only.
 - GPU-native linear solves without a CUDA- or ROCm-enabled PETSc build. Use `solve_on=CPU()`.
-
-Two behaviours to know about:
-
-- `convergence` in a `SolverSetup` is not a distributed control. PETSc converges on `atol`,
-  `rtol` and `itmax`; `convergence` is used only as the absolute tolerance when both `atol` and
-  `rtol` are zero.
-- `wall_distance!` can report that it did not converge while the residual is perfectly
-  acceptable. It compares against a fixed threshold that predates the distributed path and the
-  message is harmless.
 
 ## What to expect from parallel performance
 
-Parallel efficiency is dominated by whether your machine can hold its clock speed, so measure
-before drawing conclusions. On a consumer laptop the CPU drops its frequency as more cores
-become busy, and that alone can look exactly like a scaling problem: on a 500k-cell
-tetrahedral backward-facing step, the same case measures 87% efficiency at two ranks and 47%
-at eight when the clock is left free, but 102% and 71% when the clock is pinned. Nothing about
-the decomposition changed between those two sets of figures.
-
-With the clock held constant, efficiency is roughly 100% at two ranks and 94% at four, and a
-mesh 2.6 times larger gives the same numbers to within a point. Above four ranks the remaining
-loss is dominated by global reductions rather than by halo exchange or memory bandwidth: each
-Krylov iteration ends in an all-reduce, and with many small subdomains the ranks spend a
-growing share of each iteration waiting at that barrier.
-
-Practical guidance: prefer fewer, larger subdomains; expect a workstation or cluster node with
-a sustained clock to scale better than a laptop; and treat rank counts beyond one rank per
-physical core as pointless, since the ranks then contend for the same execution resources.
+- **Measure with a steady clock.** Many CPUs, laptops in particular, lower their clock frequency as
+  more cores become busy. This alone can look exactly like poor scaling, so pin the frequency or
+  hold package power constant before comparing timings across rank counts.
+- **Prefer fewer, larger subdomains.** Every Krylov iteration ends in a global reduction. With many
+  small subdomains, the ranks spend a growing share of each iteration waiting at that reduction
+  rather than computing.
+- **Stop at one rank per physical core.** Beyond that, ranks compete for the same execution
+  resources and gain nothing.

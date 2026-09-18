@@ -1,14 +1,14 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m7-preconditioner-api.md
-updated: 2026-09-18T03:25:00+01:00
-STATE: GATING
+updated: 2026-09-18T04:00:00+01:00
+STATE: BUILDING
 STEP: P1-M7 preconditioner API, opened on the scaling findings (D25-D37)
 HEAD: 713ab065
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: read the suite result in the scratchpad suite2.log; if green, tick the exit gate, then take P1-M7 step 1, the `reuse` rename, on the settled recommendation that `GAMG(reuse=25)` is the AMG to document (D31-D37); do NOT open a PR or close the phase
+resume: take P1-M7-S1, the `reuse` rename, per `dev/plans/p1-m7-preconditioner-api.md`; the M1-M6 exit gate PASSED at 2374a1e7 and needs no rerun; do NOT open a PR or close the phase
 ## position
-M1-M6 closed; M3 was reopened and its attribution corrected (D19-D23). M7 is OPEN with its scope now measured rather than speculative (D34-D37). Exit gate otherwise green: distributed gate 89 s, documentation build, example acceptance at n=2 and n=4 on stock binaries from clean directories. The serial suite failed once on an undeclared test dependency (D24); fixed and committed, one green rerun outstanding.
+M1-M6 closed; M3 was reopened and its attribution corrected (D19-D23). M7 is OPEN with its scope now measured rather than speculative (D34-D37). Exit gate otherwise green: distributed gate 89 s, documentation build, example acceptance at n=2 and n=4 on stock binaries from clean directories. The M1-M6 exit gate PASSED on 2026-09-18 (serial suite 1549/1549 after the D24 fix); M7 carries its own exit criterion.
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

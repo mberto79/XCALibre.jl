@@ -24,4 +24,6 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 
 ## Exit gate
 
+PASSED 2026-09-18 for M1-M6, at commit 2374a1e7; M7 opened afterwards and carries its own exit criterion. Evidence in `dev/telemetry/gate_results.md`: serial suite 1549/1549, distributed gate 5/5 in 187 s, documentation build 0 errors, example at n=2 and n=4 on stock binaries from clean directories, rank invariance to 15 significant figures under Jacobi, scaling telemetry in `scaling_attribution.md`.
+
 Full serial suite green with no reduction in test count, distributed gate green within Q2, the backward-facing-step example run on stock binaries from a clean checkout, rank invariance at one, two and four ranks meeting Q1, scaling telemetry meeting Q3, and the documentation build passing.

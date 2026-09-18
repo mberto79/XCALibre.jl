@@ -1,8 +1,7 @@
 #!/bin/bash
-# Strong scaling at CONSTANT package power: at rank count n the solver takes physical cores
-# 0..n-1 and spin-loops occupy the remaining P-cores, so every rank count runs the machine at
-# the same sustained power limit. Spin loops are pure ALU: they equalise clocks without
-# competing for memory bandwidth. Removes throttling as a variable without needing root.
+# Strong scaling at CONSTANT package power: spin loops hold the P-cores the solver is not using,
+# so every rank count meets the same sustained power limit. Pure ALU, so clocks equalise without
+# competing for memory bandwidth. The no-root substitute for pinning the clock (D20).
 set -u
 REPO=/home/humberto/Julia/XCALibre.jl
 ENVDIR=$REPO/dev/petscenv_stock

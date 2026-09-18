@@ -9,6 +9,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - `test/distributed/runtests_mpi.jl` swallows child standard output when a test passes, so anything printed by the run must be checked with a direct `mpiexec` invocation instead.
 - A distributed hang with flat resident memory and no solver banner is almost always ranks dispatching differently: any value that selects a method must be broadcast so it has the same type on every rank.
 - `xcalibre-dev check` exits non-zero on an invalid vault, but a status read through a pipe is the pipe's status; run it bare.
+- `pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so `until ! pgrep -f 'Pkg.test'` never exits while any shell mentions `Pkg.test`. Wait on a marker written to a file instead.
 
 ## environment and libraries
 
@@ -22,15 +23,13 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 
 - `/tmp` is memory-backed on this box: never write mesh partitions there.
 - The memory ceiling is rank zero holding the global mesh, not the rank count, at roughly 1.6 KB per cell. Partitioning offline in a separate process removes it.
-- This laptop has sixteen performance cores and sixteen efficiency cores; more than eight ranks crosses onto the slower cores and any scaling number past that measures core heterogeneity.
-- Sustained load throttles the clock to a fraction of peak, which alone can produce a scaling curve of the shape observed, so any scaling measurement must log clock frequency alongside timings.
+- This laptop has EIGHT performance cores (CPUs 0-15, hyperthread siblings paired adjacently, so 0,1 = core 0) and sixteen efficiency cores at 4.1 GHz (CPUs 16-31). More than eight ranks crosses onto the slower cores and any scaling number past that measures core heterogeneity.
 
-## This machine throttles, and it will invalidate any cross-rank timing
+## measuring across rank counts
 
-CPUs 0-15 are eight P-cores with hyperthread siblings paired adjacently (0,1 = core 0). Under
-load the package falls from 4400 MHz on one busy core to 3100 MHz on eight, so RANK COUNT AND
-CLOCK CO-VARY and an uncorrected strong-scaling curve measures the power limit, not the code.
-This produced a wrong attribution once already (D16, withdrawn by D19).
+- The package falls from 4400 MHz on one busy core to 3100 MHz on eight, so RANK COUNT AND CLOCK CO-VARY and an uncorrected strong-scaling curve measures the power limit, not the code. This produced a wrong attribution once already (D16, withdrawn by D19).
+- Sample the clock DURING a run, never after it: a reading taken once the solver has exited shows idle cores and is worthless (it made the first OpenFOAM comparison unusable, D22).
+- Without root, `dev/scripts/equal_thermal.sh` is the substitute for pinning: spin loops occupy every P-core the solver is not using, so all rank counts throttle equally. The two methods agree.
 
 Pin the clock before measuring, and put it back afterwards:
 
@@ -48,13 +47,3 @@ echo powersave | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 echo balance_performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
 powerprofilesctl set balanced
 ```
-
-Without root, `dev/scripts/equal_thermal.sh` is the substitute: spin loops occupy every P-core
-the solver is not using, so all rank counts throttle equally. The two methods agree.
-
-Sample the clock DURING a run, never after it: a reading taken once the solver has exited shows
-idle cores and is worthless (it made the first OpenFOAM comparison unusable, D22).
-
-`pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so
-`until ! pgrep -f 'Pkg.test'` never exits if another shell mentions `Pkg.test`. Wait on a marker
-written to a file instead.

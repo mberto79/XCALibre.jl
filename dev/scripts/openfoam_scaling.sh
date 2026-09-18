@@ -1,8 +1,6 @@
 #!/bin/bash
-# WARNING: max_mhz() here runs AFTER foamRun exits and so SAMPLES THE CLOCK AFTER the solve,
-# reading idle cores. It made the first OpenFOAM comparison unusable (D22). Use dev/scripts/
-# of_fixed-style sampling (a background sampler during the run) for any new measurement.
-# OpenFOAM strong-scaling reference for the backward-facing-step case; see dev/scripts/INDEX.md.
+# OpenFOAM strong-scaling reference; max_mhz() below samples AFTER the solver exits and so
+# reads idle cores - sample during the run instead (D22). See dev/scripts/INDEX.md.
 # Per-iteration cost is (T100 - T3) / 97, so start-up and mesh loading cancel.
 set -euo pipefail
 SRC=/home/humberto/casesXCALibre/XCALibre_benchmarks/3D_BFS_laminar/OpenFOAM

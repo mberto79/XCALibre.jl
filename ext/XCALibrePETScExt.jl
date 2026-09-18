@@ -80,6 +80,29 @@ function _options_for(o::NamedTuple, label)
     strip(string(get(o, :all, ""), " ", isempty(label) ? "" : get(o, Symbol(label), "")))
 end
 
+# PETSc aborts on first device use over a non-CUDA-aware MPI. Its exported flag is cleared rather
+# than passing a start-up option, which is lost when PETSc was initialised before this call.
+function _gpu_comm!(petsclib, opts, comm)
+    aware = MPI.has_cuda()
+    user_set = occursin("-use_gpu_aware_mpi", opts)
+    if MPI.Comm_rank(comm) == 0
+        if user_set
+            @info "GPU communication: set by petsc_options" maxlog=1 _id=:gpu_comm
+        elseif aware
+            @info "GPU communication: CUDA-aware MPI, device buffers passed directly" maxlog=1 _id=:gpu_comm
+        else
+            @warn "GPU communication: MPI is not CUDA-aware, so inter-rank messages are staged " *
+                "through host memory (slower). Solves still run on the GPU. Use a CUDA-aware MPI " *
+                "to pass device buffers directly; some need it enabled at launch, e.g. Open MPI " *
+                "with OMPI_MCA_opal_cuda_support=true." maxlog=1 _id=:gpu_comm
+        end
+    end
+    (aware || user_set) && return nothing
+    lib = Base.Libc.Libdl.dlopen(petsclib.petsc_library)
+    unsafe_store!(Ptr{Cint}(Base.Libc.Libdl.dlsym(lib, :use_gpu_aware_mpi)), Cint(0))
+    nothing
+end
+
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         comm=MPI.COMM_WORLD, petsc_options="", label="")
     petsc_options = _options_for(petsc_options, label)
@@ -93,13 +116,13 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     nnz_owned = Int(rowptr[n+1]) - 1
     N, nnz_global = MPI.Allreduce([n, nnz_owned], +, comm)
     petsclib = _petsclib(TF, nnz_global)
+    device_solve = !(_nzval(A) isa Array)
     # the same string configures PETSc's start-up and the Krylov solve; entries PETSc does not
     # recognise at one stage are consumed at the other. Start-up options apply on the FIRST call
     # only, since PETSc is initialised once per process.
     PETSc.initialize(petsclib; options=String.(split(petsc_options)))
     PI = petsclib.PetscInt
-    # device fields never fall back to host solves; a device-enabled PETSc is required
-    device_solve = !(_nzval(A) isa Array)
+    # device fields never fall back to host solves; a device-enabled PETSc is required.
     # backend ext declares its PETSc pairing (cuda/mpiaijcusparse, hip/mpiaijhipsparse)
     dev = device_solve ? Distribute.petsc_device_info(_nzval(A)) : nothing
     device_solve && !_petsc_has_pkg(petsclib, dev.pkg) && error(
@@ -108,6 +131,7 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         "library, so install a $(dev.pkg)-enabled PETSc and select it through MPIPreferences " *
         "and PETSc's own preferences in this project environment, or run on the CPU backend. " *
         "See the distributed simulations page of the documentation.")
+    device_solve && _gpu_comm!(petsclib, petsc_options, comm)
     l2g = part.local_to_global
     coo_i = Vector{PI}(undef, nnz_owned)
     for r ∈ 1:n, k ∈ rowptr[r]:rowptr[r+1]-1

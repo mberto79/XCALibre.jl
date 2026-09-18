@@ -15,13 +15,156 @@ shell configuration. Two cases need more:
   works out of the box at the default precision. `Float32` builds do not include it.
 - GPU runs need an NVIDIA GPU and a CUDA-enabled PETSc, which `PETSc_jll` does not ship. The
   matrix, right-hand side and solution then stay on the device. Without a CUDA-enabled PETSc, a
-  GPU run stops with an error; it is never moved onto the host.
+  GPU run stops with an error; it is never moved onto the host. A prebuilt CUDA-enabled PETSc can
+  be installed without compiling, see [GPU runs without compiling PETSc](@ref).
 
-A custom PETSc or system MPI is selected through `MPIPreferences` and PETSc's own preferences.
-Julia resolves preferences per project environment, and PETSc.jl generates its low-level wrappers
-at precompilation for the configured library. The scalar precision and the library path are
-therefore fixed by the environment you run in and cannot be switched at run time. Use a separate
-project environment for each PETSc build.
+To use a system MPI or your own PETSc build, see [Setting up MPI and PETSc](@ref).
+
+## Setting up MPI and PETSc
+
+This section is only for users who need something the stock binaries do not provide: the MPI
+library installed on a cluster, a PETSc built with particular options, or a GPU-enabled PETSc.
+
+### How the pieces fit
+
+- `MPI.jl` chooses the MPI library, set with the `MPIPreferences` package. `PETSc_jll`
+  follows that choice and loads its matching build.
+- `PETSc.jl` can load any PETSc library you point it at instead of `PETSc_jll`. That library
+  must be built against the same MPI that `MPI.jl` uses.
+- Both choices are stored in the `LocalPreferences.toml` file of the project environment and are
+  read when packages precompile. Restart Julia after changing either one.
+- The scalar precision and the library path are fixed by the environment you run in and cannot be
+  switched at run time. Use a separate project environment for each PETSc build.
+
+### Using a system MPI
+
+In the project environment, point `MPI.jl` at the library and its launcher, then restart Julia
+and instantiate again. When the new library has a different ABI (for example, Open MPI instead of
+MPICH), the instantiate step downloads the matching `PETSc_jll` artifacts. Without it,
+`using PETSc` fails with a missing-artifact error.
+
+```julia
+using MPIPreferences
+MPIPreferences.use_system_binary(; library_names=["/path/to/lib/libmpi"],
+    mpiexec="/path/to/bin/mpiexec")
+# restart Julia, then:
+using Pkg; Pkg.instantiate()
+using MPI; MPI.versioninfo()   # confirms which library is loaded
+```
+
+`MPIPreferences.use_jll_binary("OpenMPI_jll")` (or `"MPICH_jll"`, `"MPItrampoline_jll"`)
+switches back to a Julia-provided MPI. On clusters, `MPItrampoline` lets one Julia environment use
+the site MPI through a small wrapper library; see the
+[MPI.jl configuration guide](https://juliaparallel.org/MPI.jl/stable/configuration/). Details
+are not repeated here.
+
+### Pointing PETSc.jl at your own PETSc
+
+```julia
+using PETSc
+PETSc.set_library!("/path/to/lib/libpetsc.so"; PetscScalar=Float64, PetscInt=Int32)
+# restart Julia, then precompile before the first mpiexec launch:
+using Pkg; Pkg.precompile()
+PETSc.library_info()   # shows the configured library, scalar and index types
+```
+
+- `PetscInt` must match the library: `Int64` if it was configured with `--with-64-bit-indices`
+  (`PETSC_USE_64BIT_INDICES` in `petscconf.h`), `Int32` otherwise.
+- Precompile in a plain Julia session before launching with `mpiexec`. Precompiling inside the
+  ranks can fail with "Precompiled image ... not available with flags".
+- `PETSc.unset_library!()` returns the environment to `PETSc_jll`.
+
+### GPU runs without compiling PETSc
+
+conda-forge publishes CUDA-enabled PETSc builds (`cuda12_real_*` and `cuda13_real_*`, Float64 with
+32-bit indices, for Linux x86-64 and aarch64). Each build comes with a matching MPI in the same
+conda environment, and `MPI.jl` and `PETSc.jl` are pointed at both. The steps below were verified
+with PETSc 3.25.5 (`cuda12_real`) on an NVIDIA RTX 4070 at one and two ranks, with Open MPI and
+with MPICH. [micromamba](https://mamba.readthedocs.io/) installs it without root access. The
+environment takes about 3 GB.
+
+```bash
+micromamba create -n petsc-cuda -c conda-forge 'petsc=*=cuda12_real*' openmpi
+```
+
+Pick `cuda13_real` instead if your driver supports CUDA 13 (`nvidia-smi` shows the highest CUDA
+version the driver supports). Then, in a fresh Julia project environment holding XCALibre,
+`MPI`, `PETSc` and `CUDA`, run the two setup blocks above with the paths below. Restart Julia
+after each block.
+
+```julia
+prefix = "/path/to/micromamba/envs/petsc-cuda"   # the conda environment's prefix
+MPIPreferences.use_system_binary(; library_names=["$prefix/lib/libmpi"],
+    mpiexec="$prefix/bin/mpiexec")
+# restart, Pkg.instantiate(), then:
+PETSc.set_library!("$prefix/lib/libpetsc.so"; PetscScalar=Float64, PetscInt=Int32)
+# restart, Pkg.precompile()
+```
+
+Both MPI variants work without further settings. The MPI variant decides how messages between
+ranks travel; the solves run on the GPU either way:
+
+- **Open MPI** from conda-forge is built with CUDA support, but it is off until you export
+  `OMPI_MCA_opal_cuda_support=true` before launching. With it on, device buffers pass directly
+  between ranks.
+- **MPICH** from conda-forge is not CUDA-aware, so messages are staged through host memory.
+
+Launch with `mpiexecjl` as usual; it uses the conda environment's `mpiexec`. The conda-forge
+hypre runs on the host only, so use `GAMG()` or `Jacobi()` for pressure on the GPU. `BoomerAMG()`
+with GPU fields crashes on this build instead of running. Float32 GPU runs are not available from
+conda-forge and still need a compiled PETSc.
+
+### Compiling a CUDA-enabled PETSc
+
+Build PETSc against the MPI that `MPI.jl` uses, then select both as above:
+
+```bash
+./configure --prefix=$HOME/petsc-cuda --with-debugging=0 --with-shared-libraries=1 \
+  --with-mpi-dir=$MPI_DIR --with-cuda=1 --with-cuda-arch=<sm, e.g. 89> \
+  --download-hypre --download-fblaslapack \
+  COPTFLAGS=-O3 CXXOPTFLAGS=-O3 FOPTFLAGS=-O3 CUDAOPTFLAGS=-O3
+make all install
+```
+
+`--download-hypre` with CUDA builds a GPU-capable hypre, so `BoomerAMG()` runs on the device (see
+[On the GPU](@ref)). Add `--with-precision=single` for a Float32 build, in its own project
+environment. Spack (`spack install petsc+cuda`) and the E4S containers are alternatives.
+The PETSc.jl [HPC notes](https://github.com/JuliaParallel/PETSc.jl/blob/main/docs/src/man/hpc.md)
+cover cluster builds.
+
+### GPU communication between ranks
+
+At start-up XCALibre asks the MPI library whether it is CUDA-aware (`MPI.has_cuda()`) and prints
+which path it takes, once, from rank 0:
+
+- CUDA-aware: device buffers go straight to MPI, for XCALibre's halo exchange and for PETSc.
+- Not CUDA-aware: a warning says that messages between ranks are staged through host memory. The
+  solves still run on the GPU; only the exchanged boundary values take the extra copies, which
+  cost more as ranks and interface sizes grow.
+
+An explicit `-use_gpu_aware_mpi` in `petsc_options` overrides PETSc's choice.
+
+### What a CUDA-aware MPI alone gives
+
+Nothing for the linear solves. PETSc's CUDA support is fixed when PETSc is compiled, and
+`PETSc_jll` has none in any variant. A CUDA-aware MPI with the stock `PETSc_jll` can exchange
+device buffers, but XCALibre still refuses a GPU run because the solves would have to move to the
+host. A GPU run needs a CUDA-enabled PETSc; a CUDA-aware MPI then removes the host staging of
+messages.
+
+### Troubleshooting
+
+- *"Artifact ... was not found"* when loading PETSc after switching MPI: run `Pkg.instantiate()`
+  in the environment.
+- *"Precompiled image ... not available with flags"* under `mpiexec`: run `Pkg.precompile()` in a
+  plain session first. Do not pass `--heap-size-hint` to the ranks; it changes the precompilation
+  flags.
+- *"MPI is not CUDA-aware"* warning with an MPI you expect to be CUDA-aware: check that its CUDA
+  support is enabled at launch (Open MPI: `OMPI_MCA_opal_cuda_support=true`).
+- *"fields live on the GPU but this PETSc build has no cuda support"*: the environment is still
+  using `PETSc_jll`; check `PETSc.library_info()`.
+- Ranks abort at start-up in `MPI_Init`: the `mpiexec` on your `PATH` belongs to a different MPI.
+  Launch through `mpiexecjl`, which always uses the configured one.
 
 ## Distributing the mesh
 
@@ -261,14 +404,16 @@ suits better.
 AMG adds a cost to every solve that Jacobi does not have: building or refreshing the hierarchy,
 then applying a V-cycle. On small partitions this can make AMG *slower* than Jacobi. Jacobi's
 iteration count grows with mesh size, roughly as the cube root of the cell count in 3D, while AMG's
-stays nearly constant, so AMG overtakes Jacobi above some problem size. Adding ranks shrinks each
-partition and erodes AMG's advantage, because its coarse levels become communication-bound. AMG also stores
-its hierarchy of coarse operators, so each rank needs noticeably more memory than with Jacobi; on
-a memory-limited machine this, not time, can set how many ranks a large mesh can use. That crossover depends on the mesh, the rank count and the memory system, so measure
-it on your own case. AMG also reduces the pressure residual much further in each outer iteration,
-which can cut the number of outer iterations needed to reach a steady state. As a rule of thumb,
-use Jacobi for small and medium cases and AMG for large ones, especially when the pressure solve
-dominates.
+stays nearly constant, so AMG overtakes Jacobi above some problem size. That crossover depends on
+the mesh, the rank count and the memory system, so measure it on your own case. Adding ranks
+shrinks each partition and erodes AMG's advantage, because its coarse levels become
+communication-bound.
+
+AMG also stores its hierarchy of coarse operators, so each rank needs noticeably more memory than
+with Jacobi. On a memory-limited machine this, not time, can set how many ranks a large mesh can
+use. In return, AMG reduces the pressure residual much further in each outer iteration, which can
+cut the number of outer iterations needed to reach a steady state. As a rule of thumb, use Jacobi
+for small and medium cases and AMG for large ones, especially when the pressure solve dominates.
 
 ### Rebuilding vs freezing the hierarchy
 
@@ -338,8 +483,9 @@ With a CUDA-enabled PETSc, `Jacobi()` and `GAMG()` run on the device and give th
 as on the CPU; GAMG builds part of its hierarchy on the host, which its `freeze` count amortises.
 `BoomerAMG()` runs on the device only if PETSc's hypre was itself built with CUDA. There PETSc
 switches it to the GPU-capable variants (PMIS coarsening, `ext+i` interpolation, l1-Jacobi
-smoothing), so its residuals differ from a CPU run with the same keywords. `GAMG()` is the
-recommended AMG on the GPU.
+smoothing), so its residuals differ from a CPU run with the same keywords. With a PETSc whose
+hypre runs on the host only, such as the conda-forge build, `BoomerAMG()` crashes on GPU fields.
+`GAMG()` is the recommended AMG on the GPU.
 
 ### Other PETSc preconditioners
 
@@ -372,7 +518,7 @@ Not distributed yet. These raise an error rather than silently giving a wrong an
 
 - The `KOmegaLKE` transition model and the LES models.
 - Float32 with `BoomerAMG`, because the stock PETSc libraries include hypre at Float64 only.
-- GPU runs without a CUDA-enabled PETSc build.
+- GPU runs without a CUDA-enabled PETSc build (see [Setting up MPI and PETSc](@ref)).
 - AMD GPUs, because PETSc.jl cannot yet hand PETSc's HIP vectors back as device arrays.
 
 ## What to expect from parallel performance

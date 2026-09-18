@@ -25,3 +25,4 @@
 - 2026-09-18 P1-M10: gate 5/5 in 100.9 s; `test_gpu.jl` n=1,2 pass on CUDA PETSc; hypre, turbulence, turbulence_sst, ppiso, periodic, io, offline 7/7 at n=2 (stock); `test_f32.jl` n=2 pass (petscenv_f32 re-resolved: its manifest predated the `Logging` dependency). Error path (CUDA fields + stock PETSc) pass at n=1 on the M9 tree.
 - 2026-09-18 P1-M11-S1: distributed suite 12/12 at n=2 (stock), test_gpu n=1,2 (CUDA PETSc), test_f32 n=2 pass.
 - 2026-09-18 P1-M14: distributed suite 12/12 at n=2 (stock, Int32 library selected).
+- 2026-09-18 P1-M13-S1/S4: distributed suite 12/12 at n=2 (stock).

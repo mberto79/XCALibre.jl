@@ -1,7 +1,7 @@
 # Strong-scaling probe for the distributed backward-facing-step case; see dev/scripts/INDEX.md.
 # Partitions are cached per rank count so repeated runs measure the solver only.
 const MODE = ARGS[1]
-# optional `pc=<jacobi|boomeramg|gamg>` may appear anywhere; positional args ignore it
+# optional `pc=<jacobi|boomeramg|gamg|ic0|ilu0>` may appear anywhere; positional args ignore it
 const PCNAME = let i = findfirst(a -> startswith(a, "pc="), ARGS)
     i === nothing ? "jacobi" : ARGS[i][4:end]
 end
@@ -48,7 +48,8 @@ function bfs_case(domain, iters; petsc_options="", pc=PCNAME, backend=CPU())
                         preconditioner = pc == "boomeramg" ?
                                            (PCREUSE === nothing ? BoomerAMG() : BoomerAMG(freeze=PCREUSE)) :
                                          pc == "gamg" ?
-                                           (PCREUSE === nothing ? GAMG() : GAMG(freeze=PCREUSE)) : Jacobi(),
+                                           (PCREUSE === nothing ? GAMG() : GAMG(freeze=PCREUSE)) :
+                                         pc == "ic0" ? IC0GPU() : pc == "ilu0" ? ILU0GPU() : Jacobi(),
                         convergence=1e-7, relax=0.2, rtol=0.01, itmax=1000))
     schemes = (U = Schemes(time=SteadyState, divergence=Upwind, gradient=Gauss),
                p = Schemes(time=SteadyState, gradient=Gauss))

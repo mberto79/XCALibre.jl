@@ -55,7 +55,7 @@ end
 
 # 3D CFD-Poisson defaults: low operator complexity that scales with mesh size
 const BOOMERAMG_3D_DEFAULTS = (
-    strong_threshold = 0.7, coarsen_type = "HMIS", interp_type = "ext+i",
+    strong_threshold = 0.7, coarsen_type = "HMIS", interp_type = "ext+i", P_max = 4,
     agg_nl = 1, agg_num_paths = 2)
 BoomerAMG(; freeze=10, kwargs...) = BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), freeze)
 

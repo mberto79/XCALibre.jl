@@ -24,7 +24,7 @@ for n in ${NS:-1 2 4 8}; do
     sleep 25   # reach the sustained power limit before timing
     OUT=$($HOME/.julia/bin/mpiexecjl -n $n --bind-to core --map-by core \
           julia --startup-file=no --project=$ENVDIR \
-          $REPO/dev/scripts/scaling_probe.jl worker "$PARTDIR" ${OPTS:+"$OPTS"} $ITERS 2>&1 | grep '^PROBE')
+          $REPO/dev/scripts/scaling_probe.jl worker "$PARTDIR" ${OPTS:+"$OPTS"} $ITERS ${EXTRA:-} 2>&1 | grep '^PROBE')
     kill $SAMPLER 2>/dev/null
     [ ${#HEAT[@]} -gt 0 ] && kill ${HEAT[@]} 2>/dev/null
     MEAN=$(awk '{s+=$1; c++} END {if(c) printf "%.0f", s/c; else print 0}' "$SAMPLE")

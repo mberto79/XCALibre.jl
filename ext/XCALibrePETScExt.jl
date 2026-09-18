@@ -16,17 +16,23 @@ _ksp_type(::Bicgstab) = "bcgs"
 _ksp_type(::Gmres) = "gmres"
 _ksp_type(s) = nothing
 _pc_type(::Jacobi) = "jacobi"
-_pc_type(::DILU) = "bjacobi" # per-rank ILU(0) blocks: closest PETSc relative of DILU
+_pc_type(::Union{DILU,ILU0GPU,IC0GPU}) = "bjacobi" # per-rank incomplete-factorisation blocks
 _pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply (SPD only)
 _pc_type(::GAMG) = "gamg" # PETSc native aggregation AMG (SPD only)
 _pc_type(p) = nothing
 
 # curated PC kwargs -> PETSc options; each kwarg k=v becomes -pc_<prefix>_<k> v
 _pc_options(p) = (;)
+_pc_options(::IC0GPU) = (sub_pc_type="icc",)
 _pc_options(p::BoomerAMG) =
     NamedTuple(Symbol("pc_hypre_boomeramg_$k") => v for (k, v) ∈ pairs(p.opts))
 _pc_options(p::GAMG) =
     NamedTuple(Symbol("pc_gamg_$k") => v for (k, v) ∈ pairs(p.opts))
+
+# serial PCs whose PETSc mapping is a relative, not the same method
+_substitute(p) = nothing
+_substitute(::Union{DILU,ILU0GPU}) = "per-rank block ILU(0)"
+_substitute(::IC0GPU) = "per-rank block ICC(0)"
 
 # PCs that manage their own hierarchy across solves carry a `freeze` count (rebuild every N solves)
 _pc_freeze(p) = 1
@@ -116,9 +122,10 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         "name one with petsc_options=\"-ksp_type ...\"")
     isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
         "$(typeof(setup.preconditioner)); name one with petsc_options=\"-pc_type ...\"")
-    setup.preconditioner isa DILU && opts.pc_type == "bjacobi" && MPI.Comm_rank(comm) == 0 &&
-        @warn "DILU has no PETSc equivalent; substituting per-rank block ILU(0) " *
-            "(-pc_type bjacobi). Name another with petsc_options=\"-pc_type ...\"" maxlog=1
+    sub = _substitute(setup.preconditioner)
+    !isnothing(sub) && opts.pc_type == "bjacobi" && MPI.Comm_rank(comm) == 0 &&
+        @warn "$(nameof(typeof(setup.preconditioner))) has no PETSc equivalent; substituting " *
+            "$sub (-pc_type bjacobi). Name another with petsc_options=\"-pc_type ...\"" maxlog=1 _id=nameof(typeof(setup.preconditioner))
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
         error("PETScSolver: hypre requested but this PETSc build ($(petsclib.PetscScalar)) has " *

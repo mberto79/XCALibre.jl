@@ -4,7 +4,7 @@ Every helper here is specific to this project. One entry per script: what it ans
 
 - `<script>` - <what question it answers>; run: `<command>`.
 
-- `scaling_probe.jl` — strong-scaling probe (`dev=cuda` runs the worker on the GPU) for the distributed backward-facing-step case: serial, single-rank and multi-rank per-iteration cost with residuals and core clock. Partitions are cached under `~/.cache/xcal_scaling_probe`. Per-iteration cost is `(t100 - t3) / 97`, which cancels compilation and setup.
+- `scaling_probe.jl` — strong-scaling probe (`dev=cuda` runs the worker on the GPU; `wait=1` prints per-rank barrier wait before each PETSc assembly, and its per_iter is invalid because the patch recompiles) for the distributed backward-facing-step case: serial, single-rank and multi-rank per-iteration cost with residuals and core clock. Partitions are cached under `~/.cache/xcal_scaling_probe`. Per-iteration cost is `(t100 - t3) / 97`, which cancels compilation and setup.
   - `julia --project=<env> dev/scripts/scaling_probe.jl serial <mesh.unv> <iters>`
   - `julia --project=<env> dev/scripts/scaling_probe.jl drive <mesh.unv> <n>... <iters>`
   - `mpiexec -n <n> julia --project=<env> dev/scripts/scaling_probe.jl worker <partdir> <iters>`
@@ -20,5 +20,5 @@ Every helper here is specific to this project. One entry per script: what it ans
 - `fixed_clock.sh <tag> <iters>` - strong-scaling sweep with the clock pinned by hardware
   (`no_turbo=1`); samples the clock during each run so the pin is verified, not assumed. Needs
   the power state from `dev/gotchas.md` applied first.
-- `equal_thermal.sh <tag> <iters>` (env `ENVDIR`, `NS` override the project and rank counts) - the no-root substitute: spin loops occupy every P-core the
+- `equal_thermal.sh <tag> <iters>` (env `ENVDIR`, `NS`, `OPTS` override the project, rank counts and petsc_options) - the no-root substitute: spin loops occupy every P-core the
   solver is not using, so every rank count runs at the same sustained power limit.

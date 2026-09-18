@@ -78,7 +78,6 @@ schemes = (
     p = Schemes(time=timeScheme, gradient=Gauss)
 )
 
-# distributed writer lands in phase 7 — run only for now
 runtime = Runtime(iterations=1000, write_interval=-1, time_step=0.0025)
 
 config = Configuration(

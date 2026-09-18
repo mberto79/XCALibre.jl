@@ -15,3 +15,17 @@ Per outer iteration, s (equal thermal, one run each):
 PETSc events, n=2, 14 outer iterations (56 KSP solves), `-log_view`:
 - before: VecTDot 2384, VecNorm 1325, VecDot 70, VecDotNorm2 35, MatMult 1304; reductions per CG iteration ~3.1
 - after: VecTDot 2762, VecNorm 120, VecDot 156, VecDotNorm2 78, MatMult 1572; reductions per CG iteration ~2.1
+
+Single-reduction CG screen (S2), equal thermal, interleaved, s/iter:
+- base: n=2 0.7212, 0.7333; n=8 0.2314, 0.2353
+- -ksp_cg_single_reduction: n=2 0.7882, 0.7241; n=8 0.2683, 0.2724
+
+PETSc events at n=8 after S1, 14 outer iterations, time s and max/min rank ratio:
+- VecNorm 120 calls 2.254 s ratio 18.8 (first reduction of each solve)
+- VecScatterEnd 1572 calls 1.306 s ratio 30.4; MatMult 1572 calls 2.299 s ratio 2.2
+- VecTDot 2762 calls 0.565 s ratio 10.8; KSPSolve 56 calls 4.250 s ratio 2.6
+
+n=8 wait attribution (S3):
+- partition, owned/ghost/boundary faces per rank: 62294/1836/7037, 62343/654/8869, 62498/2330/6058, 62500/2373/5963, 62501/2282/6507, 62500/2325/6443, 62474/1103/8275, 62393/2296/6212
+- `-log_view -log_sync`, 14 outer iterations: KSPSolve 1.549 s ratio 1.0, MatMult 1.050 s ratio 1.0, VecNorm 0.0018 s, VecScatterEnd 0.015 s ratio 5.7 (against 4.250 s KSPSolve unsynchronised)
+- `wait=1`, barrier wait on entry to each assembly, per rank s over 23 outer iterations: 0.153 0.131 0.137 0.101 0.091 0.037 0.022 0.047

@@ -6,7 +6,7 @@ STEP: P1-M11 - reduction count above four ranks
 HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: P1-M11-S2: screen -ksp_cg_single_reduction (passthrough, interleaved, equal_thermal n=2,8) then -log_view MatMult/VecScatter imbalance at n=8 to test the ghost-imbalance cause (D15, D55)
+resume: P1-M11-S3: locate the in-solve wait at n=8 (D59): per-rank VecScatter message counts/neighbours and a halo-only ping test; then M13 (research agent report pending) and, before close, run the three examples/*_mpi*.jl cases on the M9-M11 code
 ## position
 M1-M8 closed. User ruled P1 defers nothing (D48) and GPU runs never fall back to host (D47): M9-M12 opened in `dev/phaseRoadmap.md`.
 ## evidence

@@ -15,7 +15,7 @@ end
 if DEV == "cuda" && MODE == "worker"
     using XCALibre, PETSc, MPI, CUDA
 end
-const ARGV = filter(a -> !any(startswith.(a, ("pc=", "reuse=", "dev="))), ARGS)
+const ARGV = filter(a -> !any(startswith.(a, ("pc=", "reuse=", "dev=", "wait="))), ARGS)
 const CACHE = joinpath(homedir(), ".cache", "xcal_scaling_probe")
 
 # busiest-core clock, sampled the instant a run ends; sustained load throttles this box badly
@@ -104,11 +104,30 @@ elseif MODE == "worker"
         MPI.Wtime() - t0, res
     end
     run_iters(1) # absorb compilation before either timed run
+    # optional `wait=1`: time each rank's barrier wait on entry to every PETSc assembly
+    WAIT = Ref(0.0)
+    if "wait=1" in ARGS
+        ext = Base.get_extension(XCALibre, :XCALibrePETScExt)
+        # copy of the ext's passemble! body with a timed barrier in front; keep in step with the ext
+        @eval ext function passemble!(s::XPETScSolver, eqn, partition; component=nothing)
+            t0 = time(); MPI.Barrier(MPI.COMM_WORLD); $WAIT[] += time() - t0
+            _set_values!(s.petsclib, s.A, _nzval(_A(eqn)), s.sync)
+            PETSc.withlocalarray!(s.b; read=false, write=true) do arr
+                copyto!(arr, view(_b(eqn, component), 1:s.n_owned))
+            end
+            s
+        end
+    end
     t_short, _ = run_iters(SHORT)
     t_long, res = run_iters(LONG)
     mhz = core_mhz()
     MPI.Comm_rank(comm) == 0 &&
         report(MPI.Comm_size(comm), ncells, t_short, t_long, SHORT, LONG, res, mhz)
+    if "wait=1" in ARGS
+        w = MPI.Gather(WAIT[], comm; root=0)
+        MPI.Comm_rank(comm) == 0 && println("WAIT per-rank barrier wait s (short+long runs): ",
+            join(round.(w, digits=3), " "))
+    end
 
 elseif MODE == "drive"
     using XCALibre, MPI

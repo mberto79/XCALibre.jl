@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-18T12:00:00+01:00
 STATE: IDLE
 STEP: P1-M7-S2 retune the freeze defaults (S1 rename landed, D38)
-HEAD: c8b6e6e4
+HEAD: 863906e5
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: take P1-M7-S2 per `dev/plans/p1-m7-preconditioner-api.md`; first check whether the probe logs record a final pressure residual for GAMG freeze=1 vs 25, since s/iter cannot see outer-convergence cost of a stale hierarchy; any new row needs the clock pinned; do NOT open a PR or close the phase

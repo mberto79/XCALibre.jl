@@ -21,3 +21,4 @@
 - distributed gate (2 ranks, petscenv_stock): 5/5 in 97.7 s.
 - docs build (docs/makeLocal.jl) with new distributed-page doctests at 1 rank: exit 0, doctests green.
 - probes: 1-process PETSc 2D BFS 20 iters Jacobi/GAMG OK; itmax=1 no throw; DILU->bjacobi, Cgs->cgs, NormDiagonal via `-pc_type sor` OK.
+- 2026-09-18 P1-M9: distributed gate (2 ranks, petscenv_stock) 5/5 in 99.7 s; `test_gpu.jl` at n=1,2 on `dev/petscenv` (CUDA PETSc) pass, 88 s and 141 s wall including compilation.

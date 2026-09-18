@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
 updated: 2026-09-18T18:00:00+01:00
-STATE: PLANNING
-STEP: P1-M9 - GPU solves require a GPU-enabled PETSc
+STATE: BUILDING
+STEP: P1-M10 - device-resident PETSc solve
 HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: build P1-M9 (remove `solve_on` host opt-in, D47), then M10-M12 in order; the user still owes rulings on the spec non-requirements (LKE/LES, F32 hypre, multi-GPU, AMD parity) and on DILU->bjacobi substitution
+resume: P1-M10: replace host-staged MatUpdateMPIAIJWithArray + bhost/xhost with COO assembly (MatSetValuesCOO on nzval pointer) and device-to-device withlocalarray! copies, with a device sync around the PETSc solve
 ## position
 M1-M8 closed. User ruled P1 defers nothing (D48) and GPU runs never fall back to host (D47): M9-M12 opened in `dev/phaseRoadmap.md`.
 ## evidence

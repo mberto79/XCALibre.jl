@@ -92,7 +92,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 run!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options="", solve_on=nothing
+    petsc_options=""
     ) where{T,F,SO,M,Tu,E<:Conduction,D,BI} =
 begin
     residuals = laplace!(
@@ -101,7 +101,7 @@ begin
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options, solve_on=solve_on
+        petsc_options=petsc_options
         )
     return residuals
 end
@@ -138,7 +138,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options="", solve_on=nothing
+    petsc_options=""
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} =
 begin
     residuals=nothing
@@ -148,7 +148,7 @@ begin
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options, solve_on=solve_on
+        petsc_options=petsc_options
     )
 
     return residuals
@@ -245,7 +245,7 @@ end
 run!(
     model::Physics{T,F,S,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
-    petsc_options="", solve_on=nothing
+    petsc_options=""
     ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} =
 begin
     residuals = piso!(
@@ -254,7 +254,7 @@ begin
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options, solve_on=solve_on
+        petsc_options=petsc_options
     )
     return residuals
 end

@@ -28,7 +28,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options="", solve_on=nothing
+    petsc_options=""
     )
 
     residuals = setup_incompressible_solvers(
@@ -37,7 +37,7 @@ function simple!(
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options, solve_on=solve_on
+        petsc_options=petsc_options
         )
 
     return residuals
@@ -47,7 +47,7 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options="", solve_on=nothing
+    petsc_options=""
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -96,8 +96,8 @@ function setup_incompressible_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     # wrap eqns for the linear-solve seam: identity serial, DistributedEqn on a DistributedMesh
-    U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, solve_on, label="U")
-    p_eqn = wrap_eqn(p_eqn, mesh, solvers.p, config; petsc_options, solve_on, label="p")
+    U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, label="U")
+    p_eqn = wrap_eqn(p_eqn, mesh, solvers.p, config; petsc_options, label="p")
 
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config;

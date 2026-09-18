@@ -25,7 +25,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 function piso!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
-    petsc_options="", solve_on=nothing)
+    petsc_options="")
 
     residuals = setup_incompressible_solvers(
         PISO, model, config;
@@ -33,7 +33,7 @@ function piso!(
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options, solve_on=solve_on
+        petsc_options=petsc_options
         )
 
     return residuals

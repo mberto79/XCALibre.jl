@@ -31,7 +31,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function laplace!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options="", solve_on=nothing
+    petsc_options=""
     )
 
     residuals = setup_laplace_solver(
@@ -40,7 +40,7 @@ function laplace!(
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options, solve_on=solve_on
+        petsc_options=petsc_options
         )
 
     return residuals
@@ -50,7 +50,7 @@ end
 function setup_laplace_solver(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options="", solve_on=nothing
+    petsc_options=""
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -88,7 +88,7 @@ function setup_laplace_solver(
     energyModel = initialise(model.energy, model, T, rDf, rhocp, k, kf, cp, rho, config)
 
     # wrap for the linear-solve seam (identity serial / DistributedEqn on a DistributedMesh)
-    T_eqn = wrap_eqn(T_eqn, mesh, solvers, config; petsc_options, solve_on, label="T")
+    T_eqn = wrap_eqn(T_eqn, mesh, solvers, config; petsc_options, label="T")
 
 
     # The part that was previously inside the solver

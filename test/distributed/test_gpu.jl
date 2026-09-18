@@ -1,7 +1,6 @@
 # Phase 6/7 GPU gate (local-only, not CI): cavity psimple! on CUDABackend vs serial CPU,
 # ranks sharing local GPUs via bind_device!. With a CUDA PETSc (system build) the solve
-# runs natively (mpiaijcusparse); without it, solves opt into solve_on=CPU() and the
-# no-solve_on call must hard-error (no silent fallback).
+# runs natively (mpiaijcusparse); without it, run! must hard-error (no host fallback).
 using XCALibre, PETSc, MPI, Test, CUDA
 using PETSc: LibPETSc
 
@@ -14,7 +13,7 @@ rank = MPI.Comm_rank(comm)
 petsclib = PETSc.petsclibs[findfirst(l -> l.PetscScalar == Float64, PETSc.petsclibs)]
 PETSc.initialize(petsclib)
 petsc_cuda = LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits("cuda\0")))
-rank == 0 && println("PETSc CUDA: $petsc_cuda → solve path: $(petsc_cuda ? "native device" : "solve_on=CPU() stopgap")")
+rank == 0 && println("PETSc CUDA: $petsc_cuda → $(petsc_cuda ? "native device solve" : "error path only")")
 
 include(joinpath(@__DIR__, "psimple_case.jl"))
 
@@ -35,24 +34,9 @@ Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
 
 dm = distribute(gmesh; comm=comm)
 dm_dev = adapt(backend, dm)
-model, config = incompressible_case(dm_dev, cavity_bcs; iterations, backend)
-residuals = run!(model, config; pref=0.0, solve_on=(petsc_cuda ? nothing : CPU()))
-
-dux, duy, dp = field_errors(dm_dev, model, Us_x, Us_y, ps)
 n = dm.partition.n_owned
 nloc = n + dm.partition.n_ghost
 orig = dm.orig_cells
-px = Array(model.momentum.U.x.values)
-
-@testset "psimple GPU cavity (rank $rank)" begin
-    @test dux < 1e-5
-    @test duy < 1e-5
-    @test dp < 1e-5
-    @test all(abs(px[i] - Us_x[orig[i]]) < 1e-5 for i ∈ n+1:nloc)
-    @test maximum(residuals.p[iterations÷2:end]) < 1e-6
-    @test maximum(residuals.Ux[iterations÷2:end]) < 1e-6
-end
-rank == 0 && println("PSIMPLE GPU cavity n=$(MPI.Comm_size(comm)) dux=$dux duy=$duy dp=$dp")
 
 # NEW SECTION: host-staging vs auto (CUDA-aware when MPI supports it) halo paths
 
@@ -70,14 +54,28 @@ halo_exchange!(phi_b, H_staged, backend, 64)
     @test all(Array(phi_a.values)[n+1:nloc] .== Float64.(orig[n+1:nloc]))
 end
 
-# NEW SECTION: no-silent-fallback error path
+# NEW SECTION: device solve, or the no-host-fallback error without a CUDA PETSc
 
-if !petsc_cuda
+model, config = incompressible_case(dm_dev, cavity_bcs; iterations, backend)
+if petsc_cuda
+    residuals = run!(model, config; pref=0.0)
+
+    dux, duy, dp = field_errors(dm_dev, model, Us_x, Us_y, ps)
+    px = Array(model.momentum.U.x.values)
+
+    @testset "psimple GPU cavity (rank $rank)" begin
+        @test dux < 1e-5
+        @test duy < 1e-5
+        @test dp < 1e-5
+        @test all(abs(px[i] - Us_x[orig[i]]) < 1e-5 for i ∈ n+1:nloc)
+        @test maximum(residuals.p[iterations÷2:end]) < 1e-6
+        @test maximum(residuals.Ux[iterations÷2:end]) < 1e-6
+    end
+    rank == 0 && println("PSIMPLE GPU cavity n=$(MPI.Comm_size(comm)) dux=$dux duy=$duy dp=$dp")
+else
     @testset "GPU fields + non-CUDA PETSc errors (rank $rank)" begin
         err = try (run!(model, config; pref=0.0); nothing) catch e e end
         @test err isa ErrorException
-        @test occursin("solve_on=CPU()", err.msg)
+        @test occursin("not supported on a host-only PETSc", err.msg)
     end
-else
-    rank == 0 && println("PETSc has CUDA: error-path test skipped (device path active)")
 end

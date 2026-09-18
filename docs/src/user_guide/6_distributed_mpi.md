@@ -13,8 +13,8 @@ shell configuration. Two cases need more:
 
 - `BoomerAMG()` needs a PETSc built with hypre. The stock `Float64` libraries include hypre, so it
   works out of the box at the default precision. `Float32` builds do not include it.
-- GPU-native solves need a CUDA- or ROCm-enabled PETSc, which `PETSc_jll` does not ship. Without
-  one, pass `solve_on=CPU()` to `run!` and the linear solves are staged through the host.
+- GPU runs need a CUDA- or ROCm-enabled PETSc, which `PETSc_jll` does not ship. Without one, a
+  GPU run stops with an error; it is never moved onto the host.
 
 A custom PETSc or system MPI is selected through `MPIPreferences` and PETSc's own preferences.
 Julia resolves preferences per project environment, and PETSc.jl generates its low-level wrappers
@@ -170,9 +170,7 @@ PETSc's solvers and preconditioners, such as `GAMG()`, in an ordinary serial run
 to the Krylov.jl solvers used on a serial mesh. Your script does not need `using MPI`, since
 XCALibre depends on it already.
 
-On a GPU backend, the fields stay on the device. The linear solves need either a GPU-enabled PETSc
-or `run!(model, config; solve_on=CPU())`, which copies the matrix and right-hand side to the host
-for each solve.
+On a GPU backend, the fields stay on the device and the linear solves need a GPU-enabled PETSc.
 
 ## Configuring the linear solvers
 
@@ -183,7 +181,7 @@ meaning:
   `KSP` type).
 - `preconditioner`: `Jacobi()` → `jacobi`, `DILU()` → `bjacobi`, `GAMG()` → `gamg`, `BoomerAMG()`
   → `hypre` (PETSc `PC` type). PETSc has no DILU, so `DILU()` maps to its closest relative, block
-  Jacobi with an ILU(0) factorisation of each rank's block.
+  Jacobi with an ILU(0) factorisation of each rank's block, and warns once that it has done so.
 - `atol`, `rtol`, `itmax`: the stopping tolerances and iteration limit of each linear solve, as in
   serial.
 - `convergence`: the residual target that stops the outer iteration, as in serial. It does not
@@ -321,11 +319,11 @@ Distributed today:
 - CPU and GPU backends, periodic patches, and writing results in OpenFOAM's decomposed layout so
   that the usual tools can reconstruct them.
 
-Not distributed yet. These raise an error or fall back, rather than silently giving a wrong answer:
+Not distributed yet. These raise an error rather than silently giving a wrong answer:
 
 - The `KOmegaLKE` transition model and the LES models.
 - Float32 with `BoomerAMG`, because the stock PETSc libraries include hypre at Float64 only.
-- GPU-native linear solves without a CUDA- or ROCm-enabled PETSc build. Use `solve_on=CPU()`.
+- GPU runs without a CUDA- or ROCm-enabled PETSc build.
 
 ## What to expect from parallel performance
 

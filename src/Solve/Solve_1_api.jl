@@ -513,7 +513,7 @@ end
 
 # linear-solve seam (S2): setup wraps each eqn so the body calls generic solve_equation!/
 # solve_system!. Serial = identity; Distribute overrides for DistributedMesh (DistributedEqn +
-# PETScSolver). Extra kwargs (petsc_options/solve_on) are ignored serially.
+# PETScSolver). Extra kwargs (petsc_options) are ignored serially.
 wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
 
 # raw ModelEquation behind a (possibly wrapped) eqn: solver bodies assemble/discretise on the

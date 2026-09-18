@@ -99,7 +99,7 @@ bind_device!(backend, rank::Integer) =
 # GPU exts declare their PETSc pairing: external-package name + device MPIAIJ mat type
 # (CUDA → "cuda"/"mpiaijcusparse", AMD → "hip"/"mpiaijhipsparse")
 petsc_device_info(nzval) =
-    error("petsc_device_info: no PETSc device mapping for $(typeof(nzval)); use solve_on=CPU()")
+    error("petsc_device_info: no PETSc device mapping for $(typeof(nzval))")
 
 Base.show(io::IO, dm::DistributedMesh) = begin
     p = getfield(dm, :partition)

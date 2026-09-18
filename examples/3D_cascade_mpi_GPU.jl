@@ -3,7 +3,7 @@
 # Periodic :top/:bottom: distribute(periodic_patches=...) colocates matched cell pairs
 # per rank, then construct_periodic on the DistributedMesh works exactly as in serial.
 # Needs XCALibre, PETSc, MPI and CUDA, plus a CUDA-enabled MPI and PETSc build: PETSc_jll
-# ships no CUDA, so without one pass solve_on=CPU() to run the solves on the host.
+# ships no CUDA, and a GPU run on a host-only PETSc stops with an error.
 #
 # Install the launcher once:
 #   julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
@@ -87,7 +87,6 @@ GC.gc(true)
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-# native GPU solve needs a CUDA PETSc; on a host-only PETSc add solve_on=CPU()
 residuals = run!(model, config, output=OpenFOAM())
 
 is_root() && println("done: final residuals Ux=", residuals.Ux[end],

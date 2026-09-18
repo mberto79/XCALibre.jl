@@ -2,7 +2,6 @@ module XCALibrePETScExt
 
 using XCALibre, MPI, PETSc
 using PETSc: LibPETSc
-import KernelAbstractions
 using XCALibre.Distribute
 import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!
 import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval
@@ -66,7 +65,7 @@ function _petsclib(TF)
 end
 
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
-        comm=MPI.COMM_WORLD, petsc_options="", solve_on=nothing, label="")
+        comm=MPI.COMM_WORLD, petsc_options="", label="")
     part = dmesh.partition
     TF = _get_float(dmesh)
     petsclib = _petsclib(TF)
@@ -76,15 +75,15 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     PETSc.initialize(petsclib; options=String.(split(petsc_options)))
     PI = petsclib.PetscInt
     A = _A(eqn)
-    # device fields + host PETSc = hard error unless solves are explicitly opted onto host
-    device_solve = !(_nzval(A) isa Array) && !(solve_on isa KernelAbstractions.CPU)
+    # device fields never fall back to host solves; a device-enabled PETSc is required
+    device_solve = !(_nzval(A) isa Array)
     # backend ext declares its PETSc pairing (cuda/mpiaijcusparse, hip/mpiaijhipsparse)
     dev = device_solve ? Distribute.petsc_device_info(_nzval(A)) : nothing
     device_solve && !_petsc_has_pkg(petsclib, dev.pkg) && error(
-        "PETScSolver: fields live on the GPU but this PETSc build has no $(dev.pkg) support. " *
-        "PETSc_jll ships no GPU-enabled library, so this needs a $(dev.pkg)-enabled PETSc " *
-        "selected through MPIPreferences and PETSc's own preferences in this project " *
-        "environment, or host-side solves with solve_on=CPU() (A and b copied each solve). " *
+        "PETScSolver: fields live on the GPU but this PETSc build has no $(dev.pkg) support, " *
+        "and GPU runs are not supported on a host-only PETSc. PETSc_jll ships no GPU-enabled " *
+        "library, so install a $(dev.pkg)-enabled PETSc and select it through MPIPreferences " *
+        "and PETSc's own preferences in this project environment, or run on the CPU backend. " *
         "See the distributed simulations page of the documentation.")
     rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
     n = part.n_owned
@@ -117,6 +116,9 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         "name one with petsc_options=\"-ksp_type ...\"")
     isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
         "$(typeof(setup.preconditioner)); name one with petsc_options=\"-pc_type ...\"")
+    setup.preconditioner isa DILU && opts.pc_type == "bjacobi" && MPI.Comm_rank(comm) == 0 &&
+        @warn "DILU has no PETSc equivalent; substituting per-rank block ILU(0) " *
+            "(-pc_type bjacobi). Name another with petsc_options=\"-pc_type ...\"" maxlog=1
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
         error("PETScSolver: hypre requested but this PETSc build ($(petsclib.PetscScalar)) has " *

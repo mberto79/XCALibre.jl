@@ -1,9 +1,9 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m7-preconditioner-api.md
-updated: 2026-09-18T04:00:00+01:00
-STATE: BUILDING
+updated: 2026-09-18T04:15:00+01:00
+STATE: IDLE
 STEP: P1-M7 preconditioner API, opened on the scaling findings (D25-D37)
-HEAD: c61338d6
+HEAD: c8b6e6e4
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: take P1-M7-S1, the `reuse` rename, per `dev/plans/p1-m7-preconditioner-api.md`; the M1-M6 exit gate PASSED at 2374a1e7 and needs no rerun; do NOT open a PR or close the phase

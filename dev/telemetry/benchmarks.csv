@@ -7,3 +7,5 @@ bfs4mm_n6_s_per_iter,0.818
 bfs4mm_n2_efficiency_pct,85
 bfs4mm_n4_efficiency_pct,67
 bfs4mm_n6_efficiency_pct,55
+superseded_by,dev/telemetry/scaling.csv
+superseded_reason,clock_was_not_pinned_so_rank_count_and_clock_co_varied_see_D19_D20

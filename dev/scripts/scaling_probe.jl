@@ -1,6 +1,14 @@
 # Strong-scaling probe for the distributed backward-facing-step case; see dev/scripts/INDEX.md.
 # Partitions are cached per rank count so repeated runs measure the solver only.
 const MODE = ARGS[1]
+# optional `pc=<jacobi|boomeramg|gamg>` may appear anywhere; positional args ignore it
+const PCNAME = let i = findfirst(a -> startswith(a, "pc="), ARGS)
+    i === nothing ? "jacobi" : ARGS[i][4:end]
+end
+const PCREUSE = let i = findfirst(a -> startswith(a, "reuse="), ARGS)
+    i === nothing ? nothing : parse(Int, ARGS[i][7:end])
+end
+const ARGV = filter(a -> !(startswith(a, "pc=") || startswith(a, "reuse=")), ARGS)
 const CACHE = joinpath(homedir(), ".cache", "xcal_scaling_probe")
 
 # busiest-core clock, sampled the instant a run ends; sustained load throttles this box badly
@@ -12,7 +20,7 @@ function core_mhz()
     isempty(mhz) ? 0.0 : round(maximum(mhz), digits=1)
 end
 
-function bfs_case(domain, iters; petsc_options="")
+function bfs_case(domain, iters; petsc_options="", pc=PCNAME)
     velocity = [0.5, 0.0, 0.0]
     nu = 1e-3
     model = Physics(
@@ -29,7 +37,11 @@ function bfs_case(domain, iters; petsc_options="")
     solvers = (
         U = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(),
                         convergence=1e-7, relax=0.8, rtol=0.1),
-        p = SolverSetup(solver=Cg(), preconditioner=Jacobi(),
+        p = SolverSetup(solver=Cg(),
+                        preconditioner = pc == "boomeramg" ?
+                                           (PCREUSE === nothing ? BoomerAMG() : BoomerAMG(reuse=PCREUSE)) :
+                                         pc == "gamg" ?
+                                           (PCREUSE === nothing ? GAMG() : GAMG(reuse=PCREUSE)) : Jacobi(),
                         convergence=1e-7, relax=0.2, rtol=0.01, itmax=1000))
     schemes = (U = Schemes(time=SteadyState, divergence=Upwind, gradient=Gauss),
                p = Schemes(time=SteadyState, gradient=Gauss))
@@ -43,17 +55,17 @@ function bfs_case(domain, iters; petsc_options="")
 end
 
 report(n, ncells, t_short, t_long, short, long, res, mhz) = println(
-    "PROBE nranks=$n ncells=$ncells t$short=$(round(t_short, digits=3)) " *
+    "PROBE pc=$PCNAME reuse=$PCREUSE nranks=$n ncells=$ncells t$short=$(round(t_short, digits=3)) " *
     "t$long=$(round(t_long, digits=3)) " *
     "per_iter=$(round((t_long - t_short) / (long - short), digits=4)) " *
     "mhz=$mhz p=$(res.p[end]) Ux=$(res.Ux[end]) Uy=$(res.Uy[end]) Uz=$(res.Uz[end])")
 
-const SHORT, LONG = 3, parse(Int, ARGS[end])
+const SHORT, LONG = 3, parse(Int, ARGV[end])
 
 if MODE == "serial"
     using XCALibre
     activate_multithread(CPU())
-    mesh = UNV3D_mesh(ARGS[2], scale=0.001)
+    mesh = UNV3D_mesh(ARGV[2], scale=0.001)
     function run_iters(k)
         m, c, _ = bfs_case(mesh, k)
         @elapsed run!(m, c)
@@ -69,10 +81,10 @@ elseif MODE == "worker"
     using XCALibre, PETSc, MPI
     MPI.Init()
     comm = MPI.COMM_WORLD
-    dm = distribute(ARGS[2]; comm=comm)
+    dm = distribute(ARGV[2]; comm=comm)
     activate_multithread(CPU())
     ncells = MPI.Allreduce(dm.partition.n_owned, +, comm)
-    opts = length(ARGS) >= 4 ? ARGS[3] : ""
+    opts = length(ARGV) >= 4 ? ARGV[3] : ""
     function run_iters(k)
         m, c, o = bfs_case(dm, k; petsc_options=opts)
         MPI.Barrier(comm)
@@ -106,7 +118,7 @@ elseif MODE == "drive"
             run(`$(MPI.mpiexec()) -n $n --bind-to core --map-by core $julia --project=$project --startup-file=no $(@__FILE__) worker $dir $iters`)
         end
     end
-    drive(ARGS[2], parse.(Int, ARGS[3:end-1]), ARGS[end])
+    drive(ARGV[2], parse.(Int, ARGV[3:end-1]), ARGV[end])
 
 else
     error("unknown mode $MODE")

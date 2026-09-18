@@ -13,3 +13,12 @@ Every helper here is specific to this project. One entry per script: what it ans
 - `openfoam_scaling.sh` — the OpenFOAM 12 backward-facing-step benchmark at several rank counts, same binding and per-iteration metric as the XCALibre probe. The case is OpenFOAM 12 (`foamRun`, `constant/momentumTransport`) while this shell usually has the ESI build sourced, so re-enter from a clean environment. The serial run is pinned with `taskset` so it matches the binding `mpiexec` gives every other rank count. The case is copied to `~/.cache/xcal_of_scaling`, never `/tmp`, which is memory-backed here.
   - `env -i HOME=$HOME PATH=/usr/bin:/bin bash -lc 'source $HOME/OpenFOAM/OpenFOAM-12/etc/bashrc; cd <repo>; dev/scripts/openfoam_scaling.sh 1 2 4 8'`
 - `xcal_of_compare.sh` — runs both of the above back to back on the same 5 mm mesh for a like-for-like curve.
+
+- `stream.jl` - MPI axpy at a cache-resident and a DRAM-resident size; establishes THIS machine's
+  bandwidth ceiling so a solver rate can be judged against what the hardware allows rather than
+  against a guess. Run under `mpiexecjl -n <n> --bind-to core --map-by core`.
+- `fixed_clock.sh <tag> <iters>` - strong-scaling sweep with the clock pinned by hardware
+  (`no_turbo=1`); samples the clock during each run so the pin is verified, not assumed. Needs
+  the power state from `dev/gotchas.md` applied first.
+- `equal_thermal.sh <tag> <iters>` - the no-root substitute: spin loops occupy every P-core the
+  solver is not using, so every rank count runs at the same sustained power limit.

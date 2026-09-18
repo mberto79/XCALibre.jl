@@ -1,0 +1,9 @@
+kernel,working_set,bytes_per_vector_MB,ranks,GB_per_s,Gflop_per_s
+axpy,cache_resident,4.0,1,72.7,6.06
+axpy,cache_resident,2.0,2,110.3,9.19
+axpy,cache_resident,1.0,4,375.4,31.28
+axpy,cache_resident,0.5,8,989.0,82.41
+axpy,dram_resident,480.0,1,33.1,2.76
+axpy,dram_resident,240.0,2,36.5,3.04
+axpy,dram_resident,120.0,4,36.7,3.06
+axpy,dram_resident,60.0,8,38.7,3.22

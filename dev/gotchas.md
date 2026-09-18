@@ -24,3 +24,37 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - The memory ceiling is rank zero holding the global mesh, not the rank count, at roughly 1.6 KB per cell. Partitioning offline in a separate process removes it.
 - This laptop has sixteen performance cores and sixteen efficiency cores; more than eight ranks crosses onto the slower cores and any scaling number past that measures core heterogeneity.
 - Sustained load throttles the clock to a fraction of peak, which alone can produce a scaling curve of the shape observed, so any scaling measurement must log clock frequency alongside timings.
+
+## This machine throttles, and it will invalidate any cross-rank timing
+
+CPUs 0-15 are eight P-cores with hyperthread siblings paired adjacently (0,1 = core 0). Under
+load the package falls from 4400 MHz on one busy core to 3100 MHz on eight, so RANK COUNT AND
+CLOCK CO-VARY and an uncorrected strong-scaling curve measures the power limit, not the code.
+This produced a wrong attribution once already (D16, withdrawn by D19).
+
+Pin the clock before measuring, and put it back afterwards:
+
+```bash
+# pin at the 2200 MHz base clock on every core
+powerprofilesctl set performance
+echo 1   | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
+echo 100 | sudo tee /sys/devices/system/cpu/intel_pstate/min_perf_pct
+echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+
+# revert to this machine's normal state
+echo 0  | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
+echo 15 | sudo tee /sys/devices/system/cpu/intel_pstate/min_perf_pct
+echo powersave | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+echo balance_performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
+powerprofilesctl set balanced
+```
+
+Without root, `dev/scripts/equal_thermal.sh` is the substitute: spin loops occupy every P-core
+the solver is not using, so all rank counts throttle equally. The two methods agree.
+
+Sample the clock DURING a run, never after it: a reading taken once the solver has exited shows
+idle cores and is worthless (it made the first OpenFOAM comparison unusable, D22).
+
+`pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so
+`until ! pgrep -f 'Pkg.test'` never exits if another shell mentions `Pkg.test`. Wait on a marker
+written to a file instead.

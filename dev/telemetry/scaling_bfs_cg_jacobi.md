@@ -1,3 +1,8 @@
+> SUPERSEDED for the ATTRIBUTION by `scaling_attribution.md` (D19-D22). The memory-bandwidth
+> conclusion here is withdrawn: the measurements were taken unpinned, so rank count and CPU
+> clock co-varied, and `VecAXPY` was never checked against the machine's peak. The raw
+> numbers below stand as recorded; only their interpretation is replaced.
+
 # Strong scaling, distributed backward-facing-step, Cg + Jacobi, Float64, CPU
 
 Probe: `dev/scripts/scaling_probe.jl`. Per-iteration cost is `(t100 - t3) / 97`, which cancels

@@ -1,14 +1,14 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
-updated: 2026-09-18T12:00:00+01:00
-STATE: IDLE
-STEP: none - P1-M8 closed; every P1 milestone is closed
+updated: 2026-09-18T18:00:00+01:00
+STATE: PLANNING
+STEP: P1-M9 - GPU solves require a GPU-enabled PETSc
 HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: every P1 milestone is closed and gated; the next action is the user's call on closing the phase (xcalibre-close) and opening the PR - do neither without being asked
+resume: build P1-M9 (remove `solve_on` host opt-in, D47), then M10-M12 in order; the user still owes rulings on the spec non-requirements (LKE/LES, F32 hypre, multi-GPU, AMD parity) and on DILU->bjacobi substitution
 ## position
-M1-M8 are closed; M8 (D42-D46) reconciled `convergence`, extended the PETSc mapping and made the distributed page generic with doctests. The M1-M6 exit gate PASSED at 2374a1e7; M7 closed on serial 1555/1555, distributed 5/5 and a clean docs build (`dev/phaseRoadmap.md`, `dev/telemetry/gate_results.md`).
+M1-M8 closed. User ruled P1 defers nothing (D48) and GPU runs never fall back to host (D47): M9-M12 opened in `dev/phaseRoadmap.md`.
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

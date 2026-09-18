@@ -28,5 +28,5 @@
 - 2026-09-18 P1-M13-S1/S4: distributed suite 12/12 at n=2 (stock).
 - 2026-09-18 P1-M13: distributed suite 12/12 at n=2 (stock); docs build with doctests green.
 - 2026-09-18 pre-close: examples at n=2 complete - 2D_cylinder_U_mpi (stock, 26 s wall, final p 1.45e-6), 3D_BFS_mpi (stock, 57 s wall, solve 16.1 s, final p 7.19e-5), 3D_cascade_mpi_GPU (CUDA PETSc, 167 s wall, final p 3.37e-10).
-| 2026-09-18 | P1-M17 | documentation build | builds with no errors | 0 errors, setup section and @ref links resolve | PASS | this commit |
-| 2026-09-18 | P1-M17 | distributed gate n=2 + test_gpu n=1,2 | all pass | gate 5/5 in 106 s (petscenv_stock); test_gpu pass on petscenv, petscenv_conda, petscenv_conda_ompi | PASS | this commit |
+| 2026-09-18 | P1-M17 | documentation build | builds with no errors | 0 errors, setup section and @ref links resolve | PASS | fad309b5 |
+| 2026-09-18 | P1-M17 | distributed gate n=2 + test_gpu n=1,2 | all pass | gate 5/5 in 106 s (petscenv_stock); test_gpu pass on petscenv, petscenv_conda, petscenv_conda_ompi | PASS | fad309b5 |

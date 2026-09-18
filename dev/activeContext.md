@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-18T23:30:00+01:00
 STATE: IDLE
 STEP: P1-M15 - example comment blocks (next)
-HEAD: 7a0308e9
+HEAD: fad309b5
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: start P1-M15 (example comment blocks to three lines; `xcalibre-dev check` until VALID), then P1-M16 (memory breakdown first; shared-code cures on one branch off main, D67)

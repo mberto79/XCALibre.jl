@@ -96,8 +96,8 @@ bind_device!(::KernelAbstractions.CPU, rank::Integer) = nothing
 bind_device!(backend, rank::Integer) =
     error("bind_device!: no GPU extension loaded for $(typeof(backend)) — e.g. `using CUDA`")
 
-# GPU exts declare their PETSc pairing: external-package name + device MPIAIJ mat type
-# (CUDA → "cuda"/"mpiaijcusparse", AMD → "hip"/"mpiaijhipsparse")
+# GPU exts declare their PETSc pairing: external-package name, device MPIAIJ mat type and a
+# device-wide sync (CUDA → "cuda"/"mpiaijcusparse"/device_synchronize)
 petsc_device_info(nzval) =
     error("petsc_device_info: no PETSc device mapping for $(typeof(nzval))")
 

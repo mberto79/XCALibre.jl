@@ -13,7 +13,8 @@ shell configuration. Two cases need more:
 
 - `BoomerAMG()` needs a PETSc built with hypre. The stock `Float64` libraries include hypre, so it
   works out of the box at the default precision. `Float32` builds do not include it.
-- GPU runs need a CUDA- or ROCm-enabled PETSc, which `PETSc_jll` does not ship. Without one, a
+- GPU runs need an NVIDIA GPU and a CUDA-enabled PETSc, which `PETSc_jll` does not ship. The
+  matrix, right-hand side and solution then stay on the device. Without a CUDA-enabled PETSc, a
   GPU run stops with an error; it is never moved onto the host.
 
 A custom PETSc or system MPI is selected through `MPIPreferences` and PETSc's own preferences.
@@ -323,7 +324,8 @@ Not distributed yet. These raise an error rather than silently giving a wrong an
 
 - The `KOmegaLKE` transition model and the LES models.
 - Float32 with `BoomerAMG`, because the stock PETSc libraries include hypre at Float64 only.
-- GPU runs without a CUDA- or ROCm-enabled PETSc build.
+- GPU runs without a CUDA-enabled PETSc build.
+- AMD GPUs, because PETSc.jl cannot yet hand PETSc's HIP vectors back as device arrays.
 
 ## What to expect from parallel performance
 

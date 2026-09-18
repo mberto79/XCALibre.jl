@@ -22,3 +22,4 @@
 - docs build (docs/makeLocal.jl) with new distributed-page doctests at 1 rank: exit 0, doctests green.
 - probes: 1-process PETSc 2D BFS 20 iters Jacobi/GAMG OK; itmax=1 no throw; DILU->bjacobi, Cgs->cgs, NormDiagonal via `-pc_type sor` OK.
 - 2026-09-18 P1-M9: distributed gate (2 ranks, petscenv_stock) 5/5 in 99.7 s; `test_gpu.jl` at n=1,2 on `dev/petscenv` (CUDA PETSc) pass, 88 s and 141 s wall including compilation.
+- 2026-09-18 P1-M10: gate 5/5 in 100.9 s; `test_gpu.jl` n=1,2 pass on CUDA PETSc; hypre, turbulence, turbulence_sst, ppiso, periodic, io, offline 7/7 at n=2 (stock); `test_f32.jl` n=2 pass (petscenv_f32 re-resolved: its manifest predated the `Logging` dependency). Error path (CUDA fields + stock PETSc) pass at n=1 on the M9 tree.

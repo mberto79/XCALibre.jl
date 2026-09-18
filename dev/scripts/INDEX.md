@@ -4,7 +4,7 @@ Every helper here is specific to this project. One entry per script: what it ans
 
 - `<script>` - <what question it answers>; run: `<command>`.
 
-- `scaling_probe.jl` — strong-scaling probe for the distributed backward-facing-step case: serial, single-rank and multi-rank per-iteration cost with residuals and core clock. Partitions are cached under `~/.cache/xcal_scaling_probe`. Per-iteration cost is `(t100 - t3) / 97`, which cancels compilation and setup.
+- `scaling_probe.jl` — strong-scaling probe (`dev=cuda` runs the worker on the GPU) for the distributed backward-facing-step case: serial, single-rank and multi-rank per-iteration cost with residuals and core clock. Partitions are cached under `~/.cache/xcal_scaling_probe`. Per-iteration cost is `(t100 - t3) / 97`, which cancels compilation and setup.
   - `julia --project=<env> dev/scripts/scaling_probe.jl serial <mesh.unv> <iters>`
   - `julia --project=<env> dev/scripts/scaling_probe.jl drive <mesh.unv> <n>... <iters>`
   - `mpiexec -n <n> julia --project=<env> dev/scripts/scaling_probe.jl worker <partdir> <iters>`

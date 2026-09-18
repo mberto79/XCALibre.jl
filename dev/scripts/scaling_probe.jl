@@ -8,7 +8,14 @@ end
 const PCREUSE = let i = findfirst(a -> startswith(a, "reuse="), ARGS)
     i === nothing ? nothing : parse(Int, ARGS[i][7:end])
 end
-const ARGV = filter(a -> !(startswith(a, "pc=") || startswith(a, "reuse=")), ARGS)
+# optional `dev=cuda` runs the worker on the GPU (needs CUDA and a CUDA-enabled PETSc in the env)
+const DEV = let i = findfirst(a -> startswith(a, "dev="), ARGS)
+    i === nothing ? "cpu" : ARGS[i][5:end]
+end
+if DEV == "cuda" && MODE == "worker"
+    using XCALibre, PETSc, MPI, CUDA
+end
+const ARGV = filter(a -> !any(startswith.(a, ("pc=", "reuse=", "dev="))), ARGS)
 const CACHE = joinpath(homedir(), ".cache", "xcal_scaling_probe")
 
 # busiest-core clock, sampled the instant a run ends; sustained load throttles this box badly
@@ -20,7 +27,7 @@ function core_mhz()
     isempty(mhz) ? 0.0 : round(maximum(mhz), digits=1)
 end
 
-function bfs_case(domain, iters; petsc_options="", pc=PCNAME)
+function bfs_case(domain, iters; petsc_options="", pc=PCNAME, backend=CPU())
     velocity = [0.5, 0.0, 0.0]
     nu = 1e-3
     model = Physics(
@@ -45,7 +52,7 @@ function bfs_case(domain, iters; petsc_options="", pc=PCNAME)
                         convergence=1e-7, relax=0.2, rtol=0.01, itmax=1000))
     schemes = (U = Schemes(time=SteadyState, divergence=Upwind, gradient=Gauss),
                p = Schemes(time=SteadyState, gradient=Gauss))
-    hardware = Hardware(backend=CPU(), workgroup=AutoTune())
+    hardware = Hardware(backend=backend, workgroup=backend isa CPU ? AutoTune() : 32)
     config = Configuration(solvers=solvers, schemes=schemes,
         runtime=Runtime(iterations=iters, write_interval=-1, time_step=1),
         hardware=hardware, boundaries=BCs)
@@ -55,7 +62,7 @@ function bfs_case(domain, iters; petsc_options="", pc=PCNAME)
 end
 
 report(n, ncells, t_short, t_long, short, long, res, mhz) = println(
-    "PROBE pc=$PCNAME reuse=$PCREUSE nranks=$n ncells=$ncells t$short=$(round(t_short, digits=3)) " *
+    "PROBE dev=$DEV pc=$PCNAME reuse=$PCREUSE nranks=$n ncells=$ncells t$short=$(round(t_short, digits=3)) " *
     "t$long=$(round(t_long, digits=3)) " *
     "per_iter=$(round((t_long - t_short) / (long - short), digits=4)) " *
     "mhz=$mhz p=$(res.p[end]) Ux=$(res.Ux[end]) Uy=$(res.Uy[end]) Uz=$(res.Uz[end])")
@@ -81,12 +88,15 @@ elseif MODE == "worker"
     using XCALibre, PETSc, MPI
     MPI.Init()
     comm = MPI.COMM_WORLD
+    backend = DEV == "cuda" ? CUDABackend() : CPU()
+    DEV == "cuda" && bind_device!(backend, MPI.Comm_rank(comm))
     dm = distribute(ARGV[2]; comm=comm)
+    DEV == "cuda" && (dm = adapt(backend, dm))
     activate_multithread(CPU())
     ncells = MPI.Allreduce(dm.partition.n_owned, +, comm)
     opts = length(ARGV) >= 4 ? ARGV[3] : ""
     function run_iters(k)
-        m, c, o = bfs_case(dm, k; petsc_options=opts)
+        m, c, o = bfs_case(dm, k; petsc_options=opts, backend)
         MPI.Barrier(comm)
         t0 = MPI.Wtime()
         res = run!(m, c; petsc_options=o)

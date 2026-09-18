@@ -34,17 +34,14 @@ _pc_freeze(p::Union{BoomerAMG,GAMG}) = p.freeze
 
 # NEW SECTION: solver type
 
-struct XPETScSolver{PL,TM,TV,TK,TF} <: Distribute.AbstractDistributedSolver
+struct XPETScSolver{PL,TM,TV,TK,SY} <: Distribute.AbstractDistributedSolver
     petsclib::PL
     A::TM
     b::TV
     x::TV
     ksp::TK
     n_owned::Int
-    nnz_owned::Int
-    vals::Vector{TF}   # host staging: owned-row nzval slice
-    bhost::Vector{TF}
-    xhost::Vector{TF}
+    sync::SY           # device-wide sync (nothing on host): PETSc and XCALibre use separate streams
     setup_every::Int   # rebuild the PC every N solves (1 = every solve, PETSc default)
     nsolve::Base.RefValue{Int}
 end
@@ -88,25 +85,22 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
     rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
     n = part.n_owned
     N = MPI.Allreduce(n, +, comm)
-    # owned rows are the contiguous CSR prefix; ghost rows are garbage and never shipped
+    # owned rows are the contiguous CSR prefix, so the COO values are nzval[1:nnz_owned] in place;
+    # ghost rows are garbage and never shipped
     nnz_owned = Int(rowptr[n+1]) - 1
-    i0 = PI[rowptr[i] - 1 for i ∈ 1:n+1]
     l2g = part.local_to_global
-    j0 = PI[l2g[colval[k]] - 1 for k ∈ 1:nnz_owned]
-    vals = Vector{TF}(undef, nnz_owned)
-    copyto!(vals, view(_nzval(A), 1:nnz_owned))
-    Amat = LibPETSc.MatCreateMPIAIJWithArrays(petsclib, comm,
-        PI(n), PI(n), PI(N), PI(N), i0, j0, vals)
-    if device_solve
-        # device-sparse mat/vecs; values still updated via MatUpdateMPIAIJWithArray
-        mt = dev.mat
-        # ponytail: LibPETSc.MatConvert nulls M.ptr and drops the converted handle;
-        # MAT_INPLACE_MATRIX keeps the same C Mat (MatHeaderReplace), so restore it.
-        orig = Amat.ptr
-        GC.@preserve mt LibPETSc.MatConvert(petsclib, Amat, Cstring(pointer(mt)),
-            LibPETSc.MAT_INPLACE_MATRIX, Amat)
-        Amat.ptr = orig
+    coo_i = Vector{PI}(undef, nnz_owned)
+    for r ∈ 1:n, k ∈ rowptr[r]:rowptr[r+1]-1
+        coo_i[k] = l2g[r] - 1
     end
+    coo_j = PI[l2g[colval[k]] - 1 for k ∈ 1:nnz_owned]
+    Amat = LibPETSc.MatCreate(petsclib, comm)
+    LibPETSc.MatSetSizes(petsclib, Amat, PI(n), PI(n), PI(N), PI(N))
+    mt = device_solve ? dev.mat : "mpiaij"
+    GC.@preserve mt LibPETSc.MatSetType(petsclib, Amat, Base.unsafe_convert(Cstring, mt))
+    LibPETSc.MatSetPreallocationCOO(petsclib, Amat, LibPETSc.PetscCount(nnz_owned), coo_i, coo_j)
+    sync = device_solve ? dev.sync : nothing
+    _set_values!(petsclib, Amat, _nzval(A), sync)
     x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
     curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner)),
         _pc_options(setup.preconditioner))
@@ -137,34 +131,36 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
     setup_every = _pc_freeze(setup.preconditioner)
-    XPETScSolver(petsclib, Amat, b, x, ksp, n, nnz_owned, vals,
-        Vector{TF}(undef, n), Vector{TF}(undef, n), setup_every, Ref(0))
+    XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, setup_every, Ref(0))
 end
 
 # NEW SECTION: assembly and solve
 
+_sync(::Nothing) = nothing
+_sync(f) = f()
+
+# PETSc reads the values where they live (host or device) through its COO map; no staging copy
+function _set_values!(petsclib, A, nzval, sync)
+    _sync(sync)
+    GC.@preserve nzval LibPETSc.MatSetValuesCOO(petsclib, A,
+        reinterpret(Ptr{eltype(nzval)}, pointer(nzval)), LibPETSc.INSERT_VALUES)
+end
+
 function passemble!(s::XPETScSolver, eqn, partition; component=nothing)
-    copyto!(s.vals, view(_nzval(_A(eqn)), 1:s.nnz_owned))
-    LibPETSc.MatUpdateMPIAIJWithArray(s.petsclib, s.A, s.vals)
-    copyto!(s.bhost, view(_b(eqn, component), 1:s.n_owned))
+    _set_values!(s.petsclib, s.A, _nzval(_A(eqn)), s.sync)
     PETSc.withlocalarray!(s.b; read=false, write=true) do arr
-        copyto!(arr, s.bhost)
+        copyto!(arr, view(_b(eqn, component), 1:s.n_owned))
     end
     s
 end
 
-_copy_owned_in!(s, x) = begin
-    copyto!(s.xhost, view(x, 1:s.n_owned))
-    PETSc.withlocalarray!(s.x; read=false, write=true) do arr
-        copyto!(arr, s.xhost)
-    end
+# PETSc.jl hands back a device array for a device Vec, so both copies stay on the device
+_copy_owned_in!(s, x) = PETSc.withlocalarray!(s.x; read=false, write=true) do arr
+    copyto!(arr, view(x, 1:s.n_owned))
 end
 
-_copy_owned_out!(s, x) = begin
-    PETSc.withlocalarray!(s.x; read=true, write=false) do arr
-        copyto!(s.xhost, arr)
-    end
-    copyto!(view(x, 1:s.n_owned), s.xhost)
+_copy_owned_out!(s, x) = PETSc.withlocalarray!(s.x; read=true, write=false) do arr
+    copyto!(view(x, 1:s.n_owned), arr)
 end
 
 # rebuild the PC every `setup_every` solves; apply the frozen (cheap-to-apply) hierarchy in between.
@@ -179,14 +175,18 @@ end
 function psolve!(s::XPETScSolver, x::AbstractVector)
     _maybe_freeze_pc!(s)
     _copy_owned_in!(s, x)
+    _sync(s.sync)
     PETSc.solve!(s.x, s.ksp, s.b)
+    _sync(s.sync)
     _copy_owned_out!(s, x)
     x
 end
 
 function psolve_transpose!(s::XPETScSolver, x::AbstractVector)
     _copy_owned_in!(s, x)
+    _sync(s.sync)
     LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+    _sync(s.sync)
     _copy_owned_out!(s, x)
     x
 end

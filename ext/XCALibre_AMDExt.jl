@@ -32,7 +32,10 @@ Adapt.adapt_structure(to::AMDGPU.Runtime.Adaptor, dm::DistributedMesh) =
 Distribute.bind_device!(::BACKEND, rank::Integer) =
     (AMDGPU.device_id!(rank % length(AMDGPU.devices()) + 1); nothing) # device_id! is 1-based
 
-Distribute.petsc_device_info(::ROCArray) = (pkg="hip", mat="mpiaijhipsparse")
+# PETSc.jl has no HIP memory backend, so a device Vec cannot be handed back as a ROCArray
+Distribute.petsc_device_info(::ROCArray) = error("PETScSolver: distributed solves on AMD GPUs " *
+    "are not supported, because PETSc.jl cannot expose PETSc's HIP vectors as device arrays. " *
+    "Run on the CPU backend or on a CUDA GPU with a CUDA-enabled PETSc.")
 
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA

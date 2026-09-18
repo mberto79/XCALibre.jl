@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
 updated: 2026-09-18T18:00:00+01:00
-STATE: BUILDING
-STEP: P1-M10 - device-resident PETSc solve
+STATE: PLANNING
+STEP: P1-M11 - reduction count above four ranks
 HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: P1-M10: replace host-staged MatUpdateMPIAIJWithArray + bhost/xhost with COO assembly (MatSetValuesCOO on nzval pointer) and device-to-device withlocalarray! copies, with a device sync around the PETSc solve
+resume: P1-M11: measured 272 PETSc reductions/outer iter at n=2 (CG ~85 its x 3); candidate 1 = CG natural norm (matches Krylov.jl sqrt(r'Mr) stopping), candidate 2 = + -ksp_cg_single_reduction; measure n=2 and n=8 under dev/scripts/equal_thermal.sh
 ## position
 M1-M8 closed. User ruled P1 defers nothing (D48) and GPU runs never fall back to host (D47): M9-M12 opened in `dev/phaseRoadmap.md`.
 ## evidence

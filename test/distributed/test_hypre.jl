@@ -9,7 +9,7 @@ rank = MPI.Comm_rank(comm)
 include(joinpath(@__DIR__, "psimple_case.jl"))
 
 ext = Base.get_extension(XCALibre, :XCALibrePETScExt)
-petsclib = ext._petsclib(Float64)
+petsclib = ext._petsclib(Float64, 0) # the library a small case selects
 PETSc.initialize(petsclib)
 has_hypre = ext._petsc_has_pkg(petsclib, "hypre")
 

@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m13-preconditioner-guidance.md
 updated: 2026-09-18T18:00:00+01:00
 STATE: BUILDING
-STEP: P1-M11 - reduction count above four ranks
+STEP: P1-M13 - preconditioner guidance and defaults
 HEAD: d3d7c947
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: P1-M11-S3: locate the in-solve wait at n=8 (D59): per-rank VecScatter message counts/neighbours and a halo-only ping test; then M13 (research agent report pending) and, before close, run the three examples/*_mpi*.jl cases on the M9-M11 code
+resume: P1-M13-S1 (MAT_SPD for GAMG/BoomerAMG, BoomerAMG P_max=4) per dev/plans/p1-m13-preconditioner-guidance.md; user owes a ruling on which extra PCs join P1 (ICC/ILU mappings, ASM/SOR/HPDDM recipes, GPU AMG via AmgX or GPU hypre); before close run the three examples/*_mpi*.jl
 ## position
 M1-M8 closed. User ruled P1 defers nothing (D48) and GPU runs never fall back to host (D47): M9-M12 opened in `dev/phaseRoadmap.md`.
 ## evidence

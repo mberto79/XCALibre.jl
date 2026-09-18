@@ -49,29 +49,37 @@ end
 _petsc_has_pkg(petsclib, pkg) =
     LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits(pkg * "\0")))
 
-# system PETSc builds may be Int32-indexed; select by scalar, keep the lib's PetscInt.
-# NB runtime set_petsclib can NOT work here: LibPETSc wrappers are @for_petsc-generated at
-# precompile time for the preference-configured lib(s) only — other precisions need their
-# own project env with library_path/PetscScalar prefs (e.g. dev/petscenv_f32).
-function _petsclib(TF)
-    i = findfirst(l -> l.PetscScalar == TF, PETSc.petsclibs)
-    i === nothing && error("no PETSc library with PetscScalar=$TF (available: " *
+# narrowest index type that addresses the global system: MatMult is memory-bound, so 32-bit
+# indices move a quarter fewer bytes per nonzero. Only preference-configured libs exist at
+# runtime (wrappers are generated at precompile), so other precisions need their own env.
+function _petsclib(TF, nnz_global)
+    libs = filter(l -> l.PetscScalar == TF, PETSc.petsclibs)
+    isempty(libs) && error("no PETSc library with PetscScalar=$TF (available: " *
         join(("$(l.PetscScalar)/$(l.PetscInt)" for l ∈ PETSc.petsclibs), ", ") *
         "); run in an env whose PETSc preference points at a $TF build")
-    PETSc.petsclibs[i]
+    fits = filter(l -> nnz_global <= typemax(l.PetscInt), libs)
+    isempty(fits) && error("the global matrix has $nnz_global nonzeros, more than any " *
+        "$TF PETSc library's index type can address; use a 64-bit-index PETSc build")
+    fits[argmin(map(l -> sizeof(l.PetscInt), fits))]
 end
 
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         comm=MPI.COMM_WORLD, petsc_options="", label="")
     part = dmesh.partition
     TF = _get_float(dmesh)
-    petsclib = _petsclib(TF)
+    A = _A(eqn)
+    rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
+    n = part.n_owned
+    # owned rows are the contiguous CSR prefix, so the COO values are nzval[1:nnz_owned] in place;
+    # ghost rows are garbage and never shipped
+    nnz_owned = Int(rowptr[n+1]) - 1
+    N, nnz_global = MPI.Allreduce([n, nnz_owned], +, comm)
+    petsclib = _petsclib(TF, nnz_global)
     # the same string configures PETSc's start-up and the Krylov solve; entries PETSc does not
     # recognise at one stage are consumed at the other. Start-up options apply on the FIRST call
     # only, since PETSc is initialised once per process.
     PETSc.initialize(petsclib; options=String.(split(petsc_options)))
     PI = petsclib.PetscInt
-    A = _A(eqn)
     # device fields never fall back to host solves; a device-enabled PETSc is required
     device_solve = !(_nzval(A) isa Array)
     # backend ext declares its PETSc pairing (cuda/mpiaijcusparse, hip/mpiaijhipsparse)
@@ -82,12 +90,6 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         "library, so install a $(dev.pkg)-enabled PETSc and select it through MPIPreferences " *
         "and PETSc's own preferences in this project environment, or run on the CPU backend. " *
         "See the distributed simulations page of the documentation.")
-    rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
-    n = part.n_owned
-    N = MPI.Allreduce(n, +, comm)
-    # owned rows are the contiguous CSR prefix, so the COO values are nzval[1:nnz_owned] in place;
-    # ghost rows are garbage and never shipped
-    nnz_owned = Int(rowptr[n+1]) - 1
     l2g = part.local_to_global
     coo_i = Vector{PI}(undef, nnz_owned)
     for r ∈ 1:n, k ∈ rowptr[r]:rowptr[r+1]-1

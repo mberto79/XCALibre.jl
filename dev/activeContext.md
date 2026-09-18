@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m17-setup-guide.md
 updated: 2026-09-18T19:30:00+01:00
 STATE: PLANNING
-STEP: P1-M15 - example comment blocks (then P1-M16 memory footprint)
+STEP: P1-M17 - MPI and PETSc setup guide (then P1-M15, P1-M16)
 HEAD: 54546b72
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: start P1-M15: run `python3 <skill-dir>/scripts/xcalibre-dev check`, fix the listed examples/*.jl comment blocks (delete commented-out code, trim narrative to <=3 lines), repeat until VALID; then P1-M16 step 1, the memory breakdown (plan it with `xcalibre-dev plan P1-M16 memory-footprint`; shared-code cures go on one branch off main, D67)
+resume: start P1-M17 from `dev/plans/p1-m17-setup-guide.md` (research findings on MPIPreferences/MPItrampoline, PETSc.jl custom library, prebuilt CUDA PETSc): write the setup section of docs/src/user_guide/6_distributed_mpi.md, verify each procedure on this machine, build docs; then P1-M15 (example comments, check until VALID) and P1-M16 (memory breakdown first; shared-code cures on one branch off main, D67)
 ## position
 M1-M14 closed (M12 superseded by M13). This session: M9 no host fallback, M10 device-resident PETSc, M11 tolerances match Krylov.jl, M13 preconditioner guidance, M14 Int32 PETSc (D47-D66).
 ## evidence

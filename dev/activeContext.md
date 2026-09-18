@@ -1,9 +1,9 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
-updated: 2026-09-18T18:00:00+01:00
+updated: 2026-09-18T19:30:00+01:00
 STATE: PLANNING
 STEP: P1-M15 - example comment blocks (then P1-M16 memory footprint)
-HEAD: d3d7c947
+HEAD: 54546b72
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: start P1-M15: run `python3 <skill-dir>/scripts/xcalibre-dev check`, fix the listed examples/*.jl comment blocks (delete commented-out code, trim narrative to <=3 lines), repeat until VALID; then P1-M16 step 1, the memory breakdown (plan it with `xcalibre-dev plan P1-M16 memory-footprint`; shared-code cures go on one branch off main, D67)

@@ -248,14 +248,19 @@ Two behaviours to know about:
 
 ## What to expect from parallel performance
 
-The pressure and momentum solves are bandwidth-bound, so the useful rank count is set by memory
-channels rather than cores. On a single-socket laptop with one memory controller, a
-communication-free, perfectly balanced vector update already scales at only 63% from two ranks
-to eight, which puts a ceiling on everything above it: on a 500k-cell tetrahedral
-backward-facing step, parallel efficiency there was 87% at two ranks and 47% at eight. A machine
-with more memory channels per core should do considerably better, and the figures above are not
-a property of the solver.
+Parallel efficiency is dominated by whether your machine can hold its clock speed, so measure
+before drawing conclusions. On a consumer laptop the CPU drops its frequency as more cores
+become busy, and that alone can look exactly like a scaling problem: on a 500k-cell
+tetrahedral backward-facing step, the same case measures 87% efficiency at two ranks and 47%
+at eight when the clock is left free, but 102% and 71% when the clock is pinned. Nothing about
+the decomposition changed between those two sets of figures.
 
-Measure your own case before choosing a rank count, and prefer fewer, larger subdomains: each
-Krylov iteration ends in a global reduction, so small subdomains spend a growing share of the
-iteration synchronising rather than computing.
+With the clock held constant, efficiency is roughly 100% at two ranks and 94% at four, and a
+mesh 2.6 times larger gives the same numbers to within a point. Above four ranks the remaining
+loss is dominated by global reductions rather than by halo exchange or memory bandwidth: each
+Krylov iteration ends in an all-reduce, and with many small subdomains the ranks spend a
+growing share of each iteration waiting at that barrier.
+
+Practical guidance: prefer fewer, larger subdomains; expect a workstation or cluster node with
+a sustained clock to scale better than a laptop; and treat rank counts beyond one rank per
+physical core as pointless, since the ranks then contend for the same execution resources.

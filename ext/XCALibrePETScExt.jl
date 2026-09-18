@@ -106,6 +106,10 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
         _pc_options(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
+    # Krylov.jl's CG stops on sqrt(r'Mr), PETSc's natural norm; keyed on the resolved type so a
+    # passthrough -ksp_type never inherits it
+    opts.ksp_type == "cg" && !haskey(opts, :ksp_norm_type) &&
+        (opts = merge(opts, (ksp_norm_type="natural",)))
     isnothing(opts.ksp_type) && error("no PETSc mapping for solver $(typeof(setup.solver)); " *
         "name one with petsc_options=\"-ksp_type ...\"")
     isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
@@ -121,11 +125,13 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
             "or see the distributed simulations page of the documentation.")
     end
     ksp = PETSc.KSP(Amat; opts...)
-    # tolerances mean what they mean to Krylov; `convergence` is the outer-loop target only
+    # tolerances mean what they mean to Krylov.jl: rtol is relative to the warm-started initial
+    # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only
     (; atol, rtol) = setup
     LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol),
         TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
     LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)
+    LibPETSc.KSPConvergedDefaultSetUIRNorm(petsclib, ksp)
     extra = Base.structdiff(opts, (ksp_type=nothing, pc_type=nothing))
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *

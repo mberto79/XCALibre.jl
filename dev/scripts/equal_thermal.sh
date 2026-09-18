@@ -4,13 +4,13 @@
 # competing for memory bandwidth. The no-root substitute for pinning the clock (D20).
 set -u
 REPO=/home/humberto/Julia/XCALibre.jl
-ENVDIR=$REPO/dev/petscenv_stock
+ENVDIR=${ENVDIR:-$REPO/dev/petscenv_stock}
 CACHE=$HOME/.cache/xcal_scaling_probe
 TAG=${1:-bfs_tet_5mm}
 ITERS=${2:-100}
 cd $REPO
 
-for n in 1 2 4 8; do
+for n in ${NS:-1 2 4 8}; do
     PARTDIR=$CACHE/${TAG}_n$n
     [ -d "$PARTDIR" ] || { echo "SKIP n=$n (no $PARTDIR)"; continue; }
     HEAT=()

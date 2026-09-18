@@ -20,5 +20,5 @@ Every helper here is specific to this project. One entry per script: what it ans
 - `fixed_clock.sh <tag> <iters>` - strong-scaling sweep with the clock pinned by hardware
   (`no_turbo=1`); samples the clock during each run so the pin is verified, not assumed. Needs
   the power state from `dev/gotchas.md` applied first.
-- `equal_thermal.sh <tag> <iters>` - the no-root substitute: spin loops occupy every P-core the
+- `equal_thermal.sh <tag> <iters>` (env `ENVDIR`, `NS` override the project and rank counts) - the no-root substitute: spin loops occupy every P-core the
   solver is not using, so every rank count runs at the same sustained power limit.

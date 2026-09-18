@@ -18,6 +18,8 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - Stock `PETSc_jll` ships hypre for Float64 only and no CUDA in any of its libraries, so GPU-native solves need a custom PETSc build and Float32 users have no hypre.
 - `activate_multithread(backend::CPU)` pins BLAS to one thread despite its name; without it BLAS takes every core and oversubscribes the ranks.
 - Any keyword `BoomerAMG`/`GAMG` does not know, including a removed `reuse=` or a typo, is forwarded to PETSc as `-pc_<prefix>_<k>` and silently ignored unless `-options_left` is set; it never errors.
+- This shell has the custom OpenMPI `mpiexec` first on PATH, which aborts ranks of the stock (MPICH) env with `internal_Init_thread`; launch stock-env runs through `MPI.mpiexec()` or `mpiexecjl`.
+- `dev/petscenv_f32` goes stale when XCALibre gains a dependency (precompile fails with "Cannot load module ... into XCALibre"); `Pkg.resolve()` in that env fixes it.
 - Julia threads default to one, so the CPU kernel backend is already serial under MPI; passing more threads per rank adds overhead rather than removing it.
 
 ## machine

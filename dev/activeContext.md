@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-18T19:30:00+01:00
 STATE: PLANNING
 STEP: P1-M17 - MPI and PETSc setup guide (then P1-M15, P1-M16)
-HEAD: 54546b72
+HEAD: a58e5ace
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: start P1-M17 from `dev/plans/p1-m17-setup-guide.md` (research findings on MPIPreferences/MPItrampoline, PETSc.jl custom library, prebuilt CUDA PETSc): write the setup section of docs/src/user_guide/6_distributed_mpi.md, verify each procedure on this machine, build docs; then P1-M15 (example comments, check until VALID) and P1-M16 (memory breakdown first; shared-code cures on one branch off main, D67)

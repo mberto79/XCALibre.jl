@@ -117,3 +117,28 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
         p_deqn, p, bcs2.p, config2.solvers.p, config2; ref=nothing)) isa Float64
     @test (@inferred max_courant_number!(cCo, model2, config2)) isa Float64
 end
+
+# NEW SECTION: communication budget per SIMPLE iteration (P1-M19-S4)
+
+import XCALibre.Distribute: HALO_COUNT, ALLREDUCE_COUNT
+
+# setup rounds cancel in the difference between a 1- and a 4-iteration run of the same case
+function comm_counts(iters)
+    m, c = incompressible_case(dm2, bfs_bcs; iterations=iters)
+    h0, a0 = HALO_COUNT[], ALLREDUCE_COUNT[]
+    run!(m, c)
+    HALO_COUNT[] - h0, ALLREDUCE_COUNT[] - a0
+end
+h1, a1 = comm_counts(1)
+h4, a4 = comm_counts(4)
+halo_per_iter, red_per_iter = (h4 - h1) ÷ 3, (a4 - a1) ÷ 3
+is3d = dm2.mesh isa Mesh3
+println("COMM rank=$rank exchanges/iter=$halo_per_iter allreduces/iter=$red_per_iter")
+
+@testset "communication budget (rank $rank)" begin
+    # laminar SIMPLE: one exchange per momentum component, rD, Hv, p after its solve, p after
+    # relaxation, grad p; two all-reduces per residual. A new round is a regression unless a
+    # decision lowers the budget (P1-M22 fuses rounds).
+    @test halo_per_iter == (is3d ? 8 : 7)
+    @test red_per_iter == (is3d ? 8 : 6)
+end

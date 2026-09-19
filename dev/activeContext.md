@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m19-gate-widening.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m20-extraction.md
 updated: 2026-09-19T12:00:00+01:00
 STATE: BUILDING
 STEP: P1-M19-S1..S4 - gate widening
 HEAD: 9f9dec5e
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: M18 is closed pending its commit; implement `dev/plans/p1-m19-gate-widening.md` S1-S4 (gate at n=2,3; `check_ghosts` + `test_ghosts.jl`; `test_invariance.jl`; exchange/all-reduce counters in `test_perf.jl`), gate each with `julia --project=dev/petscenv_stock --startup-file=no test/distributed/runtests_mpi.jl --ranks=1,2,3,5 <files>`, land, then M20
+resume: M18 is closed pending its commit; implement `dev/plans/p1-m20-extraction.md` S1-S4 (gate at n=2,3; `check_ghosts` + `test_ghosts.jl`; `test_invariance.jl`; exchange/all-reduce counters in `test_perf.jl`), gate each with `julia --project=dev/petscenv_stock --startup-file=no test/distributed/runtests_mpi.jl --ranks=1,2,3,5 <files>`, land, then M20
 ## implementer
 - These milestones are for Fable (claude-fable-5-1) to implement in ONE fresh session, in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.

@@ -88,6 +88,9 @@ function Solve.solve_system!(deqn::DistributedEqn, setup, result, component, con
     residual(deqn, component, config)
 end
 
+# all-reduces issued by the solver seams since load; budgeted per iteration in `test_perf.jl`
+const ALLREDUCE_COUNT = Ref(0)
+
 # owned rows only (ghost CSR rows are garbage by design); identical value on every rank
 function Solve.residual(deqn::DistributedEqn, component, config)
     eqn = deqn.eqn
@@ -98,6 +101,7 @@ function Solve.residual(deqn::DistributedEqn, component, config)
     n = deqn.partition.n_owned
     kernel! = Solve._scaled_residual!(_setup(backend, workgroup, n)...)
     kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), values, b)
+    ALLREDUCE_COUNT[] += 2
     num = MPI.Allreduce(sum(view(R, 1:n)), +, _comm(deqn))
     den = MPI.Allreduce(sum(view(Fx, 1:n)), +, _comm(deqn))
     den = ifelse(den > eps(den), den, one(den))
@@ -118,6 +122,7 @@ Solve.is_distributed_mesh(::DistributedMesh) = true
 Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) == 0
 
 # global_max seam (S5): Courant dt must be identical on every rank
-Solvers.global_max(v, dm::DistributedMesh) = MPI.Allreduce(v, max, getfield(dm, :comm))
+Solvers.global_max(v, dm::DistributedMesh) =
+    (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, max, getfield(dm, :comm)))
 # courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh
 Solvers._base_mesh(dm::DistributedMesh) = getfield(dm, :mesh)

@@ -64,6 +64,37 @@ end
 # ghost centres are verbatim copies, so delegation alone leaves ghosts consistent
 initialise!(df::DistributedField, value) = initialise!(df.field, value)
 
+# NEW SECTION: ghost consistency check (debug aid, test-only cost)
+
+export check_ghosts
+
+"""
+    check_ghosts(x, dm::DistributedMesh, config)
+
+Largest absolute difference, over every rank, between the ghost entries of the scalar or vector
+field `x` and the values their owning ranks hold. Zero means every ghost is in sync; anything else
+names a primitive that changed a field without `sync!`. One exchange into a scratch copy per call.
+"""
+function check_ghosts(x::AbstractScalarField, dm::DistributedMesh, config)
+    y = ScalarField(dm)
+    copyto!(y.values, x.values)
+    sync!(y, dm, config)
+    _ghost_mismatch(y.values, x.values, dm)
+end
+function check_ghosts(x::AbstractVectorField, dm::DistributedMesh, config)
+    y = VectorField(dm)
+    copyto!(y.x.values, x.x.values); copyto!(y.y.values, x.y.values); copyto!(y.z.values, x.z.values)
+    sync!(y, dm, config)
+    max(_ghost_mismatch(y.x.values, x.x.values, dm), _ghost_mismatch(y.y.values, x.y.values, dm),
+        _ghost_mismatch(y.z.values, x.z.values, dm))
+end
+function _ghost_mismatch(a, b, dm)
+    p = getfield(dm, :partition)
+    g = p.n_owned+1:p.n_owned+p.n_ghost
+    d = maximum(abs.(Array(view(a, g)) .- Array(view(b, g))); init=zero(eltype(a)))
+    MPI.Allreduce(d, max, getfield(dm, :comm))
+end
+
 _partition(df::DistributedField) = df.field.mesh.partition
 
 # NEW SECTION: global reductions (owned entries only; ghosts never enter reductions)

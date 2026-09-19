@@ -108,6 +108,9 @@ end
 
 # NEW SECTION: exchange
 
+# exchange rounds since load; `test_perf.jl` budgets them per iteration so a new round is a regression
+const HALO_COUNT = Ref(0)
+
 _mpi_send_buf(H, k) = H.cuda_aware ? H.send_bufs[k] : H.host_send[k]
 _mpi_recv_buf(H, k) = H.cuda_aware ? H.recv_bufs[k] : H.host_recv[k]
 
@@ -118,6 +121,7 @@ Fill ghost entries of `phi` (scalar or vector field) with the owning neighbours'
 Irecv-first, pack, sync, Isend, wait, unpack; buffers and requests are reused.
 """
 function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
+    HALO_COUNT[] += 1
     for k ∈ eachindex(H.neighbours)
         MPI.Irecv!(_mpi_recv_buf(H, k), H.comm, H.recv_reqs[k]; source=H.neighbours[k], tag=0)
     end

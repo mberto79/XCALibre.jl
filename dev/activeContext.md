@@ -1,18 +1,18 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m20-extraction.md
-updated: 2026-09-19T12:00:00+01:00
-STATE: BUILDING
-STEP: P1-M19-S1..S4 - gate widening
-HEAD: 9f9dec5e
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m21-owned-row-system.md
+updated: 2026-09-19T13:30:00+01:00
+STATE: IDLE
+STEP: P1-M16 - memory breakdown (next)
+HEAD: 83d10833
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: M18 is closed pending its commit; implement `dev/plans/p1-m20-extraction.md` S1-S4 (gate at n=2,3; `check_ghosts` + `test_ghosts.jl`; `test_invariance.jl`; exchange/all-reduce counters in `test_perf.jl`), gate each with `julia --project=dev/petscenv_stock --startup-file=no test/distributed/runtests_mpi.jl --ranks=1,2,3,5 <files>`, land, then M20
+resume: user asked to stop after M19 and M20 (both delivered 2026-09-19); next is `dev/phaseRoadmap.md` order M16 (measurement only, D76), M21, M22, M23, M24, M15; the 4 mm BFS mesh is gone, so M16/M21 measure on `bfs_tet_5mm.unv` and the cascade unless it is regenerated
 ## implementer
 - These milestones are for Fable (claude-fable-5-1) to implement in ONE fresh session, in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.
 - Bars that gate every step: residuals bitwise identical under Jacobi at n=2 and n=8 (R8 is binding), `check_ghosts` zero (M19-S2), the M19-S4 round and all-reduce counters, and the serial suite with no reduction in test count.
 ## position
-M1-M14, M17 closed (M12 superseded by M13). M18-M24 opened by D72 from the audit; M16 restated to measurement only (D76). Plans for all seven live in `dev/plans/`. M18 DELIVERED 2026-09-19 (D78-D85): suite 12/12 at n=1,2, `test_gpu.jl` n=1,2 on both CUDA envs, the segfault was PETSc resetting Julia's signal handlers (D85).
+M1-M14, M17 closed (M12 superseded by M13). M18-M24 opened by D72 from the audit; M16 restated to measurement only (D76). Plans for the open ones live in `dev/plans/`. M18 DELIVERED 2026-09-19 (D78-D85): suite 12/12 at n=1,2, `test_gpu.jl` n=1,2 on both CUDA envs, the segfault was PETSc resetting Julia's signal handlers (D85). M19 DELIVERED (83d10833, D87-D89) and M20 DELIVERED (D86) 2026-09-19.
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

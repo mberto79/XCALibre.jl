@@ -7,6 +7,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - Never launch a Julia simulation in the foreground: compilation plus GPU warm-up exceeds the two-minute command timeout every time. Always run in the background and redirect simulation output to a file.
 - Smoke-test any new simulation script at one or two iterations before a full run; a typo costs a minute instead of an hour.
 - `test/distributed/runtests_mpi.jl` swallows child standard output when a test passes, so anything printed by the run must be checked with a direct `mpiexec` invocation instead.
+- The 4 mm BFS mesh (1.32M cells) is gone from this machine; only `bfs_tet_5mm.unv` (`~/casesXCALibre/.../3D_BFS_laminar/XCALibre/`) and the cascade meshes remain for large-mesh measurements.
 - A distributed hang with flat resident memory and no solver banner is almost always ranks dispatching differently: any value that selects a method must be broadcast so it has the same type on every rank.
 - `xcalibre-dev check` exits non-zero on an invalid vault, but a status read through a pipe is the pipe's status; run it bare.
 - `pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so `until ! pgrep -f 'Pkg.test'` never exits while any shell mentions `Pkg.test`. Wait on a marker written to a file instead.

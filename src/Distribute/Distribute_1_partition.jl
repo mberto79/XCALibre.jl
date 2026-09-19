@@ -3,17 +3,51 @@ export partition_mesh, is_root
 
 # NEW SECTION: partitioning
 
-function build_dual_graph(mesh)
-    n = length(mesh.cells)
-    I = Int[]; J = Int[]
-    for face ∈ mesh.faces
-        o1, o2 = face.ownerCells
-        if o1 != o2 # interior face
-            push!(I, o1); push!(J, o2)
-            push!(I, o2); push!(J, o1)
-        end
+# the mesh's own adjacency (faces_range rows, cell_neighbours columns) is the dual graph; rows are
+# sorted and deduplicated so Metis sees the same graph `sparse` built from triplets
+function _csr_graph(n, degree, fill!)
+    colptr = Vector{Int}(undef, n + 1)
+    colptr[1] = 1
+    for c ∈ 1:n
+        colptr[c+1] = colptr[c] + degree(c)
     end
-    sparse(I, J, ones(Int, length(I)), n, n)
+    rowval = Vector{Int}(undef, colptr[end] - 1)
+    fill!(rowval, colptr)
+    for c ∈ 1:n
+        sort!(view(rowval, colptr[c]:colptr[c+1]-1))
+    end
+    _dedup_columns(n, colptr, rowval)
+end
+
+function _dedup_columns(n, colptr, rowval)
+    newptr = similar(colptr)
+    newptr[1] = 1
+    k = 0
+    for c ∈ 1:n
+        prev = 0
+        for j ∈ colptr[c]:colptr[c+1]-1
+            r = rowval[j]
+            r == prev && continue
+            rowval[k += 1] = r
+            prev = r
+        end
+        newptr[c+1] = k + 1
+    end
+    resize!(rowval, k)
+    SparseMatrixCSC(n, n, newptr, rowval, ones(Int, k))
+end
+
+function build_dual_graph(mesh)
+    (; cells, cell_neighbours) = mesh
+    _csr_graph(length(cells), c -> length(cells[c].faces_range), (rowval, colptr) -> begin
+        for c ∈ eachindex(cells)
+            k = colptr[c]
+            for j ∈ cells[c].faces_range
+                rowval[k] = Int(cell_neighbours[j])
+                k += 1
+            end
+        end
+    end)
 end
 
 function partition_cells(mesh, nparts::Integer; cell_pairs=Tuple{Int,Int}[])
@@ -43,21 +77,28 @@ function partition_cells(mesh, nparts::Integer; cell_pairs=Tuple{Int,Int}[])
             super[r] == 0 && (super[r] = (ns += 1))
             super[c] = super[r]
         end
-        I = Int[]; J = Int[]
-        for face ∈ mesh.faces
-            o1, o2 = face.ownerCells
-            s1, s2 = super[o1], super[o2]
-            if o1 != o2 && s1 != s2
-                push!(I, s1); push!(J, s2)
-                push!(I, s2); push!(J, s1)
-            end
+        (; cells, cell_neighbours) = mesh
+        degree = zeros(Int, ns)
+        for c ∈ 1:n, j ∈ cells[c].faces_range
+            super[cell_neighbours[j]] != super[c] && (degree[super[c]] += 1)
         end
-        g = sparse(I, J, ones(Int, length(I)), ns, ns)
+        g = _csr_graph(ns, s -> degree[s], (rowval, colptr) -> begin
+            pos = copy(colptr)
+            for c ∈ 1:n, j ∈ cells[c].faces_range
+                s1, s2 = super[c], super[cell_neighbours[j]]
+                s1 == s2 && continue
+                rowval[pos[s1]] = s2
+                pos[s1] += 1
+            end
+        end)
         # ponytail: unweighted super-vertices — merged-pair imbalance is O(surface/volume)
         sparts = Int.(Metis.partition(g, nparts; alg=:KWAY))
         sparts[super]
     end
-    counts = [count(==(r), parts) for r ∈ 1:nparts]
+    counts = zeros(Int, nparts)
+    for p ∈ parts
+        counts[p] += 1
+    end
     cut = count(mesh.faces) do f
         o1, o2 = f.ownerCells
         o1 != o2 && parts[o1] != parts[o2]
@@ -71,55 +112,132 @@ end
 _mesh_like(::Mesh3, args...) = Mesh3(args...)
 _mesh_like(::Mesh2, args...) = Mesh2(args...)
 
-function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD)
+# CSR buckets of `items` by `key(item)` into 1:nparts, keeping ascending item order
+function _bucket(items, nparts, key)
+    ptr = zeros(Int, nparts + 1)
+    for it ∈ items
+        ptr[key(it)+1] += 1
+    end
+    ptr[1] = 1
+    cumsum!(ptr, ptr)
+    data = Vector{Int}(undef, ptr[end] - 1)
+    fill = copy(ptr)
+    for it ∈ items
+        k = key(it)
+        data[fill[k]] = it
+        fill[k] += 1
+    end
+    ptr, data
+end
+
+# every per-part structure is a bucket of one global pass; built once per decomposition and
+# shared by every extract_subdomain call so the whole decomposition costs O(N + F + P)
+struct _PartIndex{TI}
+    parts::Vector{Int}
+    nparts::Int
+    cell_ptr::Vector{Int}       # cells of part r: cell_list[cell_ptr[r]:cell_ptr[r+1]-1], original order
+    cell_list::Vector{Int}
+    face_ptr::Vector{Int}       # interior faces touching part r, ascending; a cut face lands in both parts
+    face_list::Vector{Int}
+    bface_ptr::Vector{Int}      # boundary faces whose cell part r owns, ascending (patch order)
+    bface_list::Vector{Int}
+    offs::Vector{Int}           # global block offset per part
+    pos::Vector{Int}            # position of each cell within its part
+    g2l::Vector{TI}             # reset-on-exit inverse maps, 0 = not local
+    f2l::Vector{TI}
+    n2l::Vector{TI}
+    mark::Vector{TI}
+end
+
+function _PartIndex(mesh, parts)
     TI = _get_int(mesh)
-    nparts = maximum(parts)
+    (; faces, boundary_cellsID, nodes) = mesh
     ncells = length(mesh.cells)
+    nparts = maximum(parts)
+    n_bfaces = length(boundary_cellsID)
+    cell_ptr, cell_list = _bucket(1:ncells, nparts, c -> parts[c])
+    part_counts = diff(cell_ptr)
+    offs = cumsum(vcat(0, part_counts))
+    pos = Vector{Int}(undef, ncells)
+    for r ∈ 1:nparts, (i, c) ∈ enumerate(view(cell_list, cell_ptr[r]:cell_ptr[r+1]-1))
+        pos[c] = i
+    end
+    ifaces = n_bfaces+1:length(faces)
+    p1(f) = parts[faces[f].ownerCells[1]]
+    p2(f) = parts[faces[f].ownerCells[2]]
+    cut = [f for f ∈ ifaces if p1(f) != p2(f)]
+    ptr_a, list_a = _bucket(ifaces, nparts, p1)
+    ptr_b, list_b = _bucket(cut, nparts, p2)
+    face_ptr = ptr_a .+ ptr_b .- 1
+    face_list = Vector{Int}(undef, face_ptr[end] - 1)
+    for r ∈ 1:nparts
+        a = view(list_a, ptr_a[r]:ptr_a[r+1]-1)
+        b = view(list_b, ptr_b[r]:ptr_b[r+1]-1)
+        face_list[face_ptr[r]:face_ptr[r+1]-1] = sort!(vcat(a, b))
+    end
+    bface_ptr, bface_list = _bucket(1:n_bfaces, nparts, f -> parts[boundary_cellsID[f]])
+    _PartIndex{TI}(parts, nparts, cell_ptr, cell_list, face_ptr, face_list, bface_ptr, bface_list,
+        offs, pos, zeros(TI, ncells), zeros(TI, length(faces)), zeros(TI, length(nodes)),
+        zeros(TI, max(ncells, length(faces), length(nodes))))
+end
+
+_range(ptr, r) = ptr[r]:ptr[r+1]-1
+
+function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD, index=_PartIndex(mesh, parts))
+    TI = _get_int(mesh)
     (; cells, faces, boundaries, nodes, boundary_cellsID) = mesh
     (; cell_nodes, cell_faces, cell_neighbours, cell_nsign, face_nodes) = mesh
-    n_bfaces = length(boundary_cellsID)
+    (; nparts, g2l, f2l, n2l, mark, offs, pos) = index
 
     # owned in original order; ghosts sorted by (owning part, original id) so each
     # neighbour's ghosts form a contiguous ascending block (halo alignment invariant)
-    owned = [c for c ∈ 1:ncells if parts[c] == part]
-    owned_mask = falses(ncells)
-    owned_mask[owned] .= true
-    ghost_set = Set{Int}()
+    owned = index.cell_list[_range(index.cell_ptr, part)]
+    ghosts = Int[]
     for c ∈ owned, j ∈ cells[c].faces_range
         nb = cell_neighbours[j]
-        parts[nb] != part && push!(ghost_set, nb)
+        parts[nb] == part && continue
+        mark[nb] == 0 && (mark[nb] = 1; push!(ghosts, nb))
     end
-    ghosts = sort!(collect(ghost_set), by = g -> (parts[g], g))
+    foreach(g -> mark[g] = 0, ghosts)
+    sort!(ghosts, by = g -> (parts[g], g))
     local_cells = vcat(owned, ghosts)
     n_owned, n_ghost = length(owned), length(ghosts)
-    g2l = Dict{Int,TI}(c => i for (i, c) ∈ enumerate(local_cells))
+    for (i, c) ∈ enumerate(local_cells)
+        g2l[c] = i
+    end
 
     # faces: physical boundary faces first (per patch, original order), then interior
-    bfaces = Int[]
+    bfaces = index.bface_list[_range(index.bface_ptr, part)]
     new_boundaries = eltype(boundaries)[]
+    k = 1
     for b ∈ boundaries
-        start = length(bfaces) + 1
-        append!(bfaces, (fID for fID ∈ b.IDs_range if owned_mask[boundary_cellsID[fID]]))
-        push!(new_boundaries, Boundary(b.name, UnitRange{TI}(start, length(bfaces))))
+        start = k
+        while k <= length(bfaces) && bfaces[k] in b.IDs_range
+            k += 1
+        end
+        push!(new_boundaries, Boundary(b.name, UnitRange{TI}(start, k - 1)))
     end
-    ifaces = Int[]
-    for fID ∈ (n_bfaces+1):length(faces)
-        o1, o2 = faces[fID].ownerCells
-        (owned_mask[o1] || owned_mask[o2]) && push!(ifaces, fID)
-    end
+    ifaces = index.face_list[_range(index.face_ptr, part)]
     local_faces = vcat(bfaces, ifaces)
-    f2l = Dict{Int,TI}(f => i for (i, f) ∈ enumerate(local_faces))
+    for (i, f) ∈ enumerate(local_faces)
+        f2l[f] = i
+    end
 
     # nodes: union over local cells and faces, original order
-    node_set = Set{Int}()
+    local_nodes = Int[]
     for c ∈ local_cells, j ∈ cells[c].nodes_range
-        push!(node_set, cell_nodes[j])
+        nd = cell_nodes[j]
+        mark[nd] == 0 && (mark[nd] = 1; push!(local_nodes, nd))
     end
     for f ∈ local_faces, j ∈ faces[f].nodes_range
-        push!(node_set, face_nodes[j])
+        nd = face_nodes[j]
+        mark[nd] == 0 && (mark[nd] = 1; push!(local_nodes, nd))
     end
-    local_nodes = sort!(collect(node_set))
-    n2l = Dict{Int,TI}(n => i for (i, n) ∈ enumerate(local_nodes))
+    foreach(nd -> mark[nd] = 0, local_nodes)
+    sort!(local_nodes)
+    for (i, nd) ∈ enumerate(local_nodes)
+        n2l[nd] = i
+    end
 
     # cells: geometry copied verbatim; ghost cells keep only locally-present faces
     new_cell_nodes = TI[]; new_cell_faces = TI[]
@@ -133,7 +251,7 @@ function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD)
         end
         fs = length(new_cell_faces) + 1
         for j ∈ cell.faces_range
-            lf = get(f2l, cell_faces[j], zero(TI))
+            lf = f2l[cell_faces[j]]
             iszero(lf) && continue
             push!(new_cell_faces, lf)
             push!(new_cell_neighbours, g2l[cell_neighbours[j]])
@@ -188,36 +306,35 @@ function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD)
         mesh.get_float, mesh.get_int, new_boundary_cellsID)
 
     # global block renumbering: new id = part offset + position within part (orig order)
-    part_counts = [count(==(r), parts) for r ∈ 1:nparts]
-    offs = cumsum(vcat(0, part_counts))
-    pos = zeros(Int, ncells)
-    ctr = zeros(Int, nparts)
-    for c ∈ 1:ncells
-        r = parts[c]
-        ctr[r] += 1
-        pos[c] = ctr[r]
-    end
     l2g = TI[offs[parts[c]] + pos[c] for c ∈ local_cells]
     owner = TI[parts[c] - 1 for c ∈ local_cells]
     partition = Partition(part - 1, nparts, n_owned, n_ghost, l2g, owner,
-        offs[part] + 1, offs[part] + part_counts[part])
+        offs[part] + 1, offs[part] + (index.cell_ptr[part+1] - index.cell_ptr[part]))
 
-    # processor patches: send/recv sorted by original global id (alignment invariant)
-    procs = ProcessorPatch{Vector{TI}}[]
-    for q ∈ sort!(unique(parts[g] for g ∈ ghosts))
-        pfaces = TI[]
-        send = Set{TI}()
-        for (lf, f) ∈ enumerate(ifaces)
-            o1, o2 = faces[f].ownerCells
-            if owned_mask[o1] && parts[o2] == q
-                push!(pfaces, length(bfaces) + lf); push!(send, g2l[o1])
-            elseif owned_mask[o2] && parts[o1] == q
-                push!(pfaces, length(bfaces) + lf); push!(send, g2l[o2])
-            end
-        end
-        recv_ghosts = TI[i for i ∈ n_owned+1:n_owned+n_ghost if parts[local_cells[i]] == q]
-        push!(procs, ProcessorPatch(q - 1, pfaces, sort!(collect(send)), recv_ghosts))
+    # processor patches: one pass over this part's interior faces; send/recv sorted by original
+    # global id (alignment invariant)
+    qs = sort!(unique(parts[g] for g ∈ ghosts))
+    qi = Dict(q => i for (i, q) ∈ enumerate(qs))
+    pfaces = [TI[] for _ ∈ qs]
+    sends = [TI[] for _ ∈ qs]
+    for (lf, f) ∈ enumerate(ifaces)
+        o1, o2 = faces[f].ownerCells
+        p1, p2 = parts[o1], parts[o2]
+        p1 == p2 && continue
+        own, other = p1 == part ? (o1, p2) : (o2, p1)
+        i = qi[other]
+        push!(pfaces[i], length(bfaces) + lf)
+        push!(sends[i], g2l[own])
     end
+    procs = ProcessorPatch{Vector{TI}}[]
+    for (i, q) ∈ enumerate(qs)
+        recv_ghosts = TI[i for i ∈ n_owned+1:n_owned+n_ghost if parts[local_cells[i]] == q]
+        push!(procs, ProcessorPatch(q - 1, pfaces[i], sort!(unique!(sends[i])), recv_ghosts))
+    end
+
+    foreach(c -> g2l[c] = 0, local_cells)
+    foreach(f -> f2l[f] = 0, local_faces)
+    foreach(nd -> n2l[nd] = 0, local_nodes)
 
     # halo caches are lazily built on first sync! (per rank/backend) so a DistributedMesh can be
     # MPI.send-ed intact and adapted to a GPU backend without shipping rank-local MPI state
@@ -244,7 +361,8 @@ end
 function decompose(mesh, nparts::Integer; periodic_patches=())
     parts = partition_cells(mesh, nparts;
         cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
-    [extract_subdomain(mesh, parts, r) for r ∈ 1:nparts]
+    index = _PartIndex(mesh, parts)
+    [extract_subdomain(mesh, parts, r; index) for r ∈ 1:nparts]
 end
 
 """
@@ -286,10 +404,11 @@ function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     if rank == 0
         parts = partition_cells(mesh, nranks;
             cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
+        index = _PartIndex(mesh, parts)
         for q ∈ 1:nranks-1
-            MPI.send(extract_subdomain(mesh, parts, q + 1; comm), comm; dest=q, tag=0)
+            MPI.send(extract_subdomain(mesh, parts, q + 1; comm, index), comm; dest=q, tag=0)
         end
-        extract_subdomain(mesh, parts, 1; comm)
+        extract_subdomain(mesh, parts, 1; comm, index)
     else
         _with_comm(MPI.recv(comm; source=0, tag=0), comm)
     end

@@ -40,8 +40,8 @@ println("PERF rank=$rank halo=$a_halo passemble=$a_asm psolve=$a_slv residual=$a
 
 @testset "Phase 4 perf (rank $rank)" begin
     # allocation budgets (bytes) on the per-iteration hot path
-    # halo cost is per neighbour patch (requests + pack/unpack launches), not per cell
-    @test a_halo <= 4_096 + 4_096 * max(1, length(dm.procs))
+    # halo cost is the pack/unpack launches per neighbour patch (requests are persistent), not per cell
+    @test a_halo <= 512 + 3_072 * max(1, length(dm.procs))
     @test a_asm <= 16_384
     @test a_slv <= 8_192
     @test a_res <= 1_024
@@ -110,7 +110,7 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
     # ~2x measured at introduction (see dev/STATE.md); halo/solve terms scale per neighbour
     @test a_sym <= 512
     @test a_cmf <= 12_288
-    @test a_halo3 <= 4_096 + 4_096 * max(1, length(dm2.procs))
+    @test a_halo3 <= 512 + 3_072 * max(1, length(dm2.procs))
     @test a_cour <= 4_096
     @test a_ueqn <= 98_304 + 8_192 * max(1, length(dm2.procs))
     @test a_peqn <= 40_960 + 4_096 * max(1, length(dm2.procs))

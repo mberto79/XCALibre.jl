@@ -30,3 +30,9 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 - Exchanges per iteration 6 → 5, all-reduces 2; hashes identical at n=2 and n=4 on 10 mm parts regenerated at part format 2 (format 1 parts are refused at the header); gate 10/10 in 200 s; offline, io, halo, f32, perf green at n=2,3.
 - PISO keeps a separate exchange for rD and one for Hv per corrector: `H!` runs once per corrector, so rD cannot share the first one without moving `interpolate!(rDf, rD)` into the corrector loop.
 - `check_ghosts` zero on rD and Hv after the paired exchange (`test_ghosts.jl` now mirrors the body) at n=2,3; `test_gpu.jl` n=1,2 green (255 s).
+
+## S5: persistent requests
+
+- Halo allocation 2928 → 2736 B at n=2 (5456 → 5200 at n=3); what remains is the pack/unpack launches, so the `test_perf.jl` budget drops to 512 + 3072 per neighbour.
+- `dev/scripts/halo_bench.jl` at 10 mm n=8, 200 reps × 10 alternated rounds, medians: width 3 persistent 16.57 µs vs fresh 16.89 µs; width 1 11.89 vs 12.05 µs.
+- Hashes identical at n=2 and n=4; gate 10/10 in 197 s; halo, ghosts, f32, perf green at n=2,3; `test_gpu.jl` n=1,2 green (256 s, covers the host-staged path).

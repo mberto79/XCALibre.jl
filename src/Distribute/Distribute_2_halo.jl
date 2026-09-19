@@ -4,8 +4,9 @@ export HaloExchange, halo_exchange!, halo_exchange_adjoint!
     HaloExchange
 
 Reusable halo communication schedule built from `DistributedMesh.procs`. Holds one
-send/recv buffer pair per neighbour (width 1 for scalars, 3 for vectors) plus
-preallocated MPI requests so repeat exchanges do not allocate.
+send/recv buffer pair per neighbour (width 1 for scalars, 3 for vectors, 4 for a scalar and a
+vector together) plus persistent MPI requests bound to those buffers, so repeat exchanges only
+start and wait.
 """
 struct HaloExchange{TF,VI,VB}
     comm::MPI.Comm
@@ -16,8 +17,8 @@ struct HaloExchange{TF,VI,VB}
     recv_bufs::Vector{VB}
     host_send::Vector{Vector{TF}} # staging mirrors; empty when cuda_aware
     host_recv::Vector{Vector{TF}}
-    send_reqs::Vector{MPI.Request}
-    recv_reqs::Vector{MPI.Request}
+    send_reqs::MPI.MultiRequest   # persistent, bound to the MPI-facing buffers
+    recv_reqs::MPI.MultiRequest
     width::Int
     cuda_aware::Bool              # true = MPI reads device buffers directly (CPU or CUDA-aware MPI)
 end
@@ -46,10 +47,13 @@ function HaloExchange(dmesh::DistributedMesh, width::Integer, backend; comm=getf
     recv_bufs = BufT[KernelAbstractions.allocate(backend, TF, width*length(pp.recv_ghosts)) for pp ∈ procs]
     host_send = Vector{TF}[Vector{TF}(undef, cuda_aware ? 0 : width*length(pp.send_cells)) for pp ∈ procs]
     host_recv = Vector{TF}[Vector{TF}(undef, cuda_aware ? 0 : width*length(pp.recv_ghosts)) for pp ∈ procs]
+    send_reqs, recv_reqs = MPI.MultiRequest(length(procs)), MPI.MultiRequest(length(procs))
+    for (k, pp) ∈ enumerate(procs)
+        MPI.Send_init(cuda_aware ? send_bufs[k] : host_send[k], pp.neighbour, _tag(width), comm, send_reqs[k])
+        MPI.Recv_init(cuda_aware ? recv_bufs[k] : host_recv[k], pp.neighbour, _tag(width), comm, recv_reqs[k])
+    end
     HaloExchange(comm, Int[pp.neighbour for pp ∈ procs], send_idx, recv_idx,
-        send_bufs, recv_bufs, host_send, host_recv,
-        [MPI.Request() for _ ∈ procs], [MPI.Request() for _ ∈ procs],
-        Int(width), cuda_aware)
+        send_bufs, recv_bufs, host_send, host_recv, send_reqs, recv_reqs, Int(width), cuda_aware)
 end
 
 # NEW SECTION: pack/unpack kernels
@@ -132,7 +136,7 @@ end
 const HALO_COUNT = Ref(0)
 
 # one tag base per width (adjoint uses base+1) so schedules sharing a neighbour never match each other
-_tag(H::HaloExchange) = 10H.width
+_tag(width::Integer) = 10width
 
 _mpi_send_buf(H, k) = H.cuda_aware ? H.send_bufs[k] : H.host_send[k]
 _mpi_recv_buf(H, k) = H.cuda_aware ? H.recv_bufs[k] : H.host_recv[k]
@@ -141,23 +145,20 @@ _mpi_recv_buf(H, k) = H.cuda_aware ? H.recv_bufs[k] : H.host_recv[k]
     halo_exchange!(phi, H::HaloExchange, backend, workgroup)
 
 Fill ghost entries of `phi` (scalar or vector field) with the owning neighbours' values.
-Irecv-first, pack, sync, Isend, wait, unpack; buffers and requests are reused.
+Receives started first, pack, sync, sends started, wait, unpack; buffers and persistent
+requests are reused.
 """
 function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
     HALO_COUNT[] += 1
-    for k ∈ eachindex(H.neighbours)
-        MPI.Irecv!(_mpi_recv_buf(H, k), H.comm, H.recv_reqs[k]; source=H.neighbours[k], tag=_tag(H))
-    end
+    MPI.Startall(H.recv_reqs)
     for k ∈ eachindex(H.neighbours)
         idx = H.send_idx[k]
         kernel! = _pack!(_setup(backend, workgroup, length(idx))...)
         kernel!(H.send_bufs[k], phi, idx)
     end
     KernelAbstractions.synchronize(backend)
-    for k ∈ eachindex(H.neighbours)
-        H.cuda_aware || copyto!(H.host_send[k], H.send_bufs[k])
-        MPI.Isend(_mpi_send_buf(H, k), H.comm, H.send_reqs[k]; dest=H.neighbours[k], tag=_tag(H))
-    end
+    H.cuda_aware || foreach(copyto!, H.host_send, H.send_bufs)
+    MPI.Startall(H.send_reqs)
     MPI.Waitall(H.recv_reqs)
     for k ∈ eachindex(H.neighbours)
         H.cuda_aware || copyto!(H.recv_bufs[k], H.host_recv[k])
@@ -177,9 +178,11 @@ Reverse scatter (transpose of `halo_exchange!`): ghost cotangents are sent owner
 accumulated into the owned cells they copy from; ghost entries are zeroed. Used by AD (Phase 7).
 """
 function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
-    # message direction reverses, so buffer roles swap (recv_bufs sized for ghosts)
+    # message direction reverses, so buffer roles swap (recv_bufs sized for ghosts); the persistent
+    # requests are bound to the forward direction, so this path takes its own
+    rreqs, sreqs = MPI.MultiRequest(length(H.neighbours)), MPI.MultiRequest(length(H.neighbours))
     for k ∈ eachindex(H.neighbours)
-        MPI.Irecv!(_mpi_send_buf(H, k), H.comm, H.recv_reqs[k]; source=H.neighbours[k], tag=_tag(H) + 1)
+        MPI.Irecv!(_mpi_send_buf(H, k), H.comm, rreqs[k]; source=H.neighbours[k], tag=_tag(H.width) + 1)
     end
     for k ∈ eachindex(H.neighbours)
         idx = H.recv_idx[k]
@@ -191,9 +194,9 @@ function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
     KernelAbstractions.synchronize(backend)
     for k ∈ eachindex(H.neighbours)
         H.cuda_aware || copyto!(H.host_recv[k], H.recv_bufs[k])
-        MPI.Isend(_mpi_recv_buf(H, k), H.comm, H.send_reqs[k]; dest=H.neighbours[k], tag=_tag(H) + 1)
+        MPI.Isend(_mpi_recv_buf(H, k), H.comm, sreqs[k]; dest=H.neighbours[k], tag=_tag(H.width) + 1)
     end
-    MPI.Waitall(H.recv_reqs)
+    MPI.Waitall(rreqs)
     for k ∈ eachindex(H.neighbours)
         H.cuda_aware || copyto!(H.send_bufs[k], H.host_send[k])
         idx = H.send_idx[k]
@@ -201,6 +204,6 @@ function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
         kernel!(phi, H.send_bufs[k], idx)
     end
     KernelAbstractions.synchronize(backend)
-    MPI.Waitall(H.send_reqs)
+    MPI.Waitall(sreqs)
     phi
 end

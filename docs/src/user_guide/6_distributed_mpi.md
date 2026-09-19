@@ -427,7 +427,17 @@ for small and medium cases and AMG for large ones, especially when the pressure 
 Every rank pays a fixed cost of roughly 0.8 GB for the Julia runtime, the loaded packages and the
 compiled code, plus a cost per cell it holds. For a laminar Float64 case with Jacobi the per-cell
 cost is about 1.8 KB, so a rank holding 660,000 cells peaks near 1.8 GB. Turbulence models, AMG and
-a finer mesh near the wall raise it. Each rank's garbage collector sizes its heap without knowing
+a finer mesh near the wall raise it.
+
+Not all of the fixed cost is paid once per rank. About 250 MB is the Julia system image, package
+images and shared libraries, which the operating system holds once per node however many ranks map
+them. The rest, about 0.55 GB, is private to each rank. Of that, roughly 200 MB is memory that the
+garbage collector keeps after compiling the solver on the first iteration. A node running `n` ranks
+therefore needs about `0.25 GB + n × (0.55 GB + per-cell cost)`. Tools that sum each process's
+resident memory count the shared part `n` times. The proportional set size (`Pss` in
+`/proc/<pid>/smaps_rollup`) does not.
+
+Each rank's garbage collector sizes its heap without knowing
 about the other ranks on the node, so set a heap size hint per rank of roughly the node's memory
 divided by the ranks on it, leaving room for PETSc, which allocates outside the Julia heap. Precompile
 in a plain session first, since a rank that must precompile under a different flag fails to load:
@@ -435,6 +445,77 @@ in a plain session first, since a rank that must precompile under a different fl
 ```bash
 mpiexecjl -n 8 julia --heap-size-hint=1500M --project my_case.jl
 ```
+
+The hint must be given at launch, as the flag or as the `JULIA_HEAP_SIZE_HINT` environment
+variable. Setting it later from the script cannot give back the pages used while loading. A tight
+hint makes the collector run more often. On small meshes it lowers the first-run peak by up to 30
+percent, but it can slow each iteration by 10 to 20 percent, so leave it loose unless memory,
+not time, is the limit.
+
+### Precompiling a production case
+
+Most of the first run's private memory and compile time goes on compiling the solver for your
+case's exact types. When the same case is run many times with the same mesh partition and rank
+count, you can compile it once, ahead of time, into a small local package. On a 10 mm BFS case at
+four ranks this lowered private memory per rank from 559 to 359 MB and cut first-run compilation
+from 11.5 s to under 0.1 s. Changing boundary values, iteration counts or relaxation factors keeps
+the package valid. Changing the mesh, the rank count, the physics models, the boundary-condition
+types, the schemes or the solvers does not, so trace the case again after any of those.
+
+1. Trace one short run (two iterations are enough) with the same partition and rank count. The
+   wrapper names one trace file per rank (MPICH sets `PMI_RANK`, Open MPI `OMPI_COMM_WORLD_RANK`):
+
+   ```bash
+   cat > trace.sh <<'EOF'
+   #!/bin/sh
+   exec julia --project=<env> --trace-compile="trace_${PMI_RANK:-$OMPI_COMM_WORLD_RANK}.jl" "$@"
+   EOF
+   chmod +x trace.sh
+   mpiexecjl -n 4 ./trace.sh my_case.jl
+   ```
+
+2. Create a package from the traces. Its dependencies are copied from the case's environment, so
+   that it compiles against exactly the package versions the trace ran with. Statements that name
+   your script's own definitions (`Main.`) are dropped:
+
+   ```bash
+   julia --project=<env> -e 'using Pkg, TOML
+       Pkg.generate("CasePrecompile")
+       deps = TOML.parsefile(Base.active_project())["deps"]
+       p = TOML.parsefile("CasePrecompile/Project.toml")
+       p["deps"] = Dict(k => deps[k] for k ∈ ("XCALibre", "PETSc", "MPI"))
+       open(io -> TOML.print(io, p), "CasePrecompile/Project.toml", "w")'
+   cat trace_*.jl | grep -v 'Main\.' | sort -u > CasePrecompile/src/statements.jl
+   ```
+
+   and replace `CasePrecompile/src/CasePrecompile.jl` with:
+
+   ```julia
+   module CasePrecompile
+   using XCALibre, PETSc, MPI
+   for (id, m) ∈ Base.loaded_modules # make every loaded module nameable in the statements
+       isdefined(@__MODULE__, Symbol(id.name)) || Core.eval(@__MODULE__, :(const $(Symbol(id.name)) = $m))
+   end
+   const XCALibrePETScExt = Base.get_extension(XCALibre, :XCALibrePETScExt)
+   include_dependency(joinpath(@__DIR__, "statements.jl"))
+   for line ∈ eachline(joinpath(@__DIR__, "statements.jl"))
+       try Core.eval(@__MODULE__, Meta.parse(line)) catch end
+   end
+   end
+   ```
+
+3. Add it to the case's environment without changing any other package's version, precompile it in
+   a plain session, and load it at the top of the case script, before the mesh is distributed. If
+   the environment is updated later, trace again, since the traced types may no longer match:
+
+   ```bash
+   julia --project=<env> -e 'using Pkg; Pkg.develop(path="CasePrecompile"; preserve=Pkg.PRESERVE_ALL); Pkg.precompile()'
+   ```
+
+   ```julia
+   using XCALibre, PETSc, MPI
+   using CasePrecompile
+   ```
 
 ### Rebuilding vs freezing the hierarchy
 

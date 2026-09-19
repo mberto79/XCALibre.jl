@@ -65,3 +65,10 @@ Script `dev/scripts/pkg_mem.jl one <Name>...` (smaps_rollup delta around `Base.r
 - 20 iterations: private 566 → 358, `t_iter_s` 10.58 → 0.38, hash `550bb695b7dbab9c` unchanged.
 - Generic subset only (353 statements: no rank-sized kernels, nothing typed on this case's physics or boundary conditions): private 572, `t_iter_s` 11.15, i.e. no gain. The saving lives entirely in the case-typed `SIMPLE` call tree and the sized kernels.
 - Runtime compilation is the cause of the first-run retention. The bound holds only for the exact mesh, rank count and boundary conditions traced; a shippable version needs kernel types that do not carry the launch size, plus a workload covering the supported cases.
+
+## S4: the documented per-case recipe, run literally (D108)
+
+The three steps of "Precompiling a production case" in the distributed guide, run as written in a fresh copy of `dev/petscenv_stock` (`dev/petscenv_recipe`, not committed) with `mem_probe.jl` as the case script; XCALibre developed from the checkout since the branch is unregistered. Trace run 19 s, 937 statements (936 compile, 1 returns false), package precompile 13 s. Raw: `dev/telemetry/memory_breakdown/m25s4_recipe{,_off}.txt`.
+
+- Without / with the package: private at `iterations` 556 → 359 (−35 percent, bar 389), RSS 817 → 621, `t_iter_s` 12.09 → 0.04, worker wall 22 → 7 s, hash `dbc3c69ab48b3394` both. `using XCALibre` 0.98 s stock vs 0.91 s in the recipe env.
+- Traps found and fixed in the recipe: `Pkg.develop` without `preserve=Pkg.PRESERVE_ALL` upgraded PETSc.jl (whose newer version ships only Int64 libraries) and the traced `SIMPLE` signature (Int32 PETSc) no longer matched, leaving 3.5 s of compilation; `Pkg.add` inside the new package wrote `[compat]` pins at the newest versions, which conflict with the case env, so its dependencies are copied from the case env's `Project.toml` instead.

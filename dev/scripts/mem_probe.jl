@@ -7,8 +7,8 @@ const MALLOC = "malloc=1" in ARGS
 const TRIM = "trim=1" in ARGS
 # `gclog=1` makes rank 0 print GC heap stats (bytes_resident) to stderr at each stage
 const GCLOG = "gclog=1" in ARGS
-# `pre=1` loads a local `M25Pre` package of harvested precompile statements before setup
-const PRE = "pre=1" in ARGS
+# `pre=<Package>` loads a local package of harvested precompile statements before setup
+const PRE = let i = findfirst(startswith("pre="), ARGS); i === nothing ? "" : ARGS[i][5:end] end
 # `gcmax=<MB>` sets the GC memory target at runtime, as `--heap-size-hint` does at start-up
 const GCMAX = let i = findfirst(startswith("gcmax="), ARGS); i === nothing ? 0 : parse(Int, ARGS[i][7:end]) end
 # `repeat=<k>` adds k full `run!` calls after the staged run, with a forced collection after each
@@ -62,7 +62,7 @@ if MODE == "part"
 
 elseif MODE == "worker"
     using XCALibre, PETSc, MPI, Libdl
-    PRE && @eval using M25Pre
+    isempty(PRE) || @eval using $(Symbol(PRE))
     using XCALibre.Solvers: SIMPLE
     using XCALibre.ModelPhysics: initialise
     MPI.Init()

@@ -8,7 +8,7 @@ First-run compilation drives per-rank private memory: a per-case precompile reci
 
 ## Approach
 
-(1) Size-free launches: one helper builds each kernel with dynamic sizes and passes workgroup and range at launch, so a compiled kernel serves any mesh and rank count; the call sites change mechanically and no kernel uses `@localmem`, so nothing needs a static workgroup. (2) A PrecompileTools workload over the solver call tree for covered cases, sized after measuring what it adds to package precompilation, since every user pays that (R4).
+(1) Size-free launches: one helper builds each kernel without its range and passes the range at launch, so a compiled kernel serves any mesh and rank count; the call sites change mechanically; an integer workgroup stays static because a dynamic one cost 1.6 percent CPU time, and only `AutoTune` passes its workgroup at launch (amended by D133). (2) A PrecompileTools workload over the solver call tree for covered cases, sized after measuring what it adds to package precompilation, since every user pays that (R4).
 
 ## Steps
 

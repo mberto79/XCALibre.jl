@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-19T14:00:00+01:00
 STATE: BUILDING
 STEP: P1-M21-S4 - zero-copy PETSc vectors
-HEAD: 3a31c6e3
+HEAD: 26e942c2
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl, then test_periodic/test_perf/test_invariance/test_ghosts at --ranks=2,3, each under MIN_MB=2500 memguard.sh
 resume: implement S4: storage-less vecs (`VecCreateMPIWithArray`/`VecCreateMPICUDAWithArray` with NULL) placed per solve with `VecPlaceArray`/`VecCUDAPlaceArray` under try/finally; CUDA names go in `petsc_device_info`; symbols confirmed in the conda PETSc 3.25

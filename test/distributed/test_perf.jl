@@ -2,7 +2,7 @@
 # Budgets are ~2x the values measured at introduction (recorded in dev/STATE.md); a blown
 # budget = an allocation regression on the per-iteration path — fix it, don't raise the budget.
 using XCALibre, PETSc, MPI, Test, KernelAbstractions
-import XCALibre.Solve: residual, solve_equation!, solve_system!
+import XCALibre.Solve: residual, solve_equation!, solve_system!, sync!
 
 MPI.Init()
 comm = MPI.COMM_WORLD
@@ -22,12 +22,12 @@ solve_iter!() = solve_equation!(deqn, T, config.boundaries.T, config.solvers, co
 # warmup: JIT + PETSc setup + halo request allocation
 solve_iter!(); solve_iter!()
 # each measured call once more on its own: top-level call sites compile their own thunks
-halo_exchange!(T, deqn.halo, backend, workgroup)
+sync!(T, dm, config)
 passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)
 psolve!(deqn.solver, T.values)
 residual(deqn, nothing, config)
 
-a_halo = @allocated halo_exchange!(T, deqn.halo, backend, workgroup)
+a_halo = @allocated sync!(T, dm, config)
 a_asm = @allocated passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)
 a_slv = @allocated psolve!(deqn.solver, T.values)
 a_res = @allocated residual(deqn, nothing, config)

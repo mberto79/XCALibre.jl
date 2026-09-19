@@ -1,24 +1,23 @@
 export DistributedEqn
 
 """
-    DistributedEqn(eqn, solver, partition, halo)
+    DistributedEqn(eqn, solver, partition)
 
 Wraps a serial `ModelEquation` on the rank-local mesh with a distributed solver
-(`PETScSolver`), the rank `Partition` and the field `HaloExchange`. Existing generics
+(`PETScSolver`) and the rank `Partition`; ghost exchanges use the mesh's shared halo schedule. Existing generics
 (`solve_equation!`, `solve_system!`, `residual`, `setReference!`) dispatch on it. The local id
 of the reference cell (original global cell 1) is cached at construction, 0 when another rank
 owns it.
 """
-struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,H<:HaloExchange}
+struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition}
     eqn::E
     solver::S
     partition::P
-    halo::H
     ref_cell::Int
     ref_lid::Int
 end
-DistributedEqn(eqn, solver, partition, halo) =
-    DistributedEqn(eqn, solver, partition, halo, 1, _ref_local(get_phi(eqn).mesh, 1))
+DistributedEqn(eqn, solver, partition) =
+    DistributedEqn(eqn, solver, partition, 1, _ref_local(get_phi(eqn).mesh, 1))
 
 # local id of an ORIGINAL global cell id on this rank's owned block, 0 when not owned
 function _ref_local(dm::DistributedMesh, cellID)
@@ -27,17 +26,15 @@ function _ref_local(dm::DistributedMesh, cellID)
     lid === nothing ? 0 : Int(lid)
 end
 
-_comm(deqn::DistributedEqn) = deqn.halo.comm
+_comm(deqn::DistributedEqn) = getfield(get_phi(deqn.eqn).mesh, :comm)
 
-# seam methods (S2): below-API distributed layer. wrap_eqn builds the DistributedEqn; the
+# seam methods: below-API distributed layer. wrap_eqn builds the DistributedEqn; the
 # solver body assembles/discretises the raw eqn (unwrap_eqn) but solves through the wrapper.
 Solve.unwrap_eqn(deqn::DistributedEqn) = deqn.eqn
 
 function Solve.wrap_eqn(eqn, dmesh::DistributedMesh, setup, config;
         petsc_options="", label="")
-    (; backend) = config.hardware
-    DistributedEqn(eqn, PETScSolver(eqn, dmesh, setup; petsc_options, label),
-        getfield(dmesh, :partition), HaloExchange(dmesh, 1, backend))
+    DistributedEqn(eqn, PETScSolver(eqn, dmesh, setup; petsc_options, label), getfield(dmesh, :partition))
 end
 
 function Solve.solve_equation!(
@@ -81,10 +78,9 @@ end
 _is_pure_laplacian(eqn) = length(eqn.model.terms) == 1 && eqn.model.terms[1] isa Laplacian
 
 function Solve.solve_system!(deqn::DistributedEqn, setup, result, component, config)
-    (; backend, workgroup) = config.hardware
     passemble!(deqn.solver, deqn.eqn, deqn.partition; component)
     psolve!(deqn.solver, result.values)
-    halo_exchange!(result, deqn.halo, backend, workgroup)
+    sync!(result, get_phi(deqn.eqn).mesh, config)
     residual(deqn, component, config)
 end
 
@@ -121,7 +117,7 @@ end
 Solve.is_distributed_mesh(::DistributedMesh) = true
 Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) == 0
 
-# global_max seam (S5): Courant dt must be identical on every rank
+# global_max seam: Courant dt must be identical on every rank
 Solvers.global_max(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, max, getfield(dm, :comm)))
 # courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh

@@ -111,6 +111,9 @@ end
 # exchange rounds since load; `test_perf.jl` budgets them per iteration so a new round is a regression
 const HALO_COUNT = Ref(0)
 
+# one tag base per width (adjoint uses base+1) so schedules sharing a neighbour never match each other
+_tag(H::HaloExchange) = 10H.width
+
 _mpi_send_buf(H, k) = H.cuda_aware ? H.send_bufs[k] : H.host_send[k]
 _mpi_recv_buf(H, k) = H.cuda_aware ? H.recv_bufs[k] : H.host_recv[k]
 
@@ -123,7 +126,7 @@ Irecv-first, pack, sync, Isend, wait, unpack; buffers and requests are reused.
 function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
     HALO_COUNT[] += 1
     for k ∈ eachindex(H.neighbours)
-        MPI.Irecv!(_mpi_recv_buf(H, k), H.comm, H.recv_reqs[k]; source=H.neighbours[k], tag=0)
+        MPI.Irecv!(_mpi_recv_buf(H, k), H.comm, H.recv_reqs[k]; source=H.neighbours[k], tag=_tag(H))
     end
     for k ∈ eachindex(H.neighbours)
         idx = H.send_idx[k]
@@ -133,7 +136,7 @@ function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
     KernelAbstractions.synchronize(backend)
     for k ∈ eachindex(H.neighbours)
         H.cuda_aware || copyto!(H.host_send[k], H.send_bufs[k])
-        MPI.Isend(_mpi_send_buf(H, k), H.comm, H.send_reqs[k]; dest=H.neighbours[k], tag=0)
+        MPI.Isend(_mpi_send_buf(H, k), H.comm, H.send_reqs[k]; dest=H.neighbours[k], tag=_tag(H))
     end
     MPI.Waitall(H.recv_reqs)
     for k ∈ eachindex(H.neighbours)
@@ -156,7 +159,7 @@ accumulated into the owned cells they copy from; ghost entries are zeroed. Used 
 function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
     # message direction reverses, so buffer roles swap (recv_bufs sized for ghosts)
     for k ∈ eachindex(H.neighbours)
-        MPI.Irecv!(_mpi_send_buf(H, k), H.comm, H.recv_reqs[k]; source=H.neighbours[k], tag=0)
+        MPI.Irecv!(_mpi_send_buf(H, k), H.comm, H.recv_reqs[k]; source=H.neighbours[k], tag=_tag(H) + 1)
     end
     for k ∈ eachindex(H.neighbours)
         idx = H.recv_idx[k]
@@ -168,7 +171,7 @@ function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
     KernelAbstractions.synchronize(backend)
     for k ∈ eachindex(H.neighbours)
         H.cuda_aware || copyto!(H.host_recv[k], H.recv_bufs[k])
-        MPI.Isend(_mpi_recv_buf(H, k), H.comm, H.send_reqs[k]; dest=H.neighbours[k], tag=0)
+        MPI.Isend(_mpi_recv_buf(H, k), H.comm, H.send_reqs[k]; dest=H.neighbours[k], tag=_tag(H) + 1)
     end
     MPI.Waitall(H.recv_reqs)
     for k ∈ eachindex(H.neighbours)

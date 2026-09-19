@@ -49,6 +49,5 @@ function build_deqn(dm, model, config)
     XCALibre.Distribute.DistributedEqn(
         T_eqn,
         PETScSolver(T_eqn, dm, config.solvers),
-        dm.partition,
-        HaloExchange(dm, 1, config.hardware.backend))
+        dm.partition)
 end

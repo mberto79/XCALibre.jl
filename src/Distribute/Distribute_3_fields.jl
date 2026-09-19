@@ -40,10 +40,8 @@ sync!(df::DistributedField, config) = begin
     nothing
 end
 
-# self-syncing seam (S1): solver primitives call sync!(field, mesh, config); serial is a
-# no-op (Solve), distributed fills ghosts via a width-keyed cache lazily built on dm. Width by
-# field type (scalar=1, vector=3). The cache is filled on first call (during solver priming),
-# so per-iteration calls only pay the exchange; halo_exchange! stays a fast function barrier.
+# one halo schedule per mesh and width (scalar 1, vector 3), built on first call and shared by
+# every field and equation; halo_exchange! is the function barrier past the untyped cache slot
 @inline function sync!(x::AbstractScalarField, dm::DistributedMesh, config)
     (; backend, workgroup) = config.hardware
     hc = getfield(dm, :halos)

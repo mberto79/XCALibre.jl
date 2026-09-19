@@ -38,6 +38,27 @@ _substitute(::IC0GPU) = "per-rank block ICC(0)"
 _pc_freeze(p) = 1
 _pc_freeze(p::Union{BoomerAMG,GAMG}) = p.freeze
 
+# NEW SECTION: signal dispositions
+
+# PETSc's lazy CUDA device initialisation probes GPU-aware MPI under a pushed signal handler and its
+# pop, on the empty stack PETSc.jl leaves, resets eleven signals to SIG_DFL: Julia's safepoint
+# faults then kill the process silently (D85). The dispositions in force before are put back.
+const _JULIA_SIGNALS = Cint.((1, 3, 4, 5, 7, 8, 11, 13, 15, 23, 31)) # HUP QUIT ILL TRAP BUS FPE SEGV PIPE TERM URG SYS
+const _SIGACTION_BYTES = 152
+
+_sigaction_get(sig) = (buf = zeros(UInt8, _SIGACTION_BYTES);
+    ccall(:sigaction, Cint, (Cint, Ptr{Cvoid}, Ptr{UInt8}), sig, C_NULL, buf); buf)
+
+function _with_julia_signals(f)
+    saved = map(_sigaction_get, _JULIA_SIGNALS)
+    result = f()
+    for (sig, act) ∈ zip(_JULIA_SIGNALS, saved)
+        _sigaction_get(sig) == act && continue
+        ccall(:sigaction, Cint, (Cint, Ptr{UInt8}, Ptr{Cvoid}), sig, act, C_NULL)
+    end
+    result
+end
+
 # NEW SECTION: solver type
 
 struct XPETScSolver{PL,TM,TV,TK,SY} <: Distribute.AbstractDistributedSolver
@@ -126,7 +147,10 @@ function _gpu_comm!(petsclib, opts, comm)
     nothing
 end
 
-function PETScSolver(eqn, dmesh::DistributedMesh, setup;
+PETScSolver(eqn, dmesh::DistributedMesh, setup; kwargs...) =
+    _with_julia_signals(() -> _petsc_solver(eqn, dmesh, setup; kwargs...))
+
+function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         comm=getfield(dmesh, :comm), petsc_options="", label="")
     petsc_options = _options_for(petsc_options, label)
     part = dmesh.partition

@@ -18,4 +18,4 @@ Active phase and its exit gate: `dev/phaseRoadmap.md`. Current step and state: `
 
 - [P1] `archive/dev_distributed/` and `archive/dev_motorbike/` are the only copies of the pre-P1 record; `dev/` was gitignored until P1-M1 (D1).
 - [P1] Distributed LKE and LES remain unwired and inherit the SST synchronisation audit; spec lists them as documented gaps, not defects.
-- [P1] `AUDIT.md` (2026-09-18) is the source of M18-M24; it moves to `dev/archive/reviews/p1/` at M18 close (D77). Its GPU evidence is one device and two ranks; P2 owns everything beyond that.
+- [P1] `dev/archive/reviews/p1/audit-2026-09-18.md` (2026-09-18) is the source of M18-M24; archived at M18 close (D77). Its GPU evidence is one device and two ranks; P2 owns everything beyond that.

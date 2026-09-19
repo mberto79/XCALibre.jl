@@ -4,7 +4,7 @@ Linked from `dev/phaseRoadmap.md`. Requirements: R7, Q3. Governing decisions: D5
 
 ## Problem, quantified
 
-Per laminar SIMPLE iteration (`AUDIT.md` § change 3): 8 blocking exchange rounds (three width-1 for U inside each component's `solve_system!`, `rD`, `Hv`, p after solve, p after `explicit_relaxation!`, `∇p`), 8 residual all-reduces (`Distribute_5_solvers.jl:88-89`), and on CUDA 12 `device_synchronize` (three per component solve, `XCALibrePETScExt.jl:195-233`) plus two stream syncs per halo (`Distribute_2_halo.jl:126`,`:138`). `wrap_eqn` builds a `HaloExchange` per equation (`:27`) beside the mesh's cached w1/w3; every message uses `tag=0`. Under `-log_sync` the solve is balanced (D59), so what remains at n=8 is arrival spread at reductions. GPU iteration is 0.0746 s at 500k cells n=1.
+Per laminar SIMPLE iteration (`dev/archive/reviews/p1/audit-2026-09-18.md` § change 3): 8 blocking exchange rounds (three width-1 for U inside each component's `solve_system!`, `rD`, `Hv`, p after solve, p after `explicit_relaxation!`, `∇p`), 8 residual all-reduces (`Distribute_5_solvers.jl:88-89`), and on CUDA 12 `device_synchronize` (three per component solve, `XCALibrePETScExt.jl:195-233`) plus two stream syncs per halo (`Distribute_2_halo.jl:126`,`:138`). `wrap_eqn` builds a `HaloExchange` per equation (`:27`) beside the mesh's cached w1/w3; every message uses `tag=0`. Under `-log_sync` the solve is balanced (D59), so what remains at n=8 is arrival spread at reductions. GPU iteration is 0.0746 s at 500k cells n=1.
 
 ## Approach
 

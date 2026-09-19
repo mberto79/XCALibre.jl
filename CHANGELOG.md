@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Removed the `coarse_tmp` scratch vector from `AMGLevel`. It was written only by the removed path, so every level allocated a full-length vector on the device that nothing read [#159](@ref)
 
 ### Fixed
+* Fixed an intermittent segmentation fault in distributed GPU runs. PETSc's CUDA device initialisation, reached when the first device matrix is created, resets the process's fatal-signal handlers to their defaults, and Julia relies on its own SIGSEGV handler for garbage-collection safepoints: whenever a collection started while the interactive thread was awake, the safepoint fault killed the process with no message. The handlers in force before the PETSc solver is built are now restored after it [#160](@ref)
 * Fixed missing density term in set_production! needed for cases with non-unity density [#151]
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
 * Fixed OpenFOAM `boundary` file parsing so that patch groups (`inGroups`) no longer corrupt the patch list. The parser is now token based, ignores unknown dictionary entries, and reports malformed files with an `ArgumentError` [#153](@ref)

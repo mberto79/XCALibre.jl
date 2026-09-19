@@ -4,7 +4,7 @@ Linked from `dev/phaseRoadmap.md`. Requirements: R7, R11. Governing decisions: D
 
 ## Problem, quantified
 
-Momentum holds `A0` and `A` as full CSRs including ghost rows (`ModelFramework_0_types.jl:193-194`), PETSc holds `mpiaij` plus the COO permutation arrays of `MatSetPreallocationCOO` (`XCALibrePETScExt.jl:145`): 3.5-4 copies for U, 2.5-3 for p. `psolve!` copies `x` in and out and `passemble!` copies `b` (`:201-216`): 12 vector copies per SIMPLE iteration. Six cell kernels run over ghosts (`discretise!` `:31`,`:116`; `green_gauss!`; `div!`; `inverse_diagonal!` `Solvers_0_functions.jl:102`; `H!` `:194`). Peak RSS 2.79/2.67 GB per rank at 660k cells, 4.1 KB/cell, against 1.5-1.8 KB/cell live by struct layout (`AUDIT.md` § Memory). `--heap-size-hint` is recorded as unusable (`dev/gotchas.md`).
+Momentum holds `A0` and `A` as full CSRs including ghost rows (`ModelFramework_0_types.jl:193-194`), PETSc holds `mpiaij` plus the COO permutation arrays of `MatSetPreallocationCOO` (`XCALibrePETScExt.jl:145`): 3.5-4 copies for U, 2.5-3 for p. `psolve!` copies `x` in and out and `passemble!` copies `b` (`:201-216`): 12 vector copies per SIMPLE iteration. Six cell kernels run over ghosts (`discretise!` `:31`,`:116`; `green_gauss!`; `div!`; `inverse_diagonal!` `Solvers_0_functions.jl:102`; `H!` `:194`). Peak RSS 2.79/2.67 GB per rank at 660k cells, 4.1 KB/cell, against 1.5-1.8 KB/cell live by struct layout (`dev/archive/reviews/p1/audit-2026-09-18.md` § Memory). `--heap-size-hint` is recorded as unusable (`dev/gotchas.md`).
 
 ## Approach
 

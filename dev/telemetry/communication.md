@@ -42,3 +42,10 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 - 10 mm n=4 (`scaling_probe.jl worker`, 60 iterations, Jacobi, unpinned 3.5 GHz): 20.1 ms per iteration. Exchange at n=4 (`halo_bench.jl`): width 3 13.96 µs, width 1 12.26 µs; at n=8 width 3 16.57 µs.
 - The two exchanges S6 would hide (∇p, rD+Hv) cost about 28 µs, 0.14 percent of an iteration at n=4 (about 0.3 percent at n=8), against a 3 percent bar; a full overlap cannot reach it here.
 - A `_halo_begin!`/`_halo_end!` split of `halo_exchange!` alone raised its allocation 2736 → 2992 B and was reverted. 10 mm n=8 with PETSc does not fit beside the language server (memguard stop at 2446 MB free).
+
+## S7: stream events withdrawn on its upper bound
+
+- PETSc 3.25.5 (conda, CUDA) runs every device operation on one global current context with `PETSC_STREAM_DEFAULT` and a NULL handle, the CUDA legacy default stream; CUDA.jl's task stream is non-blocking, so the device drains are what order the two today.
+- GPU residuals are not bitwise reproducible run to run (10 mm n=1: Ux `3.152013822883027e-5` vs `3.1520138228831386e-5`), so a race check on GPU must use a tolerance, not hashes.
+- 5 mm n=1 baseline 51.6 ms per iteration (was 74.6 ms when the plan was written).
+- Upper bound, A/B alternated in one session: Julia on the same NULL stream as PETSc and every per-solve drain removed, 57.3 / 57.2 ms vs 57.4 ms with drains (GPU warmer than at baseline); at most 0.3 percent against a 3 percent bar.

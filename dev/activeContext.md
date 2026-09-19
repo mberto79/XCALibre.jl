@@ -1,9 +1,9 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m22-communication.md
-updated: 2026-09-20T00:40:00+01:00
+updated: 2026-09-20T01:30:00+01:00
 STATE: BUILDING
-STEP: P1-M22-S2 one width-3 exchange for the momentum components
-HEAD: 9fd8a0cd
+STEP: P1-M22-S3 one all-reduce per equation for residuals
+HEAD: 3e4daaa5
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
 resume: start P1-M22 per `dev/plans/p1-m22-communication.md`; then M23, M24, M26, M15

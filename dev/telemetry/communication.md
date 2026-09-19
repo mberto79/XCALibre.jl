@@ -13,3 +13,10 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 - Counters unchanged (7, 6); halo allocation 2928 B at n=2 (−1088), 5456 B at n=3 (−1088); hashes identical at n=2 and n=4.
 - Gate 10/10 in 204 s; `test_halo`, `test_ghosts`, `test_f32`, `test_perf` green at n=2,3.
 - `test_gpu.jl` n=1,2 on `dev/petscenv_conda_ompi` green (2/2, 251 s).
+
+## S2: one width-3 exchange for the momentum components
+
+- Exchanges per 2D iteration 7 → 6 (3D 8 → 6), all-reduces unchanged; `check_ghosts` on U after the vector solve zero; hashes identical at n=2 and n=4; gate 10/10 in 200 s; halo, ghosts, f32, perf green at n=2,3.
+- `test_perf.jl` vector-solve allocation 47264 → 49104 B at n=2 (two extra kernel launches); budget 98304.
+- n=8 hash not run: language server resident (2.8 GB) and no 10 mm n=8 parts; n=4 stands in, as R8 makes them one bar.
+- `test_gpu.jl` n=1,2 green (2/2, 254 s).

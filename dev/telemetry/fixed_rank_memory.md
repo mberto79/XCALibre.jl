@@ -63,4 +63,5 @@ Script `dev/scripts/pkg_mem.jl one <Name>...` (smaps_rollup delta around `Base.r
 
 - 2 iterations: private at `iterations` 559 → 359 (−36 percent), RSS 820 → 622, GC live 213 → 61, `t_iter_s` 11.46 → 0.04, worker wall 24 → 6 s, hash `dbc3c69ab48b3394` unchanged.
 - 20 iterations: private 566 → 358, `t_iter_s` 10.58 → 0.38, hash `550bb695b7dbab9c` unchanged.
+- Generic subset only (353 statements: no rank-sized kernels, nothing typed on this case's physics or boundary conditions): private 572, `t_iter_s` 11.15, i.e. no gain. The saving lives entirely in the case-typed `SIMPLE` call tree and the sized kernels.
 - Runtime compilation is the cause of the first-run retention. The bound holds only for the exact mesh, rank count and boundary conditions traced; a shippable version needs kernel types that do not carry the launch size, plus a workload covering the supported cases.

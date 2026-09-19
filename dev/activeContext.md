@@ -6,7 +6,7 @@ STEP: P1-M25-S4 - precompile: upper bound measured, shippable route pending user
 HEAD: 6d7ee147
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: user chooses the shippable precompile route (telemetry § S4, D106): size-free kernel launches plus a workload, or a documented user-side precompile recipe; throwaway env dev/petscenv_m25pre and traces in ~/.cache/xcal_mem_probe/trace
+resume: user chooses the precompile route (telemetry § S4, D106-D107): (1) size-free kernel launches plus a PrecompileTools workload over common cases, (2) documented per-case trace-compile recipe, (3) both; throwaway env dev/petscenv_m25pre and traces in ~/.cache/xcal_mem_probe/trace
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M25 was opened by the user and runs before M22 (D100).

@@ -26,7 +26,7 @@ import XCALibre.Solve
 import XCALibre.Solve: solve_equation!, solve_system!, residual, setReference!,
     implicit_relaxation!, make_symmetric!
 using XCALibre.IOFormats
-import XCALibre.IOFormats: initialise_writer, write_results, copy_to_cpu, copy_scalarfield_to_cpu, get_data
+import XCALibre.IOFormats: initialise_writer, attach_flux!, write_results, copy_to_cpu, copy_scalarfield_to_cpu, get_data
 import XCALibre.Mesh: _get_backend
 
 include("Distribute_0_types.jl")

@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m24-io-restart.md
 updated: 2026-09-19T20:30:00+01:00
 STATE: IDLE
-STEP: P1-M24-S1 (next; M23 closed D129)
+STEP: P1-M24-S2 restart (next; S1 landed D130)
 HEAD: cf176c50
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: start P1-M24 per `dev/plans/p1-m24-io-restart.md`; then M26, M15
+resume: P1-M24-S2: rename `attach_flux!` to `attach_state!(writer, mdotf, dt)` and write `uniform/time`; `restart_fields!`/`restart_flux!` hooks in SIMPLE and PISO (before/after initial calcs), SST rebuilds nutf from nut; restart test on the 3D box at n=1,2,4; then S3, M26, M15
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M22 closed (D118), M23 closed (D129), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.

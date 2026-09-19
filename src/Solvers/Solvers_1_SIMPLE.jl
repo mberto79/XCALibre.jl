@@ -139,6 +139,7 @@ function SIMPLE(
     divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
+    attach_flux!(outputWriter, mdotf)
 
     @info "Allocating working memory..."
 

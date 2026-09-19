@@ -36,19 +36,8 @@ function io_case(mesh; iterations, write_interval)
     model, config
 end
 
-# parse an OF nonuniform List<vector> internalField into SVector{3,Float64}[]
-function read_of_vectors(path)
-    txt = read(path, String)
-    m = match(r"internalField\s+nonuniform\s+List<vector>\s*\n\s*(\d+)\s*\n\s*\("s, txt)
-    n = parse(Int, m.captures[1])
-    body = @view txt[m.offset + ncodeunits(m.match):end]
-    v = SVector{3,Float64}[]
-    for mm ∈ eachmatch(r"\(\s*([-0-9.eE+]+)\s+([-0-9.eE+]+)\s+([-0-9.eE+]+)\s*\)", body)
-        push!(v, SVector(parse(Float64, mm[1]), parse(Float64, mm[2]), parse(Float64, mm[3])))
-        length(v) == n && break
-    end
-    v
-end
+# the internalField of a binary OpenFOAM vector field
+read_of_vectors(path) = XCALibre.Distribute._read_foam_lists(path, SVector{3,Float64})[1]
 
 iterations = 40
 
@@ -79,6 +68,8 @@ iterdir = "processor$rank/$iterations"
 @testset "decomposed OF writer (rank $rank)" begin
     @test isfile("$iterdir/U")
     @test isfile("$iterdir/p")
+    # phi covers every local face once: internal, physical patches, processor patches
+    @test sum(length, XCALibre.Distribute._read_foam_lists("$iterdir/phi", Float64)) == length(dm.faces)
 
     # (2) disk round-trips memory
     Ud = read_of_vectors("$iterdir/U")

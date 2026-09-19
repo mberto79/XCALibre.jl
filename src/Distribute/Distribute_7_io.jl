@@ -36,49 +36,50 @@ gather(f::VectorField, dmesh::DistributedMesh; comm=getfield(dmesh, :comm), root
     y=_gather_owned(f.y.values, dmesh, comm, root),
     z=_gather_owned(f.z.values, dmesh, comm, root))
 
-# NEW SECTION: decomposed OpenFOAM writer (processor<rank>/ per rank)
+# NEW SECTION: decomposed OpenFOAM writer (processor<rank>/ per rank, OpenFOAM binary)
 
+# faces are written internal (owned-owned), physical patches, processor patches; `flip` marks a
+# processor face whose stored owner is a ghost, written reversed so its normal leaves the owned cell
 struct PFOAMWriter
-    dir::String        # processor<rank>
-    n_internal::Int    # internal (owned-owned) face count, for reference
+    dir::String                 # processor<rank>
+    order::Vector{Int}          # local face ids in written order
+    flip::BitVector             # per written face
+    n_internal::Int
+    flux::Base.RefValue{Any}    # face flux attached by the solver, written as phi
 end
 
-_foam_header(class, location, object) = """
+_foam_header(class, location, object; binary=true) = """
 FoamFile
 {
     version     2.0;
-    format      ascii;
+    format      $(binary ? "binary" : "ascii");$(binary ? "\n    arch        \"LSB;label=32;scalar=64\";" : "")
     class       $class;
     location    "$location";
     object      $object;
 }
 """
 
-# faces written in OF order: internal (owned-owned), physical patches, processor patches
-function _pface_layout(dmesh, faces_cpu)
-    n_owned = dmesh.partition.n_owned
-    nb = length(dmesh.mesh.boundary_cellsID)
-    proc_set = Set{Int}()
-    for pp ∈ dmesh.procs, f ∈ pp.faces
-        push!(proc_set, Int(f))
-    end
-    internal = [f for f ∈ (nb+1):length(faces_cpu) if !(f in proc_set)]
-    internal, nb, n_owned
+# OpenFOAM's binary list: count, then the raw little-endian values between parentheses
+function _bin_list(io, v::AbstractVector)
+    println(io)
+    println(io, length(v))
+    write(io, '(')
+    write(io, v)
+    write(io, ')')
 end
 
-# proc-face normals must point OUT of the owned cell; flip node order when owner is ghost
-_pface_owner_flip(face, n_owned) = face.ownerCells[1] > n_owned ?
-    (Int(face.ownerCells[2]), true) : (Int(face.ownerCells[1]), false)
+_label(x) = x <= typemax(Int32) ? Int32(x) : error("OpenFOAM binary output uses 32-bit labels; $x does not fit")
 
-function _write_face_nodes(io, face, face_nodes, n2c, flip)
-    nr = face.nodes_range
-    ids = [n2c[face_nodes[j]] for j ∈ nr]
-    flip && reverse!(ids)
-    write(io, "$(length(ids))(")
-    for id ∈ ids
-        write(io, "$(id - 1) ") # OF zero-indexed
+function _pface_order(dmesh, nfaces)
+    n_owned = dmesh.partition.n_owned
+    nb = length(dmesh.mesh.boundary_cellsID)
+    isproc = falses(nfaces)
+    for pp ∈ dmesh.procs, f ∈ pp.faces
+        isproc[f] = true
     end
-    write(io, ")\n")
+    internal = [f for f ∈ nb+1:nfaces if !isproc[f]]
+    procf = reduce(vcat, (Int.(pp.faces) for pp ∈ dmesh.procs); init=Int[])
+    internal, nb, procf
 end
 
 function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
@@ -94,86 +95,52 @@ function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
     faces = get_data(mesh.faces, backend)
     face_nodes = get_data(mesh.face_nodes, backend)
     boundaries = get_data(mesh.boundaries, backend)
+    n_owned = dmesh.partition.n_owned
 
-    internal, nb, n_owned = _pface_layout(dmesh, faces)
+    internal, nb, procf = _pface_order(dmesh, length(faces))
+    order = vcat(internal, 1:nb, procf)
+    flip = BitVector([k > length(internal) + nb && faces[f].ownerCells[1] > n_owned for (k, f) ∈ enumerate(order)])
     ni = length(internal)
-    nfaces_out = ni + nb + sum(length(pp.faces) for pp ∈ dmesh.procs; init=0)
 
     # points: only nodes referenced by faces (ghost-cell far-side nodes stay unwritten)
     used = falses(length(nodes))
     for face ∈ faces, j ∈ face.nodes_range
         used[face_nodes[j]] = true
     end
-    n2c = cumsum(used) # local node id -> compact written id
+    n2c = cumsum(used)
     open(joinpath(polyMeshDir, "points"), "w") do io
-        println(io, _foam_header("vectorField", "constant/polyMesh", "points"))
-        println(io, Int(sum(used)))
-        println(io, "(")
-        for (i, node) ∈ enumerate(nodes)
-            used[i] || continue
-            c = node.coords
-            println(io, @sprintf "(%.17g %.17g %.17g)" c[1] c[2] c[3])
-        end
-        println(io, ")")
+        write(io, _foam_header("vectorField", "constant/polyMesh", "points"))
+        _bin_list(io, [SVector{3,Float64}(n.coords) for (i, n) ∈ enumerate(nodes) if used[i]])
     end
 
+    # faceCompactList: offsets then zero-based point labels
+    offsets, labels = Int32[0], Int32[]
+    for (k, f) ∈ enumerate(order)
+        ids = [_label(n2c[face_nodes[j]] - 1) for j ∈ faces[f].nodes_range]
+        flip[k] && reverse!(ids)
+        append!(labels, ids)
+        push!(offsets, _label(length(labels)))
+    end
     open(joinpath(polyMeshDir, "faces"), "w") do io
-        println(io, _foam_header("faceList", "constant/polyMesh", "faces"))
-        println(io, nfaces_out)
-        println(io, "(")
-        for f ∈ internal
-            _write_face_nodes(io, faces[f], face_nodes, n2c, false)
-        end
-        for f ∈ 1:nb
-            _write_face_nodes(io, faces[f], face_nodes, n2c, false)
-        end
-        for pp ∈ dmesh.procs, f ∈ pp.faces
-            _, flip = _pface_owner_flip(faces[f], n_owned)
-            _write_face_nodes(io, faces[f], face_nodes, n2c, flip)
-        end
-        println(io, ")")
+        write(io, _foam_header("faceCompactList", "constant/polyMesh", "faces"))
+        _bin_list(io, offsets)
+        _bin_list(io, labels)
     end
 
-    note = "nPoints: $(Int(sum(used))) nCells: $n_owned nFaces: $nfaces_out nInternalFaces: $ni"
+    owner = Int32[_label(faces[f].ownerCells[flip[k] ? 2 : 1] - 1) for (k, f) ∈ enumerate(order)]
+    note = "nPoints: $(Int(sum(used))) nCells: $n_owned nFaces: $(length(order)) nInternalFaces: $ni"
     open(joinpath(polyMeshDir, "owner"), "w") do io
-        write(io, """
-        FoamFile
-        {
-            version     2.0;
-            format      ascii;
-            class       labelList;
-            note        "$note";
-            location    "constant/polyMesh";
-            object      owner;
-        }
-        """)
-        println(io, nfaces_out)
-        println(io, "(")
-        for f ∈ internal
-            println(io, Int(faces[f].ownerCells[1]) - 1)
-        end
-        for f ∈ 1:nb
-            println(io, Int(faces[f].ownerCells[1]) - 1)
-        end
-        for pp ∈ dmesh.procs, f ∈ pp.faces
-            owner, _ = _pface_owner_flip(faces[f], n_owned)
-            println(io, owner - 1)
-        end
-        println(io, ")")
+        write(io, replace(_foam_header("labelList", "constant/polyMesh", "owner"),
+            "    class" => "    note        \"$note\";\n    class"))
+        _bin_list(io, owner)
     end
-
     open(joinpath(polyMeshDir, "neighbour"), "w") do io
-        println(io, _foam_header("labelList", "constant/polyMesh", "neighbour"))
-        println(io, ni)
-        println(io, "(")
-        for f ∈ internal
-            println(io, Int(faces[f].ownerCells[2]) - 1)
-        end
-        println(io, ")")
+        write(io, _foam_header("labelList", "constant/polyMesh", "neighbour"))
+        _bin_list(io, Int32[_label(faces[f].ownerCells[2] - 1) for f ∈ internal])
     end
 
     open(joinpath(polyMeshDir, "boundary"), "w") do io
-        println(io, _foam_header("polyBoundaryMesh", "constant/polyMesh", "boundary"))
+        println(io, _foam_header("polyBoundaryMesh", "constant/polyMesh", "boundary"; binary=false))
         println(io, length(boundaries) + length(dmesh.procs))
         println(io, "(")
         for b ∈ boundaries
@@ -209,15 +176,14 @@ function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
 
     # original cell ids, so reconstructPar and distribute(FOAMCase) recover the undecomposed order
     open(joinpath(polyMeshDir, "cellProcAddressing"), "w") do io
-        println(io, _foam_header("labelList", "constant/polyMesh", "cellProcAddressing"))
-        println(io, n_owned)
-        println(io, "(")
-        foreach(c -> println(io, Int(c) - 1), view(dmesh.orig_cells, 1:n_owned))
-        println(io, ")")
+        write(io, _foam_header("labelList", "constant/polyMesh", "cellProcAddressing"))
+        _bin_list(io, Int32[_label(c - 1) for c ∈ view(dmesh.orig_cells, 1:n_owned)])
     end
 
-    PFOAMWriter(dir, ni)
+    PFOAMWriter(dir, order, flip, ni, Ref{Any}(nothing))
 end
+
+attach_flux!(w::PFOAMWriter, mdotf) = (w.flux[] = mdotf; nothing)
 
 # NEW SECTION: writer dispatch (unified: solver bodies call initialise_writer/save_output)
 
@@ -233,6 +199,12 @@ write_results(iteration, time, ::DistributedMesh, ::NoDistributedWriter, args...
 _proc_patch_value(::ScalarField) = "uniform 0"
 _proc_patch_value(::VectorField) = "uniform (0 0 0)"
 
+_host_values(f::ScalarField, backend) = Float64.(copy_scalarfield_to_cpu(f.values, backend))
+function _host_values(f::VectorField, backend)
+    x, y, z = copy_to_cpu(f.x.values, f.y.values, f.z.values, backend)
+    [SVector{3,Float64}(x[i], y[i], z[i]) for i ∈ eachindex(x)]
+end
+
 function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWriter,
         BCs, args...; suffix=nothing) where TI
     timedir = iteration == time ? (@sprintf "%i" iteration) : (@sprintf "%.8f" time)
@@ -244,34 +216,19 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
     boundaries_cpu = get_data(mesh.boundaries, backend)
 
     for (label, field) ∈ args
-        filename = joinpath(timedirpath, label)
         isscalar = field isa ScalarField
         isscalar || field isa VectorField || throw("""
         Input data should be a ScalarField or VectorField e.g. ("U", U)
         """)
-        open(filename, "w") do io
-            write(io, _foam_header(isscalar ? "volScalarField" : "volVectorField",
-                "$timedir", label), "\n")
+        open(joinpath(timedirpath, label), "w") do io
+            write(io, _foam_header(isscalar ? "volScalarField" : "volVectorField", "$timedir", label))
             write(io, IOFormats._FOAM_DIMENSIONS)
-            write(io, "internalField   nonuniform List<$(isscalar ? "scalar" : "vector")>\n")
-            println(io, n_owned)
-            println(io, "(")
-            if isscalar
-                vals = copy_scalarfield_to_cpu(field.values, backend)
-                for i ∈ 1:n_owned
-                    println(io, vals[i])
-                end
-            else
-                x, y, z = copy_to_cpu(field.x.values, field.y.values, field.z.values, backend)
-                for i ∈ 1:n_owned
-                    println(io, "(", x[i], " ", y[i], " ", z[i], ")")
-                end
-            end
-            println(io, ");")
+            write(io, "internalField   nonuniform List<$(isscalar ? "scalar" : "vector")>")
+            _bin_list(io, _host_values(field, backend)[1:n_owned])
+            println(io, ";")
             println(io, "boundaryField")
             println(io, "{")
-            fieldBCs = getproperty(BCs, Symbol(label))
-            for BC ∈ fieldBCs
+            for BC ∈ getproperty(BCs, Symbol(label))
                 println(io, "\t", boundaries_cpu[BC.ID].name)
                 println(io, IOFormats._foam_boundary_entry(BC))
             end
@@ -289,4 +246,55 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
             println(io, "}")
         end
     end
+    w.flux[] === nothing || _write_phi(joinpath(timedirpath, "phi"), timedir, dmesh, w, backend)
+end
+
+# face flux in written face order; a flipped processor face carries the opposite sign
+function _write_phi(path, timedir, dmesh, w, backend)
+    v = Float64.(copy_scalarfield_to_cpu(w.flux[].values, backend))
+    vals = [w.flip[k] ? -v[f] : v[f] for (k, f) ∈ enumerate(w.order)]
+    boundaries = get_data(dmesh.mesh.boundaries, backend)
+    nb = length(dmesh.mesh.boundary_cellsID)
+    rank = dmesh.partition.rank
+    open(path, "w") do io
+        write(io, _foam_header("surfaceScalarField", timedir, "phi"))
+        write(io, IOFormats._FOAM_DIMENSIONS)
+        write(io, "internalField   nonuniform List<scalar>")
+        _bin_list(io, vals[1:w.n_internal])
+        println(io, ";")
+        println(io, "boundaryField")
+        println(io, "{")
+        patch(name, type, r) = (println(io, "\t$name\n\t{\n\t\ttype $type;");
+            write(io, "\t\tvalue nonuniform List<scalar>"); _bin_list(io, vals[r]); println(io, ";\n\t}"))
+        for b ∈ boundaries
+            patch(b.name, "calculated", w.n_internal .+ b.IDs_range)
+        end
+        start = w.n_internal + nb
+        for pp ∈ dmesh.procs
+            patch("procBoundary$(rank)to$(pp.neighbour)", "processor", start+1:start+length(pp.faces))
+            start += length(pp.faces)
+        end
+        println(io, "}")
+    end
+end
+
+# every `nonuniform List<...>` of an OpenFOAM binary file, in file order
+function _read_foam_lists(path, ::Type{T}) where T
+    b = read(path)
+    tag = Vector{UInt8}("nonuniform List<")
+    out = Vector{T}[]
+    i = 1
+    while (r = findnext(tag, b, i)) !== nothing
+        j = findnext(==(UInt8('>')), b, last(r)) + 1
+        while isspace(Char(b[j])); j += 1; end
+        k = j
+        while isdigit(Char(b[k])); k += 1; end
+        n = parse(Int, String(b[j:k-1]))
+        while b[k] != UInt8('('); k += 1; end
+        v = Vector{T}(undef, n)
+        copyto!(reinterpret(UInt8, v), 1, b, k + 1, n * sizeof(T))
+        push!(out, v)
+        i = k + 1 + n * sizeof(T)
+    end
+    out
 end

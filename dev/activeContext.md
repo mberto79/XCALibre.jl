@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m21-owned-row-system.md
 updated: 2026-09-19T14:00:00+01:00
-STATE: BUILDING
-STEP: P1-M21-S5 - GC after setup, repeated-run growth, heap recipe
+STATE: GATING
+STEP: P1-M21 close - exit measurements
 HEAD: 6f37870d
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl plus named files at --ranks=2,3, one process at a time under MIN_MB=2500 memguard.sh
-resume: S5 per the plan: first find why three `run!` calls in one process peak 890 MB above one (PETSc objects are never destroyed in the extension); then `GC.gc(true)` after setup and the heap-hint check
+resume: M21 close: 5 mm n=2 peak RSS with `mem_probe.jl`; per-iteration time before (052ee9b7) vs HEAD with `equal_thermal.sh` at n=2 and n=8 (3 percent band); GPU 5 mm n=1 per-iteration time against 0.0746 s; then docs build, close M21 in `dev/phaseRoadmap.md`, archive the plan
 ## implementer
 - These milestones are for Fable (claude-fable-5-1) to implement in ONE fresh session, in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.

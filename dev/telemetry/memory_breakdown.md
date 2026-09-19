@@ -55,3 +55,13 @@ Operator copies per equation, counting one CSR (55 MB) as one: U 3.9 (Julia A0 a
 ## After P1-M21-S3 (host matrices without the COO map), 4 mm n=2 rank 0
 
 PetscMalloc after the run 290.1 → 205.8 MB; natural peak RSS 1950 → 1793 MB; RSS after PETSc setup 1739 → 1548 MB; residual histories unchanged (`memory_breakdown/s3_4mm_gc*.tab`). The saving is 84 MB of PETSc heap rather than the full 99 MB because `MatCreateMPIAIJWithArrays` keeps its own row bookkeeping; the rest of the peak drop is the COO setup transient.
+
+## Shared-code cures (for the D67 memory PR off `main`)
+
+Figures are per rank at 4 mm n=2 (662k local cells, 3.3M nonzeros per operator), Float64 and Int64 indices; each Julia CSR is 26 MB of values, 26 MB of column indices and 5 MB of row pointers.
+
+- One `rowptr`/`colval` per mesh shared by every equation's matrices: U's A0 and A plus p's A carry three index copies, so sharing saves about 63 MB; a k-omega SST run adds k and omega, about 127 MB.
+- 32-bit `colval` and `rowptr` wherever the local cell count fits: halves the shared indices, about 16 MB more once shared.
+- Connectivity preallocated from the cells' face counts, with no `push!` triplets and no `sparsecsr` round trip: removes the 205 MB setup transient measured while the U equation is built.
+- One host mesh copy per run instead of one `adapt(CPU(), mesh)` per equation: nothing on CPU, where the adapt returns the same mesh; on a GPU run each equation built makes a transient host copy of the local mesh, 366 MB here.
+- `A0` stays: momentum needs a clean copy per component, and it is one matrix of values (26 MB) once the indices are shared.

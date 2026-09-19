@@ -157,8 +157,7 @@ messages.
 - *"Artifact ... was not found"* when loading PETSc after switching MPI: run `Pkg.instantiate()`
   in the environment.
 - *"Precompiled image ... not available with flags"* under `mpiexec`: run `Pkg.precompile()` in a
-  plain session first. Do not pass `--heap-size-hint` to the ranks; it changes the precompilation
-  flags.
+  plain session first.
 - *"MPI is not CUDA-aware"* warning with an MPI you expect to be CUDA-aware: check that its CUDA
   support is enabled at launch (Open MPI: `OMPI_MCA_opal_cuda_support=true`).
 - *"fields live on the GPU but this PETSc build has no cuda support"*: the environment is still
@@ -422,6 +421,20 @@ with Jacobi. On a memory-limited machine this, not time, can set how many ranks 
 use. In return, AMG reduces the pressure residual much further in each outer iteration, which can
 cut the number of outer iterations needed to reach a steady state. As a rule of thumb, use Jacobi
 for small and medium cases and AMG for large ones, especially when the pressure solve dominates.
+
+### Memory per rank
+
+Every rank pays a fixed cost of roughly 0.8 GB for the Julia runtime, the loaded packages and the
+compiled code, plus a cost per cell it holds. For a laminar Float64 case with Jacobi the per-cell
+cost is about 1.8 KB, so a rank holding 660,000 cells peaks near 1.8 GB. Turbulence models, AMG and
+a finer mesh near the wall raise it. Each rank's garbage collector sizes its heap without knowing
+about the other ranks on the node, so set a heap size hint per rank of roughly the node's memory
+divided by the ranks on it, leaving room for PETSc, which allocates outside the Julia heap. Precompile
+in a plain session first, since a rank that must precompile under a different flag fails to load:
+
+```bash
+mpiexecjl -n 8 julia --heap-size-hint=1500M --project my_case.jl
+```
 
 ### Rebuilding vs freezing the hierarchy
 

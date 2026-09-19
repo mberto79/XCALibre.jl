@@ -3,7 +3,9 @@
 const MODE = ARGS[1]
 const FORCE_GC = "gc=1" in ARGS
 const MALLOC = "malloc=1" in ARGS
-const ARGV = filter(a -> !any(startswith.(a, ("gc=", "malloc="))), ARGS)
+# `repeat=<k>` adds k full `run!` calls after the staged run, with a forced collection after each
+const REPEAT = let i = findfirst(startswith("repeat="), ARGS); i === nothing ? 0 : parse(Int, ARGS[i][8:end]) end
+const ARGV = filter(a -> !any(startswith.(a, ("gc=", "malloc=", "repeat="))), ARGS)
 
 # kB fields of /proc/self/status, reported in MB
 function proc_mb(key)
@@ -85,6 +87,11 @@ elseif MODE == "worker"
     stage("petsc")
     t = @elapsed res = SIMPLE(model, turb, ∇p, U_w, p_w, config)
     stage("iterations")
+    for k ∈ 1:REPEAT
+        run!(model, config; petsc_options=opts)
+        GC.gc(true)
+        stage("run!$k")
+    end
 
     # live bytes by struct, meshes excluded so each field counts only its own arrays
     ex = Union{typeof(dm), typeof(getfield(dm, :mesh))}

@@ -151,8 +151,22 @@ function _gpu_comm!(petsclib, opts, comm)
     nothing
 end
 
-PETScSolver(eqn, dmesh::DistributedMesh, setup; kwargs...) =
-    _with_julia_signals(() -> _petsc_solver(eqn, dmesh, setup; kwargs...))
+# one live solver per equation label per process: a new wrap of a label ends the previous run's
+# solver, and every rank wraps in the same order, so the collective destroys match
+const _LIVE = Dict{String,Any}()
+
+function PETScSolver(eqn, dmesh::DistributedMesh, setup; label="", kwargs...)
+    isempty(label) || _release!(pop!(_LIVE, label, nothing))
+    s = _with_julia_signals(() -> _petsc_solver(eqn, dmesh, setup; label, kwargs...))
+    isempty(label) || (_LIVE[label] = s)
+    s
+end
+
+_release!(::Nothing) = nothing
+function _release!(s)
+    isnothing(s.ksp.opts) || PETSc.destroy(s.ksp.opts)
+    foreach(PETSc.destroy, (s.ksp, s.A, s.x, s.b))
+end
 
 function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         comm=getfield(dmesh, :comm), petsc_options="", label="")

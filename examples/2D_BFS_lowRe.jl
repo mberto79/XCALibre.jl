@@ -125,15 +125,3 @@ initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 residuals = run!(model, config) # 36.90k allocs
-
-# # Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut, config)
-# Fp = pressure_force(:wall, model.momentum.p, 1.25)
-# Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
-# ave = boundary_average(:inlet, model.momentum.U, config)
-# ave = boundary_average(:outlet, model.momentum.U, config)
-
-# using Plots
-# plot(; ylims=(1e-8,1), xlims=(1,500))
-# plot!(1:length(residuals.Ux), residuals.Ux, yscale=:log10, label="Ux")
-# plot!(1:length(residuals.Uy), residuals.Uy, yscale=:log10, label="Uy")
-# plot!(1:length(residuals.p), residuals.p, yscale=:log10, label="p")

@@ -1,6 +1,5 @@
-# Scaling gate: fixed-work distributed Laplace solve on a larger 2D mesh across rank counts.
-# Driver mode (default): spawns itself under mpiexec for each rank count (ARGS, default 1 2 4 8),
-# prints a speedup table and asserts speedup at the largest count (XCAL_MIN_SPEEDUP, default 1.2).
+# Scaling gate: fixed-work distributed Laplace solve across rank counts (ARGS, default 1 2 4 8);
+# the driver spawns itself under mpiexec and asserts speedup at the largest count (XCAL_MIN_SPEEDUP).
 # Test at top level: macros in the else branch are lowered before a conditional `using` runs
 using MPI, Test
 

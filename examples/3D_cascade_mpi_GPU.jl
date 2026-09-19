@@ -1,14 +1,6 @@
-# Distributed (MPI) + GPU version of 3D_cascade_periodic.jl, exercising the decomposed
-# OpenFOAM writer (processor<rank>/ dirs; open XCALibre.foam in ParaView).
-# Periodic :top/:bottom: distribute(periodic_patches=...) colocates matched cell pairs
-# per rank, then construct_periodic on the DistributedMesh works exactly as in serial.
-# Needs XCALibre, PETSc, MPI and CUDA, plus a CUDA-enabled MPI and PETSc build: PETSc_jll
-# ships no CUDA, and a GPU run on a host-only PETSc stops with an error.
-#
-# Install the launcher once:
-#   julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
-# then run over two ranks with:
-#   mpiexecjl -n 2 julia --project=<env> examples/3D_cascade_mpi_GPU.jl
+# Distributed (MPI) + GPU 3D_cascade_periodic.jl; needs CUDA-enabled MPI and PETSc builds (PETSc_jll has no CUDA).
+# Install the launcher once: julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
+# Run: mpiexecjl -n 2 julia --project=<env> examples/3D_cascade_mpi_GPU.jl; open XCALibre.foam in ParaView
 using XCALibre, PETSc, MPI, CUDA
 
 # every rank makes this identical call: rank 0 reads and partitions, the others receive

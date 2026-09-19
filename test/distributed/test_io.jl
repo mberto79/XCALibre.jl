@@ -1,9 +1,6 @@
-# Phase 7 I/O gate (local-only, needs dev/local_stack.sh): decomposed OpenFOAM writer.
-#   source dev/local_stack.sh && mpiexec -n 2 julia --project test/distributed/test_io.jl
-# (1) prun! with output=OpenFOAM()+write_interval writes processor<rank>/<iter>/{U,p};
-# (2) on-disk internalField round-trips the in-memory owned field (disk==memory);
-# (3) gather(field,dm) reconstructs the serial solution in original order (memory==serial).
-# (1)&(2)&(3) ⇒ the decomposed case reconstructs to the serial field.
+# Decomposed OpenFOAM I/O: written fields round-trip the in-memory owned field, gather reconstructs
+# the serial solution, the written case reads back through FOAMCase and solves to serial, and a
+# migrated FOAMCase part solves to serial.
 using XCALibre, PETSc, MPI, Test, StaticArrays, LinearAlgebra
 
 MPI.Init()

@@ -1,12 +1,6 @@
-# Distributed (MPI) backward-facing step. Needs XCALibre, PETSc and MPI in the environment;
-# the binaries shipped by PETSc_jll and MPI.jl are enough for this Float64 CPU case.
-#
-# Install the launcher once:
-#   julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
-# then run over four ranks with:
-#   mpiexecjl -n 4 julia --project=<env> examples/3D_BFS_mpi.jl [mesh.unv]
-#
-# Threads per rank use Julia's own -t; one thread per rank is the right default here.
+# Distributed (MPI) backward-facing step; needs XCALibre, PETSc and MPI (PETSc_jll/MPI.jl binaries suffice).
+# Install the launcher once: julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
+# Run: mpiexecjl -n 4 julia --project=<env> examples/3D_BFS_mpi.jl [mesh.unv]
 using XCALibre, PETSc, MPI
 
 mesh_file = isempty(ARGS) ?

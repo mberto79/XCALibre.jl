@@ -10,15 +10,6 @@ grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "bfs_unv_tet_10mm.unv"
 mesh_file = joinpath(grids_dir, grid)
 
-# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_5mm.unv"
-# mesh_file = "/home/humberto/foamCases/jCFD_benchmarks/3D_BFS/bfs_unv_tet_4mm.unv"
-# mesh_file = "bfs_unv_tet_5mm.unv"
-
-# mesh_file = "/Users/hmedi/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_5mm.unv"
-# mesh_file = "/home/humberto/Desktop/BFS_GRIDS/bfs_unv_tet_4mm.unv"
-# @time mesh = UNV3D_mesh(mesh_file, scale=0.001) # 31 sec
-# @time mesh = UNV3D_mesh(mesh_file, scale=0.001, float_type=Float32)
 grids_dir = "/home/humberto/Desktop/BFS_GRIDS"
 mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_4mm.unv"), scale=0.001)
 
@@ -119,18 +110,3 @@ initialise!(model.momentum.p, 0.0)
 
 # @time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
 @time residuals = run!(model, config, output=OpenFOAM(), ncorrectors=0)
-
-# model_cpu = adapt(CPU(), model)
-
-# model_gpu = adapt(CUDABackend(), model_cpu)
-
-
-# mesh_cpu = adapt(CPU(), mesh_dev)
-# mesh_gpu = adapt(CUDABackend(), mesh_cpu)
-# using Plots
-# iterations = runtime.iterations
-# plot(yscale=:log10, ylims=(1e-7,1e-1))
-# plot!(1:iterations, residuals.Ux, label="Ux")
-# plot!(1:iterations, residuals.Uy, label="Uy")
-# plot!(1:iterations, residuals.Uz, label="Uz")
-# plot!(1:iterations, residuals.p, label="p")

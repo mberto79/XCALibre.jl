@@ -62,9 +62,7 @@ BCs= assign(
 
 divergence = Linear # Upwind Linear LUST
 schemes = (
-    # # transient schemes
-    # U = Schemes(time=Euler, divergence=divergence, gradient=Gauss),
-    # p = Schemes(gradient=Gauss)
+    # transient: U = Schemes(time=Euler, divergence=divergence, gradient=Gauss)
 
     # Steady schemes
     U = Schemes(divergence=divergence, gradient=Gauss),
@@ -77,9 +75,7 @@ solvers = (
         solver      = Bicgstab(), #Cg(), # Bicgstab(), Gmres(), #Cg()
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        # # transient setup
-        # atol = 1e-6,
-        # relax=1
+        # transient setup: atol = 1e-6, relax = 1
 
         # steady setup
         relax       = 0.7,
@@ -89,9 +85,7 @@ solvers = (
         solver      = Cg(), #Gmres(), #Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-7,
-        # # transient setup
-        # atol = 1e-6,
-        # relax=1
+        # transient setup: atol = 1e-6, relax = 1
 
         # steady setup
         relax       = 0.3,

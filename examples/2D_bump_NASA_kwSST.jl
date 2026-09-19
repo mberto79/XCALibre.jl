@@ -170,34 +170,3 @@ initialise!(model.turbulence.omega, ω_inlet) # ω_inlet
 initialise!(model.turbulence.nut, k_inlet/ω_inlet) # k_inlet/ω_inlet
 
 residuals = run!(model, config, output=OpenFOAM()) # 36.90k allocs
-
-# Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
-# Fp = pressure_force(:wall, model.momentum.p, 1.25)
-# Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
-
-
-# plot(; xlims=(0,494))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-# using Profile, PProf
-
-# GC.gc()
-
-# initialise!(model.momentum.U, velocity)
-# initialise!(model.momentum.p, 0.0)
-# initialise!(model.turbulence.k, k_inlet)
-# initialise!(model.turbulence.omega, ω_inlet)
-# initialise!(model.turbulence.nut, νt_inlet)
-
-# residuals = run!(model, config)
-
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=0.1 begin 
-# residuals = run!(model, config)
-# end
-
-# PProf.Allocs.pprof()

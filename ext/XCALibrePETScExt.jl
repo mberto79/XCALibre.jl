@@ -40,9 +40,8 @@ _pc_freeze(p::Union{BoomerAMG,GAMG}) = p.freeze
 
 # NEW SECTION: signal dispositions
 
-# PETSc's lazy CUDA device initialisation probes GPU-aware MPI under a pushed signal handler and its
-# pop, on the empty stack PETSc.jl leaves, resets eleven signals to SIG_DFL: Julia's safepoint
-# faults then kill the process silently (D85). The dispositions in force before are put back.
+# PETSc's CUDA device init resets eleven signals to SIG_DFL, so Julia's safepoint faults would kill
+# the process silently; the dispositions in force before are put back (D85)
 const _JULIA_SIGNALS = Cint.((1, 3, 4, 5, 7, 8, 11, 13, 15, 23, 31)) # HUP QUIT ILL TRAP BUS FPE SEGV PIPE TERM URG SYS
 const _SIGACTION_BYTES = 152
 

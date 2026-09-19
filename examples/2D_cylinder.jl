@@ -2,8 +2,7 @@ using XCALibre
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
-# using ThreadedSparseCSR 
-# ThreadedSparseCSR.multithread_matmul(BaseThreads())
+# alternative: using ThreadedSparseCSR; ThreadedSparseCSR.multithread_matmul(BaseThreads())
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_5mm.unv"
@@ -87,9 +86,3 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config, ncorrectors=0)
-
-# xrange = 1:runtime.iterations
-# plot(; xlims=(0,runtime.iterations), ylims=(1e-7,0.2))
-# plot!(xrange, residuals.Ux, yscale=:log10, label="Ux")
-# plot!(xrange, residuals.Uy, yscale=:log10, label="Uy")
-# plot!(xrange, residuals.p, yscale=:log10, label="p")

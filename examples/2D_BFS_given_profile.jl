@@ -103,7 +103,3 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config) # 9.39k allocs in 184 iterations
 
-# plot(; xlims=(0,1000))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p")

@@ -1,8 +1,6 @@
-# Periodic gate: quad40 as a periodic Couette channel (moving top lid, bottom wall,
-# periodic inlet↔outlet), distributed vs serial. Cross-partition periodics via COLOCATION:
-# distribute(periodic_patches=...) contracts matched owner-cell pairs in the partition
-# graph, so periodic coupling stays rank-local and construct_periodic on the
-# DistributedMesh works per rank exactly as in serial.
+# Periodic gate: quad40 as a periodic Couette channel (moving lid, bottom wall, periodic inlet-outlet),
+# distributed vs serial; matched periodic cells are colocated on one rank, so construct_periodic
+# works per rank exactly as in serial.
 using XCALibre, PETSc, MPI, Test
 
 MPI.Init()

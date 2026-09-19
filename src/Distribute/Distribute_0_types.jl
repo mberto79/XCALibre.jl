@@ -80,10 +80,9 @@ Base.propertynames(dm::DistributedMesh) =
 Adapt.@adapt_structure Partition
 Adapt.@adapt_structure ProcessorPatch
 
-# metadata stays on host: kernels never read it and HaloExchange/PETSc make their own device
-# copies; only the wrapped mesh moves, so getproperty forwarding keeps working. A fresh empty
-# HaloCache is used so the device copy rebuilds its halos on-device (on first sync!, via the
-# GPU config backend); the host cache is not shared with the device mesh.
+# metadata stays on host (kernels never read it; HaloExchange and PETSc make their own device copies);
+# only the wrapped mesh moves, and the device copy gets an empty HaloCache so it builds its halos on
+# device at first sync!
 Adapt.adapt_structure(to, dm::DistributedMesh) = DistributedMesh(
     Adapt.adapt(to, getfield(dm, :mesh)), getfield(dm, :partition),
     getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), HaloCache(),

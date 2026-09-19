@@ -1,18 +1,8 @@
 using XCALibre
-# using CUDA # Run this if using NVIDIA GPU
-# using AMDGPU # Run this if using AMD GPU
+# using CUDA # or AMDGPU, to run on GPU
 
-# Mach 1.2 flow over a cylinder using the pressure-based transient compressible
-# solver (CPISO). A detached bow shock forms ahead of the cylinder.
-#
-# Notes for pressure-based shock capturing:
-#  - `p` MUST use `divergence = Upwind`. The compressible pressure equation carries a
-#    pressure-convection (transonic-correction) term; central differencing (`Linear`,
-#    the default) oscillates and diverges at shocks. Upwind is essential here.
-#  - Solver `limit` clamps on p and he keep the solution bounded through the strong
-#    startup transient (standard practice for pressure-based compressible solvers).
-#  - This is the pressure-based route; for strongly supersonic flow the density-based
-#    `SupersonicFlow`/Godunov solver (see 2D_cylinder_supersonic.jl) is more robust.
+# Mach 1.2 cylinder with pressure-based CPISO; `p` needs divergence=Upwind (Linear oscillates at shocks).
+# Solver `limit` clamps on p and he bound the startup transient; for strongly supersonic flow see 2D_cylinder_supersonic.jl.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh_file = joinpath(grids_dir, "cylinder_d10mm_25mm.unv")

@@ -29,3 +29,4 @@ Case as S2 decomposed `simple (2 2 2)` into 8, read with `FOAMCase`, repartition
 - ParMETIS: edge-cut 2089 (+2.1% vs serial Metis), cells 8150-8942 (max/min 1.097, max/avg 1.048), 4.6 s including compilation; fields 2.2e-9, ghosts 0.
 - PT-Scotch: edge-cut 1970 (-3.7%), cells 8450-8607 (max/min 1.019), 4.8 s; fields 2.2e-9, ghosts 0.
 - First ParMETIS run gave fields off by 0.8 with ghosts 0: interface faces whose two cells both landed on one rank were kept twice, since a `FOAMCase` part orients each copy out of its own cell. Fixed by taking such a face from the lower-id cell's record only; `test_io.jl` now migrates a `FOAMCase` part.
+- `test_repartition.jl` success branch (PT-Scotch on the 2D BFS, balance and cell total) green at n=2,3 in `dev/petscenv_conda_ompi`; stock env takes the build-hint branch.

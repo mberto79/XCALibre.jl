@@ -1,9 +1,9 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m24-io-restart.md
-updated: 2026-09-19T12:00:00+01:00
+updated: 2026-09-19T20:30:00+01:00
 STATE: IDLE
 STEP: P1-M24-S1 (next; M23 closed D129)
-HEAD: 09cb77a4
+HEAD: cf176c50
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
 resume: start P1-M24 per `dev/plans/p1-m24-io-restart.md`; then M26, M15

@@ -427,7 +427,7 @@ function _parallel_partition(dm::DistributedMesh, method, petsc_options)
         push!(rowptr, length(cols))
     end
     N, nnz = MPI.Allreduce([n, length(cols)], +, comm)
-    petsclib = _petsclib(first(PETSc.petsclibs).PetscScalar, nnz)
+    petsclib = _petsclib(_get_float(dm), nnz)
     PETSc.initialize(petsclib; options=String.(split(petsc_options)))
     _petsc_has_pkg(petsclib, string(method)) || error("repartition: this PETSc build has no $method; " *
         "use a PETSc configured with it (conda-forge's petsc has parmetis and ptscotch)")

@@ -56,3 +56,11 @@ Script `dev/scripts/pkg_mem.jl one <Name>...` (smaps_rollup delta around `Base.r
 - gcmax 330: 528 / 528, 1.25 s. gcmax 250: 479 / 459, 1.30 s; HWM 826 → 760.
 - At 2 iterations gcmax 250 gave 425 against 564, but the startup flag gave 390: a target set after `using` cannot reclaim the pool pages already dirtied by loading.
 - The retention is a first-run transient that the stock GC drains; at steady state the runtime target buys nothing measurable and costs 11-17 percent per `run!`. Julia 1.13 also reads `JULIA_HEAP_SIZE_HINT` from the environment, the launch-time equivalent of the flag.
+
+## S4: precompile upper bound (case-specific statements)
+
+`--trace-compile` on each rank of a 10 mm n=4 worker: 577 signatures and 18.2 s of compilation per rank (KernelAbstractions 6.7 s over 113, XCALibre 6.0 s over 70 with `SIMPLE` alone 4.4 s, Base 2.2, Core 2.1, MPI 0.3). Deduplicated over ranks and without `Main.`: 937 statements. 532 carry a baked kernel size: 256 are a rank's local cell or boundary-face count, which differs per rank and mesh, and 276 are `StaticSize{(1,)}`; 52 are typed on this case's physics or boundary conditions. They were evaluated at precompile time in a throwaway package loaded before setup (`mem_probe.jl pre=1`, env `dev/petscenv_m25pre`, not committed): 937 compiled, 31 MB image, package precompile 14 s. Raw: `dev/telemetry/memory_breakdown/m25s4_*.txt`.
+
+- 2 iterations: private at `iterations` 559 → 359 (−36 percent), RSS 820 → 622, GC live 213 → 61, `t_iter_s` 11.46 → 0.04, worker wall 24 → 6 s, hash `dbc3c69ab48b3394` unchanged.
+- 20 iterations: private 566 → 358, `t_iter_s` 10.58 → 0.38, hash `550bb695b7dbab9c` unchanged.
+- Runtime compilation is the cause of the first-run retention. The bound holds only for the exact mesh, rank count and boundary conditions traced; a shippable version needs kernel types that do not carry the launch size, plus a workload covering the supported cases.

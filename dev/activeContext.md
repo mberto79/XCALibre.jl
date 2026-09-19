@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m25-fixed-rank-memory.md
 updated: 2026-09-19T22:00:00+01:00
-STATE: IDLE
-STEP: P1-M25-S4 - precompile statements for the distributed path
+STATE: BLOCKED
+STEP: P1-M25-S4 - precompile: upper bound measured, shippable route pending user choice
 HEAD: 6d7ee147
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: build P1-M25-S4 per plan (trace-compile harvest on 10 mm n=4, drop Main signatures); then S5, M22, M23, M24, M15
+resume: user chooses the shippable precompile route (telemetry § S4, D106): size-free kernel launches plus a workload, or a documented user-side precompile recipe; throwaway env dev/petscenv_m25pre and traces in ~/.cache/xcal_mem_probe/trace
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M25 was opened by the user and runs before M22 (D100).

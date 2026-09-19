@@ -26,6 +26,7 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `restart` resume an incompressible run on a distributed mesh from results it wrote with `output=OpenFOAM()`: the iteration (steady) or time (transient) of a written time directory, or that directory's name. The resumed run continues from that point up to `iterations` and retraces the uninterrupted run (default = `nothing`)
 
 # Output
 
@@ -138,7 +139,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options=""
+    petsc_options="", restart=nothing
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} =
 begin
     residuals=nothing
@@ -148,7 +149,8 @@ begin
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options
+        petsc_options=petsc_options,
+        restart=restart
     )
 
     return residuals
@@ -245,7 +247,7 @@ end
 run!(
     model::Physics{T,F,S,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
-    petsc_options=""
+    petsc_options="", restart=nothing
     ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} =
 begin
     residuals = piso!(
@@ -254,7 +256,8 @@ begin
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options
+        petsc_options=petsc_options,
+        restart=restart
     )
     return residuals
 end

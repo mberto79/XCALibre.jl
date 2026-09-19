@@ -25,7 +25,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 function piso!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
-    petsc_options="")
+    petsc_options="", restart=nothing)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config;
@@ -33,7 +33,8 @@ function piso!(
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options
+        petsc_options=petsc_options,
+        restart=restart
         )
 
     return residuals
@@ -41,7 +42,7 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, restart=nothing
     )
     
     # Extract model variables and configuration
@@ -67,7 +68,7 @@ function PISO(
     divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
-    attach_flux!(outputWriter, mdotf)
+    attach_state!(outputWriter, mdotf, config.runtime.dt)
 
     @info "Allocating working memory..."
 
@@ -100,10 +101,13 @@ function PISO(
 
     # Initial calculations
     time = zero(TF) # assuming time=0
+    start, restart_time = restart_fields!(mesh, model, restart, config)
+    restart_time === nothing || (time = TF(restart_time))
     sync!(U, mesh, config); sync!(p, mesh, config) # prime ghosts (no-op serial)
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    restart_flux!(mesh, mdotf, restart, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -116,7 +120,7 @@ function PISO(
     progress = distributed ? nothing : Progress(iterations; dt=1.0, showspeed=true)
 
 
-    for iteration ∈ 1:iterations
+    for iteration ∈ start+1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 

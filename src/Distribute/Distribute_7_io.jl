@@ -46,6 +46,7 @@ struct PFOAMWriter
     flip::BitVector             # per written face
     n_internal::Int
     flux::Base.RefValue{Any}    # face flux attached by the solver, written as phi
+    dt::Base.RefValue{Any}      # time-step array attached by the solver, written to uniform/time
 end
 
 _foam_header(class, location, object; binary=true) = """
@@ -82,6 +83,14 @@ function _pface_order(dmesh, nfaces)
     internal, nb, procf
 end
 
+function _written_faces(dmesh, faces)
+    internal, nb, procf = _pface_order(dmesh, length(faces))
+    n_owned = dmesh.partition.n_owned
+    order = vcat(internal, 1:nb, procf)
+    flip = BitVector([k > length(internal) + nb && faces[f].ownerCells[1] > n_owned for (k, f) ∈ enumerate(order)])
+    order, flip, length(internal), nb
+end
+
 function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
     mesh = dmesh.mesh
     mesh isa Mesh3 || error("The OpenFOAM format can only be used for 3D simulations. Use `output=VTK()` instead.")
@@ -97,10 +106,8 @@ function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
     boundaries = get_data(mesh.boundaries, backend)
     n_owned = dmesh.partition.n_owned
 
-    internal, nb, procf = _pface_order(dmesh, length(faces))
-    order = vcat(internal, 1:nb, procf)
-    flip = BitVector([k > length(internal) + nb && faces[f].ownerCells[1] > n_owned for (k, f) ∈ enumerate(order)])
-    ni = length(internal)
+    order, flip, ni, nb = _written_faces(dmesh, faces)
+    internal = view(order, 1:ni)
 
     # points: only nodes referenced by faces (ghost-cell far-side nodes stay unwritten)
     used = falses(length(nodes))
@@ -180,10 +187,10 @@ function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
         _bin_list(io, Int32[_label(c - 1) for c ∈ view(dmesh.orig_cells, 1:n_owned)])
     end
 
-    PFOAMWriter(dir, order, flip, ni, Ref{Any}(nothing))
+    PFOAMWriter(dir, order, flip, ni, Ref{Any}(nothing), Ref{Any}(nothing))
 end
 
-attach_flux!(w::PFOAMWriter, mdotf) = (w.flux[] = mdotf; nothing)
+attach_state!(w::PFOAMWriter, mdotf, dt) = (w.flux[] = mdotf; w.dt[] = dt; nothing)
 
 # NEW SECTION: writer dispatch (unified: solver bodies call initialise_writer/save_output)
 
@@ -247,6 +254,18 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
         end
     end
     w.flux[] === nothing || _write_phi(joinpath(timedirpath, "phi"), timedir, dmesh, w, backend)
+    w.dt[] === nothing || _write_uniform_time(timedirpath, timedir, iteration, time, Array(w.dt[])[1])
+end
+
+# the loop position a restart resumes from, in OpenFOAM's own uniform/time dictionary
+function _write_uniform_time(timedirpath, timedir, iteration, time, dt)
+    open(joinpath(mkpath(joinpath(timedirpath, "uniform")), "time"), "w") do io
+        write(io, _foam_header("dictionary", "$timedir/uniform", "time"; binary=false))
+        println(io, @sprintf("value           %.17g;", time))
+        println(io, "name            \"$timedir\";")
+        println(io, "index           $iteration;")
+        println(io, @sprintf("deltaT          %.17g;", dt))
+    end
 end
 
 # face flux in written face order; a flipped processor face carries the opposite sign
@@ -297,4 +316,68 @@ function _read_foam_lists(path, ::Type{T}) where T
         i = k + 1 + n * sizeof(T)
     end
     out
+end
+
+# NEW SECTION: restart from written results
+
+function _restart_dir(dm::DistributedMesh, restart)
+    rankdir = "processor$(dm.partition.rank)"
+    name = restart isa AbstractString ? restart : begin
+        ds = isdir(rankdir) ? readdir(rankdir) : String[]
+        i = findfirst(d -> tryparse(Float64, d) == Float64(restart), ds)
+        i === nothing ? "" : ds[i]
+    end
+    dir = joinpath(rankdir, name)
+    found = !isempty(name) && isfile(joinpath(dir, "uniform", "time"))
+    MPI.Allreduce(found, &, getfield(dm, :comm)) || error("restart: no written time $restart with " *
+        "uniform/time under processor<rank>/ in $(pwd()) on every rank; results must come from a run with output=OpenFOAM()")
+    dir
+end
+
+function _read_uniform_time(path)
+    txt = read(path, String)
+    get(key) = parse(Float64, match(Regex("\\b$key\\s+([^;\\s]+);"), txt)[1])
+    (index=Int(get("index")), value=get("value"), deltaT=get("deltaT"))
+end
+
+# cell fields a restart restores: momentum, then every cell field of the turbulence model
+_restart_targets(model) = vcat(["U" => model.momentum.U, "p" => model.momentum.p],
+    [string(s) => getproperty(model.turbulence, s) for s ∈ propertynames(model.turbulence)
+        if getproperty(model.turbulence, s) isa Union{ScalarField,VectorField}])
+
+function Solvers.restart_fields!(dm::DistributedMesh, model, restart::Union{Real,AbstractString}, config)
+    dir = _restart_dir(dm, restart)
+    t = _read_uniform_time(joinpath(dir, "uniform", "time"))
+    n = dm.partition.n_owned
+    for (name, f) ∈ _restart_targets(model)
+        path = joinpath(dir, name)
+        isfile(path) || (name ∈ ("U", "p") ? error("restart: $path is missing") : continue)
+        v = _read_foam_lists(path, f isa ScalarField ? Float64 : SVector{3,Float64})[1]
+        length(v) == n || error("restart: $path holds $(length(v)) cells, this rank owns $n")
+        if f isa ScalarField
+            copyto!(view(f.values, 1:n), convert(Vector{eltype(f.values)}, v))
+        else
+            for (i, c) ∈ enumerate((f.x, f.y, f.z))
+                copyto!(view(c.values, 1:n), eltype(c.values)[x[i] for x ∈ v])
+            end
+        end
+        sync!(f, dm, config)
+    end
+    copyto!(config.runtime.dt, fill(eltype(config.runtime.dt)(t.deltaT), 1))
+    restart_turbulence!(model.turbulence, model, config, t.value)
+    t.index, t.value
+end
+
+function Solvers.restart_flux!(dm::DistributedMesh, mdotf, restart::Union{Real,AbstractString}, config)
+    dir = _restart_dir(dm, restart)
+    vals = reduce(vcat, _read_foam_lists(joinpath(dir, "phi"), Float64))
+    faces = get_data(dm.mesh.faces, _get_backend(dm.mesh))
+    order, flip, _, _ = _written_faces(dm, faces)
+    length(vals) == length(order) || error("restart: $(joinpath(dir, "phi")) holds $(length(vals)) faces, this rank has $(length(order))")
+    host = zeros(eltype(mdotf.values), length(faces))
+    for (k, f) ∈ enumerate(order)
+        host[f] = flip[k] ? -vals[k] : vals[k]
+    end
+    copyto!(mdotf.values, host)
+    nothing
 end

@@ -1,3 +1,4 @@
+export restart_fields!, restart_flux!
 export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
 ## UPDATE EFFECTIVE VISCOSITY
@@ -358,3 +359,13 @@ function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, 
 
     runtime.dt .= runtime.dt .* new_dt_factor
 end
+
+# NEW SECTION: restart hooks
+
+# cell state and loop position before the initial calculations, face flux after them; the
+# distributed module implements both for results written with output=OpenFOAM()
+restart_fields!(mesh, model, ::Nothing, config) = (0, nothing)
+restart_fields!(mesh, model, restart, config) =
+    error("restart is supported on a distributed mesh whose results were written with output=OpenFOAM()")
+restart_flux!(mesh, mdotf, ::Nothing, config) = nothing
+restart_flux!(mesh, mdotf, restart, config) = restart_fields!(mesh, nothing, restart, config)

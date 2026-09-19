@@ -28,7 +28,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options=""
+    petsc_options="", restart=nothing
     )
 
     residuals = setup_incompressible_solvers(
@@ -37,7 +37,8 @@ function simple!(
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops,
-        petsc_options=petsc_options
+        petsc_options=petsc_options,
+        restart=restart
         )
 
     return residuals
@@ -47,7 +48,7 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
-    petsc_options=""
+    petsc_options="", restart=nothing
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -104,14 +105,15 @@ function setup_incompressible_solvers(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops)
+        inner_loops=inner_loops,
+        restart=restart)
 
     return residuals
 end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, restart=nothing
     )
     
     # Extract model variables and configuration
@@ -139,7 +141,7 @@ function SIMPLE(
     divHv = get_source(p_eqn, 1)
 
     outputWriter = initialise_writer(output, model.domain)
-    attach_flux!(outputWriter, mdotf)
+    attach_state!(outputWriter, mdotf, config.runtime.dt)
 
     @info "Allocating working memory..."
 
@@ -166,10 +168,12 @@ function SIMPLE(
 
     # Initial calculations
     time = zero(TF) # assuming time=0
+    start, _ = restart_fields!(mesh, model, restart, config)
     sync!(U, mesh, config); sync!(p, mesh, config) # prime ghosts (no-op serial)
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    restart_flux!(mesh, mdotf, restart, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -181,7 +185,7 @@ function SIMPLE(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    for iteration ∈ 1:iterations
+    for iteration ∈ start+1:iterations
         time = iteration
 
         rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)

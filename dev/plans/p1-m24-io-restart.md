@@ -17,7 +17,7 @@ algorithm {SIMPLE laminar, PISO laminar, SIMPLE SST} x ranks {1, 2, 4} x format 
 ## Steps
 
 - [x] **P1-M24-S1** DELIVERED (D130; ParaView substituted by foamToVTK, not installed): `format binary` in the decomposed writer for points, faces, owner, neighbour and every field, with `phi` (`mdotf`) written as a `surfaceScalarField` over internal then boundary faces - mechanism: OpenFOAM's own binary layout, which ParaView and `reconstructPar` read - cost: none - verdict: ParaView opens the case; `reconstructPar` completes; write time at 4 mm n=2 recorded against ASCII.
-- [ ] **P1-M24-S2** `read_fields!(model, dir, time; comm)` reads each rank's `processor<rank>/<time>/` internal fields into the owned prefix, restores `mdotf` from `phi`, then syncs ghosts; `run!` gains `restart=<time>` - mechanism: the written state is the loop state - cost: none per iteration - verdict: SIMPLE laminar BFS resumed at 50 equals straight 100 to 1e-10 on the p residual at n=1,2,4; PISO the same with `dt` restored; SST the same with k, omega, nut, y restored.
+- [x] **P1-M24-S2** DELIVERED (D131; test mesh is the 3D box, since the writer is 3D-only): `read_fields!(model, dir, time; comm)` reads each rank's `processor<rank>/<time>/` internal fields into the owned prefix, restores `mdotf` from `phi`, then syncs ghosts; `run!` gains `restart=<time>` - mechanism: the written state is the loop state - cost: none per iteration - verdict: SIMPLE laminar BFS resumed at 50 equals straight 100 to 1e-10 on the p residual at n=1,2,4; PISO the same with `dt` restored; SST the same with k, omega, nut, y restored.
 - [ ] **P1-M24-S3** the guide documents checkpointing and restart, and `write_interval` semantics for it - mechanism: documentation - verdict: docs build green.
 
 ## Exit criterion
@@ -26,4 +26,4 @@ Restart test green for the three algorithms at n=1,2,4; write time recorded in `
 
 ## Open questions
 
-- Whether `y` (wall distance) is recomputed or read on restart; read is exact, recompute costs one Laplace solve. Read.
+- SETTLED (D131): `y` is written by the SST output and read back; recomputation at setup gives the same values anyway.

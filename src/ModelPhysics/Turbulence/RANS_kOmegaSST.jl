@@ -330,6 +330,13 @@ function turbulence!(
     return nothing
 end
 
+function restart_turbulence!(turbulence::KOmegaSST, model, config, time)
+    (; nut, nutf) = turbulence
+    interpolate!(nutf, nut, config)
+    correct_boundaries!(nutf, nut, config.boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, config.boundaries.nut, model, config)
+end
+
 # Specialise VTK writer
 function save_output(model::Physics{T,F,SO,M,Tu,E,D,BI}, outputWriter, iteration, time, config
     ) where {T,F,SO,M,Tu<:KOmegaSST,E,D,BI}

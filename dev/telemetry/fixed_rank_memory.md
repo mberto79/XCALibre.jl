@@ -72,3 +72,10 @@ The three steps of "Precompiling a production case" in the distributed guide, ru
 
 - Without / with the package: private at `iterations` 556 → 359 (−35 percent, bar 389), RSS 817 → 621, `t_iter_s` 12.09 → 0.04, worker wall 22 → 7 s, hash `dbc3c69ab48b3394` both. `using XCALibre` 0.98 s stock vs 0.91 s in the recipe env.
 - Traps found and fixed in the recipe: `Pkg.develop` without `preserve=Pkg.PRESERVE_ALL` upgraded PETSc.jl (whose newer version ships only Int64 libraries) and the traced `SIMPLE` signature (Int32 PETSc) no longer matched, leaving 3.5 s of compilation; `Pkg.add` inside the new package wrote `[compat]` pins at the newest versions, which conflict with the case env, so its dependencies are copied from the case env's `Project.toml` instead.
+
+## Close: 5 mm n=2 confirmation (D109)
+
+Recipe re-traced at 5 mm n=2 (20 s, 653 statements, package precompile 11 s), then measured at 5 iterations, rank 0, `gc=0`. Raw: `dev/telemetry/memory_breakdown/m25close_5mm_{on,off}.txt`.
+
+- Without / with: peak RSS 1160 → 1009 (−13 percent; D99 recorded 1152), private 901 → 750, `t_iter_s` 11.26 → 2.48, hash `6147b42500671f4c` both.
+- The saving is fixed in MB (about 150-200 per rank), so its share falls as cells per rank rise.

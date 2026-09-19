@@ -1,15 +1,15 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m25-fixed-rank-memory.md
-updated: 2026-09-19T22:00:00+01:00
-STATE: GATING
-STEP: P1-M25 close - 5 mm n=2 confirmation
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m22-communication.md
+updated: 2026-09-19T23:30:00+01:00
+STATE: IDLE
+STEP: P1-M22-S1 (next; M25 closed D109)
 HEAD: 6d7ee147
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: confirm the recipe at 5 mm n=2 (parts ~/.cache/xcal_mem_probe/5mm_n2, env dev/petscenv_recipe, recipe dir ~/.cache/xcal_mem_probe/recipe) against D99 1142/1162 MB, then close M25; next M22, M23, M24, M26, M15
+resume: start P1-M22 per `dev/plans/p1-m22-communication.md`; then M23, M24, M26, M15
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
-- M25 was opened by the user and runs before M22 (D100).
+- M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
 ## implementer
 - These milestones are for Fable (claude-fable-5-1) to implement in ONE fresh session, in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.

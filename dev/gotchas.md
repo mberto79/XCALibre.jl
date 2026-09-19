@@ -7,7 +7,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - Never launch a Julia simulation in the foreground: compilation plus GPU warm-up exceeds the two-minute command timeout every time. Always run in the background and redirect simulation output to a file.
 - Smoke-test any new simulation script at one or two iterations before a full run; a typo costs a minute instead of an hour.
 - `test/distributed/runtests_mpi.jl` swallows child standard output when a test passes, so anything printed by the run must be checked with a direct `mpiexec` invocation instead.
-- The 4 mm BFS mesh (1.32M cells) is gone from this machine; only `bfs_tet_5mm.unv` (`~/casesXCALibre/.../3D_BFS_laminar/XCALibre/`) and the cascade meshes remain for large-mesh measurements.
+- BFS tet meshes at 3, 4, 5 and 10 mm live in `~/Desktop/BFS_GRIDS/` (`bfs_unv_tet_<h>mm.unv`); parts written before the checked part header (M18) fail to load, so `~/.cache/xcal_scaling_probe` parts dated before 2026-09-19 must be regenerated.
 - A distributed hang with flat resident memory and no solver banner is almost always ranks dispatching differently: any value that selects a method must be broadcast so it has the same type on every rank.
 - `xcalibre-dev check` exits non-zero on an invalid vault, but a status read through a pipe is the pipe's status; run it bare.
 - `pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so `until ! pgrep -f 'Pkg.test'` never exits while any shell mentions `Pkg.test`. Wait on a marker written to a file instead.
@@ -32,7 +32,8 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 
 - `/tmp` is memory-backed on this box: never write mesh partitions there.
 - This box has 14 GB: the 4 mm BFS (1.32M cells) at eight ranks with AMG ran it out of memory and the kernel OOM-killed Chrome and VS Code. Run large-mesh sweeps under `dev/scripts/memguard.sh`.
-- The memory ceiling is rank zero holding the global mesh, not the rank count, at roughly 1.6 KB per cell. Partitioning offline in a separate process removes it.
+- The memory ceiling is rank zero holding the global mesh, not the rank count: 0.9 KB per cell above the runtime after load and 2.4 GB peak while partitioning the 4 mm BFS (`dev/telemetry/memory_breakdown.md`). Partitioning offline in a separate process removes it.
+- Every rank pays about 800 MB before it holds a cell (Julia runtime and packages 546 MB, compiled code the rest), so memory per rank is roughly 790 MB + 1.85 KB per local cell on the BFS at Float64.
 - This laptop has EIGHT performance cores (CPUs 0-15, hyperthread siblings paired adjacently, so 0,1 = core 0) and sixteen efficiency cores at 4.1 GHz (CPUs 16-31). More than eight ranks crosses onto the slower cores and any scaling number past that measures core heterogeneity.
 
 ## measuring across rank counts

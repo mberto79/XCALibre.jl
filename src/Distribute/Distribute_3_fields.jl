@@ -40,7 +40,7 @@ sync!(df::DistributedField, config) = begin
     nothing
 end
 
-# one halo schedule per mesh and width (scalar 1, vector 3), built on first call and shared by
+# one halo schedule per mesh and width (scalar 1, vector 3, scalar+vector 4), built on first call and shared by
 # every field and equation; halo_exchange! is the function barrier past the untyped cache slot
 @inline function sync!(x::AbstractScalarField, dm::DistributedMesh, config)
     (; backend, workgroup) = config.hardware
@@ -54,6 +54,13 @@ end
     hc = getfield(dm, :halos)
     hc.w3 === nothing && (hc.w3 = HaloExchange(dm, 3, backend))
     halo_exchange!(x, hc.w3, backend, workgroup)
+    nothing
+end
+@inline function sync!(x::Tuple{AbstractScalarField,AbstractVectorField}, dm::DistributedMesh, config)
+    (; backend, workgroup) = config.hardware
+    hc = getfield(dm, :halos)
+    hc.w4 === nothing && (hc.w4 = HaloExchange(dm, 4, backend))
+    halo_exchange!(x, hc.w4, backend, workgroup)
     nothing
 end
 # tensor (and other) ghosts are never consumed off-rank — mirrors grad!'s tensor path

@@ -24,3 +24,9 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 ## S3: one all-reduce per equation for residuals
 
 - All-reduces per iteration 6 → 2 (3D 8 → 2); exchanges 6; hashes identical at n=2 and n=4; laplace `residual` allocation 368 → 304 B; gate 10/10 in 200 s; halo, ghosts, f32, perf green at n=2,3; `test_gpu.jl` n=1,2 green (254 s).
+
+## S4: one width-4 exchange for rD and Hv (SIMPLE body)
+
+- Exchanges per iteration 6 → 5, all-reduces 2; hashes identical at n=2 and n=4 on 10 mm parts regenerated at part format 2 (format 1 parts are refused at the header); gate 10/10 in 200 s; offline, io, halo, f32, perf green at n=2,3.
+- PISO keeps a separate exchange for rD and one for Hv per corrector: `H!` runs once per corrector, so rD cannot share the first one without moving `interpolate!(rDf, rD)` into the corrector loop.
+- `check_ghosts` zero on rD and Hv after the paired exchange (`test_ghosts.jl` now mirrors the body) at n=2,3; `test_gpu.jl` n=1,2 green (255 s).

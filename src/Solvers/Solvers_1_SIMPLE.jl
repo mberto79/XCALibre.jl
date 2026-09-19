@@ -186,11 +186,12 @@ function SIMPLE(
         rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
         # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
+        inverse_diagonal!(rD, U_eqn, config; halo=false)
+        remove_pressure_source!(U_eqn, ∇p, config)
+        H!(Hv, U, U_eqn, config; halo=false)
+        sync!((rD, Hv), mesh, config) # one exchange for both (no-op serial)
         interpolate!(rDf, rD, config)
         correct_interpolation_periodic(rDf, rD, boundaries.U, config)
-        remove_pressure_source!(U_eqn, ∇p, config)
-        H!(Hv, U, U_eqn, config)
 
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation

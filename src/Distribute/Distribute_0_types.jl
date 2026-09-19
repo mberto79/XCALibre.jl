@@ -50,8 +50,9 @@ and kernels treat it as a normal mesh.
 mutable struct HaloCache
     w1::Any                   # HaloExchange (width 1) or nothing
     w3::Any                   # HaloExchange (width 3) or nothing
+    w4::Any                   # HaloExchange (width 4, a scalar and a vector packed) or nothing
 end
-HaloCache() = HaloCache(nothing, nothing)
+HaloCache() = HaloCache(nothing, nothing, nothing)
 
 struct DistributedMesh{M<:AbstractMesh,P<:Partition,PP<:ProcessorPatch,VI} <: AbstractMesh
     mesh::M                   # local Mesh3/Mesh2
@@ -67,7 +68,7 @@ const _DM_FIELDS = (:mesh, :partition, :procs, :orig_cells, :orig_faces, :halos,
 
 # a received or deserialised part carries the sender's handle, which means nothing on this rank
 _with_comm(dm::DistributedMesh, comm) = DistributedMesh(getfield(dm, :mesh), getfield(dm, :partition),
-    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), getfield(dm, :halos), comm)
+    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), HaloCache(), comm)
 
 Base.getproperty(dm::DistributedMesh, s::Symbol) =
     s in _DM_FIELDS ? getfield(dm, s) : getproperty(getfield(dm, :mesh), s)

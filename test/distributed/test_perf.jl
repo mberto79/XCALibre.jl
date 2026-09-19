@@ -141,9 +141,9 @@ is3d = dm2.mesh isa Mesh3
 println("COMM rank=$rank exchanges/iter=$halo_per_iter allreduces/iter=$red_per_iter")
 
 @testset "communication budget (rank $rank)" begin
-    # laminar SIMPLE: one width-3 exchange for all momentum components, rD, Hv, p after its solve,
-    # p after relaxation, grad p; one all-reduce for U's residuals and one for p's. A new round is
-    # a regression.
-    @test halo_per_iter == 6
+    # laminar SIMPLE: one width-3 exchange for all momentum components, one for rD and Hv, p after
+    # its solve, p after relaxation, grad p; one all-reduce for U's residuals and one for p's. A new
+    # round is a regression.
+    @test halo_per_iter == 5
     @test red_per_iter == 2
 end

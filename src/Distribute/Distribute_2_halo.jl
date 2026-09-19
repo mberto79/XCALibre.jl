@@ -67,6 +67,16 @@ end
     end
 end
 
+@kernel function _pack!(buf, f::Tuple{AbstractScalarField,AbstractVectorField}, idx)
+    i = @index(Global)
+    @inbounds begin
+        s, U = f
+        c = idx[i]
+        u = U[c]
+        buf[4i-3] = s[c]; buf[4i-2] = u[1]; buf[4i-1] = u[2]; buf[4i] = u[3]
+    end
+end
+
 @kernel function _unpack!(phi::AbstractScalarField, buf, idx)
     i = @index(Global)
     @inbounds phi[idx[i]] = buf[i]
@@ -75,6 +85,16 @@ end
 @kernel function _unpack!(U::AbstractVectorField, buf, idx)
     i = @index(Global)
     @inbounds U[idx[i]] = SVector{3}(buf[3i-2], buf[3i-1], buf[3i])
+end
+
+@kernel function _unpack!(f::Tuple{AbstractScalarField,AbstractVectorField}, buf, idx)
+    i = @index(Global)
+    @inbounds begin
+        s, U = f
+        c = idx[i]
+        s[c] = buf[4i-3]
+        U[c] = SVector{3}(buf[4i-2], buf[4i-1], buf[4i])
+    end
 end
 
 # adjoint scatter: same owned cell may receive from several neighbours concurrently

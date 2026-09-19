@@ -462,7 +462,7 @@ _parts_match(dir, nranks) = length(_part_files(dir)) == nranks &&
 
 # plain-text header line before the serialised mesh, so a stale part fails at load with a message
 # rather than deep inside the solver; the version fields must match exactly (D78)
-const _PART_FORMAT = 1
+const _PART_FORMAT = 2
 _part_header(nranks, TI, TF) = "XCALibre parts format=$(_PART_FORMAT) julia=$(VERSION) " *
     "xcalibre=$(pkgversion(parentmodule(@__MODULE__))) nranks=$nranks TI=$TI TF=$TF"
 

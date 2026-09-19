@@ -8,7 +8,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - Smoke-test any new simulation script at one or two iterations before a full run; a typo costs a minute instead of an hour.
 - Never launch the whole distributed suite (every file at ranks 1,2,3,5) in one go, and never without `dev/scripts/memguard.sh`: on 2026-09-19 it ran this 14 GB box out of memory and took VS Code down. Run `gate.jl`, then named files one at a time under `MIN_MB=2500 memguard.sh`.
 - `test/distributed/runtests_mpi.jl` swallows child standard output when a test passes, so anything printed by the run must be checked with a direct `mpiexec` invocation instead.
-- BFS tet meshes at 3, 4, 5 and 10 mm live in `~/Desktop/BFS_GRIDS/` (`bfs_unv_tet_<h>mm.unv`); parts written before the checked part header (M18) fail to load, so `~/.cache/xcal_scaling_probe` parts dated before 2026-09-19 must be regenerated.
+- BFS tet meshes at 3, 4, 5 and 10 mm live in `~/Desktop/BFS_GRIDS/` (`bfs_unv_tet_<h>mm.unv`); parts are refused at load unless written at the current part format (2 since P1-M22-S4), so any cached part dated before 2026-09-20 must be regenerated with `mem_probe.jl part`.
 - A distributed hang with flat resident memory and no solver banner is almost always ranks dispatching differently: any value that selects a method must be broadcast so it has the same type on every rank.
 - `xcalibre-dev check` exits non-zero on an invalid vault, but a status read through a pipe is the pipe's status; run it bare.
 - `pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so `until ! pgrep -f 'Pkg.test'` never exits while any shell mentions `Pkg.test`. Wait on a marker written to a file instead.

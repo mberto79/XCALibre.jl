@@ -93,7 +93,8 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
-function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
+# halo=false leaves ghosts stale for a caller that exchanges rD together with Hv
+function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}
     (; hardware) = config
     (; backend, workgroup) = hardware
     A = eqn.equation.A # Or should I use A0
@@ -103,7 +104,7 @@ function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
     kernel! = _inverse_diagonal!(_setup(backend, workgroup, ndrange)...)
     kernel!(rD, nzval, colval, rowptr)
     # # KernelAbstractions.synchronize(backend)
-    sync!(rD, rD.mesh, config) # self-syncing seam (no-op serial)
+    halo && sync!(rD, rD.mesh, config) # self-syncing seam (no-op serial)
 end
 
 @kernel function _inverse_diagonal!(rD, nzval, colval, rowptr)
@@ -182,7 +183,7 @@ end
 end
 
 # Pressure correction
-function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
+function H!(Hv, U::VF, U_eqn, config; halo=true) where {VF<:VectorField} # Extend to 3D!
     (; cells, cell_neighbours) = Hv.mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -196,7 +197,7 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     kernel!(cells, cell_neighbours,
         nzval, rowptr, colval, bx, by, bz, U, Hv)
     # # KernelAbstractions.synchronize(backend)
-    sync!(Hv, Hv.mesh, config) # self-syncing seam (no-op serial)
+    halo && sync!(Hv, Hv.mesh, config) # self-syncing seam (no-op serial)
 end
 
 # Pressure correction kernel

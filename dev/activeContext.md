@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-19T20:00:00+01:00
 STATE: IDLE
 STEP: P1-M25-S1 - shared vs private pages per rank (next)
-HEAD: 2e9f73e4
+HEAD: aaf53ed2
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
 resume: fresh session; start P1-M25-S1 per `dev/plans/p1-m25-fixed-rank-memory.md` (smaps split in `dev/scripts/mem_probe.jl`, 10 mm parts at `~/.cache/xcal_mem_probe/10mm_n2`; partition n=1,4 with `mem_probe.jl part`); then M22, M23, M24, M15

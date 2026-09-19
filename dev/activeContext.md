@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-19T14:00:00+01:00
 STATE: BUILDING
 STEP: P1-M21-S5 - GC after setup, repeated-run growth, heap recipe
-HEAD: 26e942c2
+HEAD: 6f37870d
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl plus named files at --ranks=2,3, one process at a time under MIN_MB=2500 memguard.sh
 resume: S5 per the plan: first find why three `run!` calls in one process peak 890 MB above one (PETSc objects are never destroyed in the extension); then `GC.gc(true)` after setup and the heap-hint check

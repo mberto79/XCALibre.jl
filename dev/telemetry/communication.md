@@ -20,3 +20,7 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 - `test_perf.jl` vector-solve allocation 47264 → 49104 B at n=2 (two extra kernel launches); budget 98304.
 - n=8 hash not run: language server resident (2.8 GB) and no 10 mm n=8 parts; n=4 stands in, as R8 makes them one bar.
 - `test_gpu.jl` n=1,2 green (2/2, 254 s).
+
+## S3: one all-reduce per equation for residuals
+
+- All-reduces per iteration 6 → 2 (3D 8 → 2); exchanges 6; hashes identical at n=2 and n=4; laplace `residual` allocation 368 → 304 B; gate 10/10 in 200 s; halo, ghosts, f32, perf green at n=2,3; `test_gpu.jl` n=1,2 green (254 s).

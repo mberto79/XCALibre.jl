@@ -9,16 +9,18 @@ Existing generics (`solve_equation!`, `solve_system!`, `residual`, `setReference
 it. The local id of the reference cell (original global cell 1) is cached at construction, 0
 when another rank owns it.
 """
-struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,V<:AbstractVector}
+struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,V<:AbstractVector,T}
     eqn::E
     solver::S
     partition::P
     ref_cell::Int
     ref_lid::Int
     diag::V                   # owned diagonals of the x and y systems, kept for their deferred residuals
+    red::Vector{T}            # local (num, den) per component, all-reduced in one call
 end
 DistributedEqn(eqn, solver, partition) = DistributedEqn(eqn, solver, partition, 1,
-    _ref_local(get_phi(eqn).mesh, 1), _diag_store(eqn, partition.n_owned))
+    _ref_local(get_phi(eqn).mesh, 1), _diag_store(eqn, partition.n_owned),
+    zeros(eltype(_nzval(_A(eqn))), 2 + 2 * _n_saved(eqn)))
 
 _diag_store(eqn, n) = begin
     nz = _nzval(_A(eqn))
@@ -87,15 +89,18 @@ function Solve.solve_equation!(
     end
     sync!(psi, psi.mesh, config)
 
-    resx = _residual_saved(deqn, xdir, 0, config)
+    red = deqn.red
+    red[1], red[2] = _residual_saved!(deqn, xdir, 0, config)
     if is3d
-        resy = _residual_saved(deqn, ydir, n, config)
-        resz = residual(deqn, zdir, config)
+        red[3], red[4] = _residual_saved!(deqn, ydir, n, config)
+        red[5], red[6] = _local_residual!(deqn, zdir, config)
     else
-        resy = residual(deqn, ydir, config)
-        resz = zero(_get_float(psi.mesh))
+        red[3], red[4] = _local_residual!(deqn, ydir, config)
+        red[5], red[6] = zero(eltype(red)), zero(eltype(red))
     end
-    return resx, resy, resz
+    _allreduce!(deqn)
+    resz = is3d ? _scaled(red[5], red[6]) : zero(_get_float(psi.mesh))
+    return _scaled(red[1], red[2]), _scaled(red[3], red[4]), resz
 end
 
 _solve_owned!(deqn, result, component) = begin
@@ -151,6 +156,14 @@ const ALLREDUCE_COUNT = Ref(0)
 
 # owned rows only (ghost CSR rows are garbage by design); identical value on every rank
 function Solve.residual(deqn::DistributedEqn, component, config)
+    red = deqn.red
+    fill!(red, zero(eltype(red)))
+    red[1], red[2] = _local_residual!(deqn, component, config)
+    _allreduce!(deqn)
+    _scaled(red[1], red[2])
+end
+
+function _local_residual!(deqn::DistributedEqn, component, config)
     eqn = deqn.eqn
     (; A, R, Fx) = eqn.equation
     b = _b(eqn, component)
@@ -159,27 +172,24 @@ function Solve.residual(deqn::DistributedEqn, component, config)
     n = deqn.partition.n_owned
     kernel! = Solve._scaled_residual!(_setup(backend, workgroup, n)...)
     kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), values, b)
-    _reduce_residual(deqn, R, Fx)
+    _local_sums(deqn, R, Fx)
 end
 
-function _residual_saved(deqn::DistributedEqn, component, off, config)
+function _residual_saved!(deqn::DistributedEqn, component, off, config)
     eqn = deqn.eqn
     (; A, R, Fx) = eqn.equation
     (; backend, workgroup) = config.hardware
     kernel! = _scaled_residual_saved!(_setup(backend, workgroup, deqn.partition.n_owned)...)
     kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), get_values(get_phi(eqn), component),
         _b(eqn, component), deqn.diag, off)
-    _reduce_residual(deqn, R, Fx)
+    _local_sums(deqn, R, Fx)
 end
 
-function _reduce_residual(deqn, R, Fx)
-    n = deqn.partition.n_owned
-    ALLREDUCE_COUNT[] += 2
-    num = MPI.Allreduce(sum(view(R, 1:n)), +, _comm(deqn))
-    den = MPI.Allreduce(sum(view(Fx, 1:n)), +, _comm(deqn))
-    den = ifelse(den > eps(den), den, one(den))
-    num / den
-end
+_local_sums(deqn, R, Fx) = (n = deqn.partition.n_owned; (sum(view(R, 1:n)), sum(view(Fx, 1:n))))
+
+_allreduce!(deqn) = (ALLREDUCE_COUNT[] += 1; MPI.Allreduce!(deqn.red, +, _comm(deqn)); nothing)
+
+_scaled(num, den) = num / ifelse(den > eps(den), den, one(den))
 
 # `cellID` is an ORIGINAL global cell id; only the owning rank edits its row
 function Solve.setReference!(deqn::DistributedEqn, pRef, cellID, config)

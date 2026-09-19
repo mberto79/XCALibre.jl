@@ -7,9 +7,11 @@ const MALLOC = "malloc=1" in ARGS
 const TRIM = "trim=1" in ARGS
 # `gclog=1` makes rank 0 print GC heap stats (bytes_resident) to stderr at each stage
 const GCLOG = "gclog=1" in ARGS
+# `gcmax=<MB>` sets the GC memory target at runtime, as `--heap-size-hint` does at start-up
+const GCMAX = let i = findfirst(startswith("gcmax="), ARGS); i === nothing ? 0 : parse(Int, ARGS[i][7:end]) end
 # `repeat=<k>` adds k full `run!` calls after the staged run, with a forced collection after each
 const REPEAT = let i = findfirst(startswith("repeat="), ARGS); i === nothing ? 0 : parse(Int, ARGS[i][8:end]) end
-const ARGV = filter(a -> !any(startswith.(a, ("gc=", "malloc=", "repeat=", "trim=", "gclog="))), ARGS)
+const ARGV = filter(a -> !any(startswith.(a, ("gc=", "malloc=", "repeat=", "trim=", "gclog=", "gcmax="))), ARGS)
 
 # kB fields of /proc/self/status, reported in MB
 function proc_mb(key)
@@ -77,6 +79,7 @@ elseif MODE == "worker"
         mb
     end
     GCLOG && rank == 0 && GC.enable_logging(true)
+    GCMAX > 0 && ccall(:jl_gc_set_max_memory, Cvoid, (UInt64,), GCMAX * 2^20)
     function stage(name)
         MPI.Barrier(comm)
         GCLOG && rank == 0 && println(stderr, "STAGE ", name)
@@ -127,9 +130,9 @@ elseif MODE == "worker"
     t = @elapsed res = SIMPLE(model, turb, ∇p, U_w, p_w, config)
     stage("iterations")
     for k ∈ 1:REPEAT
-        run!(model, config; petsc_options=opts)
+        tk = @elapsed run!(model, config; petsc_options=opts)
         GC.gc(true)
-        stage("run!$k")
+        stage("run!$(k)_$(round(tk, digits=2))s")
     end
 
     # live bytes by struct, meshes excluded so each field counts only its own arrays

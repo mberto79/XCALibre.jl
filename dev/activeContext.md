@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m25-fixed-rank-memory.md
 updated: 2026-09-19T22:00:00+01:00
 STATE: IDLE
-STEP: P1-M25-S3 - cure 1 (design)
+STEP: P1-M25-S4 - precompile statements for the distributed path
 HEAD: 6d7ee147
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: user picks the S3 cure (options in the session: heap-size target set per rank by XCALibre, documented flag only, precompile statements, PETSc.jl single-library load); then write mechanism, cost, bar into the plan and build; then M22, M23, M24, M15
+resume: build P1-M25-S4 per plan (trace-compile harvest on 10 mm n=4, drop Main signatures); then S5, M22, M23, M24, M15
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M25 was opened by the user and runs before M22 (D100).

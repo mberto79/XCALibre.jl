@@ -47,3 +47,12 @@ Script `dev/scripts/pkg_mem.jl one <Name>...` (smaps_rollup delta around `Base.r
 ## S2 verdict
 
 - Candidate cures, by attributed private MB per rank at n=4: (1) GC page retention, about 165 (the heap-size target lets pool pages dirtied by compilation and setup churn stay resident); (2) PETSc.jl loading every libpetsc variant and its 87 MB wrapper image, 47 private per rank at n=4 (the rest of the single-process +102 is file pages that are shared across ranks), and the mechanism lives in PETSc.jl, not XCALibre; (3) GPUArrays/LLVM on CPU runs, about 70-95 but a direct XCALibre dependency, so outside this milestone. Pkg and `sys.so` (91) are not removable by XCALibre.
+
+## S3: GC memory target set at runtime (refused, D105)
+
+`mem_probe.jl gcmax=<MB>` calls `jl_gc_set_max_memory` before setup; 10 mm n=4, 20 iterations, `repeat=2`, rank 0, private MB at `iterations` / after a second `run!`, and `run!` seconds. Raw: `dev/telemetry/memory_breakdown/m25s3_*_i20.txt`.
+
+- base: 530 / 472, 1.11 s; base repeated: 564 / 500, 1.17 s (run-to-run noise about 30 MB).
+- gcmax 330: 528 / 528, 1.25 s. gcmax 250: 479 / 459, 1.30 s; HWM 826 → 760.
+- At 2 iterations gcmax 250 gave 425 against 564, but the startup flag gave 390: a target set after `using` cannot reclaim the pool pages already dirtied by loading.
+- The retention is a first-run transient that the stock GC drains; at steady state the runtime target buys nothing measurable and costs 11-17 percent per `run!`. Julia 1.13 also reads `JULIA_HEAP_SIZE_HINT` from the environment, the launch-time equivalent of the flag.

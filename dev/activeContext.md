@@ -1,15 +1,15 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m22-communication.md
-updated: 2026-09-20T05:30:00+01:00
-STATE: BUILDING
-STEP: P1-M22-S8 owned-row ranges for cell kernels
-HEAD: bf7a26be
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m23-parallel-preprocessing.md
+updated: 2026-09-20T06:20:00+01:00
+STATE: IDLE
+STEP: P1-M23-S1 (next; M22 closed D118)
+HEAD: 920fef5d
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: start P1-M22 per `dev/plans/p1-m22-communication.md`; then M23, M24, M26, M15
+resume: start P1-M23 per `dev/plans/p1-m23-parallel-preprocessing.md`; then M24, M26, M15
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
-- M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
+- M22 closed (D118), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
 ## implementer
 - These milestones are for Fable (claude-fable-5-1) to implement in ONE fresh session, in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.

@@ -52,6 +52,7 @@ function HaloExchange(dmesh::DistributedMesh, width::Integer, backend; comm=getf
         MPI.Send_init(cuda_aware ? send_bufs[k] : host_send[k], pp.neighbour, _tag(width), comm, send_reqs[k])
         MPI.Recv_init(cuda_aware ? recv_bufs[k] : host_recv[k], pp.neighbour, _tag(width), comm, recv_reqs[k])
     end
+    MPI.add_finalize_hook!(() -> (MPI.free(send_reqs); MPI.free(recv_reqs))) # MPI warns on unfreed persistent requests
     HaloExchange(comm, Int[pp.neighbour for pp ∈ procs], send_idx, recv_idx,
         send_bufs, recv_bufs, host_send, host_recv, send_reqs, recv_reqs, Int(width), cuda_aware)
 end

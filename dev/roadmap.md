@@ -12,7 +12,7 @@ Active phase and its exit gate: `dev/phaseRoadmap.md`. Current step and state: `
 
 - [x] P0 - build the distributed module over eight phases, then a five-phase round of configuration, launch, logging, HYPRE and SST work | archived, `archive/dev_distributed/`
 - [ ] P1 - release polish: make the module stock-installable, environment-variable free, rank-uniform by construction, scaling-attributed, gated and documented, then structurally ready to scale (D72) | `dev/phaseRoadmap.md`
-- [ ] P2 - HPC validation: multi-node CPU, multi-GPU and AMD runs of the M18-M24 code, scaling recorded against R7/Q3, then M22-S6 (overlap) and M23-S4 (parallel repartition) if either was withdrawn locally (D73) | opens when P1 closes
+- [ ] P2 - HPC validation: multi-node CPU, multi-GPU and AMD runs of the M18-M24 code, scaling recorded against R7/Q3, then M22-S6 (overlap), M22-S8 (owned-row kernels at n=64) and M23-S4 (parallel repartition) if withdrawn locally (D73, D115, D117) | opens when P1 closes
 
 ## flagged
 

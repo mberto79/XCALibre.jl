@@ -49,3 +49,14 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 - GPU residuals are not bitwise reproducible run to run (10 mm n=1: Ux `3.152013822883027e-5` vs `3.1520138228831386e-5`), so a race check on GPU must use a tolerance, not hashes.
 - 5 mm n=1 baseline 51.6 ms per iteration (was 74.6 ms when the plan was written).
 - Upper bound, A/B alternated in one session: Julia on the same NULL stream as PETSc and every per-solve drain removed, 57.3 / 57.2 ms vs 57.4 ms with drains (GPU warmer than at baseline); at most 0.3 percent against a 3 percent bar.
+- Follow-up: MPICH printed `freeing inactive persistent request` at finalize for every schedule; each schedule now frees its requests from an MPI finalize hook, and the message is gone (`test_perf.jl` n=3, 0 lines).
+
+## S8: owned-row kernel ranges withdrawn on its upper bound
+
+- 10 mm n=4 CPU profile of 30 SIMPLE iterations (rank 0, 3438 samples): `discretise!` 9.2, `green_gauss!` 2.6, `div!` 0.3, `inverse_diagonal!` 0.2, `H!` 0.4 percent of samples, 12.7 together; `psolve!` 22.9; ghosts 3.5 percent of local rows.
+- Skipping ghost rows saves at most 3.5 × 12.7 ≈ 0.44 percent of an iteration here (5 mm n=8: 2.9 percent ghosts, about 0.4); at n=64 (10.8 percent ghosts) about 1.4, which P2 can re-measure.
+
+## M22 close
+
+- Per 3D laminar SIMPLE iteration: exchanges 8 → 5, all-reduces 8 → 2 (2D: 7 → 5, 6 → 2); residual hashes bitwise identical at 10 mm n=2 and n=4 throughout; GPU n=1 51.6 ms per iteration at 5 mm (plan baseline 74.6 ms).
+- n=8 pinned per-iteration time not recorded: 10 mm n=8 with PETSc exceeds memory beside the language server, and the overlap and ghost-row steps it was to judge were withdrawn on bounds below 0.5 percent.

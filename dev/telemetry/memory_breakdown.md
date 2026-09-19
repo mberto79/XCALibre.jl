@@ -65,3 +65,11 @@ Figures are per rank at 4 mm n=2 (662k local cells, 3.3M nonzeros per operator),
 - Connectivity preallocated from the cells' face counts, with no `push!` triplets and no `sparsecsr` round trip: removes the 205 MB setup transient measured while the U equation is built.
 - One host mesh copy per run instead of one `adapt(CPU(), mesh)` per equation: nothing on CPU, where the adapt returns the same mesh; on a GPU run each equation built makes a transient host copy of the local mesh, 366 MB here.
 - `A0` stays: momentum needs a clean copy per component, and it is one matrix of values (26 MB) once the indices are shared.
+
+## P1-M21 close (HEAD against M16), n=2
+
+- Peak RSS per rank, natural run: 4 mm 1950 → 1772/1747 MB (1667/1663 MB with `--heap-size-hint=1200M`); 5 mm 1202 → 1142/1162 MB. PETSc heap at 4 mm 290 → 206 MB.
+- Repeated `run!` in one process: PETSc heap flat at 70 MB per run at 5 mm (was +70 MB per run).
+- Per-iteration time, 5 mm, constant package power (`equal_thermal.sh`), two runs each, HEAD against 052ee9b7: n=2 0.579/0.583 against 0.597/0.571 s; n=4 0.293/0.292 against 0.296/0.291 s. Setup plus three iterations 11 percent faster at n=2, 19 percent at n=4 (`memory_breakdown/m21_cpu_timing_ab.tab`). n=8 was not timed: eight ranks plus the language server exceed this box's free memory.
+- GPU 5 mm n=1 (custom CUDA PETSc 3.24): HEAD 0.0766/0.0749 against 0.0736/0.0776 s per iteration (M10 recorded 0.0746/0.0720); the final p residual differs in its last three digits run to run in both versions (`memory_breakdown/m21_gpu_timing_ab.tab`).
+- CPU residual histories bitwise equal to M16's code at n=2 (10 mm) and n=8 (5 mm).

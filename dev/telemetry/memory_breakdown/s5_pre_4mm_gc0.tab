@@ -1,0 +1,20 @@
+RANK 0 n_owned=660176 n_local=662391 nfaces=1343970 iters=5 gc=false t_iter_s=20.84 p=0.00020865010243520697 reshash=3fa2ea4dcfec6176
+stage rss_MB hwm_MB gc_live_MB petsc_malloc_MB
+runtime 556.2 556.3 32.2 NaN
+mesh 921.1 921.1 393.6 NaN
+model 1008.4 1008.4 506.6 NaN
+aux_fields 1060.7 1060.7 559.1 NaN
+U_eqn 1327.8 1383.5 729.5 NaN
+p_eqn 1548.9 1548.9 975.7 NaN
+petsc 1506.7 1550.3 758.5 NaN
+iterations 1761.4 1772.1 812.8 NaN
+RANK 1 n_owned=660192 n_local=662369 nfaces=1342740 iters=5 gc=false t_iter_s=20.84 p=0.00020865010243520697 reshash=3fa2ea4dcfec6176
+stage rss_MB hwm_MB gc_live_MB petsc_malloc_MB
+runtime 555.1 555.2 32.2 NaN
+mesh 920.7 920.7 393.4 NaN
+model 1007.9 1007.9 506.4 NaN
+aux_fields 1060.2 1060.2 558.8 NaN
+U_eqn 1328.0 1388.2 729.4 NaN
+p_eqn 1548.5 1548.5 975.7 NaN
+petsc 1525.9 1598.2 769.4 NaN
+iterations 1746.8 1746.8 895.1 NaN

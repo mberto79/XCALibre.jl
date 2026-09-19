@@ -282,20 +282,3 @@ $$
 $$
 a_N = 0.5 F A_{f_N} \cdot \hat{n}_{f_N}
 $$
-
-# APPLY — performance profile, turbo off, clock pinned at 2.2 GHz base on every core
-powerprofilesctl set performance
-echo 1   | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
-echo 100 | sudo tee /sys/devices/system/cpu/intel_pstate/min_perf_pct
-echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-
-
-# REVERT — back to exactly what you have now
-echo 0  | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
-echo 15 | sudo tee /sys/devices/system/cpu/intel_pstate/min_perf_pct
-echo powersave | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-echo balance_performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
-powerprofilesctl set balanced
-
-
-cat /sys/devices/system/cpu/intel_pstate/no_turbo; grep 'cpu MHz' /proc/cpuinfo | head -4

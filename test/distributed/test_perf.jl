@@ -21,6 +21,11 @@ solve_iter!() = solve_equation!(deqn, T, config.boundaries.T, config.solvers, co
 
 # warmup: JIT + PETSc setup + halo request allocation
 solve_iter!(); solve_iter!()
+# each measured call once more on its own: top-level call sites compile their own thunks
+halo_exchange!(T, deqn.halo, backend, workgroup)
+passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)
+psolve!(deqn.solver, T.values)
+residual(deqn, nothing, config)
 
 a_halo = @allocated halo_exchange!(T, deqn.halo, backend, workgroup)
 a_asm = @allocated passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)

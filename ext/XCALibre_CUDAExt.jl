@@ -34,7 +34,8 @@ Distribute.bind_device!(::BACKEND, rank::Integer) =
 Distribute.ndevices(::BACKEND) = length(CUDA.devices())
 
 Distribute.petsc_device_info(::CuArray) =
-    (pkg="cuda", mat="mpiaijcusparse", sync=CUDA.device_synchronize)
+    (pkg="cuda", mat="mpiaijcusparse", sync=CUDA.device_synchronize,
+     vec=(create=:VecCreateMPICUDAWithArray, place=:VecCUDAPlaceArray, reset=:VecCUDAResetArray))
 
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA

@@ -72,7 +72,7 @@ T_eqn, model, config = assemble_T(dm)
 s = PETScSolver(T_eqn, dm, config.solvers)
 passemble!(s, T_eqn, part)
 
-_, y = LibPETSc.MatCreateVecs(s.petsclib, s.A)
+xv, y = LibPETSc.MatCreateVecs(s.petsclib, s.A) # the solver's x owns no storage outside a solve
 owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
 
 @testset "Phase 3 assembly (rank $rank)" begin
@@ -80,21 +80,21 @@ owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
     @test all(part.local_to_global[i] == part.row_start + i - 1 for i ∈ 1:n_owned)
 
     # MatMult matches serial SpMV
-    PETSc.withlocalarray!(s.x; read=false, write=true) do arr
+    PETSc.withlocalarray!(xv; read=false, write=true) do arr
         for i ∈ 1:n_owned
             arr[i] = xg[orig[i]]
         end
     end
-    LinearAlgebra.mul!(y, s.A, s.x)
+    LinearAlgebra.mul!(y, s.A, xv)
     @test maximum(abs.(owned_vals(y) .- yref[orig[1:n_owned]]); init=0.0) <= 1e-12
 
     # transpose MatMult identical (operator is symmetric)
-    LibPETSc.MatMultTranspose(s.petsclib, s.A, s.x, y)
+    LibPETSc.MatMultTranspose(s.petsclib, s.A, xv, y)
     @test maximum(abs.(owned_vals(y) .- yref[orig[1:n_owned]]); init=0.0) <= 1e-12
 
     # global row sums match serial
-    PETSc.withlocalarray!(a -> fill!(a, 1.0), s.x; read=false, write=true)
-    LinearAlgebra.mul!(y, s.A, s.x)
+    PETSc.withlocalarray!(a -> fill!(a, 1.0), xv; read=false, write=true)
+    LinearAlgebra.mul!(y, s.A, xv)
     @test maximum(abs.(owned_vals(y) .- rsref[orig[1:n_owned]]); init=0.0) <= 1e-12
 
     # KSP CG solve matches serial direct solution
@@ -110,11 +110,11 @@ owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
     # values-only re-assembly: scaled coefficients give scaled MatMult
     _nzval(_A(T_eqn)) .*= 2
     passemble!(s, T_eqn, part)
-    PETSc.withlocalarray!(s.x; read=false, write=true) do arr
+    PETSc.withlocalarray!(xv; read=false, write=true) do arr
         for i ∈ 1:n_owned
             arr[i] = xg[orig[i]]
         end
     end
-    LinearAlgebra.mul!(y, s.A, s.x)
+    LinearAlgebra.mul!(y, s.A, xv)
     @test maximum(abs.(owned_vals(y) .- 2 .* yref[orig[1:n_owned]]); init=0.0) <= 1e-11
 end

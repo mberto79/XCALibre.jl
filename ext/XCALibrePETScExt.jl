@@ -70,6 +70,9 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     n_owned::Int
     sync::SY           # device-wide sync (nothing on host): PETSc and XCALibre use separate streams
     fill::FI           # host block scatter; nothing on device, where values go through the COO map
+    place::Ptr{Cvoid}  # Vec(CUDA)PlaceArray: x and b own no storage and borrow the caller's arrays
+    reset::Ptr{Cvoid}  # Vec(CUDA)ResetArray
+    bptr::Base.RefValue{Ptr{Cvoid}} # b's array, set by passemble! and placed by the next solve
     setup_every::Int   # rebuild the PC every N solves (1 = every solve, PETSc default)
     nsolve::Base.RefValue{Int}
 end
@@ -186,7 +189,8 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         _coo_matrix(petsclib, comm, dev.mat, rowptr, colval, l2g, n, N, nnz_owned) :
         _split_matrix(petsclib, comm, _rowptr(A), _colval(A), _nzval(A), l2g, n, N)
     _set_values!(petsclib, Amat, _nzval(A), sync, fill)
-    x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
+    vec = device_solve ? dev.vec : _HOST_VEC
+    x, b = (_vec_without_array(petsclib, comm, n, N, vec.create) for _ ∈ 1:2)
     curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner)),
         _pc_options(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
@@ -232,7 +236,8 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
     setup_every = _pc_freeze(setup.preconditioner)
-    XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, setup_every, Ref(0))
+    XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
+        _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0))
 end
 
 # NEW SECTION: assembly and solve
@@ -241,6 +246,29 @@ _sync(::Nothing) = nothing
 _sync(f) = f()
 
 _host(x) = x isa Array ? x : Array(x)
+
+_petsc_sym(petsclib, name) = Base.Libc.Libdl.dlsym(Base.Libc.Libdl.dlopen(petsclib.petsc_library), name)
+
+const _HOST_VEC = (create=:VecCreateMPIWithArray, place=:VecPlaceArray, reset=:VecResetArray)
+
+function _vec_without_array(petsclib, comm, n, N, create)
+    v = Ref{LibPETSc.CVec}(C_NULL)
+    PI = petsclib.PetscInt
+    _vec_create(_petsc_sym(petsclib, create), comm, PI(n), PI(N), v) == 0 ||
+        error("PETSc: $create failed")
+    LibPETSc.PetscVec(v[], petsclib)
+end
+
+for I ∈ (Int32, Int64)
+    @eval _vec_create(f, comm, n::$I, N::$I, v) = ccall(f, Cint,
+        (MPI.MPI_Comm, $I, $I, $I, Ptr{Cvoid}, Ptr{LibPETSc.CVec}), comm, one($I), n, N, C_NULL, v)
+end
+
+# host Ptr or device CuPtr alike: PETSc takes the owned prefix, which starts the array
+_raw_ptr(x) = reinterpret(Ptr{Cvoid}, pointer(x))
+
+_vec_call(f, v, p) = ccall(f, Cint, (LibPETSc.CVec, Ptr{Cvoid}), v, p) == 0 || error("PETSc: vector placement failed")
+_vec_call(f, v) = ccall(f, Cint, (LibPETSc.CVec,), v) == 0 || error("PETSc: vector reset failed")
 
 function _coo_matrix(petsclib, comm, mt, rowptr, colval, l2g, n, N, nnz_owned)
     PI = petsclib.PetscInt
@@ -325,19 +353,26 @@ end
 
 function passemble!(s::XPETScSolver, eqn, partition; component=nothing)
     _set_values!(s.petsclib, s.A, _nzval(_A(eqn)), s.sync, s.fill)
-    PETSc.withlocalarray!(s.b; read=false, write=true) do arr
-        copyto!(arr, view(_b(eqn, component), 1:s.n_owned))
-    end
+    s.bptr[] = _raw_ptr(_b(eqn, component))
     s
 end
 
-# PETSc.jl hands back a device array for a device Vec, so both copies stay on the device
-_copy_owned_in!(s, x) = PETSc.withlocalarray!(s.x; read=false, write=true) do arr
-    copyto!(arr, view(x, 1:s.n_owned))
-end
-
-_copy_owned_out!(s, x) = PETSc.withlocalarray!(s.x; read=true, write=false) do arr
-    copyto!(view(x, 1:s.n_owned), arr)
+# x and b borrow the field and the right-hand side for the solve only; b's owner is the equation,
+# which outlives every solve
+function _with_placed(f, s::XPETScSolver, x)
+    GC.@preserve x begin
+        _vec_call(s.place, s.x, _raw_ptr(x))
+        _vec_call(s.place, s.b, s.bptr[])
+        try
+            _sync(s.sync)
+            f(s)
+            _sync(s.sync)
+        finally
+            _vec_call(s.reset, s.x)
+            _vec_call(s.reset, s.b)
+        end
+    end
+    x
 end
 
 # rebuild the PC every `setup_every` solves; apply the frozen (cheap-to-apply) hierarchy in between.
@@ -351,21 +386,12 @@ end
 
 function psolve!(s::XPETScSolver, x::AbstractVector)
     _maybe_freeze_pc!(s)
-    _copy_owned_in!(s, x)
-    _sync(s.sync)
-    PETSc.solve!(s.x, s.ksp, s.b)
-    _sync(s.sync)
-    _copy_owned_out!(s, x)
-    x
+    _with_placed(_ksp_solve, s, x)
 end
 
-function psolve_transpose!(s::XPETScSolver, x::AbstractVector)
-    _copy_owned_in!(s, x)
-    _sync(s.sync)
-    LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
-    _sync(s.sync)
-    _copy_owned_out!(s, x)
-    x
-end
+psolve_transpose!(s::XPETScSolver, x::AbstractVector) = _with_placed(_ksp_solve_transpose, s, x)
+
+_ksp_solve(s) = PETSc.solve!(s.x, s.ksp, s.b)
+_ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
 
 end # module

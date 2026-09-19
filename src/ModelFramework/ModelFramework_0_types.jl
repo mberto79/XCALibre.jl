@@ -149,12 +149,6 @@ ScalarEquation(phi::ScalarField, BCs) = begin
         A,
 
        _build_opA(A),
-        # KP.KrylovOperator(A), # small gain in performance
-        # A,
-
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend)
 
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),
@@ -185,10 +179,6 @@ VectorEquation(psi::VectorField, BCs) = begin
     # j = [j; periodicConnectivity.j]
     v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
-    # A = _convert_array!(sparse(i, j, v), backend) 
-    # A0 = _convert_array!(sparse(i, j, v), backend)
-    # A = _convert_array!(sparsecsr(i, j, v), backend) 
-    # A0 = _convert_array!(sparsecsr(i, j, v), backend)
 
     A = _build_A(backend, i, j, v, nCells)
     A0 = _build_A(backend, i, j, v, nCells)
@@ -197,14 +187,6 @@ VectorEquation(psi::VectorField, BCs) = begin
         A,
 
         _build_opA(A),
-        # KP.KrylovOperator(A),
-        # A,
-
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend)
 
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),

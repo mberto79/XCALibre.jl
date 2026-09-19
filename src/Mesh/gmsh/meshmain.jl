@@ -1,9 +1,4 @@
-################################################################################
-## Anemoi Developemnt Code                                                    ##
-## Mesh Construction                                                          ##
-## Author: Christopher D. Ellis                                               ##
-## Date: 04/04/2020 20:15                                                     ##
-################################################################################
+# Mesh construction (author: Christopher D. Ellis)
 
 using StatsBase
 

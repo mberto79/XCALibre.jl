@@ -14,14 +14,6 @@ function write_results(
     end
     filename = name*suffix*".vtk"
 
-    # UxNodes = FVM.NodeScalarField(Ux)
-    # UyNodes = FVM.NodeScalarField(Uy)
-    # UzNodes = FVM.NodeScalarField(Uz)
-    # pNodes = FVM.NodeScalarField(p)
-    # FVM.interpolate2nodes!(UxNodes, Ux)
-    # FVM.interpolate2nodes!(UyNodes, Uy)
-    # FVM.interpolate2nodes!(UzNodes, Uz)
-    # FVM.interpolate2nodes!(pNodes, p)
 
     (; cell_nodes) = mesh
     open(filename, "w") do io
@@ -111,18 +103,6 @@ function write_results(
             end
         end
         
-        # write(io, "POINT_DATA $(nPoints)\n")
-        # write(io, "SCALARS p double 1\n")
-        # write(io, "LOOKUP_TABLE default\n")
-        # for p ∈ pNodes.values
-        #     println(io, p)
-        # end
-        # write(io, "VECTORS U double\n")
-        # for i ∈ 1:length(UxNodes.values)
-        #     println(io, UxNodes.values[i]," ",UyNodes.values[i] ," ",UzNodes.values[i] )
-        # end
-        # # Boundary information
-        # # to be implemented
     end
 end
 

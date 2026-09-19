@@ -91,11 +91,7 @@ end
     Sf = ns*area*normal
     Af = norm(Sf)
 
-    ## Potential simplified form for performance, needs checking before use in release
-    # dPN = cellN.centre - cell.centre
-    # n = ns*normal
-    # Ef = dPN*(norm(n)^2/(dPN⋅n))*area # this works 
-    # Ef = dPN*(one(typeof(ns))/(dPN⋅n))*area # a little faster but a few more iter
+    # Faster unverified alternative: Ef = dPN*(norm(n)^2/(dPN⋅n))*area, dPN = cellN.centre - cell.centre, n = ns*normal
 
     # Use form below to ensure correctness, could be simplified for performance
     e = ns*e # original
@@ -104,15 +100,6 @@ end
     ap = term.sign*(term.flux[fID]*Ef_mag)/delta
 
 
-    # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
-
-    # ap = term.sign*(term.flux[fID]*Af)/Δ # minimum correction formulation
-
-    # Test formulation using vector d instead of e to explore any stability benefits
-    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
-    # Ef_mag = norm(Ef)
-    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
-    
     # Increment sparse array
     ac = -ap
     an = ap

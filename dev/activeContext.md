@@ -1,22 +1,21 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m23-parallel-preprocessing.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m24-io-restart.md
 updated: 2026-09-19T12:00:00+01:00
 STATE: IDLE
-STEP: P1-M23-S5 guide section for the decomposed-case route (next; S4 landed D127)
+STEP: P1-M24-S1 (next; M23 closed D129)
 HEAD: 09cb77a4
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: P1-M23-S5: docs section written in `docs/src/user_guide/6_distributed_mpi.md`, verdict is a docs build under 5 min; then close M23, then M24, M26, M15
+resume: start P1-M24 per `dev/plans/p1-m24-io-restart.md`; then M26, M15
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
-- M23-S1 format is settled by D119 and D120 (user): one header for serial and partitioned files, `mesh_info`, wrong-kind errors; serial loader may be built here but ships in its own PR off main.
-- M22 closed (D118), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
+- M22 closed (D118), M23 closed (D129), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
 ## implementer
 - These milestones are implemented by Opus 5 in the current session (D121 amends D75), in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.
 - Bars that gate every step: residual hashes bitwise equal under Jacobi at n=2 and n=4 on CPU (n=8 with PETSc does not fit beside the language server; GPU residuals are tolerance-checked, D116; R8 binding; `mem_probe.jl` on 10 mm parts fits the cap), `check_ghosts` zero (M19-S2), the M19-S4 round and all-reduce counters, and `gate.jl`. The full serial suite exceeds the five-minute cap and runs only at phase close.
 ## position
-M1-M14, M16-M22, M25 closed (M12 superseded by M13; M22 on 2026-09-19 with S6-S8 withdrawn on bounds, D110-D118). Open in order: M23, M24, M26, M15; plans in `dev/plans/`.
+M1-M14, M16-M23, M25 closed (M12 superseded by M13; M22 on 2026-09-19 with S6-S8 withdrawn on bounds, D110-D118). Open in order: M24, M26, M15; plans in `dev/plans/`.
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

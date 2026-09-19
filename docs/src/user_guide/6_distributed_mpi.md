@@ -208,6 +208,68 @@ survives XCALibre and Julia upgrades; [`mesh_info`](@ref) reads its header (kind
 and float types, cell counts), and loading a part written for another rank count or format errors
 with the call that fixes it.
 
+### Reading a case decomposed by OpenFOAM
+
+If the mesh is an OpenFOAM case already split with `decomposePar` (any method; OpenFOAM 12 and v2512
+have been checked), each rank reads its own `processor<rank>` directory and the ghost cells are built
+by one exchange between neighbours, so no process ever reads the whole mesh, not even once. Launch
+with as many ranks as there are processor directories:
+
+```julia
+mesh = distribute(FOAMCase("path/to/case", scale=0.001))
+```
+
+`decomposePar` writes `cellProcAddressing`, so [`gather`](@ref) returns fields in the undecomposed
+cell order, and results written with `output=OpenFOAM()` from the case directory reconstruct with
+`reconstructPar`. A distributed run with `output=OpenFOAM()` also writes this layout, so its case can
+be read back the same way. The example below writes a one-rank case and reads it:
+
+```jldoctest distributed; filter = r".*"s => s"", output = false
+box_file = joinpath(grids_dir, "3d_box_1000x1000x1000mm_5.unv")
+case_dir = mktempdir()
+cd(case_dir) do
+    initialise_writer(OpenFOAM(), distribute(() -> UNV3D_mesh(box_file, scale=0.001)))
+end
+box_mesh = distribute(FOAMCase(case_dir))
+
+# output
+
+```
+
+!!! note
+    Writing results into a case read with `scale` other than 1 rewrites its processor meshes in
+    metres; keep the original case if other OpenFOAM tools still need it.
+
+### Rebalancing in parallel
+
+A decomposition made by a geometric method such as `decomposePar -method simple` is valid but
+poorly balanced. [`repartition`](@ref) partitions the distributed cell graph in parallel and moves
+cells between ranks, again without any rank holding the whole mesh:
+
+```julia
+mesh = repartition(distribute(FOAMCase("path/to/case", scale=0.001)))
+```
+
+It calls PETSc's partitioners, so it needs `using PETSc` with a PETSc built with PT-Scotch (the
+default, `method=:ptscotch`) or ParMETIS (`method=:parmetis`). The conda-forge `petsc` package has
+both (see [GPU runs without compiling PETSc](@ref) for using it); `PETSc_jll` has neither, and the
+call then errors. On the 3D backward-facing step at eight ranks, a `simple` decomposition with 5369
+processor faces and a 1.23 ratio between the largest and smallest part became 1970 faces and 1.02
+with PT-Scotch, slightly better than serial Metis (2046 faces, 1.04). ParMETIS gave 2089 faces but a
+1.10 ratio.
+
+### Which route to use
+
+- **The mesh fits in one process**: `distribute() do ... end`. Rank 0 reads and partitions the mesh
+  on every run; it needs about 0.9 KB per cell above the runtime, and more while partitioning (2.4 GB
+  for 1.3 million cells).
+- **Repeated runs of a large mesh that one process can still hold once**: `distribute(dir=...)`, or
+  `partition_mesh` on a machine with more memory. The mesh is read once and later runs load only
+  their parts.
+- **A mesh no single node can hold, or one already decomposed in OpenFOAM**: `FOAMCase`, followed by
+  `repartition` when the decomposition is geometric. The number of ranks must equal the number of
+  processor directories.
+
 ## Setting up and running a case
 
 Pass the distributed mesh as the model `domain` and assign boundary conditions against it, exactly

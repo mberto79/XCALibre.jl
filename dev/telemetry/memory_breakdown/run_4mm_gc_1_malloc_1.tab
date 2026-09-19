@@ -1,0 +1,58 @@
+RANK 0 n_owned=660176 n_local=662391 nfaces=1343970 iters=5 gc=true t_iter_s=21.97 p=0.00020865010243520697
+stage rss_MB hwm_MB gc_live_MB petsc_malloc_MB
+runtime 546.3 556.2 23.1 0.0
+mesh 915.0 919.1 389.2 0.0
+model 1060.3 1060.3 451.6 0.0
+aux_fields 1111.3 1111.3 502.6 0.0
+U_eqn 1245.1 1449.7 637.8 0.0
+p_eqn 1439.5 1488.3 707.9 0.0
+petsc 1749.4 1749.4 709.3 234.6
+iterations 1812.8 1870.2 715.7 290.1
+size mesh.local 340.2
+size mesh.partition+procs+orig 25.5
+size mesh.halos 0.2
+size fields.momentum 427.1
+size fields.momentum+aux 478.1
+size eqns.all 204.8
+size U_eqn.A0 54.8
+size U_eqn.A 54.8
+size U_eqn.opA 54.8
+size U_eqn.bx 5.1
+size U_eqn.by 5.1
+size U_eqn.bz 5.1
+size U_eqn.R 5.1
+size U_eqn.Fx 5.1
+size p_eqn.A 54.8
+size p_eqn.opA 54.8
+size p_eqn.b 5.1
+size p_eqn.R 5.1
+size p_eqn.Fx 5.1
+RANK 1 n_owned=660192 n_local=662369 nfaces=1342740 iters=5 gc=true t_iter_s=21.97 p=0.00020865010243520697
+stage rss_MB hwm_MB gc_live_MB petsc_malloc_MB
+runtime 546.4 556.1 23.1 0.0
+mesh 915.0 919.3 389.0 0.0
+model 1059.8 1059.8 451.4 0.0
+aux_fields 1110.8 1110.8 502.3 0.0
+U_eqn 1245.5 1450.2 637.7 0.0
+p_eqn 1439.3 1488.4 707.8 0.0
+petsc 1748.9 1748.9 709.0 234.7
+iterations 1809.9 1855.5 715.4 290.2
+size mesh.local 340.1
+size mesh.partition+procs+orig 25.5
+size mesh.halos 0.2
+size fields.momentum 426.9
+size fields.momentum+aux 477.9
+size eqns.all 205.0
+size U_eqn.A0 54.8
+size U_eqn.A 54.8
+size U_eqn.opA 54.8
+size U_eqn.bx 5.1
+size U_eqn.by 5.1
+size U_eqn.bz 5.1
+size U_eqn.R 5.1
+size U_eqn.Fx 5.1
+size p_eqn.A 54.8
+size p_eqn.opA 54.8
+size p_eqn.b 5.1
+size p_eqn.R 5.1
+size p_eqn.Fx 5.1

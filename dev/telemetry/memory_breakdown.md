@@ -12,7 +12,7 @@ Two runs per mesh: `gc=0` is the natural run (its HWM is the peak a user sees); 
 | 5 mm | 499,503 | 250,558 | 1202 | 4.9 KB |
 | 4 mm | 1,320,368 | 662,391 | 1950 | 3.0 KB |
 
-Fit: peak ≈ 790 MB fixed + 1.85 KB per local cell (slope 1.83 KB 10→4 mm, 1.90 KB 5→4 mm). The earlier 2.79 GB at 4 mm n=2 (`preconditioner_guidance.md`) came from `scaling_probe.jl`, which calls `run!` three times in one process, each building new equations and PETSc objects. Re-run on the same parts it peaks at 2838/2830 MB per rank (`memory_breakdown/scaling_probe_4mm_n2_three_runs.log`), 890 MB above one run, so it is not one run's footprint; whether the extra is uncollected garbage or PETSc objects never destroyed between runs is open (P1-M21-S5).
+Fit: peak ≈ 790 MB fixed + 1.85 KB per local cell (slope 1.83 KB 10→4 mm, 1.90 KB 5→4 mm). The earlier 2.79 GB at 4 mm n=2 (`preconditioner_guidance.md`) came from `scaling_probe.jl`, which calls `run!` three times in one process, each building new equations and PETSc objects. Re-run on the same parts it peaks at 2838/2830 MB per rank (`memory_breakdown/scaling_probe_4mm_n2_three_runs.tab`), 890 MB above one run, so it is not one run's footprint; whether the extra is uncollected garbage or PETSc objects never destroyed between runs is open (P1-M21-S5).
 
 ## Attribution, 4 mm n=2 rank 0 (660,176 owned cells)
 

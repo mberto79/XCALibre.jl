@@ -13,6 +13,13 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - `xcalibre-dev check` exits non-zero on an invalid vault, but a status read through a pipe is the pipe's status; run it bare.
 - `pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so `until ! pgrep -f 'Pkg.test'` never exits while any shell mentions `Pkg.test`. Wait on a marker written to a file instead.
 
+## time budget (D101)
+
+- HARD CAP: any gate or experiment whose result decides a verdict finishes within five minutes of wall clock, compilation included. Plan the run to fit before launching it; if it cannot fit, shrink it, never extend the cap.
+- Measured durations to plan with: `gate.jl` (n=2,3) about 3.3 min; single suite files at `--ranks=2,3` 0.5-4 min each (`test_invariance.jl` 3.3, `test_gpu.jl` at 1,2 about 4); a 10 mm `mem_probe.jl` worker about 1 min; a 4 mm worker about 2 min; docs build several minutes.
+- Levers, cheapest first: the 10 mm mesh instead of 5 or 4 mm; 2-5 iterations; one rank-count pair; only the suite files the change can reach, run as separate commands; one A/B pair per timing run (the `equal_thermal.sh` 25 s warm-up and 15 s settle per point add up); `mem_probe.jl` residual hashes instead of full tests where bitwise equality is the verdict.
+- Swapping an extension file to compare versions forces a recompile on each swap (about 1 min); count it against the cap.
+
 ## environment and libraries
 - `xcalibre-dev` is a Python script without the executable bit: run it as `python3 <skill-dir>/scripts/xcalibre-dev check .`; `bash` misreads it and `resume` blocked past the two-minute command timeout here, so read the `LOAD` records directly instead.
 - `pkill -f <pattern>` kills the shell whose command line contains the pattern, which is the shell issuing it; match on a process name or a pid file instead.

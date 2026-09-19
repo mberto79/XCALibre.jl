@@ -354,6 +354,31 @@ Output on a distributed mesh is written with `output=OpenFOAM()` in the decompos
 no decomposed writer, so a run that asks for VTK output with a positive `write_interval` stops with
 an error at its first write. Leave `write_interval=-1` when no output is needed.
 
+## Output, checkpoints and restart
+
+With `output=OpenFOAM()` every rank writes `processor<rank>/<time>/` in the working directory, in
+OpenFOAM's binary format: the mesh once under `constant/polyMesh`, and at each write the fields,
+the face flux `phi` and a `uniform/time` file with the iteration and time step. Open the case in
+ParaView through the `XCALibre.foam` file that rank 0 creates, or combine it with `reconstructPar`
+when the decomposition came from `decomposePar`.
+
+Every write is also a checkpoint. `write_interval` counts iterations (steady) or time steps
+(transient), and a write happens whenever the iteration number is a multiple of it. To continue a
+run, launch the same script on the same number of ranks, in the same directory, with `restart` set
+to a written iteration (steady), time (transient) or time-directory name, and `iterations` set to
+where the run should stop:
+
+```julia
+residuals = run!(model, config; output=OpenFOAM(), restart=500)   # resumes after iteration 500
+```
+
+The resumed run reads the velocity, pressure, face flux and turbulence fields (and the time and
+time step of a transient run) that were written, and continues from the next iteration exactly as
+the uninterrupted run would have: with Jacobi-preconditioned solves the residuals and fields match
+bit for bit. The residual vectors it returns keep their initial fill for the iterations that were
+not run. Restart is available for incompressible SIMPLE and PISO runs with `Laminar` and `KOmegaSST`
+on a distributed mesh; a serial run started with `restart` stops with an error.
+
 ## Launching
 
 Install MPI.jl's launcher once. It resolves the same MPI binary that the package itself uses:

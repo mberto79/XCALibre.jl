@@ -1,22 +1,26 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
-updated: 2026-09-18T23:30:00+01:00
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m18-release-blockers.md
+updated: 2026-09-18T23:59:00+01:00
 STATE: IDLE
-STEP: P1-M15 - example comment blocks (next)
-HEAD: fad309b5
+STEP: P1-M18 - release blockers (next)
+HEAD: 814d5b36
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: start P1-M15 (example comment blocks to three lines; `xcalibre-dev check` until VALID), then P1-M16 (memory breakdown first; shared-code cures on one branch off main, D67)
+resume: read `AUDIT.md` once, then start P1-M18-S1 from `dev/plans/p1-m18-release-blockers.md`; work `dev/phaseRoadmap.md` in listed order (M18, M19, M20, M16, M21, M22, M23, M24, M15), landing every step
+## implementer
+- These milestones are for Fable (claude-fable-5-1) to implement in ONE fresh session, in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
+- Source of the work: `AUDIT.md` at the repository root (moves to `dev/archive/reviews/p1/audit-2026-09-18.md` at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.
+- Bars that gate every step: residuals bitwise identical under Jacobi at n=2 and n=8 (R8 is binding), `check_ghosts` zero (M19-S2), the M19-S4 round and all-reduce counters, and the serial suite with no reduction in test count.
 ## position
-M1-M14, M17 closed (M12 superseded by M13). This session: M9 no host fallback, M10 device-resident PETSc, M11 tolerances match Krylov.jl, M13 preconditioner guidance, M14 Int32 PETSc (D47-D66).
+M1-M14, M17 closed (M12 superseded by M13). M18-M24 opened by D72 from the audit; M16 restated to measurement only (D76). Plans for all seven live in `dev/plans/`.
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.
-- A project environment holding only XCALibre, MPI and PETSc, with no preferences file and no shell configuration, runs the distributed path on stock binaries (D4). `dev/petscenv_stock` is that environment; it is gitignored, and rebuilding it is `Pkg.develop` of this repository plus MPI, PETSc and Test.
-- All scaling numbers, both meshes, both codes, live in `dev/telemetry/scaling.csv`; plots come from `julia dev/scripts/plot_scaling.jl` and `SCALING_SUMMARY.md` at the repository root is the readable version. The probe takes `pc=<jacobi|boomeramg|gamg>` and `reuse=<N>` (its CLI name; it passes `freeze=N`).
+- `dev/petscenv_stock` (XCALibre, MPI, PETSc, Test; no preferences) runs the CPU path; `dev/petscenv_conda_ompi` runs the GPU path with a CUDA-aware Open MPI (`OMPI_MCA_opal_cuda_support=true`); `dev/petscenv` is the custom CUDA-hypre build.
+- Per-rank peak RSS 2.79/2.67 GB at 660k cells (4.1 KB/cell); rank-0 global mesh 1.6 KB/cell; the M16 breakdown must precede M21's cures.
 ## blocked/carried
-- Intermittent segfault once in 4 runs on conda openmpi CUDA-aware direct path, n=2 (`dev/telemetry/conda_cuda_petsc.md`); watch for it.
-- `BoomerAMG()` on GPU fields with a host-only hypre (conda-forge CUDA PETSc) SEGFAULTS instead of erroring (D70); needs its own milestone, user to rule.
-- Memory: 14 GB box; the 4 mm BFS with AMG at 8 ranks OOM-killed VS Code. Wrap every large-mesh run in `dev/scripts/memguard.sh` (P1-M16 measures under it too).
-- Machine partly reverted at 2026-09-18: turbo on, min_perf 15, governor powersave, but `powerprofilesctl get` still says performance; the user must run `powerprofilesctl set balanced`.
-- `xcalibre-dev check` is INVALID only on multi-line comment blocks in `examples/*.jl`; that is P1-M15.
+- Intermittent segfault once in 4 runs on the conda openmpi CUDA-aware direct path, n=2: root-cause is P1-M18-S11.
+- `BoomerAMG()` on GPU fields with a host-only hypre SEGFAULTS instead of erroring (D70): P1-M18-S2.
+- Memory: 14 GB box. Wrap every large-mesh run in `dev/scripts/memguard.sh`.
+- Machine partly reverted at 2026-09-18: turbo on, min_perf 15, governor powersave, but `powerprofilesctl get` still says performance; run `powerprofilesctl set balanced` before timing.
+- `xcalibre-dev check` reports pre-existing multi-line comment blocks in `examples/*.jl`; that is P1-M15.

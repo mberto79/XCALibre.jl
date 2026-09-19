@@ -12,6 +12,9 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - `pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so `until ! pgrep -f 'Pkg.test'` never exits while any shell mentions `Pkg.test`. Wait on a marker written to a file instead.
 
 ## environment and libraries
+- `xcalibre-dev` is a Python script without the executable bit: run it as `python3 <skill-dir>/scripts/xcalibre-dev check .`; `bash` misreads it and `resume` blocked past the two-minute command timeout here, so read the `LOAD` records directly instead.
+- `pkill -f <pattern>` kills the shell whose command line contains the pattern, which is the shell issuing it; match on a process name or a pid file instead.
+- MPI and PETSc API coverage for the M21-M23 plans was checked on 2026-09-18 against the installed packages: PETSc.jl wraps `VecCreateMPIWithArray`, `VecPlaceArray`, `MatUpdateMPIAIJWithArray`, `MatCreateMPIAIJWithSplitArrays`, `MatMPIAIJSetPreallocationCSR`, `MatPartitioningCreate`, `PetscDeviceContextGetStreamHandle`, but NOT the CUDA vector variants (`VecCreateMPICUDAWithArray`, `VecCUDAPlaceArray`), which need a hand-written `@ccall`; MPI.jl has `Send_init`/`Recv_init`/`Start`; Metis.jl takes vertex weights only through a hand-built `Metis.Graph`.
 
 - Julia resolves `Preferences` per project environment and `PETSc.jl`'s low-level wrappers are generated at precompilation for the configured library only, so the scalar precision and the library path are an environment choice and cannot be switched at runtime.
 - `--heap-size-hint` changes the precompilation cache-flags hash, so a child precompiling the PETSc extension asks for an image built under different flags and fails with a message that reads exactly like cache corruption; clearing the compiled cache does not fix it. Use `--startup-file=no` and no heap hint.

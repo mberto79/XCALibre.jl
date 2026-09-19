@@ -37,6 +37,8 @@ R7 PARALLEL SPEEDUP — wall-clock time per iteration falls as ranks are added o
 R8 RESULTS ARE RANK-INVARIANT — converged fields and residual histories agree across rank counts to solver tolerance.
 R9 REGRESSION NET — the distributed feature has an automated gate that runs in ordinary developer and continuous-integration time.
 R10 DOCUMENTED SCOPE — the supported and unsupported distributed physics models, floating-point precisions and hardware paths are stated in user documentation.
+R11 NO RANK IS A BOTTLENECK — the memory and time any one rank spends preparing, running or writing a distributed simulation are bounded by its own share of the mesh, not by the global mesh or the rank count.
+R12 RESTART — a distributed run can be checkpointed and resumed from its written state, and the resumed run continues the interrupted one to solver tolerance.
 
 ## acceptance
 

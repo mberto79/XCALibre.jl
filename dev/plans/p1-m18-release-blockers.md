@@ -1,0 +1,37 @@
+# P1-M18 - release blockers (plan)
+
+Linked from `dev/phaseRoadmap.md`. Requirements: R1, R2, R10. Governing decisions: D70, D71, D72, D77.
+
+## Problem, quantified
+
+`AUDIT.md` § Release blockers: 82,933 lines of OpenFOAM field files committed under `docs/1/`; `BoomerAMG()` on device fields segfaults on a host-only hypre (D70); `initialise_writer(::VTK, ::DistributedMesh)` returns `nothing` so a VTK request writes nothing; `.jls` parts fail after any Julia or XCALibre upgrade; the communicator given to `distribute` is dropped by `sync!`, `wrap_eqn` and `global_max`; `bind_device!` binds by global rank; `_gpu_comm!` pokes a private PETSc symbol; `setReference!` scans `orig_cells` every pressure solve; the Julia floor moved to 1.10 unrecorded; one CUDA-aware run in four segfaulted at n=2 (`dev/telemetry/conda_cuda_petsc.md`).
+
+## Approach
+
+Each blocker is a small, independent change with an existing test to extend. No new mechanism; the only design choice is the hypre device query (S2), which falls back to an explicit opt-in when no query exists.
+
+## Configuration space
+
+env {stock Float64, conda CUDA} x ranks {1, 2} x backend {CPU, CUDA}; the existing suite files are the catalogue (`test/distributed/runtests_mpi.jl --ranks=1,2`, `test_gpu.jl` on `dev/petscenv_conda_ompi`).
+
+## Steps
+
+- [ ] **P1-M18-S1** remove `docs/1/*` from the branch; move `PLAN_REVIEW.md` and `distributed_plan_detailed.md` to `archive/dev_distributed/`, `SCALING_SUMMARY.md` to `dev/telemetry/scaling_summary.md` (its own image and csv links become relative to `dev/telemetry/`; the only other citations are in `AUDIT.md`, checked 2026-09-19), and at milestone close `AUDIT.md` to `dev/archive/reviews/p1/audit-2026-09-18.md` with every plan citation updated (D77) - mechanism: no result file or working document lives at the repository root - cost: none - verdict: `git diff main --stat` lists no `docs/1`, docs build green.
+- [ ] **P1-M18-S2** `PETScSolver` refuses `BoomerAMG` with device fields unless hypre is device-capable - mechanism: after `PETSc.initialize`, look up `HYPRE_GetMemoryLocation` (hypre >= 2.20) with `Libdl.dlsym(lib, sym; throw_error=false)` on the PETSc handle (verify the symbol is exported by the conda build's libpetsc or by a separate libHYPRE the handle can see); if found and it reports host memory, or if not found at all, error naming `GAMG()`/`Jacobi()` and the `BoomerAMG(device=true)` opt-in that skips the check - cost: one dlsym per solver construction - verdict: conda env `test_gpu.jl` with `p_precon=BoomerAMG()` errors cleanly at n=1,2; `dev/petscenv` (CUDA hypre) runs BoomerAMG on device as in `preconditioner_guidance.md` S5.
+- [ ] **P1-M18-S3** `initialise_writer(::VTK, ::DistributedMesh)` errors: "VTK has no decomposed writer; use output=OpenFOAM() or write_interval=-1" - mechanism: silent no-output is never acceptable - cost: none - verdict: `test_io.jl` asserts the error.
+- [ ] **P1-M18-S4** `partition_mesh` writes a header `(format=1, julia=VERSION, xcalibre=pkgversion, nranks, TI, TF)` before the mesh in each `rank_<r>.jls`; `distribute(dir)` and `_parts_match` read it first and error with "regenerate with partition_mesh" on any mismatch - mechanism: version-fragile serialisation fails at load, never inside the solver - cost: none - verdict: `test_offline.jl` round-trips its own parts and a part with an edited header errors. Superseded by the binary format in P1-M23-S1; the header field set is what that format keeps.
+- [ ] **P1-M18-S5** `DistributedMesh` gains a `comm::MPI.Comm` field (host-only through `adapt_structure`, set by `extract_subdomain`/`distribute` from the `comm` keyword); `HaloExchange(dm, w, backend)` defaults to it, and `sync!`, `wrap_eqn`, `residual`, `global_max`, `is_report_rank`, `gather` and the writer read it - mechanism: one communicator per mesh, never `COMM_WORLD` by name outside `distribute` - cost: none - verdict: suite green; a new `test_halo.jl` case on `MPI.Comm_dup(COMM_WORLD)` gives bitwise the same ghosts.
+- [ ] **P1-M18-S6** `bind_device!(backend)` binds by node-local rank from `MPI.Comm_split_type(comm, MPI.COMM_TYPE_SHARED, rank)`, warns once when local ranks exceed devices - mechanism: device index is a node-local quantity - cost: one split at start-up - verdict: `test_gpu.jl` n=1,2 green (local rank equals global rank here); the docs sentence on binding updated.
+- [ ] **P1-M18-S7** `_gpu_comm!` looks the symbol up with `throw_error=false` and errors with "pass -use_gpu_aware_mpi 0 in petsc_options" when it is absent - mechanism: a private symbol may vanish; the failure must name the user's alternative - cost: none - verdict: current envs unchanged (PETSc 3.24, 3.25); a deliberately wrong symbol name hits the error.
+- [ ] **P1-M18-S8** `DistributedEqn` caches the local id of the reference cell at `wrap_eqn` time; `setReference!` uses it - mechanism: the mapping never changes after partitioning - cost: none - verdict: `test_psimple.jl` cavity (`pref=0.0`) unchanged.
+- [ ] **P1-M18-S9** CHANGELOG "Changed" entry for the Julia 1.10 floor; `CLAUDE.md` says 1.10+; the distributed guide states that `petsc_options` start-up keys apply on the first `PETSc.initialize` only and that later equations' options cannot add them - mechanism: documentation - verdict: docs build green.
+- [ ] **P1-M18-S10** `MPI.has_cuda()` is read only after `MPI.Initialized() || MPI.Init()` in the `HaloExchange` constructor - mechanism: the query is meaningless before Init (`conda_cuda_petsc.md`) - cost: none - verdict: `test_gpu.jl` staged-vs-auto case green.
+- [ ] **P1-M18-S11** root-cause the CUDA-aware direct-path segfault: ten runs of `test_gpu.jl` n=2 on `dev/petscenv_conda_ompi` with `OMPI_MCA_opal_cuda_support=true` under `compute-sanitizer --tool memcheck` and with `CUDA_LAUNCH_BLOCKING=1`, then the same with `cuda_aware=false` on the halo only, so the fault is attributed to the halo, to PETSc's scatter, or to two ranks sharing one device through CUDA IPC - mechanism: measurement - cost: about an hour of runs - verdict: the fault reproduced and fixed, or ten clean runs recorded in `dev/telemetry/conda_cuda_petsc.md` with the sanitizer output; either outcome closes the step with a decision.
+
+## Exit criterion
+
+Distributed suite 12/12 at n=1,2 on `dev/petscenv_stock`; `test_gpu.jl` n=1,2 green on `dev/petscenv_conda_ompi`; docs build green; `git diff main --stat` free of result files; `AUDIT.md` archived.
+
+## Open questions
+
+- S2: whether the conda build exports `HYPRE_GetMemoryLocation` from libpetsc; settled by `nm -D` on `libpetsc.so` and `libHYPRE*.so` in the conda prefix. If neither, the opt-in path is the whole mechanism.

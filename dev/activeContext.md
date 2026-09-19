@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-19T17:30:00+01:00
 STATE: IDLE
 STEP: P1-M21-S1 - n_rows seam, owned-row CSR
-HEAD: 7cf85354
+HEAD: 3560065f
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: start P1-M21-S1 per `dev/plans/p1-m21-owned-row-system.md`; then M21 S3-S6, M22, M23, M24, M15 in `dev/phaseRoadmap.md` order

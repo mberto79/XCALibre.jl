@@ -15,6 +15,36 @@ function proc_mb(key)
     NaN
 end
 
+const SMAPS_KEYS = ("Rss", "Pss", "Private_Clean", "Private_Dirty", "Shared_Clean", "Shared_Dirty")
+# kB fields of /proc/self/smaps_rollup in SMAPS_KEYS order, reported in MB
+function smaps_mb()
+    d = Dict{String,Float64}()
+    for l ∈ eachline("/proc/self/smaps_rollup")
+        f = split(l)
+        length(f) == 3 && (k = chop(f[1]); k ∈ SMAPS_KEYS) && (d[k] = parse(Int, f[2]) / 1024)
+    end
+    Tuple(get(d, k, NaN) for k ∈ SMAPS_KEYS)
+end
+
+# (private, shared, pss) MB per mapped path; anonymous regions keyed by permissions, so `[anon r-xp]` is JIT code
+function smaps_by_path()
+    acc = Dict{String,NTuple{3,Float64}}()
+    name = ""
+    for l ∈ eachline("/proc/self/smaps")
+        f = split(l)
+        if occursin(r"^[0-9a-f]+-[0-9a-f]+ ", l)
+            name = length(f) >= 6 ? join(f[6:end], " ") : "[anon $(f[2])]"
+        elseif length(f) == 3 && f[3] == "kB"
+            k = chop(f[1]); v = parse(Int, f[2]) / 1024
+            i = startswith(k, "Private") ? 1 : startswith(k, "Shared") ? 2 : k == "Pss" ? 3 : 0
+            i == 0 && continue
+            a = get(acc, name, (0.0, 0.0, 0.0))
+            acc[name] = ntuple(j -> a[j] + (j == i) * v, 3)
+        end
+    end
+    sort!(collect(acc); by=x -> -x[2][1])
+end
+
 if MODE == "part"
     using XCALibre
     t = @elapsed mesh = UNV3D_mesh(ARGV[2], scale=0.001)
@@ -29,7 +59,8 @@ elseif MODE == "worker"
     MPI.Init()
     comm = MPI.COMM_WORLD
     rank = MPI.Comm_rank(comm)
-    const ROWS = Tuple{String,Float64,Float64,Float64,Float64}[]
+    const ROWS = Tuple{String,Vararg{Float64,10}}[]
+    const MAPS = Pair{String,Vector{Pair{String,NTuple{3,Float64}}}}[]
     # PetscMalloc bytes summed over initialised libraries; zero unless -malloc_debug was set at start-up
     function petsc_malloc_mb()
         mb = 0.0
@@ -44,7 +75,8 @@ elseif MODE == "worker"
     function stage(name)
         MPI.Barrier(comm)
         FORCE_GC && GC.gc(true)
-        push!(ROWS, (name, proc_mb("VmRSS"), proc_mb("VmHWM"), Base.gc_live_bytes() / 2^20, MALLOC ? petsc_malloc_mb() : NaN))
+        push!(ROWS, (name, proc_mb("VmRSS"), proc_mb("VmHWM"), Base.gc_live_bytes() / 2^20, MALLOC ? petsc_malloc_mb() : NaN, smaps_mb()...))
+        name ∈ ("runtime", "iterations") && push!(MAPS, name => first(smaps_by_path(), 25))
     end
     stage("runtime")
     dm = distribute(ARGV[2]; comm=comm)
@@ -110,9 +142,12 @@ elseif MODE == "worker"
     nown = dm.partition.n_owned; nloc = length(getfield(dm, :mesh).cells)
     out = IOBuffer()
     println(out, "RANK $rank n_owned=$nown n_local=$nloc nfaces=$(length(getfield(dm, :mesh).faces)) iters=$iters gc=$FORCE_GC t_iter_s=$(round(t, digits=2)) p=$(res.p[end]) reshash=$(string(hash(collect(values(res))), base=16))")
-    println(out, "stage rss_MB hwm_MB gc_live_MB petsc_malloc_MB")
+    println(out, "stage rss_MB hwm_MB gc_live_MB petsc_malloc_MB ", join(SMAPS_KEYS, "_MB "), "_MB")
     for r ∈ ROWS
         println(out, join((r[1], (round(x, digits=1) for x ∈ r[2:end])...), " "))
+    end
+    for (st, m) ∈ MAPS, (k, v) ∈ m
+        println(out, "map ", st, " priv=", round(v[1], digits=1), " shared=", round(v[2], digits=1), " pss=", round(v[3], digits=1), " ", k)
     end
     for (k, v) ∈ sizes
         println(out, "size ", k, " ", round(v, digits=1))

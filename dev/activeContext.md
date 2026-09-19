@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m26-shipped-precompile.md
 updated: 2026-09-19T20:30:00+01:00
-STATE: IDLE
-STEP: P1-M26 shipped precompilation (next; M24 closed D132)
+STATE: BUILDING
+STEP: P1-M26-S1 size-free kernel launches
 HEAD: 4e46e5c0
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: start P1-M26: write its plan (`xcalibre-dev plan P1-M26 shipped-precompile`) from the phase-roadmap row and D106/D108 evidence, then build; then M15
+resume: P1-M26-S1: `_sized` helper in Multithread, rewrite the `F(_setup(...)...)` sites; baseline hashes and timing BEFORE the rewrite; S2 needs a user decision on workload scope
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M22 closed (D118), M23 closed (D129), M24 closed (D132), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.

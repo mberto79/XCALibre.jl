@@ -20,7 +20,7 @@ What is true of the code today. Why a mechanism was chosen belongs in `dev/decis
 - Field values crossing a partition boundary are refreshed by the halo exchange before any operation that reads a neighbour; gradient, interpolation and turbulence paths each declare where that refresh happens.
 - Each mesh holds one halo schedule per width (scalar 1, vector 3, scalar with vector 4), built on first use, shared by every field and equation, tagged by width and driven by persistent requests freed at MPI finalize. A vector solve exchanges all components once after the last one and takes each residual against that component's saved diagonal; residual sums of one equation cross ranks in one all-reduce.
 - The solver entry point routes to the distributed path on the mesh type, so physics, boundary, scheme and runtime setup are shared with the serial path unchanged.
-- Results are written per rank in the decomposed layout that OpenFOAM's reconstruction tools expect.
+- Results are written per rank in OpenFOAM's decomposed binary layout, including the face flux and the loop position, which is also the restart checkpoint: a restart restores cell fields, time and time step before the solver's initial calculations and the face flux after them, so the resumed loop state equals the written one.
 
 ## interfaces
 

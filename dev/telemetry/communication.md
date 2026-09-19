@@ -60,3 +60,4 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 
 - Per 3D laminar SIMPLE iteration: exchanges 8 → 5, all-reduces 8 → 2 (2D: 7 → 5, 6 → 2); residual hashes bitwise identical at 10 mm n=2 and n=4 throughout; GPU n=1 51.6 ms per iteration at 5 mm (plan baseline 74.6 ms).
 - n=8 pinned per-iteration time not recorded: 10 mm n=8 with PETSc exceeds memory beside the language server, and the overlap and ghost-row steps it was to judge were withdrawn on bounds below 0.5 percent.
+- Reach check after close: `test_ppiso`, `test_periodic`, `test_invariance`, `test_turbulence_sst` green at n=2,3; `test_ghosts` and `test_perf` green at n=5,8 (ghosts zero, 5 exchanges, 2 all-reduces). The 10 mm n=8 hash was not run (memory); n=2,4 hashes stand for R8. `test_perf.jl` halo budgets reset to about 2x measured (1024 + 5120 per neighbour).

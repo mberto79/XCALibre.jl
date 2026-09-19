@@ -4,7 +4,7 @@ Branch `HM/distributed-draft` at `814d5b36` (82 commits over `main`), read 2026-
 
 ## Verdict
 
-The module is correct, well-measured and cleanly layered for the range it was built on: one node, up to eight CPU ranks, two ranks on one GPU, meshes to about 1.3M cells. Inside that range it ties OpenFOAM's GAMG per iteration with Jacobi and scales better (`SCALING_SUMMARY.md` §6). It is not yet a platform for massive parallelism, and the reasons are structural rather than bugs:
+The module is correct, well-measured and cleanly layered for the range it was built on: one node, up to eight CPU ranks, two ranks on one GPU, meshes to about 1.3M cells. Inside that range it ties OpenFOAM's GAMG per iteration with Jacobi and scales better (`dev/telemetry/scaling_summary.md` §6). It is not yet a platform for massive parallelism, and the reasons are structural rather than bugs:
 
 1. Every mesh passes through one rank, serially, at O(P·N) time and O(N) memory. This is a hard ceiling, not a slow path.
 2. The linear system exists in three to four copies per rank and every cell kernel also runs over ghost rows. Peak memory is 4.1 KB per cell per rank before any AMG, against roughly 1.5 to 1.8 KB of live data by struct layout.
@@ -80,7 +80,7 @@ These are not structural and should not wait for the three changes above.
 4. **Device binding by global rank** (change 3 above) is wrong on the configuration the docs advertise.
 5. **Per-rank heap cannot be bounded** while `--heap-size-hint` is off the table (`dev/gotchas.md`). Re-verify the cache-flag claim; if it holds, document the precompile-under-launch-flags recipe; if not, a node full of ranks will over-commit.
 6. **`.jls` parts are version-fragile** and fail after any upgrade, sometimes with a type error deep in the solver rather than at load ([Distribute_1_partition.jl:348](src/Distribute/Distribute_1_partition.jl#L348)). A header with Julia, XCALibre and format versions checked at load is the minimum; a binary format is the fix.
-7. **The branch carries 82,933 lines of committed simulation output.** `docs/1/U`, `k`, `nut`, `omega`, `p` and `y` are OpenFOAM field files a run dropped into `docs/`, and `PLAN_REVIEW.md`, `SCALING_SUMMARY.md` and `distributed_plan_detailed.md` sit at the repository root. They must leave the branch, or move under `dev/` or `archive/`, before a pull request is reviewable.
+7. **The branch carries 82,933 lines of committed simulation output.** `docs/1/U`, `k`, `nut`, `omega`, `p` and `y` are OpenFOAM field files a run dropped into `docs/`, and `PLAN_REVIEW.md`, `dev/telemetry/scaling_summary.md` and `distributed_plan_detailed.md` sit at the repository root. They must leave the branch, or move under `dev/` or `archive/`, before a pull request is reviewable.
 8. **`initialise_writer(::VTK, ::DistributedMesh)` returns `nothing`** ([Distribute_7_io.jl:217](src/Distribute/Distribute_7_io.jl#L217)), so a distributed run asked for VTK output silently writes nothing. It should warn or error.
 
 ## What is solid
@@ -89,7 +89,7 @@ Keep these as they are; they are the reason the module is correct.
 
 - The seam design: `sync!`, `wrap_eqn`, `unwrap_eqn`, `is_distributed_mesh`, `global_max` are inlined identities in serial and the solver bodies are shared line for line ([Solve_1_api.jl:511-530](src/Solve/Solve_1_api.jl#L511-L530)).
 - Owned-row discipline: canonical min/max owner row in `make_symmetric!` ([Solve_1_api.jl:555](src/Solve/Solve_1_api.jl#L555)) and `correct_mass_flux!` ([Solvers_1_SIMPLE.jl:411](src/Solvers/Solvers_1_SIMPLE.jl#L411)); residual over owned rows only; reference cell by original global id.
-- Flux consistency across processor faces is bitwise by construction: `extract_subdomain` preserves original owner order through `g2l`, so both ranks compute the same interpolation and the same `aN·(p2 − p1)`. This is why Jacobi runs agree to 15 significant figures across rank counts (`SCALING_SUMMARY.md` §8).
+- Flux consistency across processor faces is bitwise by construction: `extract_subdomain` preserves original owner order through `g2l`, so both ranks compute the same interpolation and the same `aN·(p2 − p1)`. This is why Jacobi runs agree to 15 significant figures across rank counts (`dev/telemetry/scaling_summary.md` §8).
 - Rank-uniform API: `distribute(reader)` removes the rank-guard class of hang that broke the BFS example (archived findings).
 - In-place COO value assembly from the `nzval` pointer, on host or device (D51), and the narrowest-index PETSc library chosen from an all-reduced count (D61).
 - Tolerance semantics matched to Krylov.jl: `rtol` relative to the initial residual and CG on the natural norm ([XCALibrePETScExt.jl:156](ext/XCALibrePETScExt.jl#L156), [:180](ext/XCALibrePETScExt.jl#L180)), which cut 30 SIMPLE iterations' final residual by 10 to 30x (D53).
@@ -131,7 +131,7 @@ Two numbers exist: 4.1 KB per cell peak per rank and 1.6 KB per cell for the ran
 Covered by change 3. Two smaller items:
 
 - Halo host mirrors are allocated only when MPI is not CUDA-aware ([Distribute_2_halo.jl:33](src/Distribute/Distribute_2_halo.jl#L33)); correct, and the branch is decided once at construction from `MPI.has_cuda()`, which is only valid after `MPI.Init` (`dev/telemetry/conda_cuda_petsc.md`). `distribute` initialises MPI first, so the order holds, but a user constructing a `HaloExchange` before `distribute` would get the staged path silently.
-- `PipeCG` lost 17 percent at eight ranks (`SCALING_SUMMARY.md` §7). Pipelined and communication-avoiding Krylov are for 64 ranks and beyond; do not revisit before change 3 lands.
+- `PipeCG` lost 17 percent at eight ranks (`dev/telemetry/scaling_summary.md` §7). Pipelined and communication-avoiding Krylov are for 64 ranks and beyond; do not revisit before change 3 lands.
 
 ### GPU
 
@@ -145,7 +145,7 @@ Evidence is thin: one RTX 4070, two ranks sharing it, one mesh. Nothing below is
 
 ### Linear solver strategy
 
-All distributed solves go through PETSc, and the module's own AMG is serial only; `SCALING_SUMMARY.md` §9 calls the native AMG the weak component. This is a pragmatic dependency, not a defect, and PETSc's GAMG on the GPU (0.059 s per iteration at 500k cells) is the right default today. For the long range, two paths are open and both are outside P1: distribute the native KernelAbstractions AMG over the halo machinery, which removes the matrix copies and the custom-PETSc requirement on GPUs; or AmgX through PETSc, which needs yet another build. A decision is not needed now, but change 2 should be designed so the XCALibre CSR can be the single operator either path consumes.
+All distributed solves go through PETSc, and the module's own AMG is serial only; `dev/telemetry/scaling_summary.md` §9 calls the native AMG the weak component. This is a pragmatic dependency, not a defect, and PETSc's GAMG on the GPU (0.059 s per iteration at 500k cells) is the right default today. For the long range, two paths are open and both are outside P1: distribute the native KernelAbstractions AMG over the halo machinery, which removes the matrix copies and the custom-PETSc requirement on GPUs; or AmgX through PETSc, which needs yet another build. A decision is not needed now, but change 2 should be designed so the XCALibre CSR can be the single operator either path consumes.
 
 ### Testing and validation
 

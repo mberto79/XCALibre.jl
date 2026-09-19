@@ -4,9 +4,9 @@ Backward-facing step, laminar, incompressible, Float64 on CPU. All timings are
 `(t100 - t3) / 97` s per SIMPLE iteration, which cancels JIT and setup cost. One MPI rank per
 physical P-core, verified from each rank's kernel affinity mask.
 
-Data: [`dev/telemetry/scaling.csv`](dev/telemetry/scaling.csv),
-[`machine_bandwidth.csv`](dev/telemetry/machine_bandwidth.csv),
-[`petsc_events.csv`](dev/telemetry/petsc_events.csv).
+Data: [`dev/telemetry/scaling.csv`](scaling.csv),
+[`machine_bandwidth.csv`](machine_bandwidth.csv),
+[`petsc_events.csv`](petsc_events.csv).
 Plots: `dev/telemetry/plots/` — regenerate with `julia dev/scripts/plot_scaling.jl`.
 
 ---
@@ -27,7 +27,7 @@ Two independent controls agree: pinning the clock in hardware (`no_turbo=1`), an
 otherwise-idle P-core with spin loops so all rank counts throttle equally. The commands for both
 are in `dev/gotchas.md`.
 
-![throttling](dev/telemetry/plots/throttling.png)
+![throttling](plots/throttling.png)
 
 ## 2. Efficiency is independent of mesh size
 
@@ -90,7 +90,7 @@ Placing PETSc against that ceiling:
 - `MatMult` streams a 54 MB matrix that cannot fit the 36 MB L3, at 15.8 to 25.7 GB/s against the
   flat 38.7 GB/s ceiling. This one term genuinely is DRAM-bound.
 
-![machine ceiling](dev/telemetry/plots/machine_ceiling.png)
+![machine ceiling](plots/machine_ceiling.png)
 
 ## 6. Against OpenFOAM, same mesh, same machine, both pinned at 2200 MHz
 
@@ -120,7 +120,7 @@ that the baseline never had. Efficiency percentages are comparable only between 
 of similar absolute speed — comparing a fast code's efficiency against a slow one's is
 meaningless.
 
-![efficiency](dev/telemetry/plots/efficiency.png)
+![efficiency](plots/efficiency.png)
 
 ## 7. Preconditioners and remedies tested
 
@@ -178,7 +178,7 @@ runs are not reproducible across rank counts, and BoomerAMG's freeze schedule co
 `KSP=pipecg` confirmed in the solver log. The extra per-iteration work needed to enable the
 reduction overlap exceeds the barrier wait it hides at this scale.
 
-![absolute cost](dev/telemetry/plots/absolute_cost.png)
+![absolute cost](plots/absolute_cost.png)
 
 ## 8. Correctness
 

@@ -50,20 +50,5 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - Sample the clock DURING a run, never after it: a reading taken once the solver has exited shows idle cores and is worthless (it made the first OpenFOAM comparison unusable, D22).
 - Without root, `dev/scripts/equal_thermal.sh` is the substitute for pinning: spin loops occupy every P-core the solver is not using, so all rank counts throttle equally. The two methods agree.
 
-Pin the clock before measuring, and put it back afterwards:
-
-```bash
-# pin at the 2200 MHz base clock on every core
-powerprofilesctl set performance
-echo 1   | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
-echo 100 | sudo tee /sys/devices/system/cpu/intel_pstate/min_perf_pct
-echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-
-# revert to this machine's normal state
-echo 0  | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
-echo 15 | sudo tee /sys/devices/system/cpu/intel_pstate/min_perf_pct
-echo powersave | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
-echo balance_performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
-powerprofilesctl set balanced
-```
+- Pin the clock before measuring and revert afterwards with `dev/scripts/pin_clock.sh pin|revert`.
 - conda CUDA PETSc envs: micromamba at `~/.local/micromamba` (envs `petsc-cuda` mpich, `petsc-cuda-ompi` openmpi); Julia envs `dev/petscenv_conda*`; openmpi runs need `OMPI_MCA_opal_cuda_support=true` (D69).

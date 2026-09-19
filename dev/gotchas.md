@@ -6,6 +6,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 
 - Never launch a Julia simulation in the foreground: compilation plus GPU warm-up exceeds the two-minute command timeout every time. Always run in the background and redirect simulation output to a file.
 - Smoke-test any new simulation script at one or two iterations before a full run; a typo costs a minute instead of an hour.
+- Never launch the whole distributed suite (every file at ranks 1,2,3,5) in one go, and never without `dev/scripts/memguard.sh`: on 2026-09-19 it ran this 14 GB box out of memory and took VS Code down. Run `gate.jl`, then named files one at a time under `MIN_MB=2500 memguard.sh`.
 - `test/distributed/runtests_mpi.jl` swallows child standard output when a test passes, so anything printed by the run must be checked with a direct `mpiexec` invocation instead.
 - BFS tet meshes at 3, 4, 5 and 10 mm live in `~/Desktop/BFS_GRIDS/` (`bfs_unv_tet_<h>mm.unv`); parts written before the checked part header (M18) fail to load, so `~/.cache/xcal_scaling_probe` parts dated before 2026-09-19 must be regenerated.
 - A distributed hang with flat resident memory and no solver banner is almost always ranks dispatching differently: any value that selects a method must be broadcast so it has the same type on every rank.

@@ -51,3 +51,7 @@ Operator copies per equation, counting one CSR (55 MB) as one: U 3.9 (Julia A0 a
 - Zero-copy PETSc vectors (P1-M21-S4): the x and b copies, about 20 MB, plus 12 copies per iteration of time.
 - `GC.gc(true)` after setup (P1-M21-S5): up to 80 MB at n=2.
 - The fixed ~800 MB per rank (runtime plus compiled code) is untouched by every planned cure and exceeds the whole per-cell cost below about 440k cells per rank.
+
+## After P1-M21-S3 (host matrices without the COO map), 4 mm n=2 rank 0
+
+PetscMalloc after the run 290.1 → 205.8 MB; natural peak RSS 1950 → 1793 MB; RSS after PETSc setup 1739 → 1548 MB; residual histories unchanged (`memory_breakdown/s3_4mm_gc*.tab`). The saving is 84 MB of PETSc heap rather than the full 99 MB because `MatCreateMPIAIJWithArrays` keeps its own row bookkeeping; the rest of the peak drop is the COO setup transient.

@@ -102,7 +102,7 @@ elseif MODE == "worker"
     ]
     nown = dm.partition.n_owned; nloc = length(getfield(dm, :mesh).cells)
     out = IOBuffer()
-    println(out, "RANK $rank n_owned=$nown n_local=$nloc nfaces=$(length(getfield(dm, :mesh).faces)) iters=$iters gc=$FORCE_GC t_iter_s=$(round(t, digits=2)) p=$(res.p[end])")
+    println(out, "RANK $rank n_owned=$nown n_local=$nloc nfaces=$(length(getfield(dm, :mesh).faces)) iters=$iters gc=$FORCE_GC t_iter_s=$(round(t, digits=2)) p=$(res.p[end]) reshash=$(string(hash(collect(values(res))), base=16))")
     println(out, "stage rss_MB hwm_MB gc_live_MB petsc_malloc_MB")
     for r ∈ ROWS
         println(out, join((r[1], (round(x, digits=1) for x ∈ r[2:end])...), " "))

@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m21-owned-row-system.md
-updated: 2026-09-19T17:30:00+01:00
-STATE: IDLE
-STEP: P1-M21-S1 - n_rows seam, owned-row CSR
+updated: 2026-09-19T14:00:00+01:00
+STATE: BUILDING
+STEP: P1-M21-S4 - zero-copy PETSc vectors
 HEAD: 3a31c6e3
 BRANCH: HM/distributed-draft
-GATE: julia --project=. -e 'using Pkg; Pkg.test()'
-resume: start P1-M21-S1 per `dev/plans/p1-m21-owned-row-system.md`; then M21 S3-S6, M22, M23, M24, M15 in `dev/phaseRoadmap.md` order
+GATE: test/distributed/gate.jl, then test_periodic/test_perf/test_invariance/test_ghosts at --ranks=2,3, each under MIN_MB=2500 memguard.sh
+resume: implement S4: storage-less vecs (`VecCreateMPIWithArray`/`VecCreateMPICUDAWithArray` with NULL) placed per solve with `VecPlaceArray`/`VecCUDAPlaceArray` under try/finally; CUDA names go in `petsc_device_info`; symbols confirmed in the conda PETSc 3.25
 ## implementer
 - These milestones are for Fable (claude-fable-5-1) to implement in ONE fresh session, in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.

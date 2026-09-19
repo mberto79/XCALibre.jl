@@ -61,7 +61,7 @@ end
 
 # NEW SECTION: solver type
 
-struct XPETScSolver{PL,TM,TV,TK,SY} <: Distribute.AbstractDistributedSolver
+struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     petsclib::PL
     A::TM
     b::TV
@@ -69,6 +69,7 @@ struct XPETScSolver{PL,TM,TV,TK,SY} <: Distribute.AbstractDistributedSolver
     ksp::TK
     n_owned::Int
     sync::SY           # device-wide sync (nothing on host): PETSc and XCALibre use separate streams
+    fill::FI           # host block scatter; nothing on device, where values go through the COO map
     setup_every::Int   # rebuild the PC every N solves (1 = every solve, PETSc default)
     nsolve::Base.RefValue{Int}
 end
@@ -156,7 +157,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     part = dmesh.partition
     TF = _get_float(dmesh)
     A = _A(eqn)
-    rowptr, colval = Vector(_rowptr(A)), Vector(_colval(A))
+    rowptr, colval = _host(_rowptr(A)), _host(_colval(A))
     n = part.n_owned
     # owned rows are the contiguous CSR prefix, so the COO values are nzval[1:nnz_owned] in place;
     # ghost rows are garbage and never shipped
@@ -180,18 +181,11 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         "See the distributed simulations page of the documentation.")
     device_solve && _gpu_comm!(petsclib, petsc_options, comm)
     l2g = part.local_to_global
-    coo_i = Vector{PI}(undef, nnz_owned)
-    for r ∈ 1:n, k ∈ rowptr[r]:rowptr[r+1]-1
-        coo_i[k] = l2g[r] - 1
-    end
-    coo_j = PI[l2g[colval[k]] - 1 for k ∈ 1:nnz_owned]
-    Amat = LibPETSc.MatCreate(petsclib, comm)
-    LibPETSc.MatSetSizes(petsclib, Amat, PI(n), PI(n), PI(N), PI(N))
-    mt = device_solve ? dev.mat : "mpiaij"
-    GC.@preserve mt LibPETSc.MatSetType(petsclib, Amat, Base.unsafe_convert(Cstring, mt))
-    LibPETSc.MatSetPreallocationCOO(petsclib, Amat, LibPETSc.PetscCount(nnz_owned), coo_i, coo_j)
     sync = device_solve ? dev.sync : nothing
-    _set_values!(petsclib, Amat, _nzval(A), sync)
+    Amat, fill = device_solve ?
+        _coo_matrix(petsclib, comm, dev.mat, rowptr, colval, l2g, n, N, nnz_owned) :
+        _split_matrix(petsclib, comm, _rowptr(A), _colval(A), _nzval(A), l2g, n, N)
+    _set_values!(petsclib, Amat, _nzval(A), sync, fill)
     x, b = LibPETSc.MatCreateVecs(petsclib, Amat)
     curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner)),
         _pc_options(setup.preconditioner))
@@ -238,7 +232,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
     setup_every = _pc_freeze(setup.preconditioner)
-    XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, setup_every, Ref(0))
+    XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, setup_every, Ref(0))
 end
 
 # NEW SECTION: assembly and solve
@@ -246,15 +240,91 @@ end
 _sync(::Nothing) = nothing
 _sync(f) = f()
 
+_host(x) = x isa Array ? x : Array(x)
+
+function _coo_matrix(petsclib, comm, mt, rowptr, colval, l2g, n, N, nnz_owned)
+    PI = petsclib.PetscInt
+    coo_i = Vector{PI}(undef, nnz_owned)
+    for r ∈ 1:n, k ∈ rowptr[r]:rowptr[r+1]-1
+        coo_i[k] = l2g[r] - 1
+    end
+    coo_j = PI[l2g[colval[k]] - 1 for k ∈ 1:nnz_owned]
+    Amat = LibPETSc.MatCreate(petsclib, comm)
+    LibPETSc.MatSetSizes(petsclib, Amat, PI(n), PI(n), PI(N), PI(N))
+    GC.@preserve mt LibPETSc.MatSetType(petsclib, Amat, Base.unsafe_convert(Cstring, mt))
+    LibPETSc.MatSetPreallocationCOO(petsclib, Amat, LibPETSc.PetscCount(nnz_owned), coo_i, coo_j)
+    Amat, nothing
+end
+
+# owned rows list owned columns then ghosts, each ascending in global id (ghosts are sorted by
+# owning rank, then id), which is exactly the order of PETSc's diagonal and off-diagonal blocks
+struct _SplitFill{M,VI}
+    Ad::M
+    Ao::M
+    rowptr::VI
+    colval::VI
+    n::Int
+    nnz_o::Int
+    get::Ptr{Cvoid}     # MatSeqAIJGetArrayWrite
+    restore::Ptr{Cvoid} # MatSeqAIJRestoreArrayWrite
+end
+
+function _seqaij_nnz(petsclib, M)
+    info = Ref{LibPETSc.MatInfo}()
+    LibPETSc.MatGetInfo(petsclib, M, LibPETSc.MAT_LOCAL, info)
+    Int(info[].nz_used)
+end
+
+# PETSc.jl's MatSeqAIJGetArrayWrite wrapper is broken (sizes by an undefined Vec), so call it direct
+function _seqaij_array(fp, M, ::Type{T}) where T
+    p = Ref{Ptr{T}}(C_NULL)
+    ccall(fp, Cint, (Ptr{Cvoid}, Ptr{Ptr{T}}), M.ptr, p) == 0 || error("PETSc: MatSeqAIJ array access failed")
+    p[]
+end
+
+function _split_matrix(petsclib, comm, rowptr, colval, nzval, l2g, n, N)
+    PI = petsclib.PetscInt
+    issorted(view(l2g, 1:n)) && issorted(view(l2g, n+1:length(l2g))) ||
+        error("PETScSolver: owned and ghost cells must each be numbered in ascending global order")
+    nnz_owned = Int(rowptr[n+1]) - 1
+    Amat = LibPETSc.MatCreateMPIAIJWithArrays(petsclib, comm, PI(n), PI(n), PI(N), PI(N),
+        PI[rowptr[r] - 1 for r ∈ 1:n+1], PI[l2g[colval[k]] - 1 for k ∈ 1:nnz_owned], nzval)
+    LibPETSc.MatSetOption(petsclib, Amat, LibPETSc.MAT_NO_OFF_PROC_ENTRIES, LibPETSc.PETSC_TRUE)
+    Ad, Ao, _ = LibPETSc.MatMPIAIJGetSeqAIJ(petsclib, Amat)
+    nnz_o = count(k -> colval[k] > n, 1:nnz_owned)
+    (_seqaij_nnz(petsclib, Ad), _seqaij_nnz(petsclib, Ao)) == (nnz_owned - nnz_o, nnz_o) ||
+        error("PETScSolver: PETSc's diagonal/off-diagonal split does not match the local CSR")
+    lib = Base.Libc.Libdl.dlopen(petsclib.petsc_library)
+    Amat, _SplitFill(Ad, Ao, rowptr, colval, n, nnz_o,
+        Base.Libc.Libdl.dlsym(lib, :MatSeqAIJGetArrayWrite), Base.Libc.Libdl.dlsym(lib, :MatSeqAIJRestoreArrayWrite))
+end
+
 # PETSc reads the values where they live (host or device) through its COO map; no staging copy
-function _set_values!(petsclib, A, nzval, sync)
+function _set_values!(petsclib, A, nzval, sync, ::Nothing)
     _sync(sync)
     GC.@preserve nzval LibPETSc.MatSetValuesCOO(petsclib, A,
         reinterpret(Ptr{eltype(nzval)}, pointer(nzval)), LibPETSc.INSERT_VALUES)
 end
 
+function _set_values!(petsclib, A, nzval::Vector{T}, sync, f::_SplitFill) where T
+    ad = _seqaij_array(f.get, f.Ad, T)
+    ao = f.nnz_o > 0 ? _seqaij_array(f.get, f.Ao, T) : Ptr{T}(C_NULL)
+    kd = ko = 0
+    @inbounds for r ∈ 1:f.n, k ∈ f.rowptr[r]:f.rowptr[r+1]-1
+        if f.colval[k] <= f.n
+            unsafe_store!(ad, nzval[k], kd += 1)
+        else
+            unsafe_store!(ao, nzval[k], ko += 1)
+        end
+    end
+    _seqaij_array(f.restore, f.Ad, T)
+    f.nnz_o > 0 && _seqaij_array(f.restore, f.Ao, T)
+    LibPETSc.MatAssemblyBegin(petsclib, A, LibPETSc.MAT_FINAL_ASSEMBLY)
+    LibPETSc.MatAssemblyEnd(petsclib, A, LibPETSc.MAT_FINAL_ASSEMBLY)
+end
+
 function passemble!(s::XPETScSolver, eqn, partition; component=nothing)
-    _set_values!(s.petsclib, s.A, _nzval(_A(eqn)), s.sync)
+    _set_values!(s.petsclib, s.A, _nzval(_A(eqn)), s.sync, s.fill)
     PETSc.withlocalarray!(s.b; read=false, write=true) do arr
         copyto!(arr, view(_b(eqn, component), 1:s.n_owned))
     end

@@ -25,3 +25,23 @@ Machine: this laptop, `dev/petscenv_stock` (PETSc_jll 3.22), Julia 1.13, CPU bac
 - The 790 MB fixed cost of D99 is about 250 MB shared per node plus about 540 MB private per rank at 10 mm; PSS lowers the apparent n=4 cost by 35 percent at `runtime`.
 - Private after `using` + `MPI.Init` (324): Julia runtime (`sys.so` 91, GC heap 78, malloc 25) about 195, which XCALibre cannot remove; package images about 115, of which PETSc.jl 47 and Pkg 17 are the largest removable rows.
 - The private growth over the first run (232) is GC heap (+145) and malloc (+80), not code: compiler working memory and unreturned GC pages. A precompile workload that removes inference and codegen from the run is the largest single candidate; S2 must separate compiler heap from solver data before S3 picks it.
+
+## S2: private MB added by loading a package alone in a fresh process
+
+Script `dev/scripts/pkg_mem.jl one <Name>...` (smaps_rollup delta around `Base.require`; each number includes the package's own dependencies, so rows overlap). Bare Julia after start-up: 124 private. Raw: `dev/telemetry/memory_breakdown/m25s2_pkgs.txt`; the whole batch ran in 14 s.
+
+- XCALibre (loads MPI, GPUArrays, LLVM, Graphs, Pkg already; 135 modules): 158 private, 35 shared.
+- PETSc on top of XCALibre+MPI: +102 private (260 vs 158). Loads PETSc_jll, SCALAPACK32_jll and dlopens all ten libpetsc variants (single/double x real/complex x Int32/Int64, plus Int64 debug) although one is used; its package image is 87 MB. Largest removable row.
+- PETSc alone 177, MPI 66, GPUArrays 95 (LLVM 70 of it), Graphs 60 (via KrylovPreconditioners), Pkg 57, KernelAbstractions 41, Krylov 28, Metis 20, StaticArrays 20, SparseArrays 16.
+- Pkg comes in through MPI (PkgVersion), LLVMExtra_jll (LazyArtifacts) and PETSc directly, so XCALibre cannot drop it alone.
+
+## S2: solver data vs compiler and allocator memory, n=4 rank 0 (`gc=1`, then `gc=1 trim=1`, `repeat=1`)
+
+- GC live bytes at `runtime` → `iterations`: 23.5 → 50.7. Solver data added in Julia's heap is 27 MB; private memory grows 229 MB (313 → 542).
+- A second `run!` adds 21 MB private: the first-run growth is one-off (compilation and its retention), not per-run.
+- `malloc_trim(0)` after each GC returns 28 MB (`[heap]` 75 → 48; private at `iterations` 542 → 514). `[anon rw-p]` stays at 238 with 51 MB live, so about 187 MB of anonymous pages is neither live Julia data nor free malloc memory. Whether it is GC page retention or compiler (LLVM) arenas is open; a precompiled run in S3 settles it directly.
+- Transient: HWM 842 vs 803 RSS at `iterations`.
+
+## S2 verdict
+
+- Candidate cures, by attributed private MB per rank: (1) runtime compilation of the distributed SIMPLE path, about 190 of the 229 first-run growth; (2) PETSc.jl loading every libpetsc variant and its 87 MB wrapper image, 102 on top of XCALibre+MPI; (3) GPUArrays/LLVM on CPU runs, about 70-95 but a direct XCALibre dependency, so outside this milestone. Pkg and `sys.so` (91) are not removable by XCALibre.

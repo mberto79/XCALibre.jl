@@ -1,16 +1,6 @@
-# Face-based gradient limiter (inspired by OpenFOAM's faceLimitedGrad)
-#
-# What: Prevents gradient extrapolation from producing face values outside a relaxed
-#        range of the two cells sharing each face.
-# How:  Iterates over internal faces, computes min/max from the owner/neighbour pair,
-#       relaxes bounds by ±(max-min) (equivalent to OpenFOAM k=0.5), and accumulates
-#       the minimum limiter ratio per cell across all its faces. A second kernel then
-#       multiplies the gradient by the scalar limiter.
-# Cell vs Face limiter:
-#   - CellBased: iterates over cells, uses strict full-neighbourhood bounds, one scalar
-#     limiter per cell. Equivalent to OpenFOAM's `cellLimitedGrad`.
-#   - FaceBased: iterates over internal faces, relaxes bounds by ±(max-min), accumulates
-#     limiter contributions from both sides of each face.
+# Face-based gradient limiter (cf. OpenFOAM faceLimitedGrad): per internal face, owner/neighbour bounds are relaxed by ±(max-min)
+# (OpenFOAM k=0.5); each cell keeps the minimum limiter ratio over its faces, then a second kernel scales the gradient.
+# Unlike CellBased (strict full-neighbourhood bounds), limiter contributions accumulate from both sides of each face.
 
 export limit_gradient!
 export FaceBased
@@ -99,10 +89,9 @@ end
     end
 end
 
-# Vector kernel uses the projection approach from OpenFOAM's faceLimitedGrad<vector>:
-# For each face side, the gradient tensor is extrapolated to the face centre (tensor*d → vector),
-# then both cells' field values are projected onto this extrapolation direction (dot products → scalars).
-# Bounds and limiter ratios are computed in this projected scalar space using magSqr(gradf).
+# Vector kernel follows OpenFOAM faceLimitedGrad<vector>: the gradient tensor extrapolated to the face centre (tensor*d) sets a direction,
+# both cells' values are projected onto it (dot products), and bounds and limiter ratios are computed in that scalar space
+# using magSqr(gradf).
 @kernel function _limit_gradient!(::FaceBased, limiter, ∇F, F::Field, cells, faces, nbfaces
     ) where {Field<:AbstractVectorField}
     i = @index(Global)

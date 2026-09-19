@@ -41,17 +41,6 @@ function diagonal_indices!(Di, A::SparseMatrixCSR{N, Tf,Ti}) where {N, Tf,Ti}
 end
 
 function update_dilu_diagonal!(P, mesh, config) # must rename
-    # for i ∈ 1:m 
-    #     D[i] = A[i,i]
-    # end
-
-    # for i ∈ 1:m
-    #     for j ∈ (i+1):m
-    #         D[j] = D[j] - A[i,j]*A[j,i]/D[i]
-    #     end
-    # end
-
-    # (; A, storage) = P 
     (; storage) = P 
     A = storage.A
     (; rowptr, colval, nzval, m, n) = storage.A
@@ -74,12 +63,8 @@ function update_dilu_diagonal!(P, mesh, config) # must rename
     nothing
 end
 
-#### PRECONDITIONER DECOMPOSITION ####
-# L = UnitLowerTriangular(Acsc) - I
-# U = UnitUpperTriangular(Acsc) - I
-# PL = (D_star + L)*D_star_inv
-# PU = (D_star + U)
-######################################
+# Decomposition: L, U = strict lower/upper parts of A, D_star = DILU diagonal
+# PL = (D_star + L)*D_star_inv, PU = (D_star + U)
 
 function forward_substitution!(y, P::DILUprecon{M,V,VI}, b) where {M,V,VI}
     (; A, D, Di) = P

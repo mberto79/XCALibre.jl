@@ -227,10 +227,6 @@ function turbulence!(
     # @. Ω.values = sqrt(Ω.values) # This is for the proper NASA formulation
     @. Ω.values = sqrt(Pk.values) # gives better comparison with OF
 
-    # interpolate!(kf, k, config)
-    # correct_boundaries!(kf, k, boundaries.k, time, config) # Bug here but no issue
-    # interpolate!(omegaf, omega, config)
-    # correct_boundaries!(omegaf, omega, boundaries.omega, time, config)  # same here
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)

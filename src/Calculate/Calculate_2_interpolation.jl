@@ -14,27 +14,6 @@ function to_cpu(boundaries::AbstractGPUArray)
     return boundaries_cpu
 end
 
-# Function to correct interpolation at boundaries (expands loop to reduce allocations)
-
-
-# @generated function correct_boundaries!(phif, phi, BCs, time, config)
-#     unpacked_BCs = []
-#     for i ∈ 1:length(BCs.parameters)
-#         unpack = quote
-#             #KERNEL LAUNCH
-#             adjust_boundary!(BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
-#         end
-#         push!(unpacked_BCs, unpack)
-#     end
-#     quote
-#     (; mesh) = phif
-#     (; boundary_cellsID, boundaries) = mesh 
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-#     $(unpacked_BCs...) 
-#     end
-# end
-
 ## SCALAR INTERPOLATION
 
 function interpolate!(phif::FaceScalarField, phi::ScalarField, config)

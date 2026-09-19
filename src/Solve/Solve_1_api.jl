@@ -467,23 +467,7 @@ function residual(eqn, component, config)
     denominator = ifelse(denominator > eps(denominator), denominator, one(denominator))
     Residual = sum(R) / denominator
 
-    # # Openfoam's residual definition (not optimised)
-    # Fx .= A*values
-    # R .= mean(values)
-    # Fx_mean = A*R 
-    # T1 = mean(norm.(b .- Fx))
-    # T2 = mean(norm.(Fx .- Fx_mean))
-    # T3 = mean(norm.(b .- Fx_mean))
-    # Residual = T1/(T2 + T3)
-
-    # Previous definition
-    # Fx .= A * values
-    # xcal_foreach(R, config) do i
-    #         @inbounds R[i] = (b[i] - Fx[i])^2
-    # end
-    # normb = norm(b)
-    # denominator = ifelse(normb > eps(normb), normb, one(normb))
-    # Residual = sqrt(sum(R)) / denominator
+    # Alternative: OpenFOAM normalised residual T1/(T2 + T3) (not optimised)
     return Residual
 end
 

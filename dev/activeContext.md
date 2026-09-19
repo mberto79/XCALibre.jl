@@ -6,7 +6,7 @@ STEP: P1 exit gate and close (all milestones closed; M15 D136)
 HEAD: ad7b4477
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: every P1 milestone is closed; the phase exit gate (full serial suite, gate, example on stock binaries, invariance, docs) and the close are the user's call through the xcalibre-close skill; the 108 pre-existing long comment blocks on main are a separate cleanup PR off main (D136)
+resume: every P1 milestone is closed; the long comment blocks left on main are in the PR from `HM/comment-blocks` (D137), after which the vault check is VALID once both branches merge; the phase exit gate and close are the user's call through the xcalibre-close skill
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M22 closed (D118), M23 closed (D129), M24 closed (D132), M26 closed (D135), M15 closed (D136), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
@@ -25,4 +25,4 @@ M1-M26 closed (M12 superseded by M13; M22 on 2026-09-19 with S6-S8 withdrawn on 
 - Parts are `.xdm` format 3 since M23-S1 (D122, D123); every `.jls` cache is obsolete. Current: `~/.cache/xcal_m23/bfs10_n8`, `bfs4_n8`; regenerate others with `mem_probe.jl part`.
 - Memory: 14 GB box. Wrap every large-mesh run in `dev/scripts/memguard.sh`.
 - Machine partly reverted at 2026-09-18: turbo on, min_perf 15, governor powersave, but `powerprofilesctl get` still says performance; run `powerprofilesctl set balanced` before timing.
-- `xcalibre-dev check` stays INVALID on 108 long comment blocks that already exist on main (`src/`, `test/`); cleanup PR off main (D136).
+- `xcalibre-dev check` stays INVALID here on the 45 files the `HM/comment-blocks` PR fixes (D137).

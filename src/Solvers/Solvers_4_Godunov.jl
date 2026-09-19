@@ -1,34 +1,8 @@
 export godunov!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
 
-# ============================================================
-# Boundary condition dispatch overview
-# ============================================================
-#
-# Two independent BC dispatch chains, both keyed on bc_U:
-#
-# Inviscid (_apply_inviscid_bc!):
-#   Wall / Slip / Symmetry  → exact Euler wall flux: F=(0, p·n·A, 0)
-#   PeriodicParent/Periodic → Riemann solve with partner cell state
-#   Outlet                  → outflow: UR=UL (zero-gradient); backflow: UR=0 (stagnant ghost)
-#   AbstractDirichlet       → ghost UR=2*U_bc-UL; tangential prescription → wall flux
-#   fallback                → ghost, then impermeability check → wall flux or Riemann solve
-#
-# Viscous (_apply_viscous_bc!, bc_U then bc_T):
-#   Wall     → τ from two-point gradient (U_wall-U_cell)/δ⊗n; bc_T selects heat flux:
-#                FixedTemperature/Dirichlet → κ*(T_wall-T_cell)/δ  (isothermal)
-#                AbstractNeumann/AbstractPhysical → 0               (adiabatic)
-#                fallback → κ*(∇T·n)
-#   Slip/Symmetry           → nothing (zero shear, adiabatic)
-#   PeriodicParent/Periodic → two-sided face-averaged gradients
-#   fallback                → cell-centred gradient + bc_T heat flux
-#
-# bc_p: ghost pressure for Riemann paths only (irrelevant at Wall/Slip/Symmetry).
-# bc_T: ghost temperature for Riemann paths; heat-flux selector at Wall.
-# bc_nut: not used by flux chains; affects mueff via turbulence! → update_nueff!.
-#
-# ============================================================
-# Flux scheme selector types
-# ============================================================
+# BC dispatch keys on bc_U: inviscid Wall/Slip/Symmetry use the exact Euler wall flux F=(0, p·n·A, 0), Dirichlet ghost UR=2*U_bc-UL,
+# Outlet backflow a stagnant ghost; viscous Wall heat flux is selected by bc_T (Dirichlet isothermal, Neumann/physical adiabatic).
+# ==== Flux scheme selector types ====
 
 """Rusanov (Local Lax-Friedrichs) flux scheme."""
 struct Rusanov end
@@ -82,9 +56,7 @@ struct RK2 end
 @inline limiter_value(::MinMod,   r::T) where T = max(zero(T), min(one(T), r))
 @inline limiter_value(::Superbee, r::T) where T = max(zero(T), min(2*r, one(T)), min(r, 2*one(T)))
 
-# ============================================================
-# MUSCL reconstruction — scalar and vector helpers
-# ============================================================
+# ==== MUSCL reconstruction: scalar and vector helpers ====
 
 # Scalar MUSCL reconstruction using pre-computed gradient projections onto dLR = delta*e.
 # Returns reconstructed face values (left, right) with TVD slope limiter.
@@ -168,9 +140,7 @@ struct GodunovWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector}
     rhoE_0::V       # ρE  at start of time step
 end
 
-# ============================================================
-# Ghost state functions for boundary flux computation
-# ============================================================
+# ==== Ghost state functions for boundary flux computation ====
 
 # --- Velocity ghost state ---
 
@@ -511,10 +481,9 @@ end
     end
 end
 
-# ── Impermeable wall BCs (Wall, Slip, Symmetry): exact Euler wall flux ──────────
-# U·n=0 → F_mass=0, F_momentum=p*n*A, F_energy=0.
-# Riemann solver with mirror ghost (U_R=-U_L) injects spurious tangential momentum
-# ∝ a*ρ*|U_tang|, causing velocity blow-up at supersonic walls.
+# ── Impermeable wall BCs (Wall, Slip, Symmetry): exact Euler wall flux, U·n=0 → F=(0, p*n*A, 0) ──
+# A Riemann solve with mirror ghost (U_R=-U_L) injects spurious tangential momentum ∝ a*ρ*|U_tang|,
+# causing velocity blow-up at supersonic walls.
 
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Union{Wall, Slip, Symmetry}, bc_p, bc_T,
@@ -545,10 +514,9 @@ end
     Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
-# ── Outlet BC: zero-gradient outflow with reservoir-based backflow ───────────────
-# Outflow (un_L > 0): UR=UL → with Zerogradient bc_p/bc_T: L=R → zero dissipation → exact flux.
-# Backflow (un_L ≤ 0): UR=0 (stagnant ghost) at bc_p/bc_T thermodynamic state.
-# Stagnant ghost avoids wall-flux pressure lock-up (p*n*A feedback loop).
+# ── Outlet BC: outflow (un_L > 0) UR=UL, so with Zerogradient bc_p/bc_T L=R and the flux is exact ──
+# Backflow (un_L ≤ 0): stagnant ghost UR=0 at the bc_p/bc_T thermodynamic state,
+# which avoids the wall-flux pressure lock-up (p*n*A feedback loop).
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Outlet, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -855,9 +823,7 @@ end
     end
 end
 
-# ============================================================
-# Viscous flux kernels
-# ============================================================
+# ==== Viscous flux kernels ====
 
 # Viscous flux — internal faces, cell-based loop (no atomics)
 @kernel function _viscous_flux_internal!(

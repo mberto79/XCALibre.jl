@@ -1,18 +1,6 @@
-# Cell-based gradient limiter (Barth-Jespersen style)
-#
-# What: Prevents gradient extrapolation from producing face values outside the
-#        range of neighbouring cell values (overshoots/undershoots).
-# How:  Computes a single scalar limiter ∈ [0,1] per cell by comparing the gradient-
-#       extrapolated value at each face centre against the min/max of neighbour values.
-#       The minimum ratio across all faces becomes the cell's limiter, applied uniformly
-#       to the entire gradient vector.
-# Cell vs Face limiter:
-#   - CellBased: iterates over cells, uses strict neighbour bounds, one scalar limiter
-#     per cell. Equivalent to OpenFOAM's `cellLimitedGrad`.
-#   - FaceBased: iterates over internal faces, relaxes bounds by ±(max-min), accumulates
-#     limiter contributions from both sides of each face.
-#
-# The `level` parameter (0-1) controls limiting strength: 1 = full, 0 = none.
+# Cell-based gradient limiter (Barth-Jespersen, cf. OpenFOAM cellLimitedGrad): one scalar limiter in [0,1] per cell,
+# the minimum over its faces of the ratio keeping the extrapolated face value within neighbour min/max, applied to the whole gradient.
+# `level` (0-1) sets limiting strength: 1 = full, 0 = none.
 
 export limit_gradient!
 export CellBased

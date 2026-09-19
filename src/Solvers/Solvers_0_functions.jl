@@ -216,16 +216,6 @@ end
     sumz = zero(TF)
 
     @inbounds begin
-        # (; faces_range) = cells[i]
-
-        # for ni ∈ faces_range
-        #     nID = cell_neighbours[ni]
-        #     zIndex = spindex(rowptr, colval, i, nID)
-        #     val = nzval[zIndex]
-        #     sumx += val * Ux[nID]
-        #     sumy += val * Uy[nID]
-        #     sumz += val * Uz[nID]
-        # end
 
         start_index = rowptr[i]
         end_index = rowptr[i+1] - 1

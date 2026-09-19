@@ -53,16 +53,6 @@ end
     @uniform values = magS.values
     
     @inbounds values[i] = norm(S[i])
-    # sum = 0.0
-    # for i ∈ eachindex(magS.values)
-    #     sum = 0.0
-    #     for j ∈ 1:3
-    #         for k ∈ 1:3
-    #             sum +=   S[i][j,k]*S[i][k,j]
-    #         end
-    #     end
-    #     magS.values[i] =   sqrt(sum)
-    # end
 end
 
 function magnitude2!(

@@ -647,11 +647,9 @@ let s = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coa
     @test norm(b - Array(parent(A2)) * x) / norm(b) < 1e-7   # FP32-refreshed operators stay correct
 end
 
-# NEW SECTION: Float32-valued mesh regression (single precision Int32+Float32, mixed Int64+Float32).
-# SuiteSparse (CHOLMOD/UMFPACK/SPQR) factorizes only Float64, so a Float32 coarsest used to crash the
-# host coarse direct solve at workspace creation regardless of coarse_storage. The coarse direct solve
-# now runs in Float64; the rest of the hierarchy stays at the (Float32) working precision. Also asserts
-# coarse_storage is clamped to <= working precision (no silent Float64 upcast on a Float32 mesh).
+# NEW SECTION: Float32-valued mesh regression (Int32+Float32 and mixed Int64+Float32).
+# SuiteSparse factorizes only Float64, so the host coarse direct solve runs in Float64 while the hierarchy stays Float32.
+# Also asserts coarse_storage is clamped to <= working precision (no silent Float64 upcast on a Float32 mesh).
 function amg_test_matrix_i32(::Type{T}) where {T}
     i = Int32[1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5]
     j = Int32[1, 2, 1, 2, 3, 2, 3, 4, 3, 4, 5, 4, 5]
@@ -728,9 +726,8 @@ try
             @test norm(Array(b_gpu) - Array(parent(A2)) * Array(x32g2)) / norm(Array(b_gpu)) < 1e-6
         end
 
-        # greenfield matrix-free split-precision device REFRESH (device/5). The coarse RAP scatter does a
-        # GPU atomic add across the precision boundary (F64 finest -> F32 coarse); guard the type match and
-        # that a refreshed mixed-prec state converges as well as the F64 build (coarse F32 = zero iter cost).
+        # Matrix-free split-precision device refresh: the coarse RAP scatter atomically adds across precisions (F64 finest -> F32
+        # coarse); guards the type match and that the refreshed mixed-precision state converges like the F64 build.
         # Needs a matrix large enough to coarsen at max_coarse=64, so build a 2D Poisson here (A is 5x5).
         let nx = 40
             np = nx*nx; ip = Int[]; jp = Int[]; vp = Float64[]
@@ -757,10 +754,9 @@ try
             @test cg32.converged && cg32.iters <= cg64.iters + 1
         end
 
-        # T3: GPU fuse_levels equivalence. fl=0 (materialised) vs fl=1 (matrix-free) on the same F64
-        # device system must agree in iters (+-1) and solution (rel < 1e-8); fl=2 (fused coarse) converges.
-        # Screened Poisson (diag = neighbors + 1): strictly diagonally dominant so the omega=4/3 Jacobi
-        # smoother is stable (the pure Poisson diag==sum|offdiag| makes the Geometric AMG cycle diverge).
+        # GPU fuse_levels: fl=0 (materialised) and fl=1 (matrix-free) must agree in iters (+-1) and solution (rel < 1e-8); fl=2 converges.
+        # Screened Poisson (diag = neighbors + 1) is strictly diagonally dominant so the omega=4/3 Jacobi smoother is stable;
+        # pure Poisson (diag == sum|offdiag|) makes the Geometric AMG cycle diverge.
         let nx = 48
             np = nx*nx; ip = Int[]; jp = Int[]; vp = Float64[]
             pid(i, j) = (j-1)*nx + i

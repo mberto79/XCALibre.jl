@@ -46,11 +46,6 @@ end
 
     minF = min(F1, F2)
     maxF = max(F1, F2)
-    # deltaF = (maxF - minF)
-    # minF -= deltaF
-    # maxF += deltaF
-    # F1_ext = d1⋅grad1
-    # F2_ext = d2⋅grad2
     F1_ext = d1
     F2_ext = d2
 

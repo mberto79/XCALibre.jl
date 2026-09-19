@@ -39,14 +39,6 @@ function _apply_boundary_conditions!(
         update_user_boundary!(BC, faces, cells, facesID_range, time, config)
         
     end
-        # Execute apply boundary conditions kernel
-        # ndrange = nbfaces
-        # apply_bcs = apply_boundary_conditions_kernel!(
-        #     _setup(backend, workgroup, ndrange)...)
-        # apply_bcs(
-        #     model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
-        #     )
-        # KernelAbstractions.synchronize(backend)
 
         ndrange = nbfaces
         kernel! = _sized(apply_boundary_conditions_kernel!, backend, workgroup, ndrange)
@@ -55,24 +47,6 @@ function _apply_boundary_conditions!(
             )
         KernelAbstractions.synchronize(backend)
 
-    # Loop over boundary conditions to apply boundary conditions 
-    # for BC ∈ BCs
-    #     facesID_range = BC.IDs_range
-    #     start_ID = facesID_range[1]
-
-    #     # update user defined boundary storage (if needed)
-    #     # update_user_boundary!(BC, faces, cells, facesID_range, time, config)
-    #     #= The `model` passed here is defined in ModelFramework_0_types.jl line 87. It has two properties: terms and sources which define the equation being solved =#
-    #     update_user_boundary!(BC, faces, cells, facesID_range, time, config)
-        
-    #     # Execute apply boundary conditions kernel
-    #     kernel_range = length(facesID_range)
-
-    #     kernel! = apply_boundary_conditions_kernel!(backend, workgroup, kernel_range)
-    #     kernel!(
-    #         model, BC, model.terms, faces, cells, start_ID, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=kernel_range
-    #         )
-    # end
 end
 
 update_user_boundary!(
@@ -139,34 +113,6 @@ end
 end
 
 
-
-# Current implementation 
-
-# @kernel function apply_boundary_conditions_kernel!(
-#     model::Model{TN,SN,T,S}, BC, terms, 
-#     faces, cells, start_ID, boundary_cellsID, colval, rowptr, nzval, b, component, time
-#     ) where {TN,SN,T,S}
-#     i = @index(Global)
-
-#     # Redefine thread index to correct starting ID 
-#     j = i + start_ID - 1
-#     fID = j
-
-#     # Retrieve workitem cellID, cell and face
-#     cellID = boundary_cellsID[j]
-#     face = faces[fID]
-#     cell = cells[cellID] 
-
-#     zcellID = spindex(rowptr, colval, cellID, cellID)
-
-#     # Call apply generated function
-#     AP, BP = apply!(
-#         model, BC, terms, 
-#         colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
-#         )
-#     Atomix.@atomic nzval[zcellID] += AP
-#     Atomix.@atomic b[cellID] += BP
-# end
 
 # Apply generated function definition
 @generated function apply!(

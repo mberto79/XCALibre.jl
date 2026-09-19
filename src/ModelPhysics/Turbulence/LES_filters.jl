@@ -218,13 +218,6 @@ end
         surfaceSum = 0.0
     end 
 
-    # area = nothing
-    # for fi ∈ faces_range
-    #     cfID = cell_faces[fi] # cell-based face ID
-    #     (; area) = faces[cfID]
-    #     # surfaceSum += phif[cfID]*area
-    #     # areaSum += area
-    # end
     bfarea = faces[fID].area
     # areaSum += bfarea
     # surfaceSum += phif[fID]*bfarea
@@ -257,12 +250,6 @@ function basic_filter!(phiFiltered, phi, surfaceArea, config)
     kernel!(phiFiltered, phi, surfaceArea)
     KernelAbstractions.synchronize(backend)
 
-    # # number of boundary faces
-    # nbfaces = length(phif.mesh.boundary_cellsID)
-    
-    # ndrange=nbfaces
-    # kernel! = _sized(boundary_faces_contribution!, backend, workgroup, ndrange)
-    # kernel!(x, y, z, phif)
 end
 
 @kernel function _integrate_surface!(phiFiltered, phi::ScalarField, surfaceArea)
@@ -286,13 +273,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             # areaSum += area
@@ -322,13 +302,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             # areaSum += area
@@ -358,13 +331,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             # areaSum += area

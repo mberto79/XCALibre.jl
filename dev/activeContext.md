@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-19T14:00:00+01:00
 STATE: IDLE
 STEP: P1-M22-S1 - one halo schedule per mesh (next)
-HEAD: c10e9709
+HEAD: 2e9f73e4
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl plus named files at --ranks=2,3, one process at a time under MIN_MB=2500 memguard.sh
 resume: start P1-M22-S1 per `dev/plans/p1-m22-communication.md`; M21 closed (D99), then M23, M24, M15

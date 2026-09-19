@@ -36,3 +36,9 @@ Machine: this laptop, `dev/petscenv_stock`, Julia 1.13, CPU, clock unpinned. Cou
 - Halo allocation 2928 → 2736 B at n=2 (5456 → 5200 at n=3); what remains is the pack/unpack launches, so the `test_perf.jl` budget drops to 512 + 3072 per neighbour.
 - `dev/scripts/halo_bench.jl` at 10 mm n=8, 200 reps × 10 alternated rounds, medians: width 3 persistent 16.57 µs vs fresh 16.89 µs; width 1 11.89 vs 12.05 µs.
 - Hashes identical at n=2 and n=4; gate 10/10 in 197 s; halo, ghosts, f32, perf green at n=2,3; `test_gpu.jl` n=1,2 green (256 s, covers the host-staged path).
+
+## S6: overlap withdrawn on its upper bound
+
+- 10 mm n=4 (`scaling_probe.jl worker`, 60 iterations, Jacobi, unpinned 3.5 GHz): 20.1 ms per iteration. Exchange at n=4 (`halo_bench.jl`): width 3 13.96 µs, width 1 12.26 µs; at n=8 width 3 16.57 µs.
+- The two exchanges S6 would hide (∇p, rD+Hv) cost about 28 µs, 0.14 percent of an iteration at n=4 (about 0.3 percent at n=8), against a 3 percent bar; a full overlap cannot reach it here.
+- A `_halo_begin!`/`_halo_end!` split of `halo_exchange!` alone raised its allocation 2736 → 2992 B and was reverted. 10 mm n=8 with PETSc does not fit beside the language server (memguard stop at 2446 MB free).

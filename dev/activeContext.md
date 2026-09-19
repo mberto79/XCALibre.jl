@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m23-parallel-preprocessing.md
 updated: 2026-09-19T12:00:00+01:00
 STATE: IDLE
-STEP: P1-M23-S4 parallel repartition (next; S2, S3 landed D124-D126)
+STEP: P1-M23-S5 guide section for the decomposed-case route (next; S4 landed D127)
 HEAD: 09cb77a4
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: start P1-M23-S4: first query `PetscHasExternalPackage` for parmetis/ptscotch in `dev/petscenv_stock` and the conda envs; if none, WITHDRAW S4 to P2 per the plan exit; then S5, M24, M26, M15
+resume: P1-M23-S5: docs section written in `docs/src/user_guide/6_distributed_mpi.md`, verdict is a docs build under 5 min; then close M23, then M24, M26, M15
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M23-S1 format is settled by D119 and D120 (user): one header for serial and partitioned files, `mesh_info`, wrong-kind errors; serial loader may be built here but ships in its own PR off main.

@@ -20,3 +20,12 @@ Case: BFS 10 mm tet (68243 cells) converted with OpenFOAM 12 `ideasUnvToFoam`, l
 - v2512 scotch n=4: same to 3 digits; load 3.27 s. Both versions write `cellProcAddressing` in `processor<r>/constant/polyMesh`.
 - Results written at n=2 into the decomposed case: OF12 `reconstructPar -latestTime` completes once fields carry `dimensions` (added to both writers); reconstructed U matches serial to 1.08e-9 (Ux), 1.82e-9 (Uy).
 - The 2e-9 floor is identical at every n, so it is the serial path (Krylov.jl, one geometry pass) against the distributed one (PETSc, per-processor geometry), not the decomposition.
+
+## S4 `repartition` on `decomposePar -method simple` n=8
+
+Case as S2 decomposed `simple (2 2 2)` into 8, read with `FOAMCase`, repartitioned in `dev/petscenv_conda_ompi` (conda PETSc 3.25.5 with ParMETIS and PT-Scotch; stock `PETSc_jll` has neither), then solved; `REPART=<method> dev/scripts/foam_decomposed.jl`. Serial Metis k-way on the same mesh at 8: edge-cut 2046 faces, cells max/min 8727/8406 (1.038).
+
+- before (simple): edge-cut 5369, cells 7700-9486 (1.232).
+- ParMETIS: edge-cut 2089 (+2.1% vs serial Metis), cells 8150-8942 (max/min 1.097, max/avg 1.048), 4.6 s including compilation; fields 2.2e-9, ghosts 0.
+- PT-Scotch: edge-cut 1970 (-3.7%), cells 8450-8607 (max/min 1.019), 4.8 s; fields 2.2e-9, ghosts 0.
+- First ParMETIS run gave fields off by 0.8 with ghosts 0: interface faces whose two cells both landed on one rank were kept twice, since a `FOAMCase` part orients each copy out of its own cell. Fixed by taking such a face from the lower-id cell's record only; `test_io.jl` now migrates a `FOAMCase` part.

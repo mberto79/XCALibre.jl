@@ -148,4 +148,19 @@ if rank == 0
     end
 end
 
+# migrating a FOAMCase part (each side oriented its interface faces itself) must not double any face
+gm = UNV3D_mesh(mesh_path, scale=0.001)
+order = sortperm([c.centre[1] for c ∈ gm.cells])
+slabs = zeros(Int, length(order))
+foreach(((i, c),) -> slabs[c] = (i - 1) * MPI.Comm_size(comm) ÷ length(order), enumerate(order))
+dm3 = XCALibre.Distribute._migrate(dm2, slabs[dm2.orig_cells[1:dm2.partition.n_owned]])
+model3, config3 = io_case(dm3; iterations, write_interval=-1)
+run!(model3, config3)
+gU3, gp3 = gather(model3.momentum.U, dm3), gather(model3.momentum.p, dm3)
+@testset "migrated FOAMCase part (rank $rank)" begin
+    @test length(dm3.faces) == length(extract_subdomain(gm, slabs .+ 1, rank + 1; comm).faces)
+    @test check_ghosts(model3.momentum.p, dm3, config3) == 0
+    rank == 0 && @test max(reltol(gU3.x, Us_x), reltol(gp3, ps)) < 1e-6
+end
+
 MPI.Barrier(comm)

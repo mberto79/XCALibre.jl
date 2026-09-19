@@ -1,9 +1,11 @@
+# REPART=<method> repartitions after loading and prints balance and edge-cut before and after.
 # WRITE=1 writes results into the decomposed case at the last iteration, for reconstructPar.
 # Serial FOAM3D_mesh run against distribute(FOAMCase) on a decomposePar case; laminar 3D BFS, tight inner tolerances.
 using XCALibre, MPI
 MODE, CASE, ITERS = ARGS[1], ARGS[2], parse(Int, ARGS[3])
 SCALE = 0.001
 WRITE = get(ENV, "WRITE", "0") == "1"
+REPART = get(ENV, "REPART", "")
 
 function bfs(mesh; write=false)
     model = Physics(time=Steady(), fluid=Fluid{Incompressible}(nu=1e-3), turbulence=RANS{Laminar}(),
@@ -30,11 +32,22 @@ if MODE == "serial"
     U, p = m.momentum.U, m.momentum.p
     write(ref(CASE), hcat(U.x.values, U.y.values, U.z.values, p.values))
     println("SERIAL ncells=$(length(p.values)) written")
+elseif MODE == "metis"
+    partition_cells(FOAM3D_mesh(joinpath(CASE, "constant", "polyMesh"); scale=SCALE), parse(Int, ARGS[4]))
 else
     using PETSc
     MPI.Init()
     comm = MPI.COMM_WORLD
     t = @elapsed dm = distribute(FOAMCase(ARGS[4]; scale=SCALE); comm)
+    stats(d) = (extrema(MPI.Allgather(d.partition.n_owned, comm)),
+        MPI.Allreduce(sum(pp -> length(pp.faces), d.procs; init=0), +, comm) ÷ 2)
+    if !isempty(REPART)
+        before = stats(dm)
+        tr = @elapsed dm = repartition(dm; method=Symbol(REPART))
+        after = stats(dm)
+        MPI.Comm_rank(comm) == 0 && println("REPART method=$REPART s=$(round(tr; digits=2)) ",
+            "before cells=$(before[1]) cut=$(before[2]) after cells=$(after[1]) cut=$(after[2])")
+    end
     WRITE && cd(ARGS[4])
     m, config = bfs(dm; write=WRITE)
     ghosts = check_ghosts(m.momentum.p, dm, config)

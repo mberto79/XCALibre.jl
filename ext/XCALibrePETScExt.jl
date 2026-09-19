@@ -3,7 +3,7 @@ module XCALibrePETScExt
 using XCALibre, MPI, PETSc
 using PETSc: LibPETSc
 using XCALibre.Distribute
-import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!
+import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!, _parallel_partition
 import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval
 import XCALibre.Mesh: _get_float
 
@@ -407,5 +407,50 @@ psolve_transpose!(s::XPETScSolver, x::AbstractVector) = _with_placed(_ksp_solve_
 
 _ksp_solve(s) = PETSc.solve!(s.x, s.ksp, s.b)
 _ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+
+# NEW SECTION: parallel partitioning (MatPartitioning on the owned-row cell graph)
+
+for T ∈ (Int32, Int64)
+    @eval _ccall_int(f, obj, v::$T) = ccall(f, Cint, (Ptr{Cvoid}, $T), obj, v)
+end
+
+# PETSc.jl's MatPartitioningApply wrapper discards the output IS, so the partitioner is called direct
+function _parallel_partition(dm::DistributedMesh, method, petsc_options)
+    comm = getfield(dm, :comm)
+    p = dm.partition
+    (; cells, cell_neighbours) = dm.mesh
+    n = p.n_owned
+    l2g = p.local_to_global
+    rowptr, cols = Int[0], Int[]
+    for c ∈ 1:n
+        append!(cols, sort!(unique(Int(l2g[cell_neighbours[j]]) - 1 for j ∈ cells[c].faces_range)))
+        push!(rowptr, length(cols))
+    end
+    N, nnz = MPI.Allreduce([n, length(cols)], +, comm)
+    petsclib = _petsclib(first(PETSc.petsclibs).PetscScalar, nnz)
+    PETSc.initialize(petsclib; options=String.(split(petsc_options)))
+    _petsc_has_pkg(petsclib, string(method)) || error("repartition: this PETSc build has no $method; " *
+        "use a PETSc configured with it (conda-forge's petsc has parmetis and ptscotch)")
+    PI, TS = petsclib.PetscInt, petsclib.PetscScalar
+    A = LibPETSc.MatCreateMPIAIJWithArrays(petsclib, comm, PI(n), PI(n), PI(N), PI(N),
+        PI.(rowptr), PI.(cols), ones(TS, length(cols)))
+    sym(name) = _petsc_sym(petsclib, name)
+    ok(err, what) = err == 0 || error("repartition: PETSc $what failed ($err)")
+    part, is = Ref{Ptr{Cvoid}}(C_NULL), Ref{Ptr{Cvoid}}(C_NULL)
+    ok(ccall(sym(:MatPartitioningCreate), Cint, (MPI.MPI_Comm, Ptr{Ptr{Cvoid}}), comm, part), "MatPartitioningCreate")
+    ok(ccall(sym(:MatPartitioningSetAdjacency), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), part[], A.ptr), "SetAdjacency")
+    ok(ccall(sym(:MatPartitioningSetType), Cint, (Ptr{Cvoid}, Cstring), part[], string(method)), "SetType")
+    ok(_ccall_int(sym(:MatPartitioningSetNParts), part[], PI(MPI.Comm_size(comm))), "SetNParts")
+    ok(ccall(sym(:MatPartitioningSetFromOptions), Cint, (Ptr{Cvoid},), part[]), "SetFromOptions")
+    ok(ccall(sym(:MatPartitioningApply), Cint, (Ptr{Cvoid}, Ptr{Ptr{Cvoid}}), part[], is), "MatPartitioningApply")
+    idx = Ref{Ptr{Cvoid}}(C_NULL)
+    ok(ccall(sym(:ISGetIndices), Cint, (Ptr{Cvoid}, Ptr{Ptr{Cvoid}}), is[], idx), "ISGetIndices")
+    dest = Int.(copy(unsafe_wrap(Array, Ptr{PI}(idx[]), n)))
+    ok(ccall(sym(:ISRestoreIndices), Cint, (Ptr{Cvoid}, Ptr{Ptr{Cvoid}}), is[], idx), "ISRestoreIndices")
+    ok(ccall(sym(:ISDestroy), Cint, (Ptr{Ptr{Cvoid}},), is), "ISDestroy")
+    ok(ccall(sym(:MatPartitioningDestroy), Cint, (Ptr{Ptr{Cvoid}},), part), "MatPartitioningDestroy")
+    PETSc.destroy(A)
+    dest
+end
 
 end # module

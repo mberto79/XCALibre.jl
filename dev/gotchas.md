@@ -13,6 +13,8 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - `xcalibre-dev check` exits non-zero on an invalid vault, but a status read through a pipe is the pipe's status; run it bare.
 - `pgrep -f <pattern>` matches the poller's OWN command line when the pattern appears in it, so `until ! pgrep -f 'Pkg.test'` never exits while any shell mentions `Pkg.test`. Wait on a marker written to a file instead.
 
+- Kernels are built with `_sized(f!, backend, workgroup, n)` since P1-M26-S1: a size in a kernel constructor is a type parameter and recompiles per mesh, patch and rank size. The `xcalibre-kernels` skill copies (`~/.claude`, `~/.codex`, plugin cache and marketplace, XCALLAXION-GRID) still teach `_setup(...)...` and must be updated when this branch merges.
+
 ## time budget (D101)
 
 - HARD CAP: any gate or experiment whose result decides a verdict finishes within five minutes of wall clock, compilation included. Plan the run to fit before launching it; if it cannot fit, shrink it, never extend the cap.

@@ -10,7 +10,7 @@ function surface_gradient!(gradf, phif, phi, BCs, time, config)
 
     ndrange = length(mesh.faces)
     n_bfaces = length(mesh.boundary_cellsID)
-    kernel! = _surface_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_surface_gradient!, backend, workgroup, ndrange)
     kernel!(gradf, phif, phi, mesh.faces, mesh.boundary_cellsID, n_bfaces)
 end
 

@@ -42,11 +42,11 @@ function limit_gradient!(method::FaceBased, ∇F, F::AbstractField, config)
     internal_faces = length(faces) - nbfaces
 
     ndrange = internal_faces
-    kernel! = _limit_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
     kernel!(method, limiter, ∇F, F, cells, faces, nbfaces)
 
     ndrange = length(F)
-    kernel! = _update_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_update_gradient!, backend, workgroup, ndrange)
     kernel!(∇F, limiter)
 
     sync!(∇F.result, F.mesh, config) # ghost limiter values are wrong (partial face lists)

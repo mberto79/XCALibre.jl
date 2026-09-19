@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m26-shipped-precompile.md
 updated: 2026-09-19T20:30:00+01:00
 STATE: BUILDING
-STEP: P1-M26-S1 size-free kernel launches
+STEP: P1-M26-S2 workload options measured, scope decided by the user
 HEAD: 4e46e5c0
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: P1-M26-S1: `_sized` helper in Multithread, rewrite the `F(_setup(...)...)` sites; baseline hashes and timing BEFORE the rewrite; S2 needs a user decision on workload scope
+resume: P1-M26-S2: build a serial PrecompileTools workload and a single-rank distributed one, measure package precompile time, load time and first-run compile/private at 10 mm n=4; present to the user for the scope decision (plan open question)
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M22 closed (D118), M23 closed (D129), M24 closed (D132), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.

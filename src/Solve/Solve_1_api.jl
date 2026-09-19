@@ -307,7 +307,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     end
 
     ndrange = length(values)
-    kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_copy!, backend, workgroup, ndrange)
     kernel!(values, x)
 
     iterations = Krylov.iteration_count(solver)
@@ -330,7 +330,7 @@ function explicit_relaxation!(phi, phi0, alpha, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(phi)
-    kernel! = explicit_relaxation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(explicit_relaxation_kernel!, backend, workgroup, ndrange)
     kernel!(phi, phi0, alpha)
     # KernelAbstractions.synchronize(backend)
     sync!(phi, phi.mesh, config) # self-syncing seam (no-op serial)
@@ -360,7 +360,7 @@ function implicit_relaxation!(
     nzval = _nzval(A)
 
     ndrange = length(b)
-    kernel! = implicit_relaxation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(implicit_relaxation_kernel!, backend, workgroup, ndrange)
     kernel!(colval, rowptr, nzval, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
@@ -392,7 +392,7 @@ function implicit_relaxation_diagdom!(
     nzval = _nzval(A)
 
     ndrange = length(b)
-    kernel! = _implicit_relaxation_diagdom!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_implicit_relaxation_diagdom!, backend, workgroup, ndrange)
     kernel!(colval, rowptr, nzval, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
@@ -435,7 +435,7 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
         rowptr = _rowptr(A)
 
         ndrange = 1
-        kernel! = _setReference!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_setReference!, backend, workgroup, ndrange)
         kernel!(nzval, colval, rowptr, b, pRef, cellID)
     end
 end
@@ -460,7 +460,7 @@ function residual(eqn, component, config)
     colval = _colval(A)
     nzval = _nzval(A)
     ndrange = length(values)
-    kernel! = _scaled_residual!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_scaled_residual!, backend, workgroup, ndrange)
     kernel!(R, Fx, rowptr, colval, nzval, values, b)
 
     denominator = sum(Fx)
@@ -540,7 +540,7 @@ function make_symmetric!(eqn, config)
 
     nbfaces = mesh.boundary_cellsID |> length
     ndrange = length(faces) - nbfaces
-    kernel! = _make_symmetric!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_make_symmetric!, backend, workgroup, ndrange)
     kernel!(colval, rowptr, nzval, faces, nbfaces)
 end
 

@@ -10,7 +10,7 @@ function extract_diagonal!(D, Di, A::AbstractSparseArray, config)
     workgroup = cld(n, Threads.nthreads())
     
     ndrange = n
-    kernel! = _extract_diagonal!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_extract_diagonal!, backend, workgroup, ndrange)
     kernel!(D, Di, nzval)
 end
 

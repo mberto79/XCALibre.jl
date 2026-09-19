@@ -9,7 +9,7 @@ function bound!(field, config)
 
     # set up and launch kernel
     ndrange = length(values)
-    kernel! = _bound!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_bound!, backend, workgroup, ndrange)
     kernel!(values, cells, cell_neighbours)
     # KernelAbstractions.synchronize(backend)
 end
@@ -439,7 +439,7 @@ end
 
 #     # Execute apply boundary conditions kernel
         # ndrange=length(facesID_range)
-#     kernel! = _set_cell_value!(_setup(backend, workgroup, ndrange)...)
+#     kernel! = _sized(_set_cell_value!, backend, workgroup, ndrange)
 #     kernel!(
 #         field, turbulence, fluid, BC, faces, start_ID, boundary_cellsID
 #     )

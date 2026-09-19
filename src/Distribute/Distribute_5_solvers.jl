@@ -111,7 +111,7 @@ end
 function _save_diag!(deqn, off, config)
     A = _A(deqn.eqn)
     (; backend, workgroup) = config.hardware
-    kernel! = _save_diag_kernel!(_setup(backend, workgroup, deqn.partition.n_owned)...)
+    kernel! = _sized(_save_diag_kernel!, backend, workgroup, deqn.partition.n_owned)
     kernel!(deqn.diag, off, _rowptr(A), _colval(A), _nzval(A))
 end
 
@@ -170,7 +170,7 @@ function _local_residual!(deqn::DistributedEqn, component, config)
     values = get_values(get_phi(eqn), component)
     (; backend, workgroup) = config.hardware
     n = deqn.partition.n_owned
-    kernel! = Solve._scaled_residual!(_setup(backend, workgroup, n)...)
+    kernel! = _sized(Solve._scaled_residual!, backend, workgroup, n)
     kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), values, b)
     _local_sums(deqn, R, Fx)
 end
@@ -179,7 +179,7 @@ function _residual_saved!(deqn::DistributedEqn, component, off, config)
     eqn = deqn.eqn
     (; A, R, Fx) = eqn.equation
     (; backend, workgroup) = config.hardware
-    kernel! = _scaled_residual_saved!(_setup(backend, workgroup, deqn.partition.n_owned)...)
+    kernel! = _sized(_scaled_residual_saved!, backend, workgroup, deqn.partition.n_owned)
     kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), get_values(get_phi(eqn), component),
         _b(eqn, component), deqn.diag, off)
     _local_sums(deqn, R, Fx)

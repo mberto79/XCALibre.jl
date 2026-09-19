@@ -32,7 +32,7 @@ function div!(phi::ScalarField, psif::FaceVectorField, config)
 
     # Launch main calculation kernel
     ndrange = length(cells)
-    kernel! = div_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_kernel!, backend, workgroup, ndrange)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
     # KernelAbstractions.synchronize(backend)
 
@@ -41,7 +41,7 @@ function div!(phi::ScalarField, psif::FaceVectorField, config)
 
     # Launch boundary faces contribution kernel
     ndrange = nbfaces
-    kernel! = div_boundary_faces_contribution_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_boundary_faces_contribution_kernel!, backend, workgroup, ndrange)
     kernel!(faces, cells, phi, psif)
     # KernelAbstractions.synchronize(backend)
 end
@@ -109,7 +109,7 @@ function div!(phi::ScalarField, psif::FaceScalarField, config)
 
     # Launch main calculation kernel
     ndrange = length(cells)
-    kernel! = div_noS_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_noS_kernel!, backend, workgroup, ndrange)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
     # KernelAbstractions.synchronize(backend)
 
@@ -118,8 +118,7 @@ function div!(phi::ScalarField, psif::FaceScalarField, config)
 
     # Launch boundary faces contribution kernel
     ndrange = nbfaces
-    kernel! = div_noS_boundary_faces_contribution_kernel!(
-        _setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_noS_boundary_faces_contribution_kernel!, backend, workgroup, ndrange)
     kernel!(faces, cells, phi, psif)
     # KernelAbstractions.synchronize(backend)
 end

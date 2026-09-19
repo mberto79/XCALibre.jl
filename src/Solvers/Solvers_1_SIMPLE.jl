@@ -320,7 +320,7 @@ function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothi
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces
-    kernel! = _nonorthogonal_face_correction(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_nonorthogonal_face_correction, backend, workgroup, ndrange)
     kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
 end
 
@@ -365,7 +365,7 @@ function correct_mass_flux!(
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_mass_flux!, backend, workgroup, ndrange)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
@@ -388,8 +388,7 @@ function correct_nonorthogonal_mass_flux!(mdotf, correction, config)
     (; backend, workgroup) = config.hardware
     n_bfaces = length(mdotf.mesh.boundary_cellsID)
     ndrange = length(mdotf.mesh.faces) - n_bfaces
-    kernel! = _correct_nonorthogonal_mass_flux!(
-        _setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_nonorthogonal_mass_flux!, backend, workgroup, ndrange)
     kernel!(mdotf, correction, n_bfaces)
     KernelAbstractions.synchronize(backend)
 end
@@ -530,7 +529,7 @@ function correct_boundary_mass_flux!(
 
     (; faces, boundary_cellsID) = mdotf.mesh
     ndrange = length(boundary_cellsID)
-    kernel! = _correct_boundary_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_boundary_mass_flux!, backend, workgroup, ndrange)
     kernel!(
         p_BCs, U_BCs, mdotf, p, previous, pflux, psign,
         faces, boundary_cellsID, time)

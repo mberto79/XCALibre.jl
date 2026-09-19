@@ -16,7 +16,7 @@ function limit_gradient!(method::MFaceBased, ∇F, F, config)
     internal_faces = length(faces) - nbfaces
 
     ndrange = internal_faces
-    kernel! = _limit_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
     kernel!(method, ∇F, F, cells, faces, nbfaces)
     sync!(∇F.result, F.mesh, config) # ghost updates depend on faces absent locally
 end

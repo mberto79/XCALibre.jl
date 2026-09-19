@@ -95,7 +95,7 @@ function normal_distance!(y, phi, phiGrad, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(phi.values)
-    kernel! = _normal_distance!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_normal_distance!, backend, workgroup, ndrange)
     kernel!(y, phi, phiGrad)
     KernelAbstractions.synchronize(backend)
 end

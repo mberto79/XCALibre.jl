@@ -12,6 +12,7 @@ const PRE = let i = findfirst(startswith("pre="), ARGS); i === nothing ? "" : AR
 # `gcmax=<MB>` sets the GC memory target at runtime, as `--heap-size-hint` does at start-up
 const GCMAX = let i = findfirst(startswith("gcmax="), ARGS); i === nothing ? 0 : parse(Int, ARGS[i][7:end]) end
 # `repeat=<k>` adds k full `run!` calls after the staged run, with a forced collection after each
+const WG = let i = findfirst(startswith("wg="), ARGS); i === nothing ? nothing : parse(Int, ARGS[i][4:end]) end
 const REPEAT = let i = findfirst(startswith("repeat="), ARGS); i === nothing ? 0 : parse(Int, ARGS[i][8:end]) end
 const ARGV = filter(a -> !any(startswith.(a, ("gc=", "malloc=", "repeat=", "trim=", "gclog=", "gcmax=", "pre="))), ARGS)
 
@@ -111,7 +112,7 @@ elseif MODE == "worker"
                p = Schemes(time=SteadyState, gradient=Gauss))
     config = Configuration(solvers=solvers, schemes=schemes,
         runtime=Runtime(iterations=iters, write_interval=-1, time_step=1),
-        hardware=Hardware(backend=CPU(), workgroup=AutoTune()), boundaries=BCs)
+        hardware=Hardware(backend=CPU(), workgroup=WG === nothing ? AutoTune() : WG), boundaries=BCs)
     initialise!(model.momentum.U, velocity)
     initialise!(model.momentum.p, 0.0)
     stage("model")

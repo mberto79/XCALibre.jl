@@ -41,7 +41,7 @@ function limit_gradient!(method::CellBased, ∇F, F::ScalarField, config)
     (; x, y, z) = ∇F.result
 
     ndrange = length(cells)
-    kernel! = _limit_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
     kernel!(method, x, y, z, F, cells, cell_neighbours, cell_faces, faces)
     sync!(∇F.result, mesh, config) # ghost limiter values are wrong (partial face lists)
 end
@@ -58,7 +58,7 @@ function limit_gradient!(method::CellBased, ∇F, F::VectorField, config)
     (; zx, zy, zz) = ∇F.result
 
     ndrange = length(cells)
-    kernel! = _limit_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
     kernel!(method, xx, xy, xz, F.x, cells, cell_neighbours, cell_faces, faces)
     kernel!(method, yx, yy, yz, F.y, cells, cell_neighbours, cell_faces, faces)
     kernel!(method, zx, zy, zz, F.z, cells, cell_neighbours, cell_faces, faces)

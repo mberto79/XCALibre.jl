@@ -8,7 +8,7 @@ function delta!(Δ, mesh, config)
 
     # set up and launch kernel
     ndrange = length(cells)
-    kernel! = _delta!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_delta!, backend, workgroup, ndrange)
     kernel!(Δ, distance, power, cells)
     # KernelAbstractions.synchronize(backend)
 end

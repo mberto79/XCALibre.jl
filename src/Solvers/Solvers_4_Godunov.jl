@@ -752,7 +752,7 @@ function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_c
     if typeof(turb_model) <: Laminar
         @. nu_eff = nu_mol
     else
-        kernel! = _compute_nu_eff_cell!(_setup(backend, workgroup, n_cells)...)
+        kernel! = _sized(_compute_nu_eff_cell!, backend, workgroup, n_cells)
         kernel!(nu_eff, nu_mol, turb_model.nut)
     end
 end
@@ -773,7 +773,7 @@ function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:Adap
     mesh = model.domain
     (; backend, workgroup) = config.hardware
     n_cells = length(mesh.cells)
-    kernel! = _compute_dt_cell!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_compute_dt_cell!, backend, workgroup, n_cells)
     kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp, nu_eff)
     dt = minimum(dt_cell)
     runtime.dt .= dt
@@ -1208,7 +1208,7 @@ function _setup_godunov(model, config; output=VTK())
     @info "Initialising density from p and T..."
 
     ndrange = n_cells
-    kernel! = _init_rho!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_init_rho!, backend, workgroup, ndrange)
     kernel!(rho, p, T_field, model.fluid)
 
     residuals = GODUNOV(
@@ -1233,22 +1233,22 @@ function compute_residuals!(
     n_cells  = length(mesh.cells)
     n_bfaces = length(mesh.boundary_cellsID)
 
-    kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_zero_residuals!, backend, workgroup, n_cells)
     kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
 
-    kernel! = _inviscid_flux_internal!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_inviscid_flux_internal!, backend, workgroup, n_cells)
     kernel!(flux_scheme, recon_scheme, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, gradRho, gradU, gradP, mesh, model.fluid)
 
-    kernel! = _viscous_flux_internal!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_viscous_flux_internal!, backend, workgroup, n_cells)
     kernel!(res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, U, T, gradU, gradT, mueff, kappa_eff, mesh)
 
-    kernel! = _inviscid_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+    kernel! = _sized(_inviscid_bc_flux!, backend, workgroup, n_bfaces)
     kernel!(flux_scheme, boundaries.U, boundaries.p, boundaries.T,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, T, mesh, model.fluid, time)
 
-    kernel! = _viscous_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+    kernel! = _sized(_viscous_bc_flux!, backend, workgroup, n_bfaces)
     kernel!(boundaries.U, boundaries.T, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh)
 end
@@ -1262,7 +1262,7 @@ function recover_primitives!(workspace, model, config)
     (; backend, workgroup) = hardware
     n_cells = length(model.domain.cells)
 
-    kernel! = _cons_to_prim!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_cons_to_prim!, backend, workgroup, n_cells)
     kernel!(U, p, T, Mach, rho, rhoU, rhoE, model.domain.cells, model.fluid)
 end
 
@@ -1298,7 +1298,7 @@ function step!(
     mesh = model.domain
     n_cells = length(mesh.cells)
 
-    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_forward_euler!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 end
 
@@ -1324,10 +1324,10 @@ function step!(
     Pr_val = TF(model.fluid.Pr.values)
 
     # Stage 1: save W^n, Euler update using R(W^n)
-    kernel! = _save_conservative!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_save_conservative!, backend, workgroup, n_cells)
     kernel!(rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0, rho, rhoU, rhoE)
 
-    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_forward_euler!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 
     # Update primitives and face fields at W^(1) for stage-2 residual
@@ -1344,11 +1344,11 @@ function step!(
     compute_residuals!(workspace, flux_scheme, recon_scheme, boundaries, model,
                        gradU, gradRho, gradP, gradT, mueff, kappa_eff, Uf, mesh, time, config)
 
-    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_forward_euler!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 
     # Convex average: W^{n+1} = 0.5*(W^n + W^(2))
-    kernel! = _rk2_average!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_rk2_average!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0)
 end
 
@@ -1389,7 +1389,7 @@ function GODUNOV(
 
     @info "Initialising conservative variables from primitive fields..."
 
-    kernel! = _prim_to_cons!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_prim_to_cons!, backend, workgroup, n_cells)
     kernel!(rhoU, rhoE, rho, U, p, model.fluid)
 
     time = TF(0.0)

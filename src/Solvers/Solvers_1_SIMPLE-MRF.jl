@@ -291,7 +291,7 @@ function update_mrf_sources!(omegaU, U, reference_frames, config)
     cells = mesh.cells 
 
     ndrange = length(cells)
-    kernel! = _update_mrf_sources!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_update_mrf_sources!, backend, workgroup, ndrange)
     kernel!(omegaU, U, reference_frames)
 end
 
@@ -313,7 +313,7 @@ function flux_mrf!(phif::FS, psif::FV, config, reference_frames) where {FS<:Face
     (; backend, workgroup) = hardware
 
     ndrange = length(phif)
-    kernel! = _flux_mrf!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_flux_mrf!, backend, workgroup, ndrange)
     kernel!(phif, psif, reference_frames)
     # # KernelAbstractions.synchronize(backend)
 end

@@ -154,7 +154,7 @@ function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
     MPI.Startall(H.recv_reqs)
     for k ∈ eachindex(H.neighbours)
         idx = H.send_idx[k]
-        kernel! = _pack!(_setup(backend, workgroup, length(idx))...)
+        kernel! = _sized(_pack!, backend, workgroup, length(idx))
         kernel!(H.send_bufs[k], phi, idx)
     end
     KernelAbstractions.synchronize(backend)
@@ -164,7 +164,7 @@ function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
     for k ∈ eachindex(H.neighbours)
         H.cuda_aware || copyto!(H.recv_bufs[k], H.host_recv[k])
         idx = H.recv_idx[k]
-        kernel! = _unpack!(_setup(backend, workgroup, length(idx))...)
+        kernel! = _sized(_unpack!, backend, workgroup, length(idx))
         kernel!(phi, H.recv_bufs[k], idx)
     end
     KernelAbstractions.synchronize(backend)
@@ -187,9 +187,9 @@ function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
     end
     for k ∈ eachindex(H.neighbours)
         idx = H.recv_idx[k]
-        kernel! = _pack!(_setup(backend, workgroup, length(idx))...)
+        kernel! = _sized(_pack!, backend, workgroup, length(idx))
         kernel!(H.recv_bufs[k], phi, idx)
-        zero! = _zero!(_setup(backend, workgroup, length(idx))...)
+        zero! = _sized(_zero!, backend, workgroup, length(idx))
         zero!(phi, idx)
     end
     KernelAbstractions.synchronize(backend)
@@ -201,7 +201,7 @@ function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
     for k ∈ eachindex(H.neighbours)
         H.cuda_aware || copyto!(H.send_bufs[k], H.host_send[k])
         idx = H.send_idx[k]
-        kernel! = _unpack_add!(_setup(backend, workgroup, length(idx))...)
+        kernel! = _sized(_unpack_add!, backend, workgroup, length(idx))
         kernel!(phi, H.send_bufs[k], idx)
     end
     KernelAbstractions.synchronize(backend)

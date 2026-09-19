@@ -18,7 +18,7 @@ function update_viscosity_cell!(fluid, energy, config)
     (; nu, visc_model) = fluid
 
     ndrange = length(nu)
-    kernal! = _update_viscosity_cell!(_setup(backend, workgroup, ndrange)...)
+    kernal! = _sized(_update_viscosity_cell!, backend, workgroup, ndrange)
     kernal!(nu, visc_model, fluid, energy)
 end
 

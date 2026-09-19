@@ -1,7 +1,7 @@
 module Multithread
 
 export AutoTune
-export _setup, _dynamic_setup, xcal_foreach
+export _setup, _dynamic_setup, _sized, xcal_foreach
 
 using KernelAbstractions
 import AcceleratedKernels as AK
@@ -32,6 +32,27 @@ end
 _dynamic_setup(backend, workgroup, ndrange) = begin
     _, wg, nd = _setup(backend, workgroup, ndrange)
     (workgroupsize=wg, ndrange=nd)
+end
+
+# A kernel built with its launch range becomes a new type per range, so every mesh, patch and rank
+# size compiles its own copy; _sized fixes only a configured workgroup and passes the range at launch.
+struct SizedLaunch{K,N}
+    kernel::K
+    ndrange::N
+end
+(s::SizedLaunch)(args...; ndrange=s.ndrange) = s.kernel(args...; ndrange)
+
+struct AutoSizedLaunch{K,W,N}
+    kernel::K
+    workgroupsize::W
+    ndrange::N
+end
+(s::AutoSizedLaunch)(args...; ndrange=s.ndrange) = s.kernel(args...; workgroupsize=s.workgroupsize, ndrange)
+
+_sized(f, backend, workgroup::Integer, ndrange) = SizedLaunch(f(backend, workgroup), ndrange)
+_sized(f, backend, workgroup, ndrange) = begin
+    _, wg, nd = _setup(backend, workgroup, ndrange)
+    AutoSizedLaunch(f(backend), wg, nd)
 end
 
 xcal_foreach(func, arr, config) = begin

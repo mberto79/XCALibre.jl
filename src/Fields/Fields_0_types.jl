@@ -421,7 +421,7 @@ end
 function initialise!(s::ScalarField, func::Func) where Func<:Function
     backend = KA.get_backend(s)
     ndrange = length(s)
-    kernel! = _initialise_scalar!(_setup(backend, 64, ndrange)...)
+    kernel! = _sized(_initialise_scalar!, backend, 64, ndrange)
     kernel!(s, func)
     KA.synchronize(backend)
     nothing
@@ -439,7 +439,7 @@ end
 function initialise!(v::VectorField, func::Func) where Func<:Function
     backend = KA.get_backend(v.x)
     ndrange = length(v.x)
-    kernel! = _initialise_vector!(_setup(backend, 64, ndrange)...)
+    kernel! = _sized(_initialise_vector!, backend, 64, ndrange)
     kernel!(v, func)
     KA.synchronize(backend)
     nothing

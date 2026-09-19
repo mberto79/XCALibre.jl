@@ -130,7 +130,7 @@ function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField, config)
 
     # Launch interpolate midpoint kernel for scalar field
     ndrange = length(faces)
-    kernel! = interpolate_midpoint_scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(interpolate_midpoint_scalar!, backend, workgroup, ndrange)
     kernel!(faces, phif, phi)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -165,7 +165,7 @@ function interpolate_midpoint!(phif::FaceVectorField, phi::VectorField, config)
 
     # Launch interpolate midpoint kernel for scalar field
     ndrange = length(faces)
-    kernel! = interpolate_midpoint_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(interpolate_midpoint_vector!, backend, workgroup, ndrange)
     kernel!(faces, phif, phi)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -213,7 +213,7 @@ function correct_interpolation!(grad, phif, phi, config)
 
     # Launch correct interpolation kernel
     ndrange = length(faces) - nbfaces
-    kernel! = correct_interpolation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(correct_interpolation_kernel!, backend, workgroup, ndrange)
     kernel!(faces, cells, nbfaces, phi, weight, grad, phif)
     # # KernelAbstractions.synchronize(backend)
 end

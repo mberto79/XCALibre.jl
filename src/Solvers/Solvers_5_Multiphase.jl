@@ -575,7 +575,7 @@ function compute_gh!(gh, g, config)
     cells = gh.mesh.cells
 
     ndrange = length(gh)
-    kernel! = _compute_gh!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_compute_gh!, backend, workgroup, ndrange)
     kernel!(gh, g, cells)
 end
 @kernel inbounds=true function _compute_gh!(gh, g, cells)
@@ -596,7 +596,7 @@ function compute_ghf!(ghf, g, config)
     faces = ghf.mesh.faces
 
     ndrange = length(ghf)
-    kernel! = _compute_ghf!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_compute_ghf!, backend, workgroup, ndrange)
     kernel!(ghf, g, faces)
 end
 @kernel inbounds=true function _compute_ghf!(ghf, g, faces)
@@ -627,7 +627,7 @@ function phi_gf!(phi_gf, rho, ghf, rDf, model, config)
     n_bfaces = length(boundary_cellsID)
 
     ndrange = length(faces)
-    kernel! = _phi_gf!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_phi_gf!, backend, workgroup, ndrange)
     kernel!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces)
 end
 @kernel function _phi_gf!(phi_gf, rho, ghf, rDf, faces, cells, n_bfaces)
@@ -663,7 +663,7 @@ function pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, config)
     faces = ∇p_rghf_deconstructed.mesh.faces
 
     ndrange = length(∇p_rghf_deconstructed)
-    kernel! = _pressure_grad!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_pressure_grad!, backend, workgroup, ndrange)
     kernel!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, faces)
 end
 @kernel function _pressure_grad!(p_rgh, ∇p_rghf_deconstructed, phi_gf, rDf, faces)
@@ -690,7 +690,7 @@ function correct_velocity_rgh!(U, Hv, ∇p, rD, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(U)
-    kernel! = _correct_velocity_rgh!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_velocity_rgh!, backend, workgroup, ndrange)
     kernel!(U, Hv, ∇p, rD)
 end
 @kernel function _correct_velocity_rgh!(U, Hv, ∇p, rD)
@@ -727,21 +727,20 @@ function reconstruct!(phi::VectorField, psif::FaceScalarField, moments, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(cells)
-    kernel! = _reconstruct_internal_moments!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_reconstruct_internal_moments!, backend, workgroup, ndrange)
     kernel!(cells, cell_faces, faces, psif, moments)
 
     n_boundary_faces = length(mesh.boundary_cellsID)
     if n_boundary_faces > 0
         # psif is 0 on boundary faces for the multiphase callers, which makes this the constraint n_b⋅u = 0; potential_flow! passes a real boundary flux
-        kernel! = _reconstruct_boundary_moments!(
-            _setup(backend, workgroup, n_boundary_faces)...)
+        kernel! = _sized(_reconstruct_boundary_moments!, backend, workgroup, n_boundary_faces)
         kernel!(faces, psif, moments)
     end
 
     if typeof(mesh) <: Mesh2
-        kernel! = _reconstruct_operation_2D!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_reconstruct_operation_2D!, backend, workgroup, ndrange)
     else
-        kernel! = _reconstruct_operation_3D!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_reconstruct_operation_3D!, backend, workgroup, ndrange)
     end
     kernel!(phi, moments)
 end
@@ -833,7 +832,7 @@ function zero_boundary_faces!(phif::FaceScalarField, config)
     nbfaces = length(mesh.boundary_cellsID)
     if nbfaces > 0
         ndrange = nbfaces
-        kernel! = _mmp_zero_boundary_faces!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_mmp_zero_boundary_faces!, backend, workgroup, ndrange)
         kernel!(phif)
     end
 end
@@ -852,7 +851,7 @@ function zero_wall_drift_velocity!(Urf, config)
 
     if nbfaces > 0
         ndrange = nbfaces
-        kernel! = _zero_wall_drift_velocity!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_zero_wall_drift_velocity!, backend, workgroup, ndrange)
         kernel!(Urf)
     end
 end
@@ -912,19 +911,19 @@ function mules_limit!(mp_model::AbstractMultiphaseModel,
 
     # Numerical consistency
     ndrange = n_cells
-    kernel! = _mmp_mules_cell_accum!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_mmp_mules_cell_accum!, backend, workgroup, ndrange)
     kernel!(cells, cell_faces, cell_nsign, faces,
             alpha_prev, phiLf, phiAf,
             Pplus, Pminus, Qplus, Qminus,
             alphaMaxLocal, alphaMinLocal, dt)
 
     ndrange = n_cells
-    kernel! = _mmp_mules_ratios!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_mmp_mules_ratios!, backend, workgroup, ndrange)
     kernel!(Pplus, Pminus, Qplus, Qminus, Rplus, Rminus)
 
     # Core MULES operation (compute phi contribution bounded by lambda)
     ndrange = n_faces
-    kernel! = _mmp_mules_apply!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_mmp_mules_apply!, backend, workgroup, ndrange)
     kernel!(phiAf, faces, Rplus, Rminus, nbfaces)
 end
 
@@ -933,7 +932,7 @@ function mules_set_bounds!(::Mixture, alphaMaxLocal, alphaMinLocal, alpha_prev, 
     (; backend, workgroup) = hardware
 
     ndrange = length(mesh.cells)
-    kernel! = _mmp_mules_hard_bounds!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_mmp_mules_hard_bounds!, backend, workgroup, ndrange)
     kernel!(alphaMaxLocal, alphaMinLocal)
 end
 
@@ -943,7 +942,7 @@ function mules_set_bounds!(::VOF, alphaMaxLocal, alphaMinLocal, alpha_prev, mesh
     (; cells, cell_faces, faces) = mesh
 
     ndrange = length(cells)
-    kernel! = _mmp_mules_stencil_bounds!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_mmp_mules_stencil_bounds!, backend, workgroup, ndrange)
     kernel!(cells, cell_faces, faces, alpha_prev, alphaMaxLocal, alphaMinLocal)
 end
 
@@ -1067,12 +1066,12 @@ function compression_flux!(phirf, ∇alphaf, mdotf, C_alpha, config)
     # Phi max limits compression flux for numerical stability, compute it separately:
     phi_over_S_buf = similar(mdotf.values)
     ndrange = length(faces)
-    kernel! = _fill_phi_over_S!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_fill_phi_over_S!, backend, workgroup, ndrange)
     kernel!(phi_over_S_buf, mdotf, faces)
     phimax = maximum(phi_over_S_buf)
 
     ndrange = length(faces)
-    kernel! = _compression_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_compression_flux!, backend, workgroup, ndrange)
     kernel!(phirf, ∇alphaf, mdotf, faces, TF(C_alpha), TF(phimax))
 end
 
@@ -1119,7 +1118,7 @@ function cell_grad_magnitude!(mag_field, grad, config)
     (; backend, workgroup) = hardware
     mesh = mag_field.mesh
     ndrange = length(mesh.cells)
-    kernel! = _cell_grad_magnitude!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_cell_grad_magnitude!, backend, workgroup, ndrange)
     kernel!(mag_field, grad.result)
 end
 
@@ -1143,7 +1142,7 @@ function interpolate_weighted!(phif::FaceScalarField, phi::ScalarField,
     (; faces) = mesh
 
     ndrange = length(faces)
-    kernel! = _interpolate_weighted!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_interpolate_weighted!, backend, workgroup, ndrange)
     kernel!(phif, phi, weight_field, faces)
 end
 
@@ -1175,13 +1174,13 @@ function nhat_prep!(nhatf_prep, alpha, ∇alphaf, config)
     nfaces  = length(faces)
 
     if nbfaces > 0
-        kernel! = _nhat_zero_bfaces!(_setup(backend, workgroup, nbfaces)...)
+        kernel! = _sized(_nhat_zero_bfaces!, backend, workgroup, nbfaces)
         kernel!(nhatf_prep)
     end
 
     ninternal = nfaces - nbfaces
     if ninternal > 0
-        kernel! = _nhat_normalise_ifaces!(_setup(backend, workgroup, ninternal)...)
+        kernel! = _sized(_nhat_normalise_ifaces!, backend, workgroup, ninternal)
         kernel!(nhatf_prep, faces, ∇alphaf, nbfaces)
     end
 end
@@ -1220,7 +1219,7 @@ function surface_tension_flux!(rDf, sigma, kappaf, alpha, phi_gf, config)
     faces = phi_gf.mesh.faces
 
     ndrange = length(phi_gf)
-    kernel! = _surface_tension_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_surface_tension_flux!, backend, workgroup, ndrange)
     kernel!(rDf, sigma, kappaf, alpha, phi_gf, faces)
 end
 
@@ -1261,7 +1260,7 @@ function well_balanced_pressure_grad!(
     faces = mesh.faces
 
     ndrange = length(faces)
-    kernel! = _well_balanced_pressure_face!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_well_balanced_pressure_face!, backend, workgroup, ndrange)
     kernel!(face_buf, p_rgh, rho, alpha, ghf, kappaf, sigma, faces)
 
     reconstruct!(grad_field, face_buf, moments, config)
@@ -1301,7 +1300,7 @@ function correct_mass_flux_mp!(mdotf, p_eqn, config; previous, time=nothing)
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_mass_flux!, backend, workgroup, ndrange)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
@@ -1324,7 +1323,7 @@ function compute_DUmDt!(DUmDt, U, U_prev, gradU, dt, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(DUmDt)
-    kernel! = _compute_DUmDt!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_compute_DUmDt!, backend, workgroup, ndrange)
     kernel!(DUmDt, U, U_prev, gradU.result, dt)
 end
 
@@ -1362,7 +1361,7 @@ function compute_Ur!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d, config
     (; backend, workgroup) = hardware
 
     ndrange = length(Ur)
-    kernel! = _compute_Ur!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_compute_Ur!, backend, workgroup, ndrange)
     kernel!(Ur, alpha, rho, g, DUmDt, rho1, rho2, mu1, d, tau_d)
 end
 
@@ -1408,7 +1407,7 @@ function turbulent_dispersion!(Ur, alpha, ∇alpha, turbulence, Sc_t, config)
     nut = turbulence.nut
 
     ndrange = length(Ur)
-    kernel! = _turbulent_dispersion!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_turbulent_dispersion!, backend, workgroup, ndrange)
     kernel!(Ur, alpha, ∇alpha.result, nut, Sc_t)
 end
 
@@ -1438,7 +1437,7 @@ function face_dot_Sf!(phidotf, phif, config)
     faces = mesh.faces
 
     ndrange = length(faces)
-    kernel! = _face_dot_Sf!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_face_dot_Sf!, backend, workgroup, ndrange)
     kernel!(phidotf, phif, faces)
 end
 
@@ -1461,12 +1460,12 @@ function div_slip_outer!(vector::VectorField, alphaf, rhof, rho1f, rho2f, Urf, c
     (; backend, workgroup) = hardware
 
     ndrange = length(cells)
-    kernel! = div_slip_outer_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_slip_outer_kernel!, backend, workgroup, ndrange)
     kernel!(cells, cell_faces, cell_nsign, faces, vector, alphaf, rhof, rho1f, rho2f, Urf)
 
     nbfaces = length(mesh.boundary_cellsID)
     ndrange = nbfaces
-    kernel! = div_slip_outer_boundary_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_slip_outer_boundary_kernel!, backend, workgroup, ndrange)
     kernel!(faces, cells, vector, alphaf, rhof, rho1f, rho2f, Urf)
 end
 

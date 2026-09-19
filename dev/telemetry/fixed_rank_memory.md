@@ -39,9 +39,11 @@ Script `dev/scripts/pkg_mem.jl one <Name>...` (smaps_rollup delta around `Base.r
 
 - GC live bytes at `runtime` → `iterations`: 23.5 → 50.7. Solver data added in Julia's heap is 27 MB; private memory grows 229 MB (313 → 542).
 - A second `run!` adds 21 MB private: the first-run growth is one-off (compilation and its retention), not per-run.
-- `malloc_trim(0)` after each GC returns 28 MB (`[heap]` 75 → 48; private at `iterations` 542 → 514). `[anon rw-p]` stays at 238 with 51 MB live, so about 187 MB of anonymous pages is neither live Julia data nor free malloc memory. Whether it is GC page retention or compiler (LLVM) arenas is open; a precompiled run in S3 settles it directly.
+- `malloc_trim(0)` after each GC returns 28 MB (`[heap]` 75 → 48; private at `iterations` 542 → 514). `[anon rw-p]` stays at 238 with 51 MB live, so about 187 MB of anonymous pages is neither live Julia data nor free malloc memory. Settled below: GC page retention.
 - Transient: HWM 842 vs 803 RSS at `iterations`.
+- `gclog=1`: Julia's GC reports bytes_resident 64 → 254 MB (`runtime` → `iterations`) against heap_size 211 and 51 MB live after a full collection. Pool pages grow in 64 MB blocks and are not returned.
+- `--heap-size-hint=250M` on each rank (`gc=0`): `[anon rw-p]` 238 → 94, private at `iterations` 556 → 390 (−30 percent), RSS 817 → 652, HWM 701, hash unchanged. `t_iter_s` 11.0 → 12.7, which includes compilation; the time cost is not yet measured.
 
 ## S2 verdict
 
-- Candidate cures, by attributed private MB per rank: (1) runtime compilation of the distributed SIMPLE path, about 190 of the 229 first-run growth; (2) PETSc.jl loading every libpetsc variant and its 87 MB wrapper image, 102 on top of XCALibre+MPI; (3) GPUArrays/LLVM on CPU runs, about 70-95 but a direct XCALibre dependency, so outside this milestone. Pkg and `sys.so` (91) are not removable by XCALibre.
+- Candidate cures, by attributed private MB per rank at n=4: (1) GC page retention, about 165 (the heap-size target lets pool pages dirtied by compilation and setup churn stay resident); (2) PETSc.jl loading every libpetsc variant and its 87 MB wrapper image, 47 private per rank at n=4 (the rest of the single-process +102 is file pages that are shared across ranks), and the mechanism lives in PETSc.jl, not XCALibre; (3) GPUArrays/LLVM on CPU runs, about 70-95 but a direct XCALibre dependency, so outside this milestone. Pkg and `sys.so` (91) are not removable by XCALibre.

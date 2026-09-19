@@ -5,9 +5,11 @@ const FORCE_GC = "gc=1" in ARGS
 const MALLOC = "malloc=1" in ARGS
 # `trim=1` calls glibc malloc_trim after each forced collection, so retained-but-free heap is returned
 const TRIM = "trim=1" in ARGS
+# `gclog=1` makes rank 0 print GC heap stats (bytes_resident) to stderr at each stage
+const GCLOG = "gclog=1" in ARGS
 # `repeat=<k>` adds k full `run!` calls after the staged run, with a forced collection after each
 const REPEAT = let i = findfirst(startswith("repeat="), ARGS); i === nothing ? 0 : parse(Int, ARGS[i][8:end]) end
-const ARGV = filter(a -> !any(startswith.(a, ("gc=", "malloc=", "repeat=", "trim="))), ARGS)
+const ARGV = filter(a -> !any(startswith.(a, ("gc=", "malloc=", "repeat=", "trim=", "gclog="))), ARGS)
 
 # kB fields of /proc/self/status, reported in MB
 function proc_mb(key)
@@ -74,8 +76,10 @@ elseif MODE == "worker"
         end
         mb
     end
+    GCLOG && rank == 0 && GC.enable_logging(true)
     function stage(name)
         MPI.Barrier(comm)
+        GCLOG && rank == 0 && println(stderr, "STAGE ", name)
         FORCE_GC && GC.gc(true)
         TRIM && ccall(:malloc_trim, Cint, (Csize_t,), 0)
         push!(ROWS, (name, proc_mb("VmRSS"), proc_mb("VmHWM"), Base.gc_live_bytes() / 2^20, MALLOC ? petsc_malloc_mb() : NaN, smaps_mb()...))

@@ -6,7 +6,7 @@ STEP: P1-M25-S3 - cure 1 (design)
 HEAD: 6d7ee147
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: design P1-M25-S3 in the plan from telemetry § S2 verdict (D103): first-run compilation ~190 MB vs PETSc.jl all-variant load +102 MB; write mechanism, cost, bar before building; then M22, M23, M24, M15
+resume: user picks the S3 cure (options in the session: heap-size target set per rank by XCALibre, documented flag only, precompile statements, PETSc.jl single-library load); then write mechanism, cost, bar into the plan and build; then M22, M23, M24, M15
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M25 was opened by the user and runs before M22 (D100).

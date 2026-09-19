@@ -11,3 +11,9 @@ Machine: this laptop, `dev/petscenv_stock` (CPU) and `dev/petscenv_conda_ompi` (
 - GPU time, 10 mm n=1, `scaling_probe.jl dev=cuda`: 8.2 ms per iteration before, 8.0 and 8.0 after; residuals agree to about 1e-14 (GPU is tolerance-checked).
 - Private memory after `run!`, rank 0/1, forced GC (`mem_probe.jl gc=1`): `AutoTune` 600/594 → 637/624 MB (+33, first-run compilation garbage, live heap equal); workgroup 64: 591/601 → 605/606 MB (noise).
 - gate 10/10; serial SIMPLE, PISO and k-omega cases 20/20; `test_gpu.jl` n=1 green.
+
+## S4 per-case recipe after S1
+
+- Re-traced with `mem_probe.jl` (laminar BFS case) at 10 mm n=2, 2 iterations: 429 unique statements (937 before S1), none carrying a kernel size.
+- That package at 10 mm n=4, 20 iterations, rank 0: first-run `t_iter_s` 10.19 → 0.44 s, private at `iterations` 613.0 → 355.8 MB, hash `550bb695b7dbab9c` unchanged.
+- The same package at 5 mm n=4, 5 iterations: `t_iter_s` (compile plus five iterations) 11.04 → 1.62 s, private 773.9 → 499.5 MB, hash `eae4f58562b81e06` unchanged. Before S1 the recipe was valid only at its own mesh and rank count.

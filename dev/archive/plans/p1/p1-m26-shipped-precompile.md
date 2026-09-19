@@ -13,15 +13,15 @@ First-run compilation drives per-rank private memory: a per-case precompile reci
 ## Steps
 
 - [x] **P1-M26-S1** DELIVERED (D133): size-free kernel launches through one helper at every `_setup` construction site — verdict: residual hashes bitwise equal at 10 mm n=2,4 (`mem_probe.jl`), CPU per-iteration time within 3 percent, gate green, `test_gpu.jl` n=1 green; recorded: compile time of a second mesh size in the same session before and after.
-- [ ] **P1-M26-S2** measure the workload options: serial solver cases only, and serial plus the single-rank distributed path with the PETSc extension; for each, package precompile time added, load time, and first-run compile and private memory at 10 mm n=4 for a covered case — verdict: numbers recorded and the scope chosen by the user.
-- [ ] **P1-M26-S3** the chosen workload — verdict: first-run private memory and compile time at 10 mm n=4 within 10 percent of the per-case recipe for a covered case, per-iteration time within 3 percent, residuals bitwise identical, gate green.
-- [ ] **P1-M26-S4** the guide's precompile recipe says what now ships and when the recipe still helps — verdict: docs build green.
+- [-] **P1-M26-S2** WITHDRAWN (D134, user): measure the workload options: serial solver cases only, and serial plus the single-rank distributed path with the PETSc extension; for each, package precompile time added, load time, and first-run compile and private memory at 10 mm n=4 for a covered case — verdict: numbers recorded and the scope chosen by the user.
+- [-] **P1-M26-S3** WITHDRAWN (D134, user): the chosen workload — verdict: first-run private memory and compile time at 10 mm n=4 within 10 percent of the per-case recipe for a covered case, per-iteration time within 3 percent, residuals bitwise identical, gate green.
+- [x] **P1-M26-S4** DELIVERED (D135): the guide's precompile recipe says what now ships and when the recipe still helps — verdict: docs build green.
 
 ## Exit criterion
 
-The roadmap row's exit: first-run private memory and compile time at 10 mm n=4 within 10 percent of the per-case recipe for a covered case, per-iteration time within 3 percent on CPU and GPU, residuals bitwise identical, package precompile and load time recorded, gate green.
+Amended by D134: S1 landed and S4 documents what it changes for the recipe; the workload bars no longer apply. Was: the roadmap row's exit: first-run private memory and compile time at 10 mm n=4 within 10 percent of the per-case recipe for a covered case, per-iteration time within 3 percent on CPU and GPU, residuals bitwise identical, package precompile and load time recorded, gate green.
 
 ## Open questions
 
-- Workload scope (S2): the user settles it on measured precompile cost against first-run savings.
-- Whether PETSc can be initialised inside a package-extension precompile workload without an `mpiexec` launch; settled at S2.
+- SETTLED (D134): no workload ships.
+- Not pursued: PETSc initialisation inside a precompile workload (S2 withdrawn).

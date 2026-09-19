@@ -543,15 +543,20 @@ not time, is the limit.
 ### Precompiling a production case
 
 Most of the first run's private memory and compile time goes on compiling the solver for your
-case's exact types. When the same case is run many times with the same mesh partition and rank
-count, you can compile it once, ahead of time, into a small local package. On a 10 mm BFS case at
+case's exact types. When the same case is run many times, you can compile it once, ahead of time,
+into a small local package. On a 10 mm BFS case at
 four ranks this lowered private memory per rank from 559 to 359 MB and cut first-run compilation
-from 11.5 s to under 0.1 s. Changing boundary values, iteration counts or relaxation factors keeps
-the package valid. Changing the mesh, the rank count, the physics models, the boundary-condition
-types, the schemes or the solvers does not, so trace the case again after any of those.
+from 11.5 s to under 0.1 s. Compiled kernels do not depend on the mesh size or the rank count, so
+the package stays valid when the case is refined or run on more ranks: traced at two ranks on the
+10 mm mesh, it still cut first-run compilation from 10.2 to 0.4 s at four ranks, and gave the same
+saving on the 5 mm mesh. Boundary values, iteration counts and relaxation factors can change too.
+Changing the physics models, the boundary conditions (their types, or the patches they apply to),
+the schemes, the solvers or the integer and float types does not keep it valid, so trace the case
+again after any of those.
 
-1. Trace one short run (two iterations are enough) with the same partition and rank count. The
-   wrapper names one trace file per rank (MPICH sets `PMI_RANK`, Open MPI `OMPI_COMM_WORLD_RANK`):
+1. Trace one short run (two iterations are enough), on a coarse mesh and a few ranks if you like;
+   use at least two ranks so the exchange paths are traced. The wrapper names one trace file per
+   rank (MPICH sets `PMI_RANK`, Open MPI `OMPI_COMM_WORLD_RANK`):
 
    ```bash
    cat > trace.sh <<'EOF'

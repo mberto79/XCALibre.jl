@@ -4,7 +4,7 @@
 # (2) on-disk internalField round-trips the in-memory owned field (disk==memory);
 # (3) gather(field,dm) reconstructs the serial solution in original order (memory==serial).
 # (1)&(2)&(3) ⇒ the decomposed case reconstructs to the serial field.
-using XCALibre, PETSc, MPI, Test, StaticArrays
+using XCALibre, PETSc, MPI, Test, StaticArrays, LinearAlgebra
 
 MPI.Init()
 comm = MPI.COMM_WORLD
@@ -108,6 +108,39 @@ if rank == 0
     dp = reltol(gp, ps)
     println("gather-vs-serial (relative): dux=$dux duy=$duy duz=$duz dp=$dp (dir=$tmp)")
     @testset "gather reconstructs serial" begin
+        @test dux < 1e-6
+        @test duy < 1e-6
+        @test duz < 1e-6
+        @test dp < 1e-6
+    end
+end
+
+# the decomposed case written above reads back per rank, with no global mesh, and solves to serial
+dm2 = distribute(FOAMCase(tmp); comm)
+same_patches(a, b) = [(pp.neighbour, pp.send_cells, pp.recv_ghosts) for pp ∈ a.procs] ==
+    [(pp.neighbour, pp.send_cells, pp.recv_ghosts) for pp ∈ b.procs]
+@testset "decomposed OF reader (rank $rank)" begin
+    p1, p2 = dm.partition, dm2.partition
+    @test (p2.n_owned, p2.n_ghost, p2.row_start, p2.row_end) == (p1.n_owned, p1.n_ghost, p1.row_start, p1.row_end)
+    @test p2.local_to_global == p1.local_to_global && p2.owner == p1.owner
+    @test dm2.orig_cells == dm.orig_cells
+    @test same_patches(dm2, dm)
+    @test maximum(i -> norm(dm2.cells[i].centre - dm.cells[i].centre), eachindex(dm.cells)) < 1e-12
+    @test maximum(i -> abs(dm2.cells[i].volume / dm.cells[i].volume - 1), eachindex(dm.cells)) < 1e-10
+    @test length(dm2.boundary_cellsID) == length(dm.boundary_cellsID)
+    @test [b.name for b ∈ dm2.boundaries] == [b.name for b ∈ dm.boundaries]
+end
+model2, config2 = io_case(dm2; iterations, write_interval=-1)
+run!(model2, config2)
+@testset "decomposed OF reader ghosts (rank $rank)" begin
+    @test check_ghosts(model2.momentum.p, dm2, config2) == 0
+end
+gU2 = gather(model2.momentum.U, dm2)
+gp2 = gather(model2.momentum.p, dm2)
+if rank == 0
+    dux, duy, duz, dp = reltol(gU2.x, Us_x), reltol(gU2.y, Us_y), reltol(gU2.z, Us_z), reltol(gp2, ps)
+    println("FOAMCase-vs-serial (relative): dux=$dux duy=$duy duz=$duz dp=$dp")
+    @testset "FOAMCase run reconstructs serial" begin
         @test dux < 1e-6
         @test duy < 1e-6
         @test duz < 1e-6

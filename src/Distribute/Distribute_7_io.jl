@@ -112,7 +112,7 @@ function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
         for (i, node) ∈ enumerate(nodes)
             used[i] || continue
             c = node.coords
-            println(io, @sprintf "(%g %g %g)" c[1] c[2] c[3])
+            println(io, @sprintf "(%.17g %.17g %.17g)" c[1] c[2] c[3])
         end
         println(io, ")")
     end
@@ -207,6 +207,15 @@ function initialise_writer(format::OpenFOAM, dmesh::DistributedMesh)
         println(io, ")")
     end
 
+    # original cell ids, so reconstructPar and distribute(FOAMCase) recover the undecomposed order
+    open(joinpath(polyMeshDir, "cellProcAddressing"), "w") do io
+        println(io, _foam_header("labelList", "constant/polyMesh", "cellProcAddressing"))
+        println(io, n_owned)
+        println(io, "(")
+        foreach(c -> println(io, Int(c) - 1), view(dmesh.orig_cells, 1:n_owned))
+        println(io, ")")
+    end
+
     PFOAMWriter(dir, ni)
 end
 
@@ -243,6 +252,7 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
         open(filename, "w") do io
             write(io, _foam_header(isscalar ? "volScalarField" : "volVectorField",
                 "$timedir", label), "\n")
+            write(io, IOFormats._FOAM_DIMENSIONS)
             write(io, "internalField   nonuniform List<$(isscalar ? "scalar" : "vector")>\n")
             println(io, n_owned)
             println(io, "(")

@@ -7,6 +7,9 @@ using Logging
 using KernelAbstractions, Atomix
 import Adapt
 using XCALibre.Mesh
+using XCALibre.FoamMesh
+import XCALibre.FoamMesh: read_neighbour
+import XCALibre.Mesh: weight_delta_e
 using XCALibre.Fields
 using XCALibre.Multithread
 using XCALibre.ModelFramework
@@ -34,5 +37,6 @@ include("Distribute_4_linalg.jl")
 include("Distribute_5_solvers.jl")
 include("Distribute_6_format.jl")
 include("Distribute_7_io.jl")
+include("Distribute_8_foam.jl")
 
 end # module

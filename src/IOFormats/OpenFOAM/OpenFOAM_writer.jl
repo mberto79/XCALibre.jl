@@ -262,6 +262,7 @@ function write_results(
                 }
                 
                 """)
+                write(io, _FOAM_DIMENSIONS)
                 write(io, "internalField   nonuniform List<scalar>\n")
                 println(io, length(mesh.cells))
                 println(io, "(")
@@ -297,6 +298,7 @@ function write_results(
                 }
                 
                 """)
+                write(io, _FOAM_DIMENSIONS)
                 write(io, "internalField   nonuniform List<vector>\n")
                 println(io, length(mesh.cells))
                 println(io, "(")                
@@ -326,6 +328,9 @@ function write_results(
         end
     end
 end
+
+# fields carry no units; OpenFOAM utilities (reconstructPar, foamToVTK) refuse a field without the entry
+const _FOAM_DIMENSIONS = "dimensions      [0 0 0 0 0 0 0];\n"
 
 _foam_boundary_entry(BC) = begin # catch all method
     """

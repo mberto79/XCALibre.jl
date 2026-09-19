@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-19T14:00:00+01:00
 STATE: GATING
 STEP: P1-M21 close - exit measurements
-HEAD: 6f37870d
+HEAD: c10e9709
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl plus named files at --ranks=2,3, one process at a time under MIN_MB=2500 memguard.sh
 resume: M21 close: 5 mm n=2 peak RSS with `mem_probe.jl`; per-iteration time before (052ee9b7) vs HEAD with `equal_thermal.sh` at n=2 and n=8 (3 percent band); GPU 5 mm n=1 per-iteration time against 0.0746 s; then docs build, close M21 in `dev/phaseRoadmap.md`, archive the plan

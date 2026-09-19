@@ -80,6 +80,30 @@ function _options_for(o::NamedTuple, label)
     strip(string(get(o, :all, ""), " ", isempty(label) ? "" : get(o, Symbol(label), "")))
 end
 
+# hypre's memory-location query reports device memory on every build (a CPU-only hypre maps device
+# memory to the host), so the execution policy (HYPRE_EXEC_DEVICE = 1) is the real answer. Querying
+# an uninitialised hypre creates its handle and breaks the later BoomerAMG creation (D83).
+function _hypre_on_device(petsclib)
+    lib = Base.Libc.Libdl.dlopen(petsclib.petsc_library)
+    sym(s) = Base.Libc.Libdl.dlsym(lib, s; throw_error=false)
+    q, isinit, init = sym(:HYPRE_GetExecutionPolicy), sym(:HYPRE_Initialized), sym(:HYPRE_Initialize)
+    (q === nothing || isinit === nothing || init === nothing) && return false
+    ccall(isinit, Cint, ()) == 0 && ccall(init, Cint, ())
+    policy = Ref{Cint}(-1)
+    ccall(q, Cint, (Ptr{Cint},), policy)
+    policy[] == 1
+end
+
+# `use_gpu_aware_mpi` is a private PETSc symbol: a build without it must name the user's alternative
+function _petsc_global(petsclib, sym)
+    lib = Base.Libc.Libdl.dlopen(petsclib.petsc_library)
+    p = Base.Libc.Libdl.dlsym(lib, sym; throw_error=false)
+    p === nothing && error("PETScSolver: this PETSc build does not export `$sym`, so the " *
+        "host-staged GPU communication path cannot be selected automatically; pass " *
+        "-use_gpu_aware_mpi 0 in petsc_options, or use a CUDA-aware MPI")
+    p
+end
+
 # PETSc aborts on first device use over a non-CUDA-aware MPI. Its exported flag is cleared rather
 # than passing a start-up option, which is lost when PETSc was initialised before this call.
 function _gpu_comm!(petsclib, opts, comm)
@@ -98,13 +122,12 @@ function _gpu_comm!(petsclib, opts, comm)
         end
     end
     (aware || user_set) && return nothing
-    lib = Base.Libc.Libdl.dlopen(petsclib.petsc_library)
-    unsafe_store!(Ptr{Cint}(Base.Libc.Libdl.dlsym(lib, :use_gpu_aware_mpi)), Cint(0))
+    unsafe_store!(Ptr{Cint}(_petsc_global(petsclib, :use_gpu_aware_mpi)), Cint(0))
     nothing
 end
 
 function PETScSolver(eqn, dmesh::DistributedMesh, setup;
-        comm=MPI.COMM_WORLD, petsc_options="", label="")
+        comm=getfield(dmesh, :comm), petsc_options="", label="")
     petsc_options = _options_for(petsc_options, label)
     part = dmesh.partition
     TF = _get_float(dmesh)
@@ -169,6 +192,14 @@ function PETScSolver(eqn, dmesh::DistributedMesh, setup;
             "no hypre support. PETSc_jll carries hypre for Float64 only; other precisions need " *
             "a PETSc configured with --download-hypre. Use GAMG(), which needs no extra build, " *
             "or see the distributed simulations page of the documentation.")
+    end
+    pc = setup.preconditioner
+    if pc isa BoomerAMG && device_solve && !pc.device && !_hypre_on_device(petsclib)
+        error("PETScSolver: BoomerAMG() with GPU fields needs a hypre built for the device, and " *
+            "this PETSc's hypre runs on the host (or exposes no HYPRE_GetExecutionPolicy), which " *
+            "crashes instead of erroring. Use GAMG() or Jacobi() for pressure, or " *
+            "BoomerAMG(device=true) to skip this check. See the distributed simulations page of " *
+            "the documentation.")
     end
     ksp = PETSc.KSP(Amat; opts...)
     # tolerances mean what they mean to Krylov.jl: rtol is relative to the warm-started initial

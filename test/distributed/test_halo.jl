@@ -86,3 +86,24 @@ ref_norm, ref_dot, ref_mean = MPI.bcast(ref, comm; root=0)
     a2 = @allocated halo_exchange!(phi, H1, backend, workgroup)
     @test a2 <= a1
 end
+
+# the mesh carries its communicator: a duplicated comm gives bitwise the same ghosts through the
+# self-syncing seam and the reductions, with nothing reading COMM_WORLD by name
+comm2 = MPI.Comm_dup(comm)
+dm2 = distribute(gmesh; comm=comm2)
+@testset "communicator on the mesh (rank $rank)" begin
+    @test dm2.comm == comm2
+    @test dm2.orig_cells == dm.orig_cells
+    phi1, phi2 = ScalarField(dm), ScalarField(dm2)
+    for i ∈ 1:n_owned
+        phi1[i] = f(dm.mesh.cells[i].centre...); phi2[i] = phi1[i]
+    end
+    phi1.values[ghosts] .= NaN; phi2.values[ghosts] .= NaN
+    config = (; hardware=(; backend, workgroup))
+    sync!(phi1, dm, config); sync!(phi2, dm2, config)
+    @test phi2.values == phi1.values
+    @test dm2.halos.w1.comm == comm2
+    @test XCALibre.Solvers.global_max(Float64(rank + 1), dm2) == MPI.Comm_size(comm2)
+    @test XCALibre.Solve.is_report_rank(dm2) == (rank == 0)
+    @test (gather(phi2, dm2) === nothing) == (rank != 0)
+end

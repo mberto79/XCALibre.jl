@@ -16,6 +16,15 @@ has_hypre = ext._petsc_has_pkg(petsclib, "hypre")
 @testset "hypre capability guards (rank $rank)" begin
     # BoomerAMG is PETSc-only: serial constructor must refuse
     @test_throws ErrorException Preconditioner{BoomerAMG}(nothing)
+    # the device-execution query answers false on a host-only or static hypre; device=true skips it
+    @test ext._hypre_on_device(petsclib) isa Bool
+    @test !BoomerAMG().device && BoomerAMG(device=true).device
+end
+
+@testset "PETSc private symbol guard (rank $rank)" begin
+    @test ext._petsc_global(petsclib, :use_gpu_aware_mpi) != C_NULL
+    err = try (ext._petsc_global(petsclib, :xcalibre_no_such_symbol); nothing) catch e e end
+    @test err isa ErrorException && occursin("-use_gpu_aware_mpi 0", err.msg)
 end
 
 @testset "per-equation petsc_options (rank $rank)" begin

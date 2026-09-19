@@ -31,6 +31,7 @@ Adapt.adapt_structure(to::CUDA.KernelAdaptor, dm::DistributedMesh) =
 
 Distribute.bind_device!(::BACKEND, rank::Integer) =
     (CUDA.device!(rank % length(CUDA.devices())); nothing)
+Distribute.ndevices(::BACKEND) = length(CUDA.devices())
 
 Distribute.petsc_device_info(::CuArray) =
     (pkg="cuda", mat="mpiaijcusparse", sync=CUDA.device_synchronize)

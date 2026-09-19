@@ -23,15 +23,15 @@ function _gather_owned(vals, dmesh, comm, root)
 end
 
 """
-    gather(field, dmesh; comm=MPI.COMM_WORLD, root=0)
+    gather(field, dmesh; comm=dmesh.comm, root=0)
 
 Gather a distributed field to `root` in ORIGINAL (pre-partition) cell order.
 Returns a `Vector` (ScalarField) or `(x, y, z)` NamedTuple of Vectors (VectorField)
 on `root`, `nothing` on other ranks.
 """
-gather(f::ScalarField, dmesh::DistributedMesh; comm=MPI.COMM_WORLD, root=0) =
+gather(f::ScalarField, dmesh::DistributedMesh; comm=getfield(dmesh, :comm), root=0) =
     _gather_owned(f.values, dmesh, comm, root)
-gather(f::VectorField, dmesh::DistributedMesh; comm=MPI.COMM_WORLD, root=0) = (;
+gather(f::VectorField, dmesh::DistributedMesh; comm=getfield(dmesh, :comm), root=0) = (;
     x=_gather_owned(f.x.values, dmesh, comm, root),
     y=_gather_owned(f.y.values, dmesh, comm, root),
     z=_gather_owned(f.z.values, dmesh, comm, root))
@@ -212,9 +212,12 @@ end
 
 # NEW SECTION: writer dispatch (unified: solver bodies call initialise_writer/save_output)
 
-# VTK has no decomposed writer; distributed runs use OpenFOAM() or write_interval=-1.
-# nothing writer => the solver body's `outputWriter === nothing || save_output(...)` skips.
-initialise_writer(::VTK, ::DistributedMesh) = nothing
+# VTK has no decomposed writer: the sentinel lets write_interval=-1 runs proceed and makes any write
+# an error rather than silence (the solver bodies only skip a `nothing` writer)
+struct NoDistributedWriter end
+initialise_writer(::VTK, ::DistributedMesh) = NoDistributedWriter()
+write_results(iteration, time, ::DistributedMesh, ::NoDistributedWriter, args...; kwargs...) =
+    error("VTK has no decomposed writer; use output=OpenFOAM() (3D meshes) or write_interval=-1")
 
 # NEW SECTION: field output
 

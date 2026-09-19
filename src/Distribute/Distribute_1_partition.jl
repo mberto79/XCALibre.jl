@@ -71,7 +71,7 @@ end
 _mesh_like(::Mesh3, args...) = Mesh3(args...)
 _mesh_like(::Mesh2, args...) = Mesh2(args...)
 
-function extract_subdomain(mesh, parts, part::Integer)
+function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD)
     TI = _get_int(mesh)
     nparts = maximum(parts)
     ncells = length(mesh.cells)
@@ -221,7 +221,7 @@ function extract_subdomain(mesh, parts, part::Integer)
 
     # halo caches are lazily built on first sync! (per rank/backend) so a DistributedMesh can be
     # MPI.send-ed intact and adapted to a GPU backend without shipping rank-local MPI state
-    DistributedMesh(lmesh, partition, procs, TI.(local_cells), TI.(local_faces), HaloCache())
+    DistributedMesh(lmesh, partition, procs, TI.(local_cells), TI.(local_faces), HaloCache(), comm)
 end
 
 # NEW SECTION: entry points
@@ -282,16 +282,16 @@ function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     quiet_nonroot!(comm)
     nranks = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
-    nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1)
+    nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1; comm)
     if rank == 0
         parts = partition_cells(mesh, nranks;
             cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
         for q ∈ 1:nranks-1
-            MPI.send(extract_subdomain(mesh, parts, q + 1), comm; dest=q, tag=0)
+            MPI.send(extract_subdomain(mesh, parts, q + 1; comm), comm; dest=q, tag=0)
         end
-        extract_subdomain(mesh, parts, 1)
+        extract_subdomain(mesh, parts, 1; comm)
     else
-        MPI.recv(comm; source=0, tag=0)
+        _with_comm(MPI.recv(comm; source=0, tag=0), comm)
     end
 end
 
@@ -336,21 +336,55 @@ end
 _part_files(dir) = isdir(dir) ?
     filter(f -> startswith(f, "rank_") && endswith(f, ".jls"), readdir(dir)) : String[]
 
-_parts_match(dir, nranks) = length(_part_files(dir)) == nranks
+_parts_match(dir, nranks) = length(_part_files(dir)) == nranks &&
+    all(f -> _part_header_ok(joinpath(dir, f), nranks), _part_files(dir))
 
 # NEW SECTION: offline partitioning
+
+# plain-text header line before the serialised mesh, so a stale part fails at load with a message
+# rather than deep inside the solver; the version fields must match exactly (D78)
+const _PART_FORMAT = 1
+_part_header(nranks, TI, TF) = "XCALibre parts format=$(_PART_FORMAT) julia=$(VERSION) " *
+    "xcalibre=$(pkgversion(parentmodule(@__MODULE__))) nranks=$nranks TI=$TI TF=$TF"
+
+function _check_part_header(header, nranks, path)
+    startswith(header, "XCALibre parts ") ||
+        error("$path is not a partition written by partition_mesh; regenerate with partition_mesh")
+    have = Dict(String(k) => String(v) for (k, v) ∈ (split(kv, '='; limit=2) for kv ∈ split(header)[3:end]))
+    for (k, v) ∈ ("format" => string(_PART_FORMAT), "julia" => string(VERSION),
+                  "xcalibre" => string(pkgversion(parentmodule(@__MODULE__))), "nranks" => string(nranks))
+        get(have, k, "?") == v || error("partition $path was written with $k=$(get(have, k, "?")) " *
+            "but this run has $k=$v; regenerate with partition_mesh")
+    end
+end
+
+_part_header_ok(path, nranks) = try
+    open(io -> (_check_part_header(readline(io), nranks, path); true), path)
+catch
+    false
+end
+
+_read_part(path, nranks) = open(path) do io
+    _check_part_header(readline(io), nranks, path)
+    deserialize(io)
+end
 
 """
     partition_mesh(mesh, nparts; dir, periodic_patches=())
 
 Offline decomposition: partition `mesh` into `nparts` rank-local meshes and write one
-`rank_<r>.jls` per rank into `dir`. Load with `distribute(dir; comm)`. Files use Julia
-serialization — regenerate after Julia or XCALibre upgrades.
+`rank_<r>.jls` per rank into `dir`. Load with `distribute(dir; comm)`. Each file starts with a
+header naming the format, Julia and XCALibre versions and the rank count; loading a part written
+under different versions errors and asks for the decomposition to be regenerated.
 """
 function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=())
     mkpath(dir)
+    header = _part_header(nparts, _get_int(mesh), _get_float(mesh))
     for (r, dm) ∈ enumerate(decompose(mesh, nparts; periodic_patches))
-        serialize(joinpath(dir, "rank_$(r-1).jls"), dm)
+        open(joinpath(dir, "rank_$(r-1).jls"), "w") do io
+            println(io, header)
+            serialize(io, dm)
+        end
     end
     dir
 end
@@ -364,9 +398,9 @@ its own `rank_<rank>.jls` from `dir` (no rank-0 memory bottleneck).
 function distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
     MPI.Initialized() || MPI.Init()
     quiet_nonroot!(comm)
-    dm = deserialize(joinpath(dir, "rank_$(MPI.Comm_rank(comm)).jls"))
+    dm = _read_part(joinpath(dir, "rank_$(MPI.Comm_rank(comm)).jls"), MPI.Comm_size(comm))
     p = getfield(dm, :partition)
     p.nranks == MPI.Comm_size(comm) || error(
         "offline decomposition in $dir has $(p.nranks) parts; comm has $(MPI.Comm_size(comm)) ranks")
-    dm
+    _with_comm(dm, comm)
 end

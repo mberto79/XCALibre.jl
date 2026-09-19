@@ -44,6 +44,9 @@ hierarchy stays a good preconditioner, and a full hypre rebuild every solve othe
 runtime. `freeze=1` rebuilds every solve. Longer freezes cut setup cost further but let the
 stale hierarchy degrade the pressure residual.
 
+On GPU fields the solver refuses `BoomerAMG()` unless PETSc's hypre reports device execution, since
+a host-only hypre crashes there; `device=true` skips that check for a build the query misreads.
+
 Each other keyword `k=v` overrides a default and is passed to PETSc as `-pc_hypre_boomeramg_<k> v`.
 Common knobs: `strong_threshold` (0.5-0.7 in 3D), `coarsen_type` ("HMIS"/"PMIS"/"Falgout"),
 `interp_type` ("ext+i"/"classical"), `P_max` (interpolation entries per row), `agg_nl` (aggressive-coarsening levels), `relax_type_all`
@@ -53,13 +56,15 @@ Common knobs: `strong_threshold` (0.5-0.7 in 3D), `coarsen_type` ("HMIS"/"PMIS"/
 struct BoomerAMG{NT<:NamedTuple} <: PreconditionerType
     opts::NT
     freeze::Int
+    device::Bool # skip the hypre device-execution check on GPU fields
 end
 
 # 3D CFD-Poisson defaults: low operator complexity that scales with mesh size
 const BOOMERAMG_3D_DEFAULTS = (
     strong_threshold = 0.7, coarsen_type = "HMIS", interp_type = "ext+i", P_max = 4,
     agg_nl = 1, agg_num_paths = 2)
-BoomerAMG(; freeze=10, kwargs...) = BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), freeze)
+BoomerAMG(; freeze=10, device=false, kwargs...) =
+    BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), freeze, device)
 
 """
     GAMG(; kwargs...) <: PreconditionerType

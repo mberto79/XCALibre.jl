@@ -18,7 +18,7 @@ rank == 0 && println("PETSc CUDA: $petsc_cuda → $(petsc_cuda ? "native device 
 include(joinpath(@__DIR__, "psimple_case.jl"))
 
 backend = CUDABackend()
-bind_device!(backend, rank)
+bind_device!(backend; comm) # node-local rank; equals the global rank on one node
 iterations = 300
 
 gmesh = rank == 0 ? cavity_mesh() : nothing
@@ -72,6 +72,21 @@ if petsc_cuda
         @test maximum(residuals.Ux[iterations÷2:end]) < 1e-6
     end
     rank == 0 && println("PSIMPLE GPU cavity n=$(MPI.Comm_size(comm)) dux=$dux duy=$duy dp=$dp")
+
+    # BoomerAMG on device fields: runs where hypre executes on the device, errors cleanly otherwise
+    ext = Base.get_extension(XCALibre, :XCALibrePETScExt)
+    hypre_dev = ext._hypre_on_device(petsclib)
+    rank == 0 && println("hypre on device: $hypre_dev")
+    model_b, config_b = incompressible_case(dm_dev, cavity_bcs; iterations=5, backend, p_precon=BoomerAMG())
+    @testset "BoomerAMG device guard (rank $rank)" begin
+        if hypre_dev
+            @test run!(model_b, config_b; pref=0.0) !== nothing
+        else
+            err = try (run!(model_b, config_b; pref=0.0); nothing) catch e e end
+            @test err isa ErrorException
+            @test occursin("BoomerAMG(device=true)", err.msg)
+        end
+    end
 else
     @testset "GPU fields + non-CUDA PETSc errors (rank $rank)" begin
         err = try (run!(model, config; pref=0.0); nothing) catch e e end

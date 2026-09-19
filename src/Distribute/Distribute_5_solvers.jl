@@ -5,13 +5,26 @@ export DistributedEqn
 
 Wraps a serial `ModelEquation` on the rank-local mesh with a distributed solver
 (`PETScSolver`), the rank `Partition` and the field `HaloExchange`. Existing generics
-(`solve_equation!`, `solve_system!`, `residual`, `setReference!`) dispatch on it.
+(`solve_equation!`, `solve_system!`, `residual`, `setReference!`) dispatch on it. The local id
+of the reference cell (original global cell 1) is cached at construction, 0 when another rank
+owns it.
 """
 struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,H<:HaloExchange}
     eqn::E
     solver::S
     partition::P
     halo::H
+    ref_cell::Int
+    ref_lid::Int
+end
+DistributedEqn(eqn, solver, partition, halo) =
+    DistributedEqn(eqn, solver, partition, halo, 1, _ref_local(get_phi(eqn).mesh, 1))
+
+# local id of an ORIGINAL global cell id on this rank's owned block, 0 when not owned
+function _ref_local(dm::DistributedMesh, cellID)
+    n = getfield(dm, :partition).n_owned
+    lid = findfirst(==(cellID), view(getfield(dm, :orig_cells), 1:n))
+    lid === nothing ? 0 : Int(lid)
 end
 
 _comm(deqn::DistributedEqn) = deqn.halo.comm
@@ -94,19 +107,17 @@ end
 # `cellID` is an ORIGINAL global cell id; only the owning rank edits its row
 function Solve.setReference!(deqn::DistributedEqn, pRef, cellID, config)
     pRef === nothing && return nothing
-    n = deqn.partition.n_owned
-    orig = get_phi(deqn.eqn).mesh.orig_cells
-    lid = findfirst(==(cellID), view(orig, 1:n))
-    lid === nothing || setReference!(deqn.eqn, pRef, lid, config)
+    lid = cellID == deqn.ref_cell ? deqn.ref_lid : _ref_local(get_phi(deqn.eqn).mesh, cellID)
+    lid == 0 || setReference!(deqn.eqn, pRef, lid, config)
     nothing
 end
 
 # NEW SECTION: reduction + mesh seams (extend the serial identities from Solvers)
 
 Solve.is_distributed_mesh(::DistributedMesh) = true
-Solve.is_report_rank(dm::DistributedMesh) = getfield(dm, :partition).rank == 0
+Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) == 0
 
 # global_max seam (S5): Courant dt must be identical on every rank
-Solvers.global_max(v, ::DistributedMesh) = MPI.Allreduce(v, max, MPI.COMM_WORLD)
+Solvers.global_max(v, dm::DistributedMesh) = MPI.Allreduce(v, max, getfield(dm, :comm))
 # courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh
 Solvers._base_mesh(dm::DistributedMesh) = getfield(dm, :mesh)

@@ -60,9 +60,14 @@ struct DistributedMesh{M<:AbstractMesh,P<:Partition,PP<:ProcessorPatch,VI} <: Ab
     orig_cells::VI            # original global cell id per local cell (I/O, gather)
     orig_faces::VI            # original global face id per local face
     halos::HaloCache          # lazily-built width-1/3 halo caches for self-syncing sync!
+    comm::MPI.Comm            # communicator the partition was made for; every exchange and reduction uses it
 end
 
-const _DM_FIELDS = (:mesh, :partition, :procs, :orig_cells, :orig_faces, :halos)
+const _DM_FIELDS = (:mesh, :partition, :procs, :orig_cells, :orig_faces, :halos, :comm)
+
+# a received or deserialised part carries the sender's handle, which means nothing on this rank
+_with_comm(dm::DistributedMesh, comm) = DistributedMesh(getfield(dm, :mesh), getfield(dm, :partition),
+    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), getfield(dm, :halos), comm)
 
 Base.getproperty(dm::DistributedMesh, s::Symbol) =
     s in _DM_FIELDS ? getfield(dm, s) : getproperty(getfield(dm, :mesh), s)
@@ -80,21 +85,34 @@ Adapt.@adapt_structure ProcessorPatch
 # GPU config backend); the host cache is not shared with the device mesh.
 Adapt.adapt_structure(to, dm::DistributedMesh) = DistributedMesh(
     Adapt.adapt(to, getfield(dm, :mesh)), getfield(dm, :partition),
-    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), HaloCache())
+    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), HaloCache(),
+    getfield(dm, :comm))
 
 """
-    bind_device!(backend)
+    bind_device!(backend; comm=MPI.COMM_WORLD)
     bind_device!(backend, rank)
 
-Bind this MPI rank to GPU `rank % ndevices` (one rank per device). No-op on CPU. Call
-before `adapt(backend, dmesh)` or building fields/`HaloExchange` on a GPU backend. Without
-`rank` the calling rank's own id is used, so no script needs to query the communicator.
+Bind this MPI rank to a GPU. Without `rank`, the rank's position among the ranks on its own node
+picks the device, so ranks on one node take its devices in turn whatever the global rank order;
+when a node has more ranks than devices they share, and a warning says so. `bind_device!(backend,
+rank)` binds to device `rank % ndevices` explicitly. No-op on CPU. Call before `adapt(backend,
+dmesh)` or building fields/`HaloExchange` on a GPU backend.
 """
-bind_device!(backend) =
-    (MPI.Initialized() || MPI.Init(); bind_device!(backend, MPI.Comm_rank(MPI.COMM_WORLD)))
+function bind_device!(backend; comm=MPI.COMM_WORLD)
+    backend isa KernelAbstractions.CPU && return nothing
+    MPI.Initialized() || MPI.Init()
+    node = MPI.Comm_split_type(comm, MPI.COMM_TYPE_SHARED, MPI.Comm_rank(comm))
+    lrank, lsize = MPI.Comm_rank(node), MPI.Comm_size(node)
+    MPI.free(node)
+    nd = ndevices(backend)
+    lrank == 0 && lsize > nd && @warn "bind_device!: $lsize ranks on this node share $nd GPU(s)" maxlog=1
+    bind_device!(backend, lrank)
+end
 bind_device!(::KernelAbstractions.CPU, rank::Integer) = nothing
 bind_device!(backend, rank::Integer) =
     error("bind_device!: no GPU extension loaded for $(typeof(backend)) — e.g. `using CUDA`")
+ndevices(backend) =
+    error("ndevices: no GPU extension loaded for $(typeof(backend)) — e.g. `using CUDA`")
 
 # GPU exts declare their PETSc pairing: external-package name, device MPIAIJ mat type and a
 # device-wide sync (CUDA → "cuda"/"mpiaijcusparse"/device_synchronize)

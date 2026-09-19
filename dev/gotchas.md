@@ -24,6 +24,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - This shell has the custom OpenMPI `mpiexec` first on PATH, which aborts ranks of the stock (MPICH) env with `internal_Init_thread`; launch stock-env runs through `MPI.mpiexec()` or `mpiexecjl`.
 - `dev/petscenv_f32` goes stale when XCALibre gains a dependency (precompile fails with "Cannot load module ... into XCALibre"); `Pkg.resolve()` in that env fixes it.
 - Julia threads default to one, so the CPU kernel backend is already serial under MPI; passing more threads per rank adds overhead rather than removing it.
+- `HYPRE_GetMemoryLocation` says device on a CPU-only hypre too (device memory maps to host there); `HYPRE_GetExecutionPolicy` is the query that distinguishes the builds (D79). Both live in libHYPRE, reachable through `dlsym` on the libpetsc handle.
 
 ## machine
 

@@ -65,6 +65,25 @@ end
     @test reads[] == 0
 end
 
+# a part written under another Julia version must fail at load, not inside the solver
+if rank == 0
+    bad = mktempdir()
+    bytes = read(joinpath(dir, "rank_0.jls"))
+    nl = findfirst(==(UInt8('\n')), bytes)
+    open(joinpath(bad, "rank_0.jls"), "w") do io
+        println(io, replace(String(bytes[1:nl-1]), r"julia=\S+" => "julia=0.0.0"))
+        write(io, bytes[nl+1:end])
+    end
+    @testset "part header check" begin
+        @test XCALibre.Distribute._part_header_ok(joinpath(dir, "rank_0.jls"), nranks)
+        @test !XCALibre.Distribute._part_header_ok(joinpath(bad, "rank_0.jls"), nranks)
+        @test !XCALibre.Distribute._parts_match(bad, 1)
+        err = try (XCALibre.Distribute._read_part(joinpath(bad, "rank_0.jls"), nranks); nothing) catch e e end
+        @test err isa ErrorException && occursin("regenerate with partition_mesh", err.msg)
+    end
+    rm(bad; recursive=true)
+end
+
 rank == 0 && println("OFFLINE == ONLINE n=$nranks")
 MPI.Barrier(comm)
 rank == 0 && (rm(dir; recursive=true); rm(dir2; recursive=true))

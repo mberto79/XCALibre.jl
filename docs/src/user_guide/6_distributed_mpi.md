@@ -7,9 +7,9 @@ you do not write a solver, model or boundary condition any differently for paral
 
 ## Requirements
 
-You need `PETSc` and `MPI` in your project environment, and nothing else. The binaries that
-`PETSc_jll` and `MPI.jl` install are enough for a Float64 CPU run, with no preferences file and no
-shell configuration. Two cases need more:
+You need Julia 1.10 or later and `PETSc` and `MPI` in your project environment, and nothing else.
+The binaries that `PETSc_jll` and `MPI.jl` install are enough for a Float64 CPU run, with no
+preferences file and no shell configuration. Two cases need more:
 
 - `BoomerAMG()` needs a PETSc built with hypre. The stock `Float64` libraries include hypre, so it
   works out of the box at the default precision. `Float32` builds do not include it.
@@ -201,10 +201,12 @@ mesh = distribute(dir="parts") do
 end
 ```
 
-If `dir` already holds a decomposition for the same number of ranks, it is reused and the reader
-is never called. A decomposition for a different number of ranks is replaced.
-[`partition_mesh`](@ref) writes the same layout from a standalone process if you want to decompose
-ahead of time, and `distribute(dir; comm)` loads it.
+If `dir` already holds a decomposition for the same number of ranks, written by the same Julia and
+XCALibre versions, it is reused and the reader is never called. A decomposition for a different
+number of ranks, or from other versions, is replaced. [`partition_mesh`](@ref) writes the same
+layout from a standalone process if you want to decompose ahead of time, and `distribute(dir; comm)`
+loads it; each part file starts with a header naming its versions, and loading a part written under
+other versions errors and asks for the decomposition to be regenerated.
 
 ## Setting up and running a case
 
@@ -282,8 +284,13 @@ is_root() && println("final pressure residual ", residuals.p[end])
 
 Two helpers cover what a parallel script still needs. [`is_root`](@ref), used above, is true on
 rank 0. It is also true in a serial run where MPI was never initialised, so the same guard works in
-both. `bind_device!(backend)` binds the calling rank to its GPU without your script querying the
-communicator.
+both. `bind_device!(backend)` binds the calling rank to a GPU by its position among the ranks on
+its own node, so the ranks on each node take that node's devices in turn; when a node has more
+ranks than GPUs they share one and a warning says so.
+
+Output on a distributed mesh is written with `output=OpenFOAM()` in the decomposed layout; VTK has
+no decomposed writer, so a run that asks for VTK output with a positive `write_interval` stops with
+an error at its first write. Leave `write_interval=-1` when no output is needed.
 
 ## Launching
 
@@ -356,8 +363,9 @@ run!(model, config; petsc_options = (all = "-log_view", U = "-pc_type asm -sub_p
 
 PETSc also reads these options at start-up, so options that must be set before PETSc initialises,
 such as `-log_view` or `-use_gpu_aware_mpi 0`, go there too and need no environment variable. Put
-them in the plain string or in `all`: start-up options take effect with the first solver built,
-since PETSc initialises once per process.
+them in the plain string or in `all`: PETSc initialises once per process, so start-up options take
+effect only with the first solver built, and an entry for a later equation (for example `p` when
+`U` is built first) cannot add them.
 
 ## Choosing a preconditioner
 
@@ -484,8 +492,10 @@ as on the CPU; GAMG builds part of its hierarchy on the host, which its `freeze`
 `BoomerAMG()` runs on the device only if PETSc's hypre was itself built with CUDA. There PETSc
 switches it to the GPU-capable variants (PMIS coarsening, `ext+i` interpolation, l1-Jacobi
 smoothing), so its residuals differ from a CPU run with the same keywords. With a PETSc whose
-hypre runs on the host only, such as the conda-forge build, `BoomerAMG()` crashes on GPU fields.
-`GAMG()` is the recommended AMG on the GPU.
+hypre runs on the host only, such as the conda-forge build, `BoomerAMG()` on GPU fields would
+crash, so XCALibre asks hypre for its execution policy first and stops with an error naming
+`GAMG()` and `Jacobi()` instead; `BoomerAMG(device=true)` skips that check for a build the query
+misreads. `GAMG()` is the recommended AMG on the GPU.
 
 ### Other PETSc preconditioners
 

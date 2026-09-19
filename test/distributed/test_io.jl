@@ -89,6 +89,14 @@ iterdir = "processor$rank/$iterations"
     @test maximum(i -> abs(Ud[i][3] - uz[i]), 1:n; init=0.0) < 1e-10
 end
 
+# VTK has no decomposed writer: a write must error, never silently skip
+@testset "VTK on a distributed mesh errors (rank $rank)" begin
+    w = initialise_writer(VTK(), dm)
+    err = try (write_results(1, 1, dm, w, config.boundaries, ("p", model.momentum.p)); nothing) catch e e end
+    @test err isa ErrorException
+    @test occursin("no decomposed writer", err.msg)
+end
+
 # (3) gather reconstructs serial in original order (relative tol: the box case is a
 # stiff closed-box that grows to ~1e5 U / ~1e8 p, so absolute deltas are meaningless;
 # serial and distributed still agree to ~1e-8 relative)

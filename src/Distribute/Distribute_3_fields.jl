@@ -4,7 +4,7 @@ export sync!, pnorm, pdot, pmean
 import XCALibre.Solve: sync!
 
 """
-    DistributedScalarField(dmesh, backend; comm=MPI.COMM_WORLD)
+    DistributedScalarField(dmesh, backend; comm=dmesh.comm)
 
 A `ScalarField` on a `DistributedMesh` paired with its `HaloExchange`; `sync!` fills ghosts.
 """
@@ -12,11 +12,11 @@ struct DistributedScalarField{F<:ScalarField,H<:HaloExchange}
     field::F
     halo::H
 end
-DistributedScalarField(dmesh::DistributedMesh, backend; comm=MPI.COMM_WORLD) =
+DistributedScalarField(dmesh::DistributedMesh, backend; comm=getfield(dmesh, :comm)) =
     DistributedScalarField(ScalarField(dmesh), HaloExchange(dmesh, 1, backend; comm))
 
 """
-    DistributedVectorField(dmesh, backend; comm=MPI.COMM_WORLD)
+    DistributedVectorField(dmesh, backend; comm=dmesh.comm)
 
 A `VectorField` on a `DistributedMesh` paired with a 3-wide `HaloExchange`.
 """
@@ -24,7 +24,7 @@ struct DistributedVectorField{F<:VectorField,H<:HaloExchange}
     field::F
     halo::H
 end
-DistributedVectorField(dmesh::DistributedMesh, backend; comm=MPI.COMM_WORLD) =
+DistributedVectorField(dmesh::DistributedMesh, backend; comm=getfield(dmesh, :comm)) =
     DistributedVectorField(VectorField(dmesh), HaloExchange(dmesh, 3, backend; comm))
 
 const DistributedField = Union{DistributedScalarField,DistributedVectorField}

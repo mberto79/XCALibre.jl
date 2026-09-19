@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-19T13:30:00+01:00
 STATE: IDLE
 STEP: P1-M16 - memory breakdown (next)
-HEAD: 83d10833
+HEAD: 7cf85354
 BRANCH: HM/distributed-draft
 GATE: julia --project=. -e 'using Pkg; Pkg.test()'
 resume: user asked to stop after M19 and M20 (both delivered 2026-09-19); next is `dev/phaseRoadmap.md` order M16 (measurement only, D76), M21, M22, M23, M24, M15; the 4 mm BFS mesh is gone, so M16/M21 measure on `bfs_tet_5mm.unv` and the cascade unless it is regenerated

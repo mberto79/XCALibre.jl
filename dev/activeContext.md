@@ -1,9 +1,9 @@
 # Active context - distributed module release polish
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
-updated: 2026-09-19T20:30:00+01:00
+updated: 2026-09-19T21:45:00+01:00
 STATE: IDLE
 STEP: P1 exit gate and close (all milestones closed; M15 D136)
-HEAD: 4e46e5c0
+HEAD: ad7b4477
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
 resume: every P1 milestone is closed; the phase exit gate (full serial suite, gate, example on stock binaries, invariance, docs) and the close are the user's call through the xcalibre-close skill; the 108 pre-existing long comment blocks on main are a separate cleanup PR off main (D136)

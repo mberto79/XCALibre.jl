@@ -18,7 +18,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 ## time budget (D101)
 
 - HARD CAP: any gate or experiment whose result decides a verdict finishes within five minutes of wall clock, compilation included. Plan the run to fit before launching it; if it cannot fit, shrink it, never extend the cap.
-- Measured durations to plan with: `gate.jl` (n=2,3) about 3.3 min; single suite files at `--ranks=2,3` 0.5-4 min each (`test_invariance.jl` 3.3, `test_gpu.jl` at 1,2 about 4); a 10 mm `mem_probe.jl` worker about 1 min; a 4 mm worker about 2 min; docs build several minutes.
+- Measured durations to plan with: `gate.jl` (n=2,3) about 3.3 min; single suite files at `--ranks=2,3` 0.5-4 min each (`test_invariance.jl` 3.3, `test_gpu.jl` at 1,2 about 4); `test_restart.jl` at `--ranks=1,2,4` about 3 min and `test_repartition.jl` at 2,3 about 1.5 min (neither is in `gate.jl`; run them when restart, output or migration code changes); a 10 mm `mem_probe.jl` worker about 1 min; a 4 mm worker about 2 min; docs build several minutes.
 - Levers, cheapest first: the 10 mm mesh instead of 5 or 4 mm; 2-5 iterations; one rank-count pair; only the suite files the change can reach, run as separate commands; one A/B pair per timing run (the `equal_thermal.sh` 25 s warm-up and 15 s settle per point add up); `mem_probe.jl` residual hashes instead of full tests where bitwise equality is the verdict.
 - Swapping an extension file to compare versions forces a recompile on each swap (about 1 min); count it against the cap.
 

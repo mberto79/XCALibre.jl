@@ -1,6 +1,6 @@
 module Distribute
 
-using SparseArrays, StaticArrays, Accessors, LinearAlgebra, Serialization
+using SparseArrays, StaticArrays, Accessors, LinearAlgebra
 using MPI, Metis
 using Printf
 using Logging
@@ -32,6 +32,7 @@ include("Distribute_2_halo.jl")
 include("Distribute_3_fields.jl")
 include("Distribute_4_linalg.jl")
 include("Distribute_5_solvers.jl")
+include("Distribute_6_format.jl")
 include("Distribute_7_io.jl")
 
 end # module

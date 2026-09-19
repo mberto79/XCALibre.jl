@@ -18,23 +18,25 @@ MPI.Barrier(comm)
 dm_off = distribute(dir; comm)
 dm_on = distribute(gmesh; comm=comm)
 
-po, pn = dm_off.partition, dm_on.partition
+const MESH_ARRAYS = (:cells, :cell_nodes, :cell_faces, :cell_neighbours, :cell_nsign, :faces,
+    :face_nodes, :boundaries, :nodes, :node_cells, :boundary_cellsID, :get_float, :get_int)
+same_mesh(a, b) = all(getfield(a, k) == getfield(b, k) for k ∈ MESH_ARRAYS)
+fields_eq(a, b) = all(getfield(a, k) == getfield(b, k) for k ∈ fieldnames(typeof(a)))
+same_part(a, b) = fields_eq(getfield(a, :partition), getfield(b, :partition)) &&
+    a.orig_cells == b.orig_cells && a.orig_faces == b.orig_faces &&
+    length(a.procs) == length(b.procs) && all(fields_eq(a.procs[i], b.procs[i]) for i ∈ eachindex(a.procs)) &&
+    typeof(getfield(a, :mesh)) == typeof(getfield(b, :mesh)) && same_mesh(getfield(a, :mesh), getfield(b, :mesh))
+
+pn = dm_on.partition
 @testset "offline == online (rank $rank)" begin
-    @test po.n_owned == pn.n_owned && po.n_ghost == pn.n_ghost
-    @test po.local_to_global == pn.local_to_global
-    @test po.row_start == pn.row_start && po.row_end == pn.row_end
-    @test dm_off.orig_cells == dm_on.orig_cells
-    @test dm_off.orig_faces == dm_on.orig_faces
-    @test length(dm_off.procs) == length(dm_on.procs)
-    @test all(dm_off.procs[i].neighbour == dm_on.procs[i].neighbour &&
-              dm_off.procs[i].faces == dm_on.procs[i].faces &&
-              dm_off.procs[i].send_cells == dm_on.procs[i].send_cells &&
-              dm_off.procs[i].recv_ghosts == dm_on.procs[i].recv_ghosts
-              for i ∈ eachindex(dm_off.procs))
-    @test dm_off.mesh.cells == dm_on.mesh.cells
-    @test dm_off.mesh.faces == dm_on.mesh.faces
-    @test dm_off.mesh.cell_neighbours == dm_on.mesh.cell_neighbours
-    @test dm_off.mesh.boundary_cellsID == dm_on.mesh.boundary_cellsID
+    for k ∈ fieldnames(Partition)
+        @test getfield(dm_off.partition, k) == getfield(pn, k)
+    end
+    for k ∈ MESH_ARRAYS
+        @test getfield(dm_off.mesh, k) == getfield(dm_on.mesh, k)
+    end
+    @test same_part(dm_off, dm_on)
+    @test dm_off.comm == comm
 end
 # the rank-uniform form: every rank runs the same call, only rank 0 reads, and a
 # decomposition left by a different rank count must be replaced rather than reused
@@ -65,21 +67,45 @@ end
     @test reads[] == 0
 end
 
-# a part written under another Julia version must fail at load, not inside the solver
+# format, kind and rank count are checked at load; the serial kind shares the layout
+const D = XCALibre.Distribute
 if rank == 0
     bad = mktempdir()
-    bytes = read(joinpath(dir, "rank_0.jls"))
-    nl = findfirst(==(UInt8('\n')), bytes)
-    open(joinpath(bad, "rank_0.jls"), "w") do io
-        println(io, replace(String(bytes[1:nl-1]), r"julia=\S+" => "julia=0.0.0"))
-        write(io, bytes[nl+1:end])
-    end
-    @testset "part header check" begin
-        @test XCALibre.Distribute._part_header_ok(joinpath(dir, "rank_0.jls"), nranks)
-        @test !XCALibre.Distribute._part_header_ok(joinpath(bad, "rank_0.jls"), nranks)
-        @test !XCALibre.Distribute._parts_match(bad, 1)
-        err = try (XCALibre.Distribute._read_part(joinpath(bad, "rank_0.jls"), nranks); nothing) catch e e end
+    part0 = joinpath(dir, "rank_0.xdm")
+    bytes = read(part0)
+    off = length(D._XDM_MAGIC) + 8 * (findfirst(==(:format), D._XDM_KEYS) - 1)
+    bytes[off+1:off+8] = reinterpret(UInt8, [Int64(D._XDM_FORMAT - 1)])
+    write(joinpath(bad, "rank_0.xdm"), bytes)
+    box = UNV3D_mesh(joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), "3d_box_1000x1000x1000mm_10.unv"), scale=0.001)
+    @testset "part format" begin
+        info = mesh_info(part0)
+        @test info.kind == :partitioned && info.nranks == nranks && info.rank == 0
+        @test info.mesh == Mesh2 && info.TI == XCALibre.Mesh._get_int(gmesh) && info.TF == Float64
+        @test info.n_owned == pn.n_owned
+        @test D._part_header_ok(part0, nranks)
+        @test !D._part_header_ok(part0, nranks + 1)
+        @test !D._part_header_ok(joinpath(bad, "rank_0.xdm"), nranks)
+        @test !D._parts_match(bad, 1)
+        err = try (D._read_part_file(joinpath(bad, "rank_0.xdm"), nranks); nothing) catch e e end
         @test err isa ErrorException && occursin("regenerate with partition_mesh", err.msg)
+        err = try (D._read_part_file(part0, nranks + 1); nothing) catch e e end
+        @test err isa ErrorException && occursin("mpiexec -n $nranks", err.msg)
+        # serial kind: exact round trip, and each loader refuses the other kind naming the right call
+        for (name, m) ∈ (("bfs", gmesh), ("box", box))
+            path = D._write_mesh_file(joinpath(bad, "$name.xdm"), m)
+            @test mesh_info(path).kind == :serial && mesh_info(path).n_ghost == 0
+            back = D._read_mesh_file(path)
+            @test typeof(back) == typeof(m) && same_mesh(back, m)
+            err = try (D._read_part_file(path, 1); nothing) catch e e end
+            @test err isa ErrorException && occursin("partition_mesh(mesh, nranks; dir)", err.msg)
+        end
+        err = try (D._read_mesh_file(part0); nothing) catch e e end
+        @test err isa ErrorException && occursin("distribute(dir) under mpiexec -n $nranks", err.msg)
+        # a 3D part round trips exactly through the file
+        for dm ∈ decompose(box, 3)
+            path = D._write_xdm(joinpath(bad, "box_part.xdm"), getfield(dm, :mesh), dm)
+            @test same_part(D._read_part_file(path, 3), dm)
+        end
     end
     rm(bad; recursive=true)
 end

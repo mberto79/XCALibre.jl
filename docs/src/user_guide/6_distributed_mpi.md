@@ -200,12 +200,13 @@ mesh = distribute(dir="parts") do
 end
 ```
 
-If `dir` already holds a decomposition for the same number of ranks, written by the same Julia and
-XCALibre versions, it is reused and the reader is never called. A decomposition for a different
-number of ranks, or from other versions, is replaced. [`partition_mesh`](@ref) writes the same
-layout from a standalone process if you want to decompose ahead of time, and `distribute(dir; comm)`
-loads it; each part file starts with a header naming its versions, and loading a part written under
-other versions errors and asks for the decomposition to be regenerated.
+If `dir` already holds a decomposition for the same number of ranks, it is reused and the reader is
+never called; one for a different number of ranks, or of an older file format, is replaced.
+[`partition_mesh`](@ref) writes the same layout from a standalone process if you want to decompose
+ahead of time, and `distribute(dir; comm)` loads it. Each part is a binary `rank_<r>.xdm` file that
+survives XCALibre and Julia upgrades; [`mesh_info`](@ref) reads its header (kind, rank count, integer
+and float types, cell counts), and loading a part written for another rank count or format errors
+with the call that fixes it.
 
 ## Setting up and running a case
 

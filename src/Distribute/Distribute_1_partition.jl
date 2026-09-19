@@ -444,7 +444,7 @@ function distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic
     end
     nranks = MPI.Comm_size(comm)
     if MPI.Comm_rank(comm) == 0 && !_parts_match(dir, nranks)
-        foreach(f -> rm(joinpath(dir, f)), _part_files(dir)) # a stale part count would be reused
+        foreach(f -> rm(joinpath(dir, f)), _part_files(dir; ext=(".xdm", ".jls"))) # a stale part count would be reused
         partition_mesh(reader(), nranks; dir, periodic_patches)
         GC.gc(true) # drop the global mesh before the ranks claim memory for their own parts
     end
@@ -452,58 +452,26 @@ function distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic
     distribute(dir; comm)
 end
 
-_part_files(dir) = isdir(dir) ?
-    filter(f -> startswith(f, "rank_") && endswith(f, ".jls"), readdir(dir)) : String[]
+_part_files(dir; ext=(".xdm",)) = isdir(dir) ?
+    filter(f -> startswith(f, "rank_") && any(e -> endswith(f, e), ext), readdir(dir)) : String[]
 
 _parts_match(dir, nranks) = length(_part_files(dir)) == nranks &&
     all(f -> _part_header_ok(joinpath(dir, f), nranks), _part_files(dir))
 
 # NEW SECTION: offline partitioning
 
-# plain-text header line before the serialised mesh, so a stale part fails at load with a message
-# rather than deep inside the solver; the version fields must match exactly (D78)
-const _PART_FORMAT = 2
-_part_header(nranks, TI, TF) = "XCALibre parts format=$(_PART_FORMAT) julia=$(VERSION) " *
-    "xcalibre=$(pkgversion(parentmodule(@__MODULE__))) nranks=$nranks TI=$TI TF=$TF"
-
-function _check_part_header(header, nranks, path)
-    startswith(header, "XCALibre parts ") ||
-        error("$path is not a partition written by partition_mesh; regenerate with partition_mesh")
-    have = Dict(String(k) => String(v) for (k, v) ∈ (split(kv, '='; limit=2) for kv ∈ split(header)[3:end]))
-    for (k, v) ∈ ("format" => string(_PART_FORMAT), "julia" => string(VERSION),
-                  "xcalibre" => string(pkgversion(parentmodule(@__MODULE__))), "nranks" => string(nranks))
-        get(have, k, "?") == v || error("partition $path was written with $k=$(get(have, k, "?")) " *
-            "but this run has $k=$v; regenerate with partition_mesh")
-    end
-end
-
-_part_header_ok(path, nranks) = try
-    open(io -> (_check_part_header(readline(io), nranks, path); true), path)
-catch
-    false
-end
-
-_read_part(path, nranks) = open(path) do io
-    _check_part_header(readline(io), nranks, path)
-    deserialize(io)
-end
-
 """
     partition_mesh(mesh, nparts; dir, periodic_patches=())
 
 Offline decomposition: partition `mesh` into `nparts` rank-local meshes and write one
-`rank_<r>.jls` per rank into `dir`. Load with `distribute(dir; comm)`. Each file starts with a
-header naming the format, Julia and XCALibre versions and the rank count; loading a part written
-under different versions errors and asks for the decomposition to be regenerated.
+`rank_<r>.xdm` per rank into `dir`. Load with `distribute(dir; comm)` under `mpiexec -n nparts`. Each
+file is binary with a header ([`mesh_info`](@ref)) naming its format, kind and rank count; a part of
+another format or rank count is refused at load with the call that fixes it.
 """
 function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=())
     mkpath(dir)
-    header = _part_header(nparts, _get_int(mesh), _get_float(mesh))
     for (r, dm) ∈ enumerate(decompose(mesh, nparts; periodic_patches))
-        open(joinpath(dir, "rank_$(r-1).jls"), "w") do io
-            println(io, header)
-            serialize(io, dm)
-        end
+        _write_xdm(joinpath(dir, "rank_$(r-1).xdm"), getfield(dm, :mesh), dm)
     end
     dir
 end
@@ -512,14 +480,13 @@ end
     distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
 
 Load an offline decomposition written by [`partition_mesh`](@ref): each rank reads only
-its own `rank_<rank>.jls` from `dir` (no rank-0 memory bottleneck).
+its own `rank_<rank>.xdm` from `dir` (no rank-0 memory bottleneck).
 """
 function distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
     MPI.Initialized() || MPI.Init()
     quiet_nonroot!(comm)
-    dm = _read_part(joinpath(dir, "rank_$(MPI.Comm_rank(comm)).jls"), MPI.Comm_size(comm))
-    p = getfield(dm, :partition)
-    p.nranks == MPI.Comm_size(comm) || error(
-        "offline decomposition in $dir has $(p.nranks) parts; comm has $(MPI.Comm_size(comm)) ranks")
+    rank = MPI.Comm_rank(comm)
+    dm = _read_part_file(joinpath(dir, "rank_$rank.xdm"), MPI.Comm_size(comm))
+    getfield(dm, :partition).rank == rank || error("rank_$rank.xdm in $dir holds another rank's part")
     _with_comm(dm, comm)
 end

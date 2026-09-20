@@ -365,3 +365,58 @@ Caveats, stated rather than buried: one sample per cell on a machine with +/-6% 
 noise. The two Int32 results are 8% and 21%, so the 8-thread one is outside the noise and the
 1-thread one is marginally so. The scaling row is the honest weak spot - OpenFOAM still gets
 2.93x where we get 2.14x, so a machine with more cores would likely favour it again.
+
+## Round 3b: the GPU (RTX 4070 Laptop, 8 GB)
+
+Isolated assembly, min of 20 reps after 3 warm-up launches, arms interleaved, every timed
+region closed with `KernelAbstractions.synchronize`. The solver's phase timers wrap
+asynchronous launches and are meaningless on GPU, so they are not used here. One process runs
+every variant because each new process pays the full GPU kernel compilation (~15 min).
+
+  discretise!, ms          k        p        U      2k+p+U
+    pre-gDiff, cell      6.377    2.644    6.260    21.657
+    current,   cell      5.384    0.555    6.286    17.609
+    current,   face     14.980    0.713   13.239    43.911
+    current,   cell i32  5.160    0.442    5.954    16.716
+    current,   face i32 14.623    0.664   12.818    42.728
+
+### The gDiff change helps on GPU too, but for a different reason
+
+Assembly per SIMPLE iteration 21.657 -> 17.609 ms, -19%. The split is nothing like the CPU's:
+p falls 79% (2.644 -> 0.555), k falls 16%, U not at all - where on CPU k fell 62%. That fits.
+On CPU the win was mostly the 128-byte `Face3D` load disappearing; on GPU that load is
+coalesced and bandwidth is not the binding constraint, so what is left is the removed
+arithmetic - two dot products, a norm and a divide. The p equation is pure Laplacian, so
+removing that arithmetic removes nearly all of its work; U's LUST divergence still dominates
+and is untouched.
+
+### Face assembly is 2.8x SLOWER than cell assembly on this GPU
+
+Not the expected result, and opposite to the CPU, where the two are within 1%. End-to-end over
+20 SIMPLE iterations: cell 227.79 ms/iter, face 254.78 ms/iter, face 12% slower.
+
+It is not atomic contention. Both paths issue exactly two Float64 atomics per internal face
+whatever the equation, yet the face/cell ratio tracks the number of terms:
+
+    p (1 term)      1.28x
+    U (3 terms)     2.11x
+    k (4 terms)     2.78x
+
+What does scale with term count is per-thread work: `_discretise_faces!` calls `_scheme!`
+twice, once from each side of the face, so a 4-term equation inlines eight scheme bodies into
+one thread with both results live at once. The cell loop emits the body once inside a loop and
+reuses the registers. Register spill to local memory is the explanation consistent with all
+three ratios; it is an inference from the term-count trend, not a measured register count.
+
+If that is right, the fix is to stop emitting `_scheme!` twice - process the two sides in a
+loop over a 2-tuple of (nID, sign, diagonal, offdiagonal), or split the face kernel per term.
+Worth testing before concluding that face assembly is wrong for GPUs in general: this measures
+one kernel structure, not the idea.
+
+Int32 on GPU is worth only 5% of assembly (17.609 -> 16.716), far less than the 21% it is worth
+on the 8-thread CPU - consistent with the GPU not being addressing-bandwidth bound here.
+
+The 20-iteration full solve also confirms `diagonal_operator` (change 9) compiles and runs on
+CUDA, with residuals in the expected range. GPU vs CPU wall time is NOT compared here: the GPU
+run is 20 iterations and the CPU benchmark 500, and early SIMPLE iterations carry far more
+Krylov work, so the per-iteration figures are not comparable.

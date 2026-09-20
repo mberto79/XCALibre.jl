@@ -1,0 +1,8 @@
+device=gpu index=both reps=20 face_assembly_available=true
+sum column = 2k + p + U, i.e. one SIMPLE iteration's assemblies (k and omega same shape)
+i64  cell   k    5.384 ms   p    0.555 ms   U    6.286 ms   sum   17.609
+i64  face   k   14.980 ms   p    0.713 ms   U   13.239 ms   sum   43.911
+i32  cell   k    5.160 ms   p    0.442 ms   U    5.954 ms   sum   16.716
+i32  face   k   14.623 ms   p    0.664 ms   U   12.818 ms   sum   42.728
+
+full solve, 20 iterations: cell 4.56 s (227.79 ms/iter) final=(1.254e-5, 0.000157, 0.0001914, 0.001052) | face 5.10 s (254.78 ms/iter) final=(1.239e-5, 0.0001626, 0.0001983, 0.001175)

@@ -163,14 +163,29 @@ wall-function atomics above - that is pre-existing and independent of this work.
 
 Combined effect of rounds 1 and 2 on assembly at 8 threads: 53.3 -> 24.8 ms/iter, -54%.
 
-## Verdict: this does not beat OpenFOAM yet
+## Verdict: XCALibre now WINS at 1 core, and still loses at 8
 
-Measured against the instrumented steady-state cost (not wall - the 20-iteration walls carry
-~57 ms/iter of one-off `run!` setup that is ~4 ms at the benchmark's 500):
-  1 thread: saved ~30 ms of ~573  (~5%);  the gap to OpenFOAM was 12%
-  8 threads: saved ~9 ms of ~264  (~3%);  the gap to OpenFOAM was 49%
-So roughly half the 1-core gap is closed and little of the 8-core gap. The two levers that
-would close the rest are both identified and both unimplemented - see below.
+500 iterations, the benchmark's own case and settings, measured the same way:
+
+                    before      after     OpenFOAM    result
+  1 core            266.92 s    188 s     238.87 s    21% FASTER
+  8 threads         121.79 s    100 s      81.66 s    22% slower
+  scaling 1->8        2.19x      1.88x      2.93x
+
+The 1-core win comes almost entirely from assembly: 207.7 -> 43.2 ms/iter (-79%), which was
+36% of the iteration. At 8 threads assembly was already only 20% of the iteration and scaled
+well (3.9x), so shrinking it helps less; what is left is dominated by Krylov, which scales at
+1.5x. Scaling got WORSE (2.19 -> 1.88) precisely because the part that scaled well is now
+small. Closing the 8-thread gap means fixing Krylov scaling, not assembly.
+
+Caveats on these two numbers, stated rather than buried:
+- They are ProgressMeter's loop totals, read from the run logs, because `bench500.jl` had a
+  closure-scoping bug (`t = ...` inside a `redirect_stdout do` block creates a local, so the
+  value never escaped). The benchmark's own figure additionally includes
+  `setup_incompressible_solvers`, ~2.3 s on this mesh, so the comparable numbers are ~190 s
+  and ~102 s. The script is fixed; a clean rerun should confirm.
+- One sample each, on a machine with +/-6% run-to-run noise. 21% is well outside that; the
+  8-thread 22% is too.
 
 ## Still on the table, not done
 - BIGGEST REMAINING 1-THREAD LEVER. `faces[fID]` is still a 128-byte load per (cell,face),

@@ -30,11 +30,12 @@ struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmega
 
-struct KOmegaModel{T,E1,E2,S1} 
+struct KOmegaModel{T,E1,E2,S1,WB} 
     turbulence::T
     k_eqn::E1 
     ω_eqn::E2
     state::S1
+    wall_buffers::WB # reused by the wall-function passes instead of allocating per iteration
 end
 Adapt.@adapt_structure KOmegaModel
 
@@ -137,7 +138,8 @@ function initialise(
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaModel(
-        turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false)
+        turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false),
+        wall_cell_accumulators(mesh, config)
         ), config
 end
 
@@ -167,7 +169,7 @@ function turbulence!(
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs) = rans.turbulence
     (; U, Uf, gradU) = S
-    (;k_eqn, ω_eqn, state) = rans
+    (;k_eqn, ω_eqn, state, wall_buffers) = rans
     (; solvers, runtime, boundaries) = config
 
     mueffk = get_flux(k_eqn, 3)
@@ -199,7 +201,7 @@ function turbulence!(
             Dkf[i] = rhoi*coeffs.β⁺*omegai
         end
     end
-    @xcprof :wallfun correct_production!(Pk, boundaries.k, model, S.gradU, config) # Must be after previous line
+    @xcprof :wallfun correct_production!(Pk, boundaries.k, model, S.gradU, config, wall_buffers) # Must be after previous line
     @xcprof :sources xcal_foreach(mueffk.values, config) do i
         @inbounds begin
             rhofi = rhof[i]
@@ -245,7 +247,7 @@ function turbulence!(
 
     @xcprof :nut interpolate!(nutf, nut, config)
     @xcprof :nut correct_boundaries!(nutf, nut, boundaries.nut, time, config)
-    @xcprof :wallfun correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
+    @xcprof :wallfun correct_eddy_viscosity!(nutf, boundaries.nut, model, config, wall_buffers)
     end
 
     state.residuals = ((:k , k_res),(:omega, ω_res))

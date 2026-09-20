@@ -74,6 +74,15 @@ wall_cell_accumulators(mesh, config) = begin
     KernelAbstractions.zeros(backend, TF, n), KernelAbstractions.zeros(backend, TF, n)
 end
 
+# Callers that own persistent buffers pass them instead, so the outer loop stops allocating
+# and zeroing two cell-sized arrays on every iteration.
+wall_cell_accumulators(mesh, config, ::Nothing) = wall_cell_accumulators(mesh, config)
+wall_cell_accumulators(mesh, config, buffers) = begin
+    fill!(buffers[1], zero(eltype(buffers[1])))
+    fill!(buffers[2], zero(eltype(buffers[2])))
+    buffers
+end
+
 # Every patch must be summed before any cell is averaged, so the two passes each run
 # over all patches. The averaging write is the same from every face of a cell, which
 # keeps it free of the race it replaces.
@@ -101,13 +110,13 @@ end
     end
 end
 
-@generated correct_production!(P, fieldBCs, model, gradU, config) = begin
+@generated correct_production!(P, fieldBCs, model, gradU, config, buffers=nothing) = begin
     BCs = fieldBCs.parameters
     any(BC -> BC <: KWallFunction, BCs) || return :(nothing)
     sum_calls = [:(set_production!(sums, counts, fieldBCs[$i], model, gradU, config)) for i ∈ eachindex(BCs)]
     avg_calls = [:(average_wall_cells!(P.values, fieldBCs[$i], sums, counts, model, config)) for i ∈ eachindex(BCs)]
     quote
-        sums, counts = wall_cell_accumulators(model.domain, config)
+        sums, counts = wall_cell_accumulators(model.domain, config, buffers)
         $(sum_calls...)
         $(avg_calls...)
         nothing
@@ -172,7 +181,7 @@ end
 
 # Only the mixing-length variant writes a cell value, so the averaging phases are
 # emitted only when one is present.
-@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config)
+@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config, buffers=nothing)
     BCs = nutBCs.parameters
     calls = [:(correct_nut_wall!(νtf, nutBCs[$i], sums, counts, model, config)) for i ∈ eachindex(BCs)]
     any(BC -> BC <: NutMixingLengthWallFunction, BCs) || return quote
@@ -182,7 +191,7 @@ end
     end
     avg_calls = [:(average_wall_cells!(model.turbulence.nut.values, nutBCs[$i], sums, counts, model, config)) for i ∈ eachindex(BCs)]
     quote
-        sums, counts = wall_cell_accumulators(model.domain, config)
+        sums, counts = wall_cell_accumulators(model.domain, config, buffers)
         $(calls...)
         $(avg_calls...)
         nothing

@@ -23,7 +23,7 @@ S1 removes the defect class rather than the four reported instances: one predica
 
 ## Exit criterion
 
-The motorBike RANS tutorial runs distributed with KOmegaSST and with `potential_flow!` initialisation at 1, 2, 6 and 8 ranks, rank-invariant at the Q1 bar, with the distributed gate green.
+KOmegaSST with wall functions and `potential_flow!` match serial on the 10 mm backward-facing step at 2, 6 and 8 ranks (D146). The distributed gate runs at 2 and 3 ranks, where no patch empties, so it cannot see this class: the empty-patch path is gated by the serial `unit_test_wall_function_empty_patch.jl` and proved distributed by `runtests_mpi.jl --ranks=6,8`.
 
 ## Expected size
 

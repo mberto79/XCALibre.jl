@@ -1,0 +1,110 @@
+# motorBike KOmega: why XCALibre is slower than OpenFOAM, and what was changed
+
+Branch `HM/KOmega-profiling`. Mesh read from the benchmark directory; nothing there is modified.
+Case: motorBike, 353,830 cells, SIMPLE, k-omega, matched linear solvers, p-rtol 0.1.
+
+## Baseline (what the benchmark reports)
+                1 core      8 cores
+  OpenFOAM      238.87 s    81.66 s
+  XCALibre      266.92 s   121.79 s
+  ratio         1.12x       1.49x
+XCALibre scales 2.19x on 8 threads, OpenFOAM 2.93x.
+
+## Convergence is NOT the problem
+Krylov iterations per SIMPLE iteration, measured:
+  equation   OpenFOAM   XCALibre
+  k          1.00       1.10
+  omega      1.01       1.00
+  U (3 cmp)  6.13       8.50
+  p          63.76      25.78   (XCALibre runs the looser rtol)
+k and omega match OpenFOAM exactly. The turbulence linear solves are already as cheap as
+OpenFOAM's. The gap is entirely cost per iteration.
+
+## Where the time goes (ms per SIMPLE iteration, phase timers)
+                    1 thread   8 threads   1t->8t
+  discretise (x4)     207.7       53.3       3.9x
+  Krylov (x6)         173.8      114.9       1.5x
+  gradients/flux       99.0       59.6       1.7x
+  residual (x6)        25.4        9.6       2.6x
+
+At 1 thread ASSEMBLY is the largest single cost, 36% of the iteration. Assembling the k
+equation once (57.4 ms) costs as much as ~18 sparse mat-vecs, and more than the entire
+pressure solve's 25.8 CG iterations.
+
+KOmega's share of the whole iteration: 37% at 1 thread, 31% at 8. Two of the four assemblies
+are k and omega, and they are the two most expensive ones.
+
+## Why XCALibre's assembly is expensive (vs OpenFOAM)
+OpenFOAM's `fvm::laplacian` is two flat array statements over faces:
+    upper[f] = deltaCoeffs[f]*gammaMagSf[f];   negSumDiag();
+~40 bytes per face, addressing precomputed in lduAddressing, each face visited once.
+
+XCALibre assembles cell-by-cell (a deliberate no-atomics GPU design) and per (cell,face) pair:
+  - loads the whole 128-byte `Face3D` struct - and every internal face is visited twice
+  - loaded `cells[nID]`, a ~64-byte random access, that NO scheme uses (dead since the only
+    reader is a commented-out line in the Laplacian)
+  - recomputed the full Laplacian face geometry (2 dot products, a norm, a divide)
+  - searched the CSR row linearly for each coefficient's position (`spindex`)
+Estimated ~500 MB of traffic per assembly against OpenFOAM's ~40 MB.
+
+## Changes made, with measured effect
+
+Assembly cost is independent of how many SIMPLE iterations a run does, so these are
+comparable across runs; Krylov cost is not (early iterations need more CG sweeps), so only
+same-iteration-count runs are compared for it.
+
+  discretise, ms/iter     1 thread          8 threads
+                        before  after     before  after
+  omega                  58.14  43.66      13.60  14.47*
+  k                      57.44  43.46      13.45  14.36*
+  U                      51.90  50.91      13.95  14.77*
+  (*) the 8-thread "after" column is from the step3 run, which came out ~10% slower overall
+  than the run before it on every phase including untouched ones - machine noise, not a
+  regression. The clean 8-thread measurement of changes 1+2 alone is:
+  omega 11.54, k 11.49, U 12.03, p 9.02 - assembly total 53.3 -> 44.1 ms, -17%.
+
+1. `cells[nID]` removed from both assembly kernels - a dead random load per (cell,face).
+   `scheme!` now takes `nID` instead of the cell struct.
+2. Laplacian face geometry reduced to `area/(|normal.e|*delta)`. Verified equal to the
+   expanded form to 1.1e-15 over all 1,058,470 internal faces (`check_laplacian_algebra.jl`).
+   1+2 together: k and omega assembly -24% at 1 thread, -15% at 8.
+3. `spindex` replaced by precomputed nzval index maps (`diag_nz`, `face_nz` on the equation),
+   also used by the relaxation, `inverse_diagonal!` and `H!`.
+   MEASURED NEUTRAL ON CPU (53.32 -> 53.48 ms) - the CSR row stays in cache, so the linear
+   scan was never the cost. Kept because it should matter more on GPU, but it bought nothing
+   here and is the change to drop first if the diff needs to shrink.
+4. BLAS thread count - INVESTIGATED, NOT ADOPTED. `activate_multithread` sets BLAS to 1
+   thread, and Krylov.jl sends every dot and axpy on a `Vector{Float64}` straight to BLAS, so
+   the vector half of every linear solve is serial at any Julia thread count. In isolation at
+   n=353830 on 8 threads this is worth a lot: dot 59.0->12.3 us (4.8x), axpy! 79.3->7.5 us
+   (10.6x); nrm2 does not thread either way. Predicted end-to-end gain ~5% at 8 threads.
+   A paired in-process A/B (`ab_blas.jl`, 3 reps x 15 iterations, arms alternating so drift
+   hits both) could NOT resolve it:
+     BLAS 1 : 471.9 509.5 468.8 ms/iter   (min 468.8)
+     BLAS 8 : 467.1 525.0 493.9 ms/iter   (min 467.1)
+   Run-to-run noise is +/-6%, larger than the effect. The default is therefore left at 1 and
+   the finding recorded; `activate_multithread(backend, nthreads=N)` already exposes it.
+   To settle this, run `ab_blas.jl` with more reps on an otherwise idle machine.
+5. `turbulence!` source/flux update fused from seven passes into two (one cell, one face),
+   with the strain-rate magnitude no longer written to Pk and read back twice.
+
+Correctness: residuals match the unmodified code to 13 significant figures (reassociated
+arithmetic in the Laplacian); k, omega and nut field sums match to 15.
+
+## Still on the table, not done
+- `faces[fID]` is still a 128-byte load per (cell,face). Precomputing one per-face scalar
+  (`area/(|normal.e|*delta)`) and one weight would remove it entirely for k and omega, whose
+  Upwind divergence needs nothing from the face at all. This needs somewhere to cache the
+  array (an extra field on the Laplacian `Operator` is the least invasive spot) and is the
+  single biggest remaining assembly win.
+- Every internal face is still assembled twice on CPU. A face-based CPU path (keeping the
+  cell-based one for GPU) would halve the scheme work.
+- `wall_cell_accumulators` allocates and zeroes two N-cell arrays every outer iteration
+  inside `correct_production!`; they belong in `KOmegaModel`.
+- `residual()` costs a full extra SpMV plus two reductions after every solve (25.4 ms/iter at
+  1 thread). OpenFOAM gets its residual free from the solver.
+- `turb_gradU` (14.7 ms at 8 threads) and `simple_flux`/`simple_gradp` scale at only ~1.6x.
+- Int32 indices: OpenFOAM runs `WM_LABEL_SIZE=32` by default, XCALibre's `FOAM3D_mesh`
+  defaults to Int64 - ~17% more SpMV traffic. `integer_type=Int32` is already supported;
+  `dev/komega/build_mesh_i32.jl` builds the mesh. NOT YET MEASURED. This is a benchmark
+  setting, not a code change.

@@ -1,0 +1,7 @@
+[deps]
+JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
+ThreadPinning = "811555cd-349b-4f26-b7bc-1f208b848042"
+XCALibre = "cf91e36b-bd94-493a-8848-32508a10963c"
+
+[sources]
+XCALibre = {path = "/home/humberto/Julia/XCALibre.jl"}

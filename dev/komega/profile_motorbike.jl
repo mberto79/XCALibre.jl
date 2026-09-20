@@ -1,7 +1,7 @@
 #=
 motorBike KOmega profiling harness (branch HM/KOmega-profiling).
 
-  julia --project -t N dev/komega/profile_motorbike.jl <iterations> <outfile> [profile]
+  julia --project -t N dev/komega/profile_motorbike.jl <iterations> <outfile> [profile] [i32]
 
 Mesh is loaded from the benchmark directory; nothing is copied into the repo.
 All solver output goes to <outfile>.log; only <outfile> is meant to be read.
@@ -13,13 +13,16 @@ using Profile
 using Printf
 using ThreadPinning
 using Logging
+using LinearAlgebra
 
 iterations = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 20
 outfile    = length(ARGS) >= 2 ? ARGS[2] : "dev/komega/out.txt"
-do_profile = length(ARGS) >= 3 && ARGS[3] == "profile"
+do_profile = "profile" in ARGS
+IX         = "i32" in ARGS ? "i32" : "i64"
 
 BENCH = "/home/humberto/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS"
-mesh = load_object(joinpath(BENCH, "XCALibre", "mesh.jld2"))
+mesh = load_object(IX == "i32" ? joinpath(@__DIR__, "mesh_i32.jld2") :
+                                 joinpath(BENCH, "XCALibre", "mesh.jld2"))
 
 pinthreads(:cores)
 backend = CPU(static=true)
@@ -85,8 +88,8 @@ with_logger(SimpleLogger(log_io)) do
     GC.gc(true)
     init!(); potential_flow!(model, cfg(iterations); ncorrectors=10)
     t = @elapsed res = run!(model, cfg(iterations))
-    @printf(summary, "threads=%d  iterations=%d  cells=%d\n",
-            Threads.nthreads(), iterations, length(mesh.cells))
+    @printf(summary, "threads=%d  blas=%d  index=%s  iterations=%d  cells=%d\n",
+            Threads.nthreads(), BLAS.get_num_threads(), IX, iterations, length(mesh.cells))
     @printf(summary, "wall=%.3f s   per-iteration=%.1f ms\n", t, 1000t/iterations)
     for kk in keys(res)
         @printf(summary, "  res[%s] = %.17g\n", kk, last(res[kk]))

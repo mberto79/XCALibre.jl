@@ -500,3 +500,124 @@ there needs repeats. The 1-core result and the GPU are well outside noise.
 
 GPU per-iteration falls from 88.66 ms over 100 iterations to 59.10 ms over 500, the same
 early-iteration effect noted above - another reason to quote only full-length runs.
+
+## Round 4: the 8-thread "scaling deficiency", measured rather than inferred
+
+Everything below is from this branch's current code (gDiff, Int32, threaded diagonal, cell
+assembly), balanced power mode, machine idle.
+
+### 1. The machine's roof: threads cannot buy 2.9x here
+
+STREAM triad (2 reads + 1 write, 320 MB arrays, far outside the 36 MB L3),
+`dev/komega` env, `pinthreads(:cores)`, min of 6:
+
+      threads    GB/s    scaling vs 1 thread
+         1       25.0      1.00x
+         2       28.5      1.08x
+         4       36.8      1.48x
+         8       38.8      1.55x
+        16       32.4      1.23x
+        24       31.0      1.24x
+
+One core already pulls 25 GB/s, 64% of everything the memory system will ever give. The
+maximum possible 1->8 speedup of a purely DRAM-bound phase on this laptop is 1.55x, and past
+8 threads the E-cores make it worse. So 2.93x is not a number any bandwidth-bound solver
+reaches on this machine with threads, and XCALibre's 2.10x is already ABOVE the streaming
+roof (it is not purely bandwidth-bound; assembly and the gradients have cache reuse).
+
+### 2. Fresh phase split - the old narrative is dead
+
+`profile_motorbike.jl 50 ... i32`, ms per SIMPLE iteration:
+
+      phase              1 thread   8 threads   1t->8t
+      p_krylov              76.97      34.95      2.20x
+      U_krylov              65.95      37.41      1.76x
+      k+omega_krylov        21.49      13.70      1.57x
+      turb_gradU            24.81      13.88      1.79x
+      simple_flux           17.13      10.71      1.60x
+      simple_gradp          16.23      10.74      1.51x
+      simple_Hv             12.39       7.25      1.71x
+      simple_massflux        9.81       4.04      2.43x
+      discretise (x4)       38.17      23.77      1.61x
+      residual (x4)         23.52       9.15      2.57x
+      WALL                 436.38     242.72      1.80x
+
+Two things changed since the Round 1 table. Assembly no longer scales at 3.9x - it scales at
+1.61x, because gDiff and the cached nz indices turned it from compute-bound into
+bandwidth-bound. And Krylov no longer scales at 1.5x - it is 1.76-2.20x, because the BLAS
+thread count and the diagonal preconditioner were fixed. **Every phase now sits in the
+1.5-1.8x band, i.e. on the triad roof.** There is no lagging phase left to fix: the code is
+uniformly memory-bound at 8 threads, and adding threads is finished as a lever.
+
+(Phase ratios come from a 50-iteration window, which over-weights the early solver-heavy
+iterations; the headline 2.10x is from the 500-iteration runs. The ratios are the point.)
+
+### 3. Linear-solver work is already matched, or better
+
+Mean Krylov iterations per solve, same case, 500 iterations:
+
+                     XCALibre        OpenFOAM
+      U (each)          2.8         1.93/2.09/2.12
+      p                25.1            63.9
+      k                 1.08            1.01
+      omega             1.00            1.00
+
+XCALibre does the same momentum and turbulence work and 2.5x LESS pressure work, and still
+only ties on wall time. The gap is therefore cost per unit of work, not amount of work. That
+also removes "fewer Krylov iterations" (multigrid) from the top of the lever list: on this
+machine OpenFOAM's own GAMG is worth only 4% at 8 cores (76.18 vs 79.66 s, psolver_study.txt).
+
+### 4. The OpenFOAM reference numbers are PCG, not GAMG - check this
+
+Every reference log (`OpenFOAM/log.simpleFoam_{1,2,6,8}`, written 20 Sep 19:35-19:41) reports
+`diagonalPCG:  Solving for p`, and their `ExecutionTime` values are exactly the four quoted
+figures 238.87 / 170.52 / 90.89 / 81.66. `system/pSolver` is currently the PCG copy.
+`fvSolution` says the main benchmark should use `pSolver.GAMG`, so either the logs were made
+while `run_psolver_study.sh` had PCG in place, or the intent changed. Consequences:
+
+- The comparison is currently solver-MATCHED (both Cg/PCG + Jacobi/diagonal), not unmatched.
+- OpenFOAM's best configuration on this machine is 206.89 s at 1 core and 76.18 s at 8
+  (psolver_study.txt), so against its best the honest read is 1 core 1.24x faster, 8 threads
+  4% slower - not 1.43x / level.
+- The matched comparison still favours XCALibre on tolerance: OpenFOAM's p runs relTol 0.01
+  (63.9 its), XCALibre rtol 0.1 (25.1 its). The README justifies this (different residual
+  definitions; 0.01 costs ~20% for a 0.003% drag change), but ~20% is the size of the whole
+  disputed margin, so it belongs next to any claim of a tie.
+
+### 5. What actually produces OpenFOAM's 2.93x: decomposition, not threading
+
+OpenFOAM at "8 cores" is 8 MPI ranks of ~44k cells each. A 44k-cell subdomain's matrix and
+vectors are a few MB and largely stay in cache; a 354k-cell shared-memory problem does not.
+XCALibre's own numbers on this same case show the identical effect, on identical code:
+
+                    1 core    8 cores   scaling
+      MPI ranks     299.13     93.32     3.21x
+      threads       276.42    124.56     2.22x
+
+MPI starts 8% slower on one core and finishes 25% faster on eight. That is the whole story of
+the scaling ratio, and it is a property of the decomposition, not of OpenFOAM.
+
+### 6. Ranked levers, by measured ms at 8 threads
+
+1. **Re-measure the MPI path with this branch's changes.** It is the only lever that has
+   already been demonstrated to be worth >20% at 8 cores on this case, and it needs no new
+   code. If it keeps its 25% edge over threads, 8 ranks lands near 60-65 s against
+   OpenFOAM's 76-82 - a win outside the +/-6% noise, which the threaded number is not.
+2. **Fuse the gradient/flux group** - 46.6 ms/iter at 8 threads (19%), spread over
+   `turb_gradU`, `simple_gradp`, `simple_flux`, `simple_Hv`, `simple_massflux`. These are
+   separate full passes over the same face and cell arrays. Fusing passes removes DRAM
+   traffic, which is the only currency left. NOT face-based loops - that pattern was just
+   rejected.
+3. **Cell renumbering** (RCM or a space-filling curve) to shrink the matrix bandwidth. Same
+   idea as 1, applied inside one process: it improves `x[colval[nz]]` locality in the SpMV
+   and the neighbour loads in assembly. The benchmark never runs `renumberMesh`, so both
+   codes read snappyHexMesh order and this is an absolute win, not a gap-closer.
+4. **`residual()`** - 9.15 ms/iter (3.8%), a full extra SpMV plus two reductions after each
+   of six solves. OpenFOAM gets its residual from the solver for free.
+5. **Kernels that anti-scale**: `turb_sources` 3.05 -> 3.87 ms and `simple_copies`
+   0.47 -> 0.87 ms are SLOWER on 8 threads than on 1. Short loops paying thread-launch
+   overhead; merge them into adjacent kernels or run them serially.
+
+What is NOT worth doing, with the reason: more threads (past 8 the bandwidth drops), a
+better pressure preconditioner (OpenFOAM's own is worth 4% at 8 cores and XCALibre already
+does 2.5x fewer pressure iterations), and further assembly work (23.8 ms and bandwidth-bound).

@@ -102,10 +102,13 @@ Correctness:
     2d_incompressible_laminar_BFS                  4/4
     3d_incompressible_laminar_BFS                  5/5
                                             total 52/52, 0 failures, 1m58s
-  The full `Pkg.test()` suite has NOT been run to completion on this branch: this machine has
-  14 GB of RAM and the 3D cases plus the profiling runs exhaust it. Run it on a larger box
-  before merging - in particular the LES, multiphase, MRF, periodic and supersonic cases,
-  which also go through the assembly kernel and `scheme!`.
+  UPDATE, after round 3: the full `Pkg.test()` suite DOES run on this machine and passes,
+  1544/1544 in 7m38s, exit 0 (only skip is a CUDA AMG test the suite skips when CUDA is absent
+  from the test env). The earlier claim that 14 GB was not enough was wrong - that OOM came
+  from running motorBike profiling jobs concurrently with the suite, not from the suite. Run
+  the suite on an idle machine and it is fine. It covers Incompressible, Compressible,
+  Godunov, Multiphase, Thin Film, AMG, DILU and Smoothers, so it exercises both the assembly
+  kernels and the new `diagonal_operator` on every solver.
 
 ## Round 2: cached face coefficient + selectable face/cell assembly
 

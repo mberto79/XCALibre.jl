@@ -137,11 +137,29 @@ Three changes, measured at 8 threads on the same case (phase timers, ms/iter):
    cell-sized arrays per outer iteration. turb_wallfun 2.72 -> 1.82 ms.
    The fused source loops from round 1 also show clean now: turb_sources 3.65 -> 2.20 ms.
 
-Equivalence of the two assemblies after 20 SIMPLE iterations on motorBike: residuals agree to
-1.8e-5 relative, field sums to 1e-7..1e-9. That is round-off divergence amplified through 20
-nonlinear iterations, not a discrepancy in the matrix - but note FaceAssembly is NOT bitwise
-reproducible run to run, because the order of the atomic diagonal accumulations varies.
-CellAssembly remains bitwise reproducible.
+### Equivalence of the two assemblies - and a trap in how to check it
+
+Comparing SOLUTIONS is useless on this case. After a single SIMPLE iteration the two
+assemblies gave field sums differing by up to 20% (sumP), which looked like a bug. It is not.
+At the benchmark's `rtol = 0.1`, a perturbation of 1e-16 in the matrix can flip whether a
+Krylov solve stops after n or n+1 iterations, and one extra iteration changes the answer by
+O(rtol), i.e. ~10%. The case is chaotic at the tolerance it is run at, so no solution-level
+comparison on it can resolve anything finer than the solver tolerance. The same effect makes
+the CELL path's answers depend on thread count, because the wall-function accumulators
+(`Atomix.@atomic sums[cID] += Pf`) sum boundary faces in thread order.
+
+The right gate is the MATRIX, compared before any solve (`matrix_check.jl`,
+`matrix_check_mb.jl`):
+  BFS 2D, 1800 cells, random fluxes of both signs, Upwind / Linear / LUST:
+      max|dA| = 0, 0 of 8760 entries differ, b bitwise identical - all three schemes.
+  motorBike, 353,830 cells, 2,470,770 nonzeros, real Wall/Slip/wall-function BCs,
+  full k-equation term list (Time + Upwind + Laplacian + Si), 8 threads:
+      max|dA| = 3.55e-15 (1.9e-16 relative), 0 entries differ above 1e-12, b bitwise identical.
+So the face path builds the same matrix; the residual 1e-16 is the atomic accumulation order.
+
+Note FaceAssembly is NOT bitwise reproducible run to run, for that reason. CellAssembly is
+bitwise reproducible for the matrix, but the solver as a whole is not, because of the
+wall-function atomics above - that is pre-existing and independent of this work.
 
 Combined effect of rounds 1 and 2 on assembly at 8 threads: 53.3 -> 24.8 ms/iter, -54%.
 

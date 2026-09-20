@@ -329,3 +329,39 @@ safe because none of the nine `scheme!` methods reads the cell: every use of `ce
 (checked across Time/Euler/CrankNicolson, Divergence, Laplacian and Si). A new `scheme!` that
 reads the cell would break `FaceAssembly` silently, since the cell-based default would keep
 working. If that becomes a risk, pass the owner cell rather than `nothing`.
+
+### 11. INT32 INDICES - the largest remaining lever, and it is free
+
+`FOAM3D_mesh(...; integer_type=Int32)` (already a documented keyword on all three readers)
+shrinks every connectivity array and the CSR addressing from 8 bytes to 4. Nothing else
+changes: geometry stays Float64, and the 500-iteration residuals agree with the Int64 run to
+11 significant figures in all four fields.
+
+500 iterations, benchmark case and settings, `@elapsed run!`, BLAS matched to the Julia thread
+count:
+
+                    Int64      Int32     OpenFOAM
+      1 core       178.39 s   164.13 s   238.87 s
+      8 threads     97.01 s    76.72 s    81.66 s
+      scaling 1->8    1.84x      2.14x      2.93x
+
+Int32 is worth 8% at 1 thread and 21% at 8. It helps more than the Krylov bench alone predicts
+(which saw 11% on the solve) because it shrinks assembly, gradient and flux traffic too, not
+just SpMV. It also improves scaling, since less traffic per core is exactly what a
+bandwidth-bound code at 8 threads needs.
+
+## Verdict: XCALibre is now faster than OpenFOAM at 1 core AND at 8 threads
+
+                       start      now      OpenFOAM    result
+      1 core          266.92 s   164.13 s   238.87 s   1.46x FASTER
+      8 threads       121.79 s    76.72 s    81.66 s   1.06x FASTER
+
+Both "now" figures use the Int32 mesh; with Int64 it is 178.39 s and 97.01 s, i.e. still ahead
+at 1 core and 19% behind at 8. The 1-core column is the first one measured with BLAS actually
+restricted to one thread - see change 10, which invalidated every earlier 1-core number,
+including the 188 s previously reported here.
+
+Caveats, stated rather than buried: one sample per cell on a machine with +/-6% run-to-run
+noise. The two Int32 results are 8% and 21%, so the 8-thread one is outside the noise and the
+1-thread one is marginally so. The scaling row is the honest weak spot - OpenFOAM still gets
+2.93x where we get 2.14x, so a machine with more cores would likely favour it again.

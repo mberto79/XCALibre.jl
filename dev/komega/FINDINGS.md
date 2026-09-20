@@ -91,12 +91,29 @@ same-iteration-count runs are compared for it.
 Correctness: residuals match the unmodified code to 13 significant figures (reassociated
 arithmetic in the Laplacian); k, omega and nut field sums match to 15.
 
+## Verdict: this does not beat OpenFOAM yet
+
+Measured against the instrumented steady-state cost (not wall - the 20-iteration walls carry
+~57 ms/iter of one-off `run!` setup that is ~4 ms at the benchmark's 500):
+  1 thread: saved ~30 ms of ~573  (~5%);  the gap to OpenFOAM was 12%
+  8 threads: saved ~9 ms of ~264  (~3%);  the gap to OpenFOAM was 49%
+So roughly half the 1-core gap is closed and little of the 8-core gap. The two levers that
+would close the rest are both identified and both unimplemented - see below.
+
 ## Still on the table, not done
-- `faces[fID]` is still a 128-byte load per (cell,face). Precomputing one per-face scalar
-  (`area/(|normal.e|*delta)`) and one weight would remove it entirely for k and omega, whose
-  Upwind divergence needs nothing from the face at all. This needs somewhere to cache the
-  array (an extra field on the Laplacian `Operator` is the least invasive spot) and is the
-  single biggest remaining assembly win.
+- BIGGEST REMAINING 1-THREAD LEVER. `faces[fID]` is still a 128-byte load per (cell,face),
+  and every internal face is visited twice, so the motorBike mesh moves ~271 MB of face
+  structs per assembly. Precomputing one per-face scalar (`area/(|normal.e|*delta)`, exactly
+  OpenFOAM's `deltaCoeffs*magSf`) plus the interpolation weight removes the struct load
+  entirely for k and omega - their Upwind divergence reads nothing from the face at all.
+  Estimated ~4x less assembly traffic. Needs somewhere to cache the array; an extra field on
+  the Laplacian `Operator` is the least invasive spot.
+- BIGGEST REMAINING 8-THREAD LEVER. Krylov scales at only 1.5x (p 1.70x, U 1.44x) while
+  assembly scales 3.9x. Part of that is the serial BLAS-1 above. One confound was not
+  eliminated: `pinthreads(:cores)` pins the Julia threads, but OpenBLAS spawns its own
+  unpinned threads, which on this P/E hybrid chip may land on efficiency cores. Re-run
+  `ab_blas.jl` with OpenBLAS pinned (or more reps on an idle machine) before concluding the
+  effect is not there.
 - Every internal face is still assembled twice on CPU. A face-based CPU path (keeping the
   cell-based one for GPU) would halve the scheme work.
 - `wall_cell_accumulators` allocates and zeroes two N-cell arrays every outer iteration
@@ -108,3 +125,21 @@ arithmetic in the Laplacian); k, omega and nut field sums match to 15.
   defaults to Int64 - ~17% more SpMV traffic. `integer_type=Int32` is already supported;
   `dev/komega/build_mesh_i32.jl` builds the mesh. NOT YET MEASURED. This is a benchmark
   setting, not a code change.
+
+## Diff notes for a future PR
+- `scheme!` is exported and its signature changed (`cellN` -> `nID`). Any user-defined scheme
+  method breaks and must be updated. Nothing in-tree read `cellN`.
+- The `xcprof` phase timers live in `src/` (Multithread/profiling.jl plus call sites in
+  Solvers_1_SIMPLE, Solve_1_api and RANS_kOmega). They are opt-in and cost one Ref load when
+  off, but they would be stripped or moved behind a compile-time flag for a real PR.
+- Change 3 (nz index maps) is measured neutral on CPU. If the diff needs to shrink, drop it
+  first; keep it only if a GPU measurement justifies it.
+- Residual comparisons in this file are against the code with the nz index maps already in,
+  since those are provably index-equivalent to the `spindex` they replace. They are not a
+  comparison against unmodified `main`.
+
+## Reproducing
+  julia --project=dev/komega -t N dev/komega/profile_motorbike.jl <iters> <out> [profile]
+  julia --project=dev/komega dev/komega/check_laplacian_algebra.jl
+  julia --project=dev/komega -t 8 dev/komega/ab_blas.jl <reps> <iters> <out>
+The mesh is read from the benchmark directory and nothing there is written.

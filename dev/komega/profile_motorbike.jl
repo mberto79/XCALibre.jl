@@ -98,15 +98,8 @@ with_logger(SimpleLogger(log_io)) do
         sum(model.turbulence.k.values), sum(model.turbulence.omega.values),
         sum(model.turbulence.nut.values))
 
-    # phase timers: second run, instrumented
-    GC.gc(true)
-    init!(); potential_flow!(model, cfg(iterations); ncorrectors=10)
-    xcprof_reset!(); XCPROF[] = true
-    t2 = @elapsed run!(model, cfg(iterations))
-    XCPROF[] = false
-    @printf(summary, "instrumented wall=%.3f s  per-iteration=%.1f ms\n\n", t2, 1000t2/iterations)
-    xcprof_report(summary; iterations=iterations, total=t2)
-
+    # the opt-in phase timers this script used were removed with the rest of the branch's
+    # profiling scaffolding; recover them from 211474fe if a phase split is needed again
     if do_profile
         GC.gc(true)
         init!(); potential_flow!(model, cfg(iterations); ncorrectors=10)

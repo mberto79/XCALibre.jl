@@ -220,8 +220,8 @@ function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=eqn.model.terms[1].flux, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    @xcprof :discretise discretise!(eqn, phi, config, rho_prev=rho_prev)
-    @xcprof :bcs apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
+    discretise!(eqn, phi, config, rho_prev=rho_prev)  
+    apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
         make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
     end
@@ -230,7 +230,7 @@ function solve_equation!(
         implicit_relaxation!(eqn, phi.values, irelax, nothing, config)
         # implicit_relaxation_diagdom!(eqn, phi.values, irelax, nothing, config)
     end
-    @xcprof :precon update_preconditioner!(eqn.preconditioner, phi.mesh, config)
+    update_preconditioner!(eqn.preconditioner, phi.mesh, config)
     res = solve_system!(eqn, solversetup, phi, nothing, config)
     return res
 end
@@ -242,35 +242,33 @@ function solve_equation!(
 
     mesh = psi.mesh
 
-    @xcprof_eqn :U begin
-    @xcprof :discretise discretise!(psiEqn, psi, config, rho_prev=rho_prev)
-    @xcprof :update_eqn update_equation!(psiEqn, config)
+    discretise!(psiEqn, psi, config, rho_prev=rho_prev)
+    update_equation!(psiEqn, config)
     
-    @xcprof :bcs apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
+    apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
     # implicit_relaxation!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
-    @xcprof :relax implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
-    @xcprof :precon update_preconditioner!(psiEqn.preconditioner, mesh, config)
+    implicit_relaxation_diagdom!(psiEqn, psi.x.values, solversetup.relax, xdir, config)
+    update_preconditioner!(psiEqn.preconditioner, mesh, config)
     resx = solve_system!(psiEqn, solversetup, psi.x, xdir, config)
     
-    @xcprof :update_eqn update_equation!(psiEqn, config)
-    @xcprof :bcs apply_boundary_conditions!(psiEqn, psiBCs, ydir, time, config)
+    update_equation!(psiEqn, config)
+    apply_boundary_conditions!(psiEqn, psiBCs, ydir, time, config)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
-    @xcprof :relax implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
+    implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     # update_preconditioner!(psiEqn.preconditioner, mesh, config)
     resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
     resz = zero(_get_float(mesh))
     if typeof(mesh) <: Mesh3
-        @xcprof :update_eqn update_equation!(psiEqn, config)
-        @xcprof :bcs apply_boundary_conditions!(psiEqn, psiBCs, zdir, time, config)
+        update_equation!(psiEqn, config)
+        apply_boundary_conditions!(psiEqn, psiBCs, zdir, time, config)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
-        @xcprof :relax implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
+        implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         # update_preconditioner!(psiEqn.preconditioner, mesh, config)
         resz = solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
     return resx, resy, resz
-    end
 end
 
 function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
@@ -291,7 +289,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
-    @xcprof :krylov krylov_solve!(
+    krylov_solve!(
         solver, opA, b, values; 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
         )
@@ -304,16 +302,13 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     end
 
     ndrange = length(values)
-    @xcprof :copyback begin
     kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
     kernel!(values, x)
-    end
 
     iterations = Krylov.iteration_count(solver)
     iterations == itmax && @warn "Maximum number of iterations reached!"
-    xcprof!(:krylov_iterations, 0.0, iterations)
 
-    res = @xcprof :residual residual(phiEqn, component, config)
+    res = residual(phiEqn, component, config)
     return res
 end
 

@@ -184,12 +184,11 @@ function turbulence!(
 
     # TO-DO: Need to bring gradient calculation inside turbulence models!!!!!
 
-    @xcprof_eqn :turb begin
-    @xcprof :gradU grad!(gradU, Uf, U, boundaries.U, time, config)
-    @xcprof :gradU limit_gradient!(config.schemes.U.limiter, gradU, U, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config)
+    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     # One pass over the cells and one over the faces: the strain-rate magnitude feeds both
     # productions, so writing it to Pk and reading it back twice was three passes for one.
-    @xcprof :sources xcal_foreach(Pk.values, config) do i
+    xcal_foreach(Pk.values, config) do i
         @inbounds begin
             Sij = S[i]
             GbyNu = 2*sum(Sij .* Sij)
@@ -201,8 +200,8 @@ function turbulence!(
             Dkf[i] = rhoi*coeffs.β⁺*omegai
         end
     end
-    @xcprof :wallfun correct_production!(Pk, boundaries.k, model, S.gradU, config, wall_buffers) # Must be after previous line
-    @xcprof :sources xcal_foreach(mueffk.values, config) do i
+    correct_production!(Pk, boundaries.k, model, S.gradU, config, wall_buffers) # Must be after previous line
+    xcal_foreach(mueffk.values, config) do i
         @inbounds begin
             rhofi = rhof[i]
             nufi = nuf[i]
@@ -211,44 +210,37 @@ function turbulence!(
             mueffk[i] = rhofi*(nufi + coeffs.σk*nutfi)
         end
     end
-    end
 
     # Solve omega equation
     # prev .= omega.values
-    @xcprof_eqn :omega begin
-    @xcprof :discretise discretise!(ω_eqn, omega, config)
-    @xcprof :bcs apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
+    discretise!(ω_eqn, omega, config)
+    apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    @xcprof :relax implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    @xcprof :wallfun constrain_equation!(ω_eqn, boundaries.omega, model, config) # active with WFs only
-    @xcprof :precon update_preconditioner!(ω_eqn.preconditioner, mesh, config)
-    end
-    ω_res = @xcprof_eqn :omega solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
+    implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
+    constrain_equation!(ω_eqn, boundaries.omega, model, config) # active with WFs only
+    update_preconditioner!(ω_eqn.preconditioner, mesh, config)
+    ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     
     # constrain_boundary!(omega, boundaries.omega, model, config) # active with WFs only
-    @xcprof_eqn :omega @xcprof :bound bound!(omega, config)
+    bound!(omega, config)
     # explicit_relaxation!(omega, prev, solvers.omega.relax, config)
 
     # Solve k equation
     # prev .= k.values
-    @xcprof_eqn :k begin
-    @xcprof :discretise discretise!(k_eqn, k, config)
-    @xcprof :bcs apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
+    discretise!(k_eqn, k, config)
+    apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    @xcprof :relax implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    @xcprof :precon update_preconditioner!(k_eqn.preconditioner, mesh, config)
-    end
-    k_res = @xcprof_eqn :k solve_system!(k_eqn, solvers.k, k, nothing, config)
-    @xcprof_eqn :k @xcprof :bound bound!(k, config)
+    implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
+    update_preconditioner!(k_eqn.preconditioner, mesh, config)
+    k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
+    bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    @xcprof_eqn :turb begin
     @. nut.values = k.values/omega.values
 
-    @xcprof :nut interpolate!(nutf, nut, config)
-    @xcprof :nut correct_boundaries!(nutf, nut, boundaries.nut, time, config)
-    @xcprof :wallfun correct_eddy_viscosity!(nutf, boundaries.nut, model, config, wall_buffers)
-    end
+    interpolate!(nutf, nut, config)
+    correct_boundaries!(nutf, nut, boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config, wall_buffers)
 
     state.residuals = ((:k , k_res),(:omega, ω_res))
     state.converged = k_res < solvers.k.convergence && ω_res < solvers.omega.convergence

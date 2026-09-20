@@ -93,7 +93,8 @@ Correctness:
   Laplacian); k, omega and nut field sums match to 15. The comparison is against the code
   with the nz index maps already in, since those are provably index-equivalent to the
   `spindex` calls they replace - not against unmodified `main`.
-- Test cases, all passing (`dev/komega/komega_tests.jl`, run on `--project=test`):
+- Test cases, all passing after round 2 as well (`dev/komega/komega_tests.jl`, on
+  `--project=test`), 52/52 in 1m48s, zero failures, same counts as before the changes:
     2d_incompressible_flatplate_KOmega_lowRe       7/7
     2d_incompressible_flatplate_KOmega_HighRe     19/19
     2d_incompressible_transient_KOmega_BFS_lowRe   7/7
@@ -105,6 +106,44 @@ Correctness:
   14 GB of RAM and the 3D cases plus the profiling runs exhaust it. Run it on a larger box
   before merging - in particular the LES, multiphase, MRF, periodic and supersonic cases,
   which also go through the assembly kernel and `scheme!`.
+
+## Round 2: cached face coefficient + selectable face/cell assembly
+
+Three changes, measured at 8 threads on the same case (phase timers, ms/iter):
+
+  discretise        start   round2-cell   round2-face
+    omega           13.60      5.31          6.75
+    k               13.45      5.07          6.77
+    U               13.95     10.49          7.83
+    p               12.32      3.93          6.00
+    TOTAL           53.32     24.79         27.35     (-54% / -49%)
+
+6. PER-FACE LAPLACIAN COEFFICIENT, cached on the equation. `gDiff[f] = area/(|normal.e|*delta)`
+   is constant for a fixed mesh, so the Laplacian reads one number instead of eight and skips
+   two dot products, a norm and a divide. For k and omega, whose Upwind divergence reads
+   nothing from the face, the 128-byte `Face3D` load disappears from the assembly entirely -
+   which is why they drop hardest (13.5 -> 5.1 ms, -62%).
+7. FACE-BASED ASSEMBLY with atomics, selectable via `Hardware(assembly=FaceAssembly())`;
+   `CellAssembly()` is the default and the pre-existing path. Both are kept and both are
+   exercised by `ab_assembly.jl`.
+   RESULT ON CPU: the two are within ~1% of total runtime, which matches what the user found
+   independently. Per equation it splits: cell wins on the scalar equations (k, omega, p),
+   face wins on the vector one. That is consistent with what each still reads - after change
+   6 the scalar schemes touch no face struct at all, so the cell loop's duplicated work is
+   nearly free, while U's LUST divergence still reads `face.weight` and so benefits from
+   loading the face once. Face assembly is the better choice on GPU (user's own experiments:
+   hardware atomics, and conflicts are rare enough not to hurt the CPU either).
+8. WALL-FUNCTION BUFFERS preallocated on `KOmegaModel` instead of allocating and zeroing two
+   cell-sized arrays per outer iteration. turb_wallfun 2.72 -> 1.82 ms.
+   The fused source loops from round 1 also show clean now: turb_sources 3.65 -> 2.20 ms.
+
+Equivalence of the two assemblies after 20 SIMPLE iterations on motorBike: residuals agree to
+1.8e-5 relative, field sums to 1e-7..1e-9. That is round-off divergence amplified through 20
+nonlinear iterations, not a discrepancy in the matrix - but note FaceAssembly is NOT bitwise
+reproducible run to run, because the order of the atomic diagonal accumulations varies.
+CellAssembly remains bitwise reproducible.
+
+Combined effect of rounds 1 and 2 on assembly at 8 threads: 53.3 -> 24.8 ms/iter, -54%.
 
 ## Verdict: this does not beat OpenFOAM yet
 
@@ -141,9 +180,33 @@ would close the rest are both identified and both unimplemented - see below.
   `dev/komega/build_mesh_i32.jl` builds the mesh. NOT YET MEASURED. This is a benchmark
   setting, not a code change.
 
+## Next levers, now that assembly is no longer the top cost
+
+At 8 threads the steady-state split is now roughly: Krylov ~115 ms, assembly ~25 ms,
+gradients/flux/Hv ~48 ms, residual ~10 ms. The ranking has changed:
+- KRYLOV (~44%) is the target and is bandwidth bound. The one untried traffic reduction is
+  Int32 indices: OpenFOAM runs `WM_LABEL_SIZE=32`, XCALibre's `FOAM3D_mesh` defaults to
+  Int64, so colval alone is ~10 MB/SpMV of avoidable traffic, and every index array in the
+  assembly halves too. `integer_type=Int32` already exists; `build_mesh_i32.jl` builds it.
+  STILL NOT MEASURED.
+- `turb_gradU` (~15 ms) is Green-Gauss grad(U), and its cell pass visits each internal face
+  twice exactly like the old assembly did. The same face-loop-with-atomics treatment now
+  available for the matrix applies to it.
+- `residual()` still costs a full extra SpMV plus two reductions after every solve.
+
 ## Diff notes for a future PR
-- `scheme!` is exported and its signature changed (`cellN` -> `nID`). Any user-defined scheme
-  method breaks and must be updated. Nothing in-tree read `cellN`.
+- `scheme!` is exported and its signature changed twice: `cellN` -> `nID`, and a `gDiff_f`
+  argument was added before `nID`. Any user-defined scheme method breaks and must be updated.
+  Nothing in-tree read `cellN`.
+- `Hardware` gained a third field (`assembly`) and a third type parameter. It is `@kwdef`, so
+  keyword construction is unaffected, but positional `Hardware(backend, workgroup)` now needs
+  a third argument.
+- `ScalarEquation`/`VectorEquation` gained `owner_nz`, `neig_nz` and `gDiff` alongside the
+  index maps. `nz_index_maps` builds all of them on the host in one serial pass per equation;
+  on a 354k-cell mesh that is a visible one-off cost at setup and would be worth a kernel.
+- `KOmegaModel` gained a `wall_buffers` field. `correct_production!` and
+  `correct_eddy_viscosity!` take an optional trailing `buffers` argument, defaulting to the
+  old allocating behaviour, so other turbulence models are unaffected.
 - The `xcprof` phase timers live in `src/` (Multithread/profiling.jl plus call sites in
   Solvers_1_SIMPLE, Solve_1_api and RANS_kOmega). They are opt-in and cost one Ref load when
   off, but they would be stripped or moved behind a compile-time flag for a real PR.

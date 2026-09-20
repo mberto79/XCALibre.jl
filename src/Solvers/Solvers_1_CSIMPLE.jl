@@ -344,7 +344,7 @@ function CSIMPLE(
         R_p[iteration] = rp
 
         Uz_convergence = true
-        if typeof(mesh) <: Mesh3
+        if _base_mesh(mesh) isa Mesh3
             Uz_convergence = rz <= solvers.U.convergence
         end
 

@@ -25,6 +25,7 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 function cpiso!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
+    check_distributed_support(:CPISO, model)
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config;

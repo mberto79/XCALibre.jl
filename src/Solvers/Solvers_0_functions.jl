@@ -359,3 +359,43 @@ restart_fields!(mesh, model, restart, config) =
     error("restart is supported on a distributed mesh whose results were written with output=OpenFOAM()")
 restart_flux!(mesh, mdotf, ::Nothing, config) = nothing
 restart_flux!(mesh, mdotf, restart, config) = restart_fields!(mesh, nothing, restart, config)
+
+# NEW SECTION: distributed support
+
+# Every solver and model is unsupported on a distributed mesh unless declared here. A combination
+# with no distributed linear-solve seam never calls `wrap_eqn`, so each rank would solve its own
+# block and return a plausible wrong answer; it is refused instead. Adding a method is the record
+# that the combination has been wired and tested.
+distributed_ready(::Any) = false
+distributed_ready(::Nothing) = true                 # a model the case does not define
+distributed_ready(::Incompressible) = true
+distributed_ready(::Uniform) = true
+distributed_ready(::Isothermal) = true
+distributed_ready(::Conduction) = true
+distributed_ready(::Laminar) = true
+distributed_ready(::KOmega) = true
+distributed_ready(::KOmegaSST) = true
+
+const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow)
+
+# called by every solver entry point, named for itself; a no-op on a serial mesh
+function check_distributed_support(solver::Symbol, model)
+    is_distributed_mesh(model.domain) || return nothing
+    gaps = String[]
+    solver ∈ DISTRIBUTED_SOLVERS || push!(gaps, "the $(solver) solver")
+    for (kind, m) ∈ (("fluid", model.fluid), ("solid", model.solid),
+                     ("turbulence", model.turbulence), ("energy", model.energy))
+        distributed_ready(m) || push!(gaps, "the $(nameof(typeof(m))) $(kind) model")
+    end
+    isempty(gaps) && return nothing
+    error("""
+    Not supported on a distributed mesh: $(join(gaps, ", ")).
+
+    Distributed runs currently support the SIMPLE, PISO and Laplace solvers and `potential_flow!`,
+    with an Incompressible fluid or Uniform solid, Isothermal or Conduction energy, and Laminar,
+    KOmega or KOmegaSST turbulence. Everything else still needs its distributed linear-solve seam:
+    without one each rank solves its own block and the result is wrong without any error.
+
+    Run this case on a single process, or see the distributed section of the documentation.
+    """)
+end

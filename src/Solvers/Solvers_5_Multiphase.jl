@@ -3,6 +3,7 @@ export multiphase!
 function multiphase!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
+    check_distributed_support(:multiphase, model)
 
     residuals = setup_multiphase_solvers(
         MULTIPHASE, model, config;

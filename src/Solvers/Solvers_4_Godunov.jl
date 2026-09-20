@@ -1100,6 +1100,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `rho` Vector of density residuals for each time step.
 """
 function godunov!(model, config; output=VTK())
+    check_distributed_support(:Godunov, model)
     residuals = _setup_godunov(model, config; output=output)
     return residuals
 end

@@ -5,6 +5,7 @@ function filmModel!(
     output=VTK(),#, pref=nothing, ncorrectors=
     inner_loops=2
 )
+    check_distributed_support(:FilmModel, model)
     residuals = setup_FilmModel_Solver(
         FilmModel, model, config,
         output=output,

@@ -33,6 +33,7 @@ function laplace!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
     petsc_options=""
     )
+    check_distributed_support(:Laplace, model)
 
     residuals = setup_laplace_solver(
         LAPLACE, model, config;

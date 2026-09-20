@@ -30,6 +30,7 @@ function simple!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
     petsc_options="", restart=nothing
     )
+    check_distributed_support(:SIMPLE, model)
 
     residuals = setup_incompressible_solvers(
         SIMPLE, model, config;

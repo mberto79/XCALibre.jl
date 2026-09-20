@@ -29,6 +29,7 @@ function simple_MRF!(
     model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
     )
+    check_distributed_support(:SIMPLE_MRF, model)
 
     residuals = setup_incompressible_solvers_MRF(
         SIMPLE_MRF, model, config; 

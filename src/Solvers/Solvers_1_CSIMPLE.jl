@@ -27,6 +27,7 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 
 """
 function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0) 
+    check_distributed_support(:CSIMPLE, model)
 
     residuals = setup_compressible_solvers(
         CSIMPLE, model, config; 

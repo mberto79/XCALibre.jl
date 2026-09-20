@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-20T18:30:00+01:00
 STATE: IDLE
 STEP: P1 exit gate and close (all milestones closed; M27 D158)
-HEAD: 3ae770ef
+HEAD: 49ba8a11
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
 resume: every P1 milestone is closed; the phase exit gate and close are the user's call through the xcalibre-close skill, and the long comment blocks left on main are in PR #160 from `HM/comment-blocks` (D137)

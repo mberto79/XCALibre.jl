@@ -11,7 +11,7 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 # SteadyState
 @inline function scheme!(
     term::Operator{F,P,I,Time{SteadyState}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     # nothing
     z = zero(eltype(nzval_array))
     z, z
@@ -25,7 +25,7 @@ end
 ## Euler
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     0.0, 0.0 # add types if this approach works
 end
 
@@ -54,7 +54,7 @@ end
 ## Crank-Nicholson
 @inline function scheme!(
     term::Operator{F,P,I,Time{CrankNicolson}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
 
     0.0, 0.0 # add types if this approach works
 end
@@ -83,14 +83,12 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
     
-    # gDiff_f is area/(|normal.e|*delta), precomputed per face: the expanded form
-    # norm(((Sf.Sf)/(Sf.e))*e)/delta with Sf = ns*area*normal reduces to it exactly (ns
-    # cancels, normal and e are unit). Verified to 1e-15 on every internal motorBike face.
-    ap = term.sign*term.flux[fID]*gDiff_f
+    # term.gDiff is the face geometry, built once with the operator (see gDiff_coefficients)
+    ap = term.sign*term.flux[fID]*term.gDiff[fID]
 
 
     # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
@@ -117,7 +115,7 @@ end
 # Linear
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Linear}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
     w = face.weight
@@ -139,7 +137,7 @@ end
 # Upwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
@@ -156,7 +154,7 @@ end
 # LUST
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{LUST}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     
     w = face.weight
@@ -183,7 +181,7 @@ end
 # BoundedUpwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # $$\mathcal{D}_{bounded} = \sum_f \phi_f \psi_f - \psi_P \sum_f \phi_f$$
     # phif =  max(phif, 0) - max(-phi_f, 0)$
@@ -203,7 +201,7 @@ end
 # IMPLICIT SOURCE
 @inline function scheme!(
     term::Operator{F,P,I,Si}, 
-    nzval_array, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     z = zero(eltype(nzval_array))
     z, z

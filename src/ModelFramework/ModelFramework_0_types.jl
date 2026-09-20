@@ -15,11 +15,12 @@ abstract type AbstractEquation end
 
 # Base Operator
 
-struct Operator{F,P,S,T} <: AbstractOperator
+struct Operator{F,P,S,T,G} <: AbstractOperator
     flux::F
     phi::P 
     sign::S
     type::T
+    gDiff::G # Laplacian face geometry, built once by its constructor; nothing for the rest
 end
 Adapt.@adapt_structure Operator
 
@@ -48,24 +49,35 @@ end
 # constructors
 
 Time{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Time{T}()
+    flux, phi, 1, Time{T}(), nothing
     )
 
 Time{T}(phi) where T = Operator(
-    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}()
+    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}(), nothing
     )
 
 Laplacian{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Laplacian{T}()
+    flux, phi, 1, Laplacian{T}(), gDiff_coefficients(phi.mesh)
     )
 
 Divergence{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Divergence{T}()
+    flux, phi, 1, Divergence{T}(), nothing
     )
 
 Si(flux, phi) = Operator(
-    flux, phi, 1, Si()
+    flux, phi, 1, Si(), nothing
 )
+
+# norm(((Sf.Sf)/(Sf.e))*e)/delta with Sf = ns*area*normal reduces to area/(|normal.e|*delta):
+# ns cancels and both normal and e are unit vectors. Fixed for a given mesh, so the Laplacian
+# carries it instead of rebuilding the face geometry for every (cell, face) pair it assembles.
+# Broadcasting keeps the result on whatever backend the mesh is on.
+gDiff_coefficients(mesh) = _gDiff.(mesh.faces)
+
+_gDiff(face) = begin
+    den = abs(face.normal ⋅ face.e)*face.delta
+    den > zero(den) ? face.area/den : zero(den)
+end
 
 # SOURCES
 
@@ -115,7 +127,6 @@ struct ScalarEquation{VTf<:AbstractVector, VTi<:AbstractVector, ASA<:AbstractSpa
     Fx::VTf
     diag_nz::VTi  # nzval index of A[i,i]
     face_nz::VTi  # nzval index of A[owner, neighbour], indexed like mesh.cell_neighbours
-    gDiff::VTf    # per-face Laplacian geometric coefficient, area/(|normal.e|*delta)
 end
 Adapt.@adapt_structure ScalarEquation
 
@@ -148,7 +159,7 @@ ScalarEquation(phi::ScalarField, BCs) = begin
     backend = _get_backend(mesh)
     # A = _convert_array!(sparse(i, j, v), backend)
     A = _build_A(backend, i, j, v, nCells)
-    diag_nz, face_nz, gDiff = nz_index_maps(mesh_temp, A, backend)
+    diag_nz, face_nz = nz_index_maps(mesh_temp, A, backend)
     ScalarEquation(
         A,
 
@@ -164,8 +175,7 @@ ScalarEquation(phi::ScalarField, BCs) = begin
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),
         diag_nz,
-        face_nz,
-        gDiff
+        face_nz
         )
 end
 
@@ -180,7 +190,6 @@ struct VectorEquation{VTf<:AbstractVector, VTi<:AbstractVector, ASA<:AbstractSpa
     Fx::VTf
     diag_nz::VTi
     face_nz::VTi
-    gDiff::VTf
 end
 Adapt.@adapt_structure VectorEquation
 
@@ -202,7 +211,7 @@ VectorEquation(psi::VectorField, BCs) = begin
 
     A = _build_A(backend, i, j, v, nCells)
     A0 = _build_A(backend, i, j, v, nCells)
-    diag_nz, face_nz, gDiff = nz_index_maps(mesh_temp, A, backend)
+    diag_nz, face_nz = nz_index_maps(mesh_temp, A, backend)
     VectorEquation(
         A0,
         A,
@@ -223,8 +232,7 @@ VectorEquation(psi::VectorField, BCs) = begin
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),
         diag_nz,
-        face_nz,
-        gDiff
+        face_nz
         )
 end
 
@@ -261,11 +269,9 @@ end
 # Built on the host from a host mesh, then moved to the backend with the rest of the equation.
 function nz_index_maps(mesh, A, backend)
     TI = _get_int(mesh)
-    TF = _get_float(mesh)
     rowptr = _rowptr(A) |> Array
     colval = _colval(A) |> Array
-    (; cells, cell_neighbours, faces) = mesh
-    nfaces = length(faces)
+    (; cells, cell_neighbours) = mesh
     diag_nz = zeros(TI, length(cells))
     face_nz = zeros(TI, length(cell_neighbours))
     for cID ∈ eachindex(cells)
@@ -274,15 +280,7 @@ function nz_index_maps(mesh, A, backend)
             face_nz[fi] = spindex(rowptr, colval, cID, cell_neighbours[fi])
         end
     end
-    # norm(((Sf.Sf)/(Sf.e))*e)/delta with Sf = ns*area*normal, for unit normal and e. Constant
-    # for a fixed mesh, so the Laplacian reads one number instead of eight.
-    gDiff = zeros(TF, nfaces)
-    for fID ∈ eachindex(faces)
-        f = faces[fID]
-        den = abs(f.normal ⋅ f.e)*f.delta
-        gDiff[fID] = den > zero(den) ? f.area/den : zero(TF)
-    end
-    (adapt(backend, diag_nz), adapt(backend, face_nz), adapt(backend, gDiff))
+    (adapt(backend, diag_nz), adapt(backend, face_nz))
 end
 
 # Sparse CSR format

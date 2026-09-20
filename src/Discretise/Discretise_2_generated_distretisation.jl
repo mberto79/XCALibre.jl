@@ -17,7 +17,7 @@ function discretise!(
     # Sparse array fields accessors
     nzval = _nzval(A)
     nzval0 = _nzval(A0)
-    (; diag_nz, face_nz, gDiff) = eqn.equation
+    (; diag_nz, face_nz) = eqn.equation
 
     # reset storage of sparse matrix
     z = zero(eltype(nzval))
@@ -27,14 +27,14 @@ function discretise!(
 
     ndrange = length(mesh.cells)
     kernel! = _discretise_vector_model!(_setup(backend, workgroup, ndrange)...)
-    kernel!(model, model.terms, model.sources, mesh, nzval0, diag_nz, face_nz, gDiff,
+    kernel!(model, model.terms, model.sources, mesh, nzval0, diag_nz, face_nz,
         bx, by, bz, prev, runtime, rho_prev)
 end
 
 # @kernel function _discretise_vector_model!(
 #     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval0::AbstractArray{F}, nzval, colval, rowptr, bx, by, bz, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_vector_model!(
-    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval0::AbstractArray{F}, diag_nz, face_nz, gDiff, bx, by, bz, prev, runtime, rho_prev) where {TN,SN,T,S,F,TERMS,SRCS}
+    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval0::AbstractArray{F}, diag_nz, face_nz, bx, by, bz, prev, runtime, rho_prev) where {TN,SN,T,S,F,TERMS,SRCS}
     i = @index(Global)
     # Extract mesh fields for kernel
     (; faces, cells, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -59,7 +59,7 @@ end
 
 
             # Call scheme generated fucntion
-            ac, an = _scheme!(model, terms, nzval0, cell, face, gDiff[fID], nID, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = _scheme!(model, terms, nzval0, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval0[nIndex] = an
 
@@ -95,7 +95,7 @@ function discretise!(
 
     # Sparse array fields accessors
     nzval = _nzval(A)
-    (; diag_nz, face_nz, gDiff) = eqn.equation
+    (; diag_nz, face_nz) = eqn.equation
 
     # reset storage of sparse matrix
     z = zero(eltype(nzval))
@@ -105,7 +105,7 @@ function discretise!(
 
     ndrange = length(mesh.cells)
     kernel! = _discretise_scalar_model!(_setup(backend, workgroup, ndrange)...)
-    kernel!(model, model.terms, model.sources, mesh, nzval, diag_nz, face_nz, gDiff, b,
+    kernel!(model, model.terms, model.sources, mesh, nzval, diag_nz, face_nz, b,
         prev, runtime, rho_prev)
 end
 
@@ -113,7 +113,7 @@ end
 # @kernel function _discretise_scalar_model!(
 #     model::Model{TN,SN,T,S}, terms, sources, mesh, nzval::AbstractArray{F}, colval, rowptr, b, prev, runtime) where {TN,SN,T,S,F}
 @kernel function _discretise_scalar_model!(
-    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval::AbstractArray{F}, diag_nz, face_nz, gDiff, b, prev, runtime, rho_prev) where {TN,SN,T,S,F,TERMS,SRCS}
+    model::Model{TN,SN,T,S}, terms::TERMS, sources::SRCS, mesh, nzval::AbstractArray{F}, diag_nz, face_nz, b, prev, runtime, rho_prev) where {TN,SN,T,S,F,TERMS,SRCS}
 
     i = @index(Global)
     # Extract mesh fields for kernel
@@ -137,7 +137,7 @@ end
             nIndex = face_nz[fi]
 
             # Call scheme generated fucntion
-            ac, an = _scheme!(model, terms, nzval, cell, face, gDiff[fID], nID, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = _scheme!(model, terms, nzval, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval[nIndex] = an
         end
@@ -158,7 +158,7 @@ return_quote(x, t) = :(nothing)
 # @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
 @generated function _scheme!(
     model::Model{TN,SN,T,S}, terms::TERMS, nzval::AbstractArray{F}, cell, face,
-    gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nID, ns, cIndex, nIndex, fID, prev, runtime
     ) where {TN,SN,T,S,TERMS,F}
     # Allocate expression array to store scheme function
     out = Expr(:block)
@@ -166,7 +166,7 @@ return_quote(x, t) = :(nothing)
     # Loop over number of terms and store scheme function in array
     for t in 1:TN
         function_call_scheme = quote
-            ac, an = scheme!(terms[$t], nzval, cell, face, gDiff_f, nID, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = scheme!(terms[$t], nzval, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
             AC += F(ac)
             AN += F(an)
         end

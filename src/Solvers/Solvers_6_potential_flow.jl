@@ -79,7 +79,7 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, pet
         discretise!(Phi_eqn, Phi, potential_config)
         apply_boundary_conditions!(
             Phi_eqn, potential_BCs, nothing, time_value, potential_config)
-        setReference!(Phi_eqn, reference, 1, potential_config)
+        setReference!(Phi_deqn, reference, 1, potential_config)
         nonorthogonal_face_correction(
             Phi_eqn, gradPhi, unit_flux, potential_config;
             correction=nonorthogonal_flux)

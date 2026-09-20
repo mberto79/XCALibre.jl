@@ -737,7 +737,8 @@ function reconstruct!(phi::VectorField, psif::FaceScalarField, moments, config)
         kernel!(faces, psif, moments)
     end
 
-    if typeof(mesh) <: Mesh2
+    # a DistributedMesh is not <: Mesh2, and the 3D branch inverts a moment matrix singular in 2D
+    if typeof(_base_mesh(mesh)) <: Mesh2
         kernel! = _sized(_reconstruct_operation_2D!, backend, workgroup, ndrange)
     else
         kernel! = _sized(_reconstruct_operation_3D!, backend, workgroup, ndrange)

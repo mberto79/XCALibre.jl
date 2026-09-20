@@ -166,30 +166,34 @@ function SIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = @xcprof_eqn :total @xcprof :U_solve solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
         # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rDf, rD, config)
-        correct_interpolation_periodic(rDf, rD, boundaries.U, config)
-        remove_pressure_source!(U_eqn, ∇p, config)
-        H!(Hv, U, U_eqn, config)
+        @xcprof_eqn :simple begin
+        @xcprof :Hv inverse_diagonal!(rD, U_eqn, config)
+        @xcprof :Hv interpolate!(rDf, rD, config)
+        @xcprof :Hv correct_interpolation_periodic(rDf, rD, boundaries.U, config)
+        @xcprof :Hv remove_pressure_source!(U_eqn, ∇p, config)
+        @xcprof :Hv H!(Hv, U, U_eqn, config)
         
         # Interpolate faces
-        interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
-        correct_boundaries!(Uf, Hv, boundaries.U, time, config)
+        @xcprof :flux interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
+        @xcprof :flux correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
         # div!(divHv, Uf, config) 
 
         # new approach
-        flux!(mdotf, Uf, config)
-        div!(divHv, mdotf, config)
+        @xcprof :flux flux!(mdotf, Uf, config)
+        @xcprof :flux div!(divHv, mdotf, config)
         
         # Pressure calculations
+        @xcprof :copies begin
         @. prev = p.values
         @. p_boundary_reference = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        end
+        end
+        rp = @xcprof_eqn :total @xcprof :p_solve (@xcprof_eqn :p solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref))
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -208,18 +212,20 @@ function SIMPLE(
         # Flux correction must use the unrelaxed pressure solution so that the
         # pressure equation removes the full predicted continuity error. Pressure
         # relaxation applies only to the momentum/velocity correction.
-        correct_mass_flux!(
+        @xcprof_eqn :simple begin
+        @xcprof :massflux correct_mass_flux!(
             mdotf, p_eqn, config;
             previous=p_boundary_reference, time=time,
             nonorthogonal=nonorthogonal_flux)
 
-        explicit_relaxation!(p, prev, solvers.p.relax, config)
-        grad!(∇p, pf, p, boundaries.p, time, config)
-        limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        correct_velocity!(U, Hv, ∇p, rD, config)
+        @xcprof :gradp explicit_relaxation!(p, prev, solvers.p.relax, config)
+        @xcprof :gradp grad!(∇p, pf, p, boundaries.p, time, config)
+        @xcprof :gradp limit_gradient!(schemes.p.limiter, ∇p, p, config)
+        @xcprof :gradp correct_velocity!(U, Hv, ∇p, rD, config)
+        end
 
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
-        update_nueff!(nueff, nu, model.turbulence, config)
+        @xcprof_eqn :total @xcprof :turbulence turbulence!(turbulenceModel, model, S, prev, time, config) 
+        @xcprof_eqn :simple @xcprof :nueff update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx
         R_uy[iteration] = ry
@@ -247,7 +253,7 @@ function SIMPLE(
             break
         end
 
-        ProgressMeter.next!(
+        @xcprof_eqn :simple @xcprof :progress ProgressMeter.next!(
             progress, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
@@ -258,7 +264,7 @@ function SIMPLE(
                 ]
             )
         
-        runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+        @xcprof_eqn :simple @xcprof :postproc runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
         
         if iteration%write_interval + signbit(write_interval) == 0      
             save_output(model, outputWriter, iteration, time, config)

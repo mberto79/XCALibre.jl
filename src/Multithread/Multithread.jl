@@ -15,6 +15,7 @@ import SparseArrays
 import KernelAbstractions
 
 include("spmvm.jl")
+include("profiling.jl")
 
 struct AutoTune end
 

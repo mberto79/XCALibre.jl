@@ -19,6 +19,9 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 - Steady weakly compressible (SIMPLE algorithm for coupling)
 - Transient weakly compressible (PISO algorithm for coupling)
 
+On a distributed mesh only the incompressible SIMPLE and PISO solvers and the Laplace solver are
+supported; any other solver or model errors rather than solving each rank's block on its own.
+
 # Input arguments
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.

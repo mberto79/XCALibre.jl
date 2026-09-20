@@ -21,6 +21,13 @@ les_model = Physics(
     energy = Energy{Isothermal}(),
     domain = dm)
 
+compressible_model = Physics(
+    time = Steady(),
+    fluid = Fluid{WeaklyCompressible}(nu=1e-3, cp=1005.0, gamma=1.4, Pr=0.7),
+    turbulence = RANS{Laminar}(),
+    energy = Energy{SensibleEnthalpy}(Tref=288.15),
+    domain = dm)
+
 @testset "unsupported distributed combinations error (rank $rank)" begin
     # supported: the set this branch wired and tested
     @test check(:SIMPLE, model) === nothing
@@ -37,10 +44,13 @@ les_model = Physics(
 
     # supported solver, unsupported model
     @test_throws ErrorException check(:SIMPLE, les_model)
+    @test_throws ErrorException check(:SIMPLE, compressible_model)
 
     # the message names what is missing, so it doubles as the implementation list
     msg = try; check(:CSIMPLE, les_model); ""; catch e; sprint(showerror, e); end
     @test occursin("CSIMPLE", msg) && occursin("Smagorinsky", msg)
+    cmsg = try; check(:CSIMPLE, compressible_model); ""; catch e; sprint(showerror, e); end
+    @test occursin("WeaklyCompressible", cmsg) && occursin("SensibleEnthalpy", cmsg)
 end
 
 # a serial mesh is never refused

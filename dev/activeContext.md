@@ -1,12 +1,12 @@
 # Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m27-motorbike-distributed.md
-updated: 2026-09-20T12:00:00+01:00
-STATE: BUILDING
-STEP: P1-M27-S1 - guard the six per-patch wall-function launches against an empty IDs_range
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
+updated: 2026-09-20T18:30:00+01:00
+STATE: IDLE
+STEP: P1 exit gate and close (all milestones closed; M27 D158)
 HEAD: 3ae770ef
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: the S1 guards are in `RANS_functions.jl`; run the motorBike RANS benchmark at n=8 (`MOTORBIKE_ITERATIONS=3`, background, memguard) to confirm it completes and to produce the first failure that names P1-M27-S2
+resume: every P1 milestone is closed; the phase exit gate and close are the user's call through the xcalibre-close skill, and the long comment blocks left on main are in PR #160 from `HM/comment-blocks` (D137)
 ## binding
 - HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
 - M22 closed (D118), M23 closed (D129), M24 closed (D132), M26 closed (D135), M15 closed (D136), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
@@ -15,7 +15,7 @@ resume: the S1 guards are in `RANS_functions.jl`; run the motorBike RANS benchma
 - Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.
 - Bars that gate every step: residual hashes bitwise equal under Jacobi at n=2 and n=4 on CPU (n=8 with PETSc does not fit beside the language server; GPU residuals are tolerance-checked, D116; R8 binding; `mem_probe.jl` on 10 mm parts fits the cap), `check_ghosts` zero (M19-S2), the M19-S4 round and all-reduce counters, and `gate.jl`. The full serial suite exceeds the five-minute cap and runs only at phase close.
 ## position
-M1-M26 closed (M12 superseded by M13; M22 on 2026-09-19 with S6-S8 withdrawn on bounds, D110-D118). M27 open (D138, user): the motorBike tutorial benchmarks distributed - S1 wall-function empty patches, S2 KOmegaSST, S3 `potential_flow!`. The P1 exit gate and close wait on M27 and are the user's call through the xcalibre-close skill.
+M1-M26 closed (M12 superseded by M13; M22 on 2026-09-19 with S6-S8 withdrawn on bounds, D110-D118). M27 closed (D158). Open: none. The distributed gate is now 4m38s of the five-minute cap, so the next gate addition must displace something (D157).
 ## evidence
 - The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
 - This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.

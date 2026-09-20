@@ -707,16 +707,24 @@ automatically when the mesh is distributed, and your script needs nothing extra.
 Distributed today:
 
 - Steady and transient incompressible flow through the SIMPLE and PISO families.
+- The Laplace (conduction) solver, and `potential_flow!` for initialising a velocity field.
 - `Laminar`, `KOmega` and `KOmegaSST` turbulence, including wall distance.
 - CPU and GPU backends, periodic patches, and writing results in OpenFOAM's decomposed layout so
   that the usual tools can reconstruct them.
 
-Not distributed yet. These raise an error rather than silently giving a wrong answer:
+Not distributed yet. These raise an error naming every missing piece, rather than silently giving a
+wrong answer: without a distributed linear-solve seam each rank would solve only its own block.
 
+- Compressible flow (`csimple!`, `cpiso!`), the density-based supersonic solver, multiple reference
+  frames, the film model and the multiphase solver.
 - The `KOmegaLKE` transition model and the LES models.
 - Float32 with `BoomerAMG`, because the stock PETSc libraries include hypre at Float64 only.
 - GPU runs without a CUDA-enabled PETSc build (see [Setting up MPI and PETSc](@ref)).
 - AMD GPUs, because PETSc.jl cannot yet hand PETSc's HIP vectors back as device arrays.
+
+The supported set is declared by `distributed_ready` methods in `src/Solvers/Solvers_0_functions.jl`,
+which default to unsupported, so a newly added solver or model is refused until it has been wired
+and tested.
 
 ## What to expect from parallel performance
 

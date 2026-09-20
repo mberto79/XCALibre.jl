@@ -554,16 +554,25 @@ iterations; the headline 2.10x is from the 500-iteration runs. The ratios are th
 
 ### 3. Linear-solver work is already matched, or better
 
-Mean Krylov iterations per solve, same case, 500 iterations:
+Mean Krylov iterations per solve. XCALibre's profile covers the first 50 SIMPLE iterations,
+so OpenFOAM is counted over the same window; its 500-iteration means are given too, because
+early solves are much heavier (its first three p solves are 82, 143, 62 iterations).
 
-                     XCALibre        OpenFOAM
-      U (each)          2.8         1.93/2.09/2.12
-      p                25.1            63.9
-      k                 1.08            1.01
-      omega             1.00            1.00
+                     XCALibre      OpenFOAM        OpenFOAM
+                     first 50      first 50        all 500
+      U (each)          2.8       2.52-3.02      1.93-2.12
+      p                25.1          86.9           63.9
+      k                 1.08          1.02           1.01
+      omega             1.00          1.02           1.00
 
-XCALibre does the same momentum and turbulence work and 2.5x LESS pressure work, and still
-only ties on wall time. The gap is therefore cost per unit of work, not amount of work. That
+`xcprof_report` divides units by SIMPLE iterations, not by calls, so the U row's raw 8.4 is
+three component solves; 2.8 each is the comparable figure.
+
+Momentum and turbulence are matched solve for solve. Pressure is not: XCALibre runs 3.5x
+fewer iterations there, but at rtol 0.1 against OpenFOAM's relTol 0.01, so that is a
+tolerance difference, not a win - and the README puts the cost of closing it at ~20%, which
+is larger than the whole disputed 8-thread margin. XCALibre still only ties on wall time
+while doing less pressure work. The gap is therefore cost per unit of work, not amount of work. That
 also removes "fewer Krylov iterations" (multigrid) from the top of the lever list: on this
 machine OpenFOAM's own GAMG is worth only 4% at 8 cores (76.18 vs 79.66 s, psolver_study.txt).
 
@@ -599,10 +608,15 @@ the scaling ratio, and it is a property of the decomposition, not of OpenFOAM.
 
 ### 6. Ranked levers, by measured ms at 8 threads
 
-1. **Re-measure the MPI path with this branch's changes.** It is the only lever that has
-   already been demonstrated to be worth >20% at 8 cores on this case, and it needs no new
-   code. If it keeps its 25% edge over threads, 8 ranks lands near 60-65 s against
-   OpenFOAM's 76-82 - a win outside the +/-6% noise, which the threaded number is not.
+1. **Re-measure the MPI path with this branch's changes.** It is the only lever already
+   demonstrated to be worth >20% at 8 cores on this case. It needs no new solver code, but it
+   is not on this branch: `src/` has no Distribute module, the distributed benchmark ran on
+   `HM/distributed-draft`, so this means merging that branch (or cherry-picking gDiff + the
+   Int32 mesh onto it) first. Only some of this branch transfers: gDiff and Int32 do, the
+   threaded diagonal and the BLAS default do not, because PETSc owns the solve there.
+   PROJECTION, not a measurement: if MPI keeps its 25% edge over threads, 8 ranks lands near
+   60-65 s against OpenFOAM's 76-82 - outside the +/-6% noise, which the threaded number is
+   not.
 2. **Fuse the gradient/flux group** - 46.6 ms/iter at 8 threads (19%), spread over
    `turb_gradU`, `simple_gradp`, `simple_flux`, `simple_Hv`, `simple_massflux`. These are
    separate full passes over the same face and cell arrays. Fusing passes removes DRAM

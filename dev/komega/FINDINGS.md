@@ -320,3 +320,12 @@ consequences, both of which change earlier claims in this file:
 
 The isolated bench remains the right instrument; the error was in choosing which of its rows
 was the status quo.
+
+### Invariant the face path depends on
+
+`_discretise_faces!` passes `nothing` where the cell loop passes `mesh.cells[cID]`. That is
+safe because none of the nine `scheme!` methods reads the cell: every use of `cell.volume` in
+`Discretise_1_schemes.jl` is inside `scheme_source!`, which only ever runs in the cell pass
+(checked across Time/Euler/CrankNicolson, Divergence, Laplacian and Si). A new `scheme!` that
+reads the cell would break `FaceAssembly` silently, since the cell-based default would keep
+working. If that becomes a risk, pass the owner cell rather than `nothing`.

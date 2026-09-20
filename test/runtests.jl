@@ -28,6 +28,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_potential_flow.jl")
     end
 
+    @testset "Wall functions on an empty patch" begin
+        include("unit_test_wall_function_empty_patch.jl")
+    end
+
     @testset "Smoothers" begin
         include("test_smoothers.jl")
     end

@@ -231,8 +231,21 @@ gradients/flux/Hv ~48 ms, residual ~10 ms. The ranking has changed:
 - `residual()` still costs a full extra SpMV plus two reductions after every solve.
 
 ## Diff notes for a future PR
-- `scheme!` is exported and its signature changed twice: `cellN` -> `nID`, and a `gDiff_f`
-  argument was added before `nID`. Any user-defined scheme method breaks and must be updated.
+- `scheme!` is exported and its signature changed once: `cellN` -> `nID`. Any user-defined
+  scheme method breaks and must be updated. (The `gDiff_f` argument this list used to mention
+  was removed again when the coefficient moved onto the Laplacian operator.)
+- `Operator` gained a fifth type parameter and a `gDiff` field, `nothing` for every operator
+  but the Laplacian. Partial parameterisation means every `Operator{F,P,I,Laplacian{Linear}}`
+  signature, including the two `@define_boundary` macros, keeps matching untouched.
+- `ScalarEquation`/`VectorEquation` gained `diag_nz` and `face_nz`, so anything constructing
+  them positionally breaks.
+- Every turbulence model struct gained a `wall_scratch` field, built by `wall_scratch(mesh,
+  boundaries, config)` in its `initialise`.
+- `src/precompile.jl` is stale: its type-literal statements naming `ScalarEquation`,
+  `Operator` or `scheme!` no longer match, so they silently stop precompiling. Regenerate it
+  before merging - startup latency on this repo has been a problem before.
+- The opt-in phase timers (`XCPROF`, `@xcprof`) were removed; recover from `211474fe` if a
+  phase split is ever needed again.
   Nothing in-tree read `cellN`.
 - `Hardware` gained a third field (`assembly`) and a third type parameter. It is `@kwdef`, so
   keyword construction is unaffected, but positional `Hardware(backend, workgroup)` now needs

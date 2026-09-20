@@ -254,3 +254,69 @@ gradients/flux/Hv ~48 ms, residual ~10 ms. The ranking has changed:
   julia --project=dev/komega dev/komega/check_laplacian_algebra.jl
   julia --project=dev/komega -t 8 dev/komega/ab_blas.jl <reps> <iters> <out>
 The mesh is read from the benchmark directory and nothing there is written.
+
+## Round 3: the Krylov gap, Int32 indices, and the GPU
+
+### The measurement that the end-to-end A/B could not make
+
+Round 1 left the BLAS-1 question unresolved because the whole-run A/B has +/-6% noise and the
+effect is smaller than that. The fix is to stop timing whole runs: `krylov_bench.jl` builds the
+real motorBike matrices (unsymmetric transport for Bicgstab, pure Laplacian for Cg, real BC
+set, 2,470,770 nonzeros), then solves with `atol = rtol = 0, itmax = 50` so every variant does
+exactly the same 50 iterations, and takes min of 14 reps. Iteration counts are printed to prove
+the work is equal.
+
+ms per Krylov iteration, motorBike, n = 353,830:
+
+                          8 Julia threads        1 Julia thread
+    variant             bicgstab      cg      bicgstab      cg
+    blas1 opDiag i64      4.006     1.634      6.695     3.077   <- activate_multithread's default
+    blas8 opDiag i64      3.238     1.331      5.861     2.902   <- what the benchmark actually ran
+    blas1 thrDiag i64     3.749     1.578      6.722     3.066
+    blas8 thrDiag i64     2.847     1.146      5.897     2.904
+    blas1 opDiag i32      3.578     1.343      6.477     2.879
+    blas8 thrDiag i32     2.340     1.005      5.644     2.731
+
+Primitives at the same size (min of 200) explain it completely:
+
+                        8 threads              1 thread
+    spmv (threaded)      0.32 ms                2.04 ms
+    diag precon, opDiagonal    0.104            0.130
+    diag precon, threaded      0.011            0.125
+    BLAS dot   1 / 8 threads   0.052 / 0.014    0.073 / 0.007
+    BLAS axpy  1 / 8 threads   0.076 / 0.012    0.095 / 0.008
+
+At 1 thread a Bicgstab iteration is 6.70 ms of which 4.1 ms is the two mat-vecs: it is a
+bandwidth problem and only Int32 addresses it. At 8 threads the mat-vecs scale 6.4x and fall to
+0.64 ms of 4.01 ms, so five sixths of the iteration is serial BLAS-1 vector work and a serial
+diagonal preconditioner. That, and not the sparse kernel, is why Krylov scaled at 1.5x.
+
+### 9. THREADED DIAGONAL PRECONDITIONER
+
+`Preconditioner{Jacobi}` and `{NormDiagonal}` applied the diagonal through LinearOperators'
+`opDiagonal`, a serial broadcast that runs once (Cg) or twice (Bicgstab) per Krylov iteration
+over a full-length vector. `diagonal_operator` replaces it with a KernelAbstractions kernel, so
+the same code path covers CPU threads and GPU. Worth 6% of every Krylov iteration at 8 threads
+on its own and 14% in combination with threaded BLAS-1; neutral at 1 thread (0.125 vs 0.130 ms).
+
+### 10. BLAS THREAD DEFAULT - and a hole in the earlier 1-core numbers
+
+`activate_multithread(backend)` defaulted to `nthreads=1`. The default is now
+`Threads.nthreads()`, so the vector half of each solve gets the same thread budget as the rest
+of the solver.
+
+While checking this I found that Julia starts OpenBLAS with **16** threads on this machine
+whatever `-t` says, and `bench500.jl` never called `activate_multithread` at all. Two
+consequences, both of which change earlier claims in this file:
+
+- Every "1 core" number reported here, the 188 s result and the 266.92 s baseline alike, was
+  run with 16 OpenBLAS threads doing the dots and axpys. They were not single-core runs.
+  `bench500.jl` now calls `activate_multithread`, so `-t 1` means one core, and the 1-core
+  column below is the first honest measurement of it.
+- At 8 threads, threaded BLAS-1 is therefore not a new gain: it was already there. The live
+  baseline is `blas8 opDiag`, not `blas1 opDiag`, so of the isolated 29% only the threaded
+  preconditioner's 12-14% is new, which is ~4% of the iteration. The 500-iteration run agrees:
+  100 s -> 97.01 s.
+
+The isolated bench remains the right instrument; the error was in choosing which of its rows
+was the status quo.

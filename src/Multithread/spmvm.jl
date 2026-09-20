@@ -68,20 +68,22 @@ function xmul(y::AbstractVector, A::SparseXCSR, x::AbstractVector)
 end
 
 """
-    activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
+    activate_multithread(backend::CPU; nthreads=Threads.nthreads())
 
 Convenience function to set number of BLAS threads. 
     
 # Input arguments
 
 - `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`
-- `nthreads` can be used to set the number of BLAS cores (default `nthreads=1`)
+- `nthreads` can be used to set the number of BLAS cores (default: the Julia thread count)
+
+!!! note
+    Krylov.jl sends every dot and axpy on a `Vector{Float64}` to BLAS, so this also decides
+    whether the vector half of each linear solve is threaded. Julia's own default is half the
+    logical cores regardless of `-t`, so a run that never calls this is neither serial nor
+    matched to its thread budget.
 """
-# Krylov.jl sends every dot and axpy on a Vector{Float64} straight to BLAS, so this also decides
-# whether the vector half of every linear solve is threaded. Raising it makes dot 4.8x and axpy
-# 10.6x faster in isolation at motorBike size, but a paired A/B on the full solve could not
-# resolve any end-to-end gain above +/-6% run-to-run noise, so the default is left at 1.
-activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
+activate_multithread(backend::CPU; nthreads=Threads.nthreads()) = BLAS.set_num_threads(nthreads)
 
 
 # Extend multiplications methods in LinearAlgebra and Base

@@ -1,0 +1,29 @@
+julia threads=1  n=353830  nnz=2470770  itmax=50  reps=15 (first discarded)
+variant               bicgstab ms        cg ms      bi_it      cg_it
+blas1 opDiag i64           334.76       153.84         50         50
+blas8 opDiag i64           293.03       145.08         50         50
+blas1 thrDiag i64          336.08       153.28         50         50
+blas8 thrDiag i64          294.86       145.20         50         50
+blas1 opDiag i32           323.87       143.96         50         50
+blas8 thrDiag i32          282.21       136.53         50         50
+
+per Krylov iteration (ms):
+blas1 opDiag i64     bicgstab  6.6952   cg  3.0768
+blas8 opDiag i64     bicgstab  5.8607   cg  2.9017
+blas1 thrDiag i64    bicgstab  6.7215   cg  3.0656
+blas8 thrDiag i64    bicgstab  5.8971   cg  2.9041
+blas1 opDiag i32     bicgstab  6.4773   cg  2.8792
+blas8 thrDiag i32    bicgstab  5.6441   cg  2.7307
+
+primitives:
+  blas=1  spmv 2.042 ms   opDiag 0.130   thrDiag 0.125   dot 0.073   axpy 0.095
+  blas=8  spmv 2.026 ms   opDiag 0.131   thrDiag 0.134   dot 0.007   axpy 0.008
+  i32 spmv (blas irrelevant) 1.883 ms
+
+SIMPLE-iteration projection (motorBike: p 25.78 cg, U 3x8.5 bicgstab, k+omega 2.1 bicgstab)
+blas1 opDiag i64       264.1 ms/SIMPLE-iter  ->  132.1 s over 500
+blas8 opDiag i64       236.6 ms/SIMPLE-iter  ->  118.3 s over 500
+blas1 thrDiag i64      264.5 ms/SIMPLE-iter  ->  132.3 s over 500
+blas8 thrDiag i64      237.6 ms/SIMPLE-iter  ->  118.8 s over 500
+blas1 opDiag i32       253.0 ms/SIMPLE-iter  ->  126.5 s over 500
+blas8 thrDiag i32      226.2 ms/SIMPLE-iter  ->  113.1 s over 500

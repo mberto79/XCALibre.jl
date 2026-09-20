@@ -14,7 +14,7 @@ pinthreads(:cores)
 backend = CPU(static=true)
 # without this BLAS runs on half the logical cores whatever -t says, so a "1 core" run is not
 activate_multithread(backend)
-hardware = Hardware(backend=backend, workgroup=AutoTune())  # CellAssembly default
+hardware = Hardware(backend=backend, workgroup=AutoTune())
 
 velocity = [20.0,0.0,0.0]; noSlip = [0.0,0.0,0.0]
 nu = 1.5e-5; k_inlet = 0.24; omega_inlet = 1.78; nut_inlet = k_inlet/omega_inlet

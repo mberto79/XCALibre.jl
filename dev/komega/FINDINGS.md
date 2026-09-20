@@ -412,6 +412,14 @@ and is untouched.
 
 ### Face assembly is 2.5x SLOWER than cell assembly on this GPU
 
+REMOVED FROM THE BRANCH. The numbers in this section and the four-way table below are the
+reason: face assembly loses on GPU and ties on CPU, so it earns nothing and costs a second
+assembly path to maintain. `AbstractAssembly`/`FaceAssembly`/`CellAssembly`, the `assembly`
+field of `Hardware`, the two face kernels, and the `owner_nz`/`neig_nz` index maps are gone;
+the cell path is unchanged, so no result above needs re-measuring. The scripts that existed
+only to compare the two (`ab_assembly.jl`, `matrix_check*.jl`, `eq_check*.jl`, `gpu_run.jl`)
+went with it.
+
 Not the expected result, and opposite to the CPU, where the two are within 1%. Aggregate 2k+p+U is 2.5x
 (43.911 vs 17.609); k alone is 2.8x. End-to-end over 20 SIMPLE iterations: cell 227.79 ms/iter,
 face 254.78 ms/iter, face 12% slower.

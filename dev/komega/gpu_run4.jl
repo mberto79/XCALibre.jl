@@ -1,12 +1,11 @@
-#= End-to-end GPU wall time for all four combinations of assembly and index type, in one
-   process because each new process pays the full GPU kernel compilation.
-     julia --project=dev/komega dev/komega/gpu_run4.jl [iters] [out]
+#= End-to-end GPU wall time for each index type, in one process because each new process
+   pays the full GPU kernel compilation.
+     julia --project=dev/komega dev/komega/gpu_run4.jl [iters] [out] [i64|i32|both]
 =#
 using XCALibre, JLD2, Printf, Logging, Adapt, KernelAbstractions, CUDA
 iters = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 100
 out   = length(ARGS) >= 2 ? ARGS[2] : "dev/komega/gpu_run4.txt"
 ixsel = length(ARGS) >= 3 ? ARGS[3] : "both"
-asmsel= length(ARGS) >= 4 ? ARGS[4] : "both"
 backend = CUDABackend(); workgroup = 32
 sync() = KernelAbstractions.synchronize(backend)
 BENCH = "/home/humberto/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS"
@@ -26,9 +25,7 @@ rows = String[]
 io = open(out*".log","w")
 redirect_stdout(io) do; redirect_stderr(io) do; with_logger(SimpleLogger(io)) do
 ixs  = ixsel  == "both" ? ("i64","i32") : (ixsel,)
-asms = asmsel == "both" ? (("cell", CellAssembly()), ("face", FaceAssembly())) :
-       asmsel == "face" ? (("face", FaceAssembly()),) : (("cell", CellAssembly()),)
-for ix in ixs, (label, asm) in asms
+for ix in ixs
     mesh = adapt(backend, load_object(meshpath(ix)))
     BCs = assign(region = mesh, (
         U = [Dirichlet(:inlet, velocity), Zerogradient(:outlet), Wall(:lowerWall, velocity),
@@ -43,7 +40,7 @@ for ix in ixs, (label, asm) in asms
              NutWallFunction(:motorBike), Slip(:upperWall), Slip(:frontAndBack)]))
     model = Physics(time=Steady(), fluid=Fluid{Incompressible}(nu=nu),
         turbulence=RANS{KOmega}(), energy=Energy{Isothermal}(), domain=mesh)
-    hardware = Hardware(backend=backend, workgroup=workgroup, assembly=asm)
+    hardware = Hardware(backend=backend, workgroup=workgroup)
     cfg(n) = Configuration(solvers=solvers, schemes=schemes,
         runtime=Runtime(iterations=n, write_interval=-1, time_step=1),
         hardware=hardware, boundaries=BCs)
@@ -55,7 +52,7 @@ for ix in ixs, (label, asm) in asms
     sync(); GC.gc(true); CUDA.reclaim()
     init!(); potential_flow!(model, cfg(iters); ncorrectors=10)
     t = @elapsed (res = run!(model, cfg(iters)); sync())
-    push!(rows, @sprintf("%-4s %-5s %7.2f s   %7.2f ms/iter   final=%s", ix, label, t,
+    push!(rows, @sprintf("%-4s %7.2f s   %7.2f ms/iter   final=%s", ix, t,
         1000t/iters, string(map(x->round(last(x), sigdigits=5), values(res)))))
     model = nothing; mesh = nothing; BCs = nothing
     GC.gc(true); CUDA.reclaim()

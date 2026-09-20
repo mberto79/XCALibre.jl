@@ -3,7 +3,7 @@
    cannot be trusted on GPU. One process does every variant because each new process pays the
    full GPU kernel compilation (~15 min on this case).
      julia --project=<env> dev/komega/gpu_asm.jl [gpu|cpu] [i64|i32|both] [reps] [out] [run]
-   Runs in the current env and in the pre-gDiff baseline env (FaceAssembly guarded).
+   Runs in the current env and in the pre-gDiff baseline env.
 =#
 using XCALibre, JLD2, Printf, Random, KernelAbstractions, Adapt, Logging
 const DEV = length(ARGS) >= 1 ? ARGS[1] : "gpu"
@@ -17,7 +17,6 @@ if DEV == "gpu"
 else
     backend = CPU(static=true); workgroup = AutoTune()
 end
-const HAS_FACE = isdefined(XCALibre, :FaceAssembly)
 sync() = KernelAbstractions.synchronize(backend)
 BENCH = "/home/humberto/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS"
 meshpath(ix) = ix == "i32" ? joinpath(@__DIR__, "mesh_i32.jld2") :
@@ -36,9 +35,7 @@ mkBCs(mesh) = assign(region = mesh, (
          OmegaWallFunction(:motorBike), Slip(:upperWall), Slip(:frontAndBack)],
     nut = [Dirichlet(:inlet, nut_inlet), Zerogradient(:outlet), NutWallFunction(:lowerWall),
          NutWallFunction(:motorBike), Slip(:upperWall), Slip(:frontAndBack)]))
-mkhw(asm) = HAS_FACE && asm !== nothing ?
-    Hardware(backend=backend, workgroup=workgroup, assembly=asm) :
-    Hardware(backend=backend, workgroup=workgroup)
+mkhw() = Hardware(backend=backend, workgroup=workgroup)
 
 # Three warm-up launches, not one: kernel compilation and the first device allocations must be
 # out of the way before the timed reps. The arms are then interleaved rep by rep so a laptop
@@ -58,7 +55,7 @@ rows = String[]
 for ix in (IX == "both" ? ("i64","i32") : (IX,))
     mesh = adapt(backend, load_object(meshpath(ix)))
     BCs = mkBCs(mesh)
-    cfg(asm) = Configuration(
+    cfg() = Configuration(
         solvers = (U = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-8, relax=1.0),
                    p = SolverSetup(solver=Cg(), preconditioner=Jacobi(), convergence=1e-8, relax=1.0),
                    k = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-8, relax=1.0)),
@@ -66,7 +63,7 @@ for ix in (IX == "both" ? ("i64","i32") : (IX,))
                    p = Schemes(time=SteadyState, laplacian=Linear, gradient=Gauss),
                    k = Schemes(time=SteadyState, divergence=Upwind, laplacian=Linear, gradient=Gauss)),
         runtime = Runtime(iterations=1, write_interval=-1, time_step=1),
-        hardware = mkhw(asm), boundaries = BCs)
+        hardware = mkhw(), boundaries = BCs)
 
     Random.seed!(7)
     nc = length(mesh.cells); nf = length(mesh.faces)
@@ -84,20 +81,14 @@ for ix in (IX == "both" ? ("i64","i32") : (IX,))
     U_eqn = (Time{SteadyState}(U) + Divergence{LUST}(mdotf, U)
              - Laplacian{Linear}(mueff, U) == - Source(gradp)) → VectorEquation(U, BCs.U)
 
-    asms = HAS_FACE ? [("cell", CellAssembly()), ("face", FaceAssembly())] : [("cell", nothing)]
-    fs = Pair{String,Function}[]
-    for (label, asm) in asms
-        c = cfg(asm)
-        push!(fs, "$(label)_k" => () -> discretise!(k_eqn, phi, c))
-        push!(fs, "$(label)_p" => () -> discretise!(p_eqn, phi, c))
-        push!(fs, "$(label)_U" => () -> discretise!(U_eqn, U, c))
-    end
+    c = cfg()
+    fs = Pair{String,Function}["k" => () -> discretise!(k_eqn, phi, c),
+                               "p" => () -> discretise!(p_eqn, phi, c),
+                               "U" => () -> discretise!(U_eqn, U, c)]
     best = bench_all(fs)
-    for (label, _) in asms
-        tk = best["$(label)_k"]; tp = best["$(label)_p"]; tu = best["$(label)_U"]
-        push!(rows, @sprintf("%-4s %-6s k %8.3f ms   p %8.3f ms   U %8.3f ms   sum %8.3f",
-            ix, label, 1000tk, 1000tp, 1000tu, 1000*(2tk+tp+tu)))
-    end
+    tk = best["k"]; tp = best["p"]; tu = best["U"]
+    push!(rows, @sprintf("%-4s k %8.3f ms   p %8.3f ms   U %8.3f ms   sum %8.3f",
+        ix, 1000tk, 1000tp, 1000tu, 1000*(2tk+tp+tu)))
     mesh = nothing; GC.gc(true)
 end
 
@@ -117,18 +108,18 @@ if RUN > 0
     init!() = (initialise!(model.momentum.U, velocity); initialise!(model.momentum.p, 0.0);
         initialise!(model.turbulence.k, k_inlet); initialise!(model.turbulence.omega, omega_inlet);
         initialise!(model.turbulence.nut, nut_inlet))
-    rcfg(n, asm) = Configuration(solvers=solvers, schemes=schemes,
+    rcfg(n) = Configuration(solvers=solvers, schemes=schemes,
         runtime=Runtime(iterations=n, write_interval=-1, time_step=1),
-        hardware=mkhw(asm), boundaries=BCs)
+        hardware=mkhw(), boundaries=BCs)
     io = open(OUT*".runlog","w")
     parts = String[]
     redirect_stdout(io) do; redirect_stderr(io) do; with_logger(SimpleLogger(io)) do
-        for (label, asm) in (HAS_FACE ? [("cell",CellAssembly()),("face",FaceAssembly())] : [("cell",nothing)])
-            init!(); potential_flow!(model, rcfg(2, asm); ncorrectors=10); run!(model, rcfg(2, asm))
+        begin
+            init!(); potential_flow!(model, rcfg(2); ncorrectors=10); run!(model, rcfg(2))
             sync(); GC.gc(true)
-            init!(); potential_flow!(model, rcfg(RUN, asm); ncorrectors=10)
-            t = @elapsed (res = run!(model, rcfg(RUN, asm)); sync())
-            push!(parts, @sprintf("%s %.2f s (%.2f ms/iter) final=%s", label, t, 1000t/RUN,
+            init!(); potential_flow!(model, rcfg(RUN); ncorrectors=10)
+            t = @elapsed (res = run!(model, rcfg(RUN)); sync())
+            push!(parts, @sprintf("cell %.2f s (%.2f ms/iter) final=%s", t, 1000t/RUN,
                 string(map(x->round(last(x), sigdigits=4), values(res)))))
         end
     end; end; end
@@ -137,7 +128,7 @@ if RUN > 0
 end
 
 open(OUT, "w") do f
-    @printf(f, "device=%s index=%s reps=%d face_assembly_available=%s\n", DEV, IX, REPS, HAS_FACE)
+    @printf(f, "device=%s index=%s reps=%d\n", DEV, IX, REPS)
     println(f, "sum column = 2k + p + U, i.e. one SIMPLE iteration's assemblies (k and omega same shape)")
     for r in rows; println(f, r); end
     RUN > 0 && println(f, "\nfull solve, $RUN iterations: ", runrow)

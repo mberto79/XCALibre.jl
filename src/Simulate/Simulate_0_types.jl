@@ -62,21 +62,13 @@ Struct used to configure the backend.
 
 - `backend`: used to specify the backend e.g. `CPU()`, `CUDABackend()` or other backends supported by `KernelAbstraction.jl`
 - `workgroup::Int` this is an integer specifying the number of workers that cooperate in a parallel run. For GPUs this could be set to the size of the device's warp e.g. `workgroup = 32`. On CPUs, the default value in `KernelAbstractions.jl` is currently `workgroup = 1024`.
-- `assembly` selects how the sparse matrix is built. `CellAssembly()` (default) loops over
-  cells, visiting every internal face from both owners, and needs no atomics.
-  `FaceAssembly()` loops over faces once and accumulates the two diagonals with atomics.
-  Both build the same matrix. On this CPU the two are within a couple of percent overall:
-  cell wins on scalar equations, face wins on the vector (velocity) equation, which is the
-  only one whose scheme still reads the face struct. Face assembly is the better choice on
-  GPUs, which have hardware atomics.
 
 # Output
 
-This function returns a `Hardware` object with the fields `backend`, `workgroup` and `assembly` which are accessed by internally in `XCALibre.jl` to execute a given kernel in the target `backend`.
+This function returns a `Hardware` object with the fields `backend` and `workgroup` which are accessed by internally in `XCALibre.jl` to execute a given kernel in the target `backend`.
 """
-@kwdef struct Hardware{B,W,A}
+@kwdef struct Hardware{B,W}
     backend::B
     workgroup::W
-    assembly::A = CellAssembly()
 end
 Adapt.@adapt_structure Hardware

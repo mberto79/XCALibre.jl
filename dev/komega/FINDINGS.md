@@ -362,7 +362,15 @@ Int32 is worth 8% at 1 thread and 21% at 8. It helps more than the Krylov bench 
 just SpMV. It also improves scaling, since less traffic per core is exactly what a
 bandwidth-bound code at 8 threads needs.
 
-## Verdict: XCALibre is now faster than OpenFOAM at 1 core AND at 8 threads
+## VOID - the table below was measured in the wrong power mode
+
+The runs in this section were taken with the laptop accidentally in "performance" platform
+profile, while the OpenFOAM benchmark was run in "balanced". They are kept for the record but
+are NOT the comparison; see "Verdict, balanced power mode" at the end of this file. The
+difference turned out to be small (3.4% at 8 threads, 1.5% at 1 core) and changes no
+conclusion, but it changes the margins.
+
+## Superseded verdict (performance mode)
 
                        start      now      OpenFOAM    result
       1 core          266.92 s   164.13 s   238.87 s   1.46x FASTER
@@ -462,3 +470,25 @@ Cross-device comparison, stated carefully: the GPU's 100-iteration average (88.6
 already below the 8-thread CPU's 500-iteration average (153.4), and lengthening a run only
 lowers its per-iteration average, so the GPU is ahead of the 8-thread CPU by at least 1.7x on
 this case. A matched-iteration comparison was not run.
+
+## VERDICT, balanced power mode - the like-for-like comparison
+
+Platform profile `balanced`, power-profiles-daemon `balanced`, EPP `balance_performance`,
+turbo on; confirmed by the user to be the same power setting used for the OpenFOAM benchmark.
+Int32 mesh, `CellAssembly`, 500 iterations, `@elapsed run!`, BLAS matched to the Julia thread
+count, machine otherwise idle.
+
+                          XCALibre     OpenFOAM    ratio
+      1 core              166.53 s     238.87 s    1.43x faster
+      8 threads            79.34 s      81.66 s    1.03x faster
+      GPU, RTX 4070 Lap    29.55 s        -        2.76x faster than OF on 8 cores
+
+Power mode cost 3.4% at 8 threads (76.72 -> 79.34) and 1.5% at 1 core (164.13 -> 166.53), so
+the earlier performance-mode numbers were not far off, but these are the ones to quote.
+
+Read the 8-thread row honestly: 2.8% is INSIDE the +/-6% run-to-run noise measured on this
+machine. At 8 threads XCALibre is level with OpenFOAM, not demonstrably ahead; claiming a win
+there needs repeats. The 1-core result and the GPU are well outside noise.
+
+GPU per-iteration falls from 88.66 ms over 100 iterations to 59.10 ms over 500, the same
+early-iteration effect noted above - another reason to quote only full-length runs.

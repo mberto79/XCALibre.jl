@@ -5,6 +5,8 @@
 using XCALibre, JLD2, Printf, Logging, Adapt, KernelAbstractions, CUDA
 iters = length(ARGS) >= 1 ? parse(Int, ARGS[1]) : 100
 out   = length(ARGS) >= 2 ? ARGS[2] : "dev/komega/gpu_run4.txt"
+ixsel = length(ARGS) >= 3 ? ARGS[3] : "both"
+asmsel= length(ARGS) >= 4 ? ARGS[4] : "both"
 backend = CUDABackend(); workgroup = 32
 sync() = KernelAbstractions.synchronize(backend)
 BENCH = "/home/humberto/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS"
@@ -23,7 +25,10 @@ schemes = (U=Schemes(time=SteadyState,divergence=LUST,gradient=Gauss),
 rows = String[]
 io = open(out*".log","w")
 redirect_stdout(io) do; redirect_stderr(io) do; with_logger(SimpleLogger(io)) do
-for ix in ("i64", "i32"), (label, asm) in (("cell", CellAssembly()), ("face", FaceAssembly()))
+ixs  = ixsel  == "both" ? ("i64","i32") : (ixsel,)
+asms = asmsel == "both" ? (("cell", CellAssembly()), ("face", FaceAssembly())) :
+       asmsel == "face" ? (("face", FaceAssembly()),) : (("cell", CellAssembly()),)
+for ix in ixs, (label, asm) in asms
     mesh = adapt(backend, load_object(meshpath(ix)))
     BCs = assign(region = mesh, (
         U = [Dirichlet(:inlet, velocity), Zerogradient(:outlet), Wall(:lowerWall, velocity),

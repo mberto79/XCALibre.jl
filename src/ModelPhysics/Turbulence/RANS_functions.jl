@@ -74,6 +74,10 @@ wall_cell_accumulators(mesh, config) = begin
     KernelAbstractions.zeros(backend, TF, n), KernelAbstractions.zeros(backend, TF, n)
 end
 
+# Wall functions launch one kernel per patch, unlike the shared boundary kernel, so a rank
+# owning no face of a patch must skip the launch instead of indexing an empty range.
+no_wall_faces(BC) = isempty(BC.IDs_range)
+
 # Every patch must be summed before any cell is averaged, so the two passes each run
 # over all patches. The averaging write is the same from every face of a cell, which
 # keeps it free of the race it replaces.
@@ -82,6 +86,7 @@ average_wall_cells!(values, BC, sums, counts, model, config) = nothing
 function average_wall_cells!(
     values, BC::Union{KWallFunction,OmegaWallFunction,NutMixingLengthWallFunction},
     sums, counts, model, config)
+    no_wall_faces(BC) && return nothing
     (; backend, workgroup) = config.hardware
     boundary_cellsID = model.domain.boundary_cellsID
     ndrange = length(BC.IDs_range)
@@ -117,6 +122,7 @@ end
 set_production!(sums, counts, BC, model, gradU, config) = nothing
 
 function set_production!(sums, counts, BC::KWallFunction, model, gradU, config)
+    no_wall_faces(BC) && return nothing
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -192,6 +198,7 @@ end
 correct_nut_wall!(nutf, BC, sums, counts, model, config) = nothing
 
 function correct_nut_wall!(νtf, BC::NutWallFunction, sums, counts, model, config)
+    no_wall_faces(BC) && return nothing
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -241,6 +248,7 @@ end
 end
 
 function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, sums, counts, model, config)
+    no_wall_faces(BC) && return nothing
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -320,6 +328,7 @@ fix_wall_row!(eqn, BC, model, config) = nothing
 # Pins the cell to the wall value: every contributing face writes the same row, so the
 # repeated writes are harmless, and the source is then averaged over those faces.
 function fix_wall_row!(eqn, BC::OmegaWallFunction, model, config)
+    no_wall_faces(BC) && return nothing
     (; backend, workgroup) = config.hardware
     A = _A(eqn)
     b = _b(eqn, nothing)
@@ -347,6 +356,7 @@ end
 constrain!(sums, counts, BC, model, config) = nothing
 
 function constrain!(sums, counts, BC::OmegaWallFunction, model, config)
+    no_wall_faces(BC) && return nothing
 
     # backend = _get_backend(mesh)
     (; hardware) = config

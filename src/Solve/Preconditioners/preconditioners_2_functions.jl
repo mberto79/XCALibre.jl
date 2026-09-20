@@ -62,7 +62,7 @@ end
     # end
 end
 
-function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config; diag_nz=nothing) where {M<:AbstractSparseArray,PT,S}
+function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) where {M<:AbstractSparseArray,PT,S}
     # backend = _get_backend(mesh)
 
     (; hardware) = config
@@ -79,15 +79,15 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config; 
 
     ndrange = m
     kernel! = update_Jacobi!(_setup(backend, workgroup, ndrange)...)
-    kernel!(rowval, colptr, nzval, diag_nz, storage)
+    kernel!(rowval, colptr, nzval, idx_diagonal, storage)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function update_Jacobi!(colval, rowptr, nzval, diag_nz, storage)
+@kernel function update_Jacobi!(colval, rowptr, nzval, idx_diagonal, storage)
     i = @index(Global)
 
     @inbounds begin
-        idx_diagonal = diag_nz === nothing ? spindex(rowptr, colval, i, i) : diag_nz[i]
+        idx_diagonal = spindex(rowptr, colval, i, i)
         diagonal = abs(nzval[idx_diagonal])
         storage[i] = one(diagonal)/diagonal
     end

@@ -436,3 +436,29 @@ The 20-iteration full solve also confirms `diagonal_operator` (change 9) compile
 CUDA, with residuals in the expected range. GPU vs CPU wall time is NOT compared here: the GPU
 run is 20 iterations and the CPU benchmark 500, and early SIMPLE iterations carry far more
 Krylov work, so the per-iteration figures are not comparable.
+
+### GPU end-to-end, all four combinations (100 iterations each, one process)
+
+  RTX 4070 Laptop            wall      ms/iter
+    i64  cell               9.06 s      90.65
+    i64  face              11.61 s     116.09
+    i32  cell               8.87 s      88.66
+    i32  face              11.68 s     116.80
+
+Residuals identical across all four to 5 significant figures.
+
+- Cell beats face by 28% end-to-end, so the 2.5x assembly gap is not an artefact of the
+  isolated measurement. `CellAssembly` is the right default on GPU as well as CPU.
+- Int32 is worth 2.2% on GPU, inside run-to-run noise, against 21% on the 8-thread CPU. The
+  assembly-level figure said 5%, so the two agree: this GPU is not addressing-bandwidth bound
+  on this case. Int32 is a CPU lever here, not a GPU one - the opposite of the usual
+  assumption, and the reason it is worth measuring rather than assuming.
+
+Use 100 iterations, not 20, for any per-iteration GPU figure: the 20-iteration run earlier in
+this file reported 227.79 ms/iter for the same i64 cell configuration that averages 90.65 over
+100, because the early SIMPLE iterations carry far more Krylov work.
+
+Cross-device comparison, stated carefully: the GPU's 100-iteration average (88.66 ms/iter) is
+already below the 8-thread CPU's 500-iteration average (153.4), and lengthening a run only
+lowers its per-iteration average, so the GPU is ahead of the 8-thread CPU by at least 1.7x on
+this case. A matched-iteration comparison was not run.

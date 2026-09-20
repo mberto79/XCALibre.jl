@@ -33,7 +33,7 @@ struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmegaSST
 
-struct KOmegaSSTModel{E1,E2,S,S1,F1,F2,S2,S3,S4,S5,S6,F3,S7,S8,V1,V2}
+struct KOmegaSSTModel{E1,E2,S,S1,F1,F2,S2,S3,S4,S5,S6,F3,S7,S8,V1,V2,WS}
     k_eqn::E1 
     ω_eqn::E2
     state::S
@@ -50,6 +50,7 @@ struct KOmegaSSTModel{E1,E2,S,S1,F1,F2,S2,S3,S4,S5,S6,F3,S7,S8,V1,V2}
     Ω::S8
     ∇k::V1
     ∇ω::V2
+    wall_scratch::WS
 end
 Adapt.@adapt_structure KOmegaSSTModel
 
@@ -167,7 +168,7 @@ function initialise(
     new_config = wall_distance!(model, model.wall_info, config)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω), new_config
+    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω, wall_scratch(mesh, boundaries, config)), new_config
 end
 
 # Model solver call (implementation)
@@ -196,7 +197,7 @@ function turbulence!(
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, kf, omegaf, nutf, coeffs, gamma1, gamma2, y) = model.turbulence
     (; U, Uf, gradU) = S
-    (;k_eqn, ω_eqn, state, β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω) = rans
+    (;k_eqn, ω_eqn, state, β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω, wall_scratch) = rans
     (; solvers, runtime, boundaries) = config
 
     mueffk = get_flux(k_eqn, 3)
@@ -272,7 +273,7 @@ function turbulence!(
         10*coeffs.β⁺*k.values*omega.values
     )
 
-    correct_production!(Pk, boundaries.k, model, S.gradU, config) # Must be after Pk
+    correct_production!(Pk, boundaries.k, model, S.gradU, config, wall_scratch) # Must be after Pk
     @. dkdomegadx.values = begin
         # 2*(F1.values - 1)*rho.values*coeffs.σω2*dkdomegadx.values/omega.values # explicit 
         2*(F1.values - 1)*rho.values*coeffs.σω2*dkdomegadx.values/omega.values/omega.values
@@ -285,7 +286,7 @@ function turbulence!(
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    constrain_equation!(ω_eqn, boundaries.omega, model, config) # active with WFs only
+    constrain_equation!(ω_eqn, boundaries.omega, model, config, wall_scratch) # active with WFs only
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     
@@ -312,7 +313,7 @@ function turbulence!(
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)
-    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config, wall_scratch)
 
     state.residuals = ((:k , k_res),(:omega, ω_res))
     state.converged = k_res < solvers.k.convergence && ω_res < solvers.omega.convergence

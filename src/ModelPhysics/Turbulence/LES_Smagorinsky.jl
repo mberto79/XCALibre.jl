@@ -19,10 +19,11 @@ struct Smagorinsky{S1,S2,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure Smagorinsky
 
-struct SmagorinskyModel{T,D,S1}
+struct SmagorinskyModel{T,D,S1,WS}
     turbulence::T
     Δ::D 
     state::S1
+    wall_scratch::WS
 end
 Adapt.@adapt_structure SmagorinskyModel
 
@@ -81,7 +82,8 @@ function initialise(
     return SmagorinskyModel(
         turbulence, 
         Δ, 
-        ModelState((), false)
+        ModelState((), false),
+        wall_scratch(mesh, boundaries, config)
     ), config
 end
 
@@ -128,7 +130,7 @@ function turbulence!(
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)
-    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config, les.wall_scratch)
 end
 
 # Specialise VTK writer

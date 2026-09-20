@@ -74,13 +74,19 @@ wall_cell_accumulators(mesh, config) = begin
     KernelAbstractions.zeros(backend, TF, n), KernelAbstractions.zeros(backend, TF, n)
 end
 
-# Callers that own persistent buffers pass them instead, so the outer loop stops allocating
-# and zeroing two cell-sized arrays on every iteration.
-wall_cell_accumulators(mesh, config, ::Nothing) = wall_cell_accumulators(mesh, config)
-wall_cell_accumulators(mesh, config, buffers) = begin
-    fill!(buffers[1], zero(eltype(buffers[1])))
-    fill!(buffers[2], zero(eltype(buffers[2])))
-    buffers
+# Built once by every turbulence model's `initialise` and handed back to the three wall
+# function passes below, which would otherwise allocate and zero two cell-sized arrays on
+# every outer iteration. `nothing` when no patch uses a wall function, which is what those
+# passes already compile to.
+wall_scratch(mesh, boundaries, config) =
+    any(BCs -> any(BC -> BC isa AbstractWallFunction, BCs), values(boundaries)) ?
+        wall_cell_accumulators(mesh, config) : nothing
+
+reset_wall_scratch(mesh, config, ::Nothing) = wall_cell_accumulators(mesh, config)
+reset_wall_scratch(mesh, config, scratch) = begin
+    fill!(scratch[1], zero(eltype(scratch[1])))
+    fill!(scratch[2], zero(eltype(scratch[2])))
+    scratch
 end
 
 # Every patch must be summed before any cell is averaged, so the two passes each run
@@ -110,13 +116,13 @@ end
     end
 end
 
-@generated correct_production!(P, fieldBCs, model, gradU, config, buffers=nothing) = begin
+@generated correct_production!(P, fieldBCs, model, gradU, config, scratch=nothing) = begin
     BCs = fieldBCs.parameters
     any(BC -> BC <: KWallFunction, BCs) || return :(nothing)
     sum_calls = [:(set_production!(sums, counts, fieldBCs[$i], model, gradU, config)) for i ∈ eachindex(BCs)]
     avg_calls = [:(average_wall_cells!(P.values, fieldBCs[$i], sums, counts, model, config)) for i ∈ eachindex(BCs)]
     quote
-        sums, counts = wall_cell_accumulators(model.domain, config, buffers)
+        sums, counts = reset_wall_scratch(model.domain, config, scratch)
         $(sum_calls...)
         $(avg_calls...)
         nothing
@@ -181,7 +187,7 @@ end
 
 # Only the mixing-length variant writes a cell value, so the averaging phases are
 # emitted only when one is present.
-@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config, buffers=nothing)
+@generated function correct_eddy_viscosity!(νtf, nutBCs, model, config, scratch=nothing)
     BCs = nutBCs.parameters
     calls = [:(correct_nut_wall!(νtf, nutBCs[$i], sums, counts, model, config)) for i ∈ eachindex(BCs)]
     any(BC -> BC <: NutMixingLengthWallFunction, BCs) || return quote
@@ -191,7 +197,7 @@ end
     end
     avg_calls = [:(average_wall_cells!(model.turbulence.nut.values, nutBCs[$i], sums, counts, model, config)) for i ∈ eachindex(BCs)]
     quote
-        sums, counts = wall_cell_accumulators(model.domain, config, buffers)
+        sums, counts = reset_wall_scratch(model.domain, config, scratch)
         $(calls...)
         $(avg_calls...)
         nothing
@@ -309,14 +315,14 @@ end
     end
 end
 
-@generated constrain_equation!(eqn, fieldBCs, model, config) = begin
+@generated constrain_equation!(eqn, fieldBCs, model, config, scratch=nothing) = begin
     BCs = fieldBCs.parameters
     any(BC -> BC <: OmegaWallFunction, BCs) || return :(nothing)
     fix_calls = [:(fix_wall_row!(eqn, fieldBCs[$i], model, config)) for i ∈ eachindex(BCs)]
     constrain_calls = [:(constrain!(sums, counts, fieldBCs[$i], model, config)) for i ∈ eachindex(BCs)]
     avg_calls = [:(average_wall_cells!(_b(eqn, nothing), fieldBCs[$i], sums, counts, model, config)) for i ∈ eachindex(BCs)]
     quote
-        sums, counts = wall_cell_accumulators(model.domain, config)
+        sums, counts = reset_wall_scratch(model.domain, config, scratch)
         $(fix_calls...)
         $(constrain_calls...)
         $(avg_calls...)

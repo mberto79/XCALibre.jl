@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-20T12:00:00+01:00
 STATE: BUILDING
 STEP: P1-M27-S1 - guard the six per-patch wall-function launches against an empty IDs_range
-HEAD: ad7b4477
+HEAD: 3ae770ef
 BRANCH: HM/distributed-draft
 GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
 resume: the S1 guards are in `RANS_functions.jl`; run the motorBike RANS benchmark at n=8 (`MOTORBIKE_ITERATIONS=3`, background, memguard) to confirm it completes and to produce the first failure that names P1-M27-S2

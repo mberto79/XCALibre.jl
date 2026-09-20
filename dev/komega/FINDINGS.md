@@ -88,8 +88,23 @@ same-iteration-count runs are compared for it.
 5. `turbulence!` source/flux update fused from seven passes into two (one cell, one face),
    with the strain-rate magnitude no longer written to Pk and read back twice.
 
-Correctness: residuals match the unmodified code to 13 significant figures (reassociated
-arithmetic in the Laplacian); k, omega and nut field sums match to 15.
+Correctness:
+- Residuals on motorBike match to 13 significant figures (reassociated arithmetic in the
+  Laplacian); k, omega and nut field sums match to 15. The comparison is against the code
+  with the nz index maps already in, since those are provably index-equivalent to the
+  `spindex` calls they replace - not against unmodified `main`.
+- Test cases, all passing (`dev/komega/komega_tests.jl`, run on `--project=test`):
+    2d_incompressible_flatplate_KOmega_lowRe       7/7
+    2d_incompressible_flatplate_KOmega_HighRe     19/19
+    2d_incompressible_transient_KOmega_BFS_lowRe   7/7
+    2d_compressible_KOmega_flatplate_fixedT       10/10
+    2d_incompressible_laminar_BFS                  4/4
+    3d_incompressible_laminar_BFS                  5/5
+                                            total 52/52, 0 failures, 1m58s
+  The full `Pkg.test()` suite has NOT been run to completion on this branch: this machine has
+  14 GB of RAM and the 3D cases plus the profiling runs exhaust it. Run it on a larger box
+  before merging - in particular the LES, multiphase, MRF, periodic and supersonic cases,
+  which also go through the assembly kernel and `scheme!`.
 
 ## Verdict: this does not beat OpenFOAM yet
 

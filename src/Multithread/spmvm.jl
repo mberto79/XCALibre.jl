@@ -79,9 +79,9 @@ Convenience function to set number of BLAS threads.
 
 !!! note
     Krylov.jl sends every dot and axpy on a `Vector{Float64}` to BLAS, so this also decides
-    whether the vector half of each linear solve is threaded. Julia's own default is half the
-    logical cores regardless of `-t`, so a run that never calls this is neither serial nor
-    matched to its thread budget.
+    whether the vector half of each linear solve is threaded. Julia picks its own OpenBLAS
+    thread count from the machine rather than from `-t`, so a run that never calls this is
+    neither serial nor matched to its thread budget.
 """
 activate_multithread(backend::CPU; nthreads=Threads.nthreads()) = BLAS.set_num_threads(nthreads)
 

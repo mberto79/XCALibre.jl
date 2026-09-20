@@ -321,6 +321,13 @@ consequences, both of which change earlier claims in this file:
 The isolated bench remains the right instrument; the error was in choosing which of its rows
 was the status quo.
 
+A related inconsistency between the two instruments used in this file: `profile_motorbike.jl`
+calls `activate_multithread`, so every phase-timer table above ran with BLAS on 1 thread, while
+`bench500.jl` did not, so every 500-iteration headline ran with BLAS on 16. The "Krylov scales
+only 1.5x" diagnosis is therefore a BLAS-1 measurement. It changed no decision - the serial
+diagonal preconditioner and the Int32 lever are both real under either setting - but the two
+tables were never taken under the same conditions. Both scripts now call it.
+
 ### Invariant the face path depends on
 
 `_discretise_faces!` passes `nothing` where the cell loop passes `mesh.cells[cID]`. That is
@@ -333,7 +340,9 @@ working. If that becomes a risk, pass the owner cell rather than `nothing`.
 ### 11. INT32 INDICES - the largest remaining lever, and it is free
 
 `FOAM3D_mesh(...; integer_type=Int32)` (already a documented keyword on all three readers)
-shrinks every connectivity array and the CSR addressing from 8 bytes to 4. Nothing else
+shrinks every connectivity array and the CSR addressing from 8 bytes to 4. Verified on the 2D
+BFS mesh: `colval`, `rowptr`, `cell_faces` and all four nz index maps come out `Int32`, so it
+propagates through the matrix builder and not just the mesh. Nothing else
 changes: geometry stays Float64, and the 500-iteration residuals agree with the Int64 run to
 11 significant figures in all four fields.
 
@@ -390,13 +399,16 @@ arithmetic - two dot products, a norm and a divide. The p equation is pure Lapla
 removing that arithmetic removes nearly all of its work; U's LUST divergence still dominates
 and is untouched.
 
-### Face assembly is 2.8x SLOWER than cell assembly on this GPU
+### Face assembly is 2.5x SLOWER than cell assembly on this GPU
 
-Not the expected result, and opposite to the CPU, where the two are within 1%. End-to-end over
-20 SIMPLE iterations: cell 227.79 ms/iter, face 254.78 ms/iter, face 12% slower.
+Not the expected result, and opposite to the CPU, where the two are within 1%. Aggregate 2k+p+U is 2.5x
+(43.911 vs 17.609); k alone is 2.8x. End-to-end over 20 SIMPLE iterations: cell 227.79 ms/iter,
+face 254.78 ms/iter, face 12% slower.
 
-It is not atomic contention. Both paths issue exactly two Float64 atomics per internal face
-whatever the equation, yet the face/cell ratio tracks the number of terms:
+It is not atomic contention. The cell path uses no atomics on internal faces at all; the face
+path issues exactly two Float64 atomics per face whatever the equation is, so the whole atomic
+cost is bounded by p's excess over cell, 0.16 ms. k's excess is 9.6 ms. What the ratio tracks
+instead is the number of terms:
 
     p (1 term)      1.28x
     U (3 terms)     2.11x
@@ -413,8 +425,9 @@ loop over a 2-tuple of (nID, sign, diagonal, offdiagonal), or split the face ker
 Worth testing before concluding that face assembly is wrong for GPUs in general: this measures
 one kernel structure, not the idea.
 
-Int32 on GPU is worth only 5% of assembly (17.609 -> 16.716), far less than the 21% it is worth
-on the 8-thread CPU - consistent with the GPU not being addressing-bandwidth bound here.
+Int32 is worth 5% of assembly on GPU (17.609 -> 16.716). That is not comparable with the 21%
+it is worth on the 8-thread CPU, which is an end-to-end figure; CPU assembly was never timed
+in isolation against an Int32 mesh.
 
 The 20-iteration full solve also confirms `diagonal_operator` (change 9) compiles and runs on
 CUDA, with residuals in the expected range. GPU vs CPU wall time is NOT compared here: the GPU

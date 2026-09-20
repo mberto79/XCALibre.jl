@@ -7,7 +7,7 @@ _potential_boundary(bc::PeriodicParent, value) = bc
 _potential_boundary(bc, value) = Zerogradient(bc.ID, value, bc.IDs_range)
 
 """
-    potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
+    potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="")
 
 Project the current velocity field onto a divergence-free potential-flow field.
 Velocity boundary conditions supply the initial face flux. Velocity-potential
@@ -17,7 +17,7 @@ normal gradient.
 
 The corrected face-volume flux is returned with the linear-solver residual.
 """
-function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
+function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="")
     ncorrectors >= 0 || throw(ArgumentError("ncorrectors must be non-negative"))
 
     mesh = model.domain
@@ -41,10 +41,18 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
         -Laplacian{schemes.p.laplacian}(unit_flux, Phi) == -Source(divphi)
     ) → ScalarEquation(Phi, potential_BCs)
 
-    @reset Phi_eqn.preconditioner = set_preconditioner(
-        solvers.p.preconditioner, Phi_eqn)
-    @reset Phi_eqn.solver = _workspace(solvers.p.solver, _b(Phi_eqn))
+    # Krylov preconditioner/workspace are serial-only (distributed solves through PETSc PCs)
+    distributed = is_distributed_mesh(mesh)
+    if !distributed
+        @reset Phi_eqn.preconditioner = set_preconditioner(
+            solvers.p.preconditioner, Phi_eqn)
+        @reset Phi_eqn.solver = _workspace(solvers.p.solver, _b(Phi_eqn))
+    end
+    Phi_deqn = wrap_eqn(Phi_eqn, mesh, solvers.p, config; petsc_options, label="Phi")
+    Phi_eqn = unwrap_eqn(Phi_deqn)
 
+    # nothing has run before this call, so a distributed U still has unset ghosts
+    sync!(U, mesh, potential_config)
     interpolate!(Uf, U, potential_config)
     correct_boundaries!(Uf, U, boundaries.U, time_value, potential_config)
     flux!(phif, Uf, potential_config)
@@ -57,7 +65,7 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
     nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     residual = solve_equation!(
-        Phi_eqn, Phi, potential_BCs, solvers.p, potential_config;
+        Phi_deqn, Phi, potential_BCs, solvers.p, potential_config;
         ref=reference, time=time_value,
     )
 
@@ -75,9 +83,10 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
         nonorthogonal_face_correction(
             Phi_eqn, gradPhi, unit_flux, potential_config;
             correction=nonorthogonal_flux)
-        update_preconditioner!(Phi_eqn.preconditioner, mesh, potential_config)
+        distributed || update_preconditioner!(
+            Phi_eqn.preconditioner, mesh, potential_config)
         residual = solve_system!(
-            Phi_eqn, solvers.p, Phi, nothing, potential_config)
+            Phi_deqn, solvers.p, Phi, nothing, potential_config)
     end
 
     correct_mass_flux!(
@@ -87,6 +96,8 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0)
     )
     moments = KernelAbstractions.allocate(backend, TF, length(mesh.cells), 9)
     reconstruct!(U, phif, moments, potential_config)
+    # a ghost cell has only part of its face list, so its reconstructed value is local-only
+    sync!(U, mesh, potential_config)
     interpolate!(Uf, U, potential_config)
     correct_boundaries!(Uf, U, boundaries.U, time_value, potential_config)
 

@@ -185,19 +185,29 @@ function turbulence!(
     @xcprof_eqn :turb begin
     @xcprof :gradU grad!(gradU, Uf, U, boundaries.U, time, config)
     @xcprof :gradU limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-    @xcprof :sources magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
-    # constrain_boundary!(omega, boundaries.omega, model, config) # active with WFs only
-    
-    @xcprof :sources begin
-    @. Pω.values = rho.values*coeffs.α1*Pk.values
-    @. Pk.values = rho.values*nut.values*Pk.values
+    # One pass over the cells and one over the faces: the strain-rate magnitude feeds both
+    # productions, so writing it to Pk and reading it back twice was three passes for one.
+    @xcprof :sources xcal_foreach(Pk.values, config) do i
+        @inbounds begin
+            Sij = S[i]
+            GbyNu = 2*sum(Sij .* Sij)
+            rhoi = rho[i]
+            omegai = omega[i]
+            Pω[i] = rhoi*coeffs.α1*GbyNu
+            Pk[i] = rhoi*nut[i]*GbyNu
+            Dωf[i] = rhoi*coeffs.β1*omegai
+            Dkf[i] = rhoi*coeffs.β⁺*omegai
+        end
     end
     @xcprof :wallfun correct_production!(Pk, boundaries.k, model, S.gradU, config) # Must be after previous line
-    @xcprof :sources begin
-    @. Dωf.values = rho.values*coeffs.β1*omega.values
-    @. mueffω.values = rhof.values * (nuf.values + coeffs.σω*nutf.values)
-    @. Dkf.values = rho.values*coeffs.β⁺*omega.values
-    @. mueffk.values = rhof.values * (nuf.values + coeffs.σk*nutf.values)
+    @xcprof :sources xcal_foreach(mueffk.values, config) do i
+        @inbounds begin
+            rhofi = rhof[i]
+            nufi = nuf[i]
+            nutfi = nutf[i]
+            mueffω[i] = rhofi*(nufi + coeffs.σω*nutfi)
+            mueffk[i] = rhofi*(nufi + coeffs.σk*nutfi)
+        end
     end
     end
 

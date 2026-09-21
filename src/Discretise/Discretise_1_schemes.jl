@@ -86,10 +86,8 @@ end
     nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
-    
-    # term.gDiff is the face geometry, built once with the operator (see gDiff_coefficients)
-    ap = term.sign*term.flux[fID]*term.gDiff[fID]
-
+    (; face_gDiff) = term.phi.mesh
+    ap = term.sign*term.flux[fID]*face_gDiff[fID]
 
     # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
 

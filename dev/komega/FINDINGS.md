@@ -121,7 +121,7 @@ Three changes, measured at 8 threads on the same case (phase timers, ms/iter):
     p               12.32      3.93          6.00
     TOTAL           53.32     24.79         27.35     (-54% / -49%)
 
-6. PER-FACE LAPLACIAN COEFFICIENT, cached on the equation. `gDiff[f] = area/(|normal.e|*delta)`
+6. PER-FACE LAPLACIAN COEFFICIENT, cached per mesh. `gDiff[f] = area/(|normal.e|*delta)`
    is constant for a fixed mesh, so the Laplacian reads one number instead of eight and skips
    two dot products, a norm and a divide. For k and omega, whose Upwind divergence reads
    nothing from the face, the 128-byte `Face3D` load disappears from the assembly entirely -
@@ -234,9 +234,18 @@ gradients/flux/Hv ~48 ms, residual ~10 ms. The ranking has changed:
 - `scheme!` is exported and its signature changed once: `cellN` -> `nID`. Any user-defined
   scheme method breaks and must be updated. (The `gDiff_f` argument this list used to mention
   was removed again when the coefficient moved onto the Laplacian operator.)
-- `Operator` gained a fifth type parameter and a `gDiff` field, `nothing` for every operator
-  but the Laplacian. Partial parameterisation means every `Operator{F,P,I,Laplacian{Linear}}`
-  signature, including the two `@define_boundary` macros, keeps matching untouched.
+- `Mesh2`/`Mesh3` gained a `face_gDiff` field and a type parameter, after `face_nodes`. A
+  13-argument outer constructor derives the array, so all four construction sites (UNV2,
+  UNV3, FoamMesh, `_rebuild_mesh_float`) are untouched and no call site can supply a stale
+  one; the 3D readers, which fill the face geometry after the mesh exists, are covered by
+  `update_face_gDiff!` at the end of `compute_3d_geometry!`. Anything constructing a mesh
+  with all 14 fields positionally, or destructuring one positionally, breaks. `Operator` is
+  back to four fields and carries no coefficient.
+- Boundary faces store `area/delta` and internal faces `area/(|normal.e|*delta)`, branching
+  on `is_boundary` (new, exported): boundary faces store their owner cell twice, which UNV2,
+  UNV3 and FoamMesh each set deliberately. The MPI path must honour that for processor
+  faces. The `@define_boundary Laplacian` blocks still read `(; area, delta) = face`, so
+  results are bitwise identical to the previous placement.
 - `ScalarEquation`/`VectorEquation` gained `diag_nz` and `face_nz`, so anything constructing
   them positionally breaks.
 - Every turbulence model struct gained a `wall_scratch` field, built by `wall_scratch(mesh,

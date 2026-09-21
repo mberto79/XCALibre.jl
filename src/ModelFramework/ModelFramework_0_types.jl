@@ -15,12 +15,11 @@ abstract type AbstractEquation end
 
 # Base Operator
 
-struct Operator{F,P,S,T,G} <: AbstractOperator
+struct Operator{F,P,S,T} <: AbstractOperator
     flux::F
     phi::P 
     sign::S
     type::T
-    gDiff::G # Laplacian face geometry, built once by its constructor; nothing for the rest
 end
 Adapt.@adapt_structure Operator
 
@@ -49,35 +48,24 @@ end
 # constructors
 
 Time{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Time{T}(), nothing
+    flux, phi, 1, Time{T}()
     )
 
 Time{T}(phi) where T = Operator(
-    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}(), nothing
+    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}()
     )
 
 Laplacian{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Laplacian{T}(), gDiff_coefficients(phi.mesh)
+    flux, phi, 1, Laplacian{T}()
     )
 
 Divergence{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Divergence{T}(), nothing
+    flux, phi, 1, Divergence{T}()
     )
 
 Si(flux, phi) = Operator(
-    flux, phi, 1, Si(), nothing
+    flux, phi, 1, Si()
 )
-
-# norm(((Sf.Sf)/(Sf.e))*e)/delta with Sf = ns*area*normal reduces to area/(|normal.e|*delta):
-# ns cancels and both normal and e are unit vectors. Fixed for a given mesh, so the Laplacian
-# carries it instead of rebuilding the face geometry for every (cell, face) pair it assembles.
-# Broadcasting keeps the result on whatever backend the mesh is on.
-gDiff_coefficients(mesh) = _gDiff.(mesh.faces)
-
-_gDiff(face) = begin
-    den = abs(face.normal ⋅ face.e)*face.delta
-    den > zero(den) ? face.area/den : zero(den)
-end
 
 # SOURCES
 

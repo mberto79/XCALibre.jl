@@ -100,10 +100,7 @@ end
 end
 
 # NEW SECTION: matrix-free Galerkin coarse-operator application (top-k fused zone)
-# A_l·x = R_{l-1}…R_1 · A_0 · P_1…P_{l-1}: prolong x up to the fine grid, ONE fine SpMV, restrict back.
-# This applies any coarse operator EXACTLY using only the materialized fine A_0 + the matrix-free
-# transfer factors — so A_1…A_k are never stored (the coarse-operator VRAM win). Cost: one fine SpMV
-# per coarse apply (slower), so it is gated to the top `fused_top` levels where n is large.
+# A_l·x = R…R·A_0·P…P applied exactly with one fine SpMV, so A_1…A_k are never stored; gated to the top `fused_top` levels.
 
 # Overwrite prolongation y[k] = xc[coarse_pos[g(k)]] / sqrt(w) (the chain needs set, not the += variant).
 @kernel function _amg_matrix_free_prolong_set_kernel!(x, @Const(xc), @Const(row_macro),
@@ -142,10 +139,9 @@ mutable struct MatrixFreeLevel{MA, VI, VT, VID, T}
     x::VT; tmp::VT; r::VT; rhs::VT; sc::VT  # scratch (device); sc = Ac for scale_correction
 end
 
-# Device matrix-free hierarchy AND the workspace.hierarchy on the matrix-free path (absorbs the former
-# MFGreenfield wrapper: refresh_plan/cell_perm_device/residual_permuted + the outer-loop fields the
-# materialised AMGHierarchy carries). coarse_fac/coarse_inv/refresh_plan are Ref{Any} so the empty and
-# built hierarchies share one concrete type (workspace.hierarchy reassignment after build type-checks).
+# Device matrix-free hierarchy, also the workspace.hierarchy on the matrix-free path.
+# coarse_fac/coarse_inv/refresh_plan are Ref{Any} so the empty and built hierarchies share one concrete type
+# (workspace.hierarchy reassignment after build type-checks).
 mutable struct MatrixFreeHierarchy{T, LV, B, VT, VR, VI, HS, HT} <: AbstractAMGHierarchy
     levels::LV               # Vector{MatrixFreeLevel} (transfer levels 1..M, finest first)
     coarse_fac::Base.RefValue{Any}  # lu(coarsest A) on host (host-LU fallback path)
@@ -170,10 +166,8 @@ end
 
 # NEW SECTION: zero-alloc coarsest solve (device dense-inverse GEMV or reusable-buffer host LU)
 
-# Device dense inverse for an on-device GEMV coarse solve (no per-cycle host sync) when the coarsest
-# is small enough; else `nothing` -> host LU fallback. Inverse computed in FP64 (accurate, no FP32
-# pivot fragility) then stored at the cycle type T. Mirrors reference OnDevice(max_rows). pinv on
-# singular. Returns the device-resident inverse (or host Matrix for a CPU backend).
+# Device dense inverse for an on-device GEMV coarse solve when the coarsest fits max_rows, else `nothing` -> host LU.
+# Inverse computed in FP64 (no FP32 pivot fragility, pinv on singular) then stored at cycle type T.
 function _build_coarse_dense_inv(coarse_csc, backend, ::Type{T}, max_rows::Integer) where {T}
     n = size(coarse_csc, 1)
     (n == 0 || n > max_rows) && return nothing
@@ -250,11 +244,9 @@ function build_galerkin_operators(Am, merge_levels::Integer, max_coarse::Integer
     return operators, Ps, aggs
 end
 
-# Build the device-resident multilevel matrix-free state (and return the host hierarchy + per-level
-# omega/invdiag so an independent oracle can be built from the SAME operators).
-# coarse_storage (default = finest T) sets the precision of levels 2..M + coarsest buffers; level 1
-# (A_0, the "fused matrix-free" finest part) is ALWAYS built at the finest type T. Operators are built
-# in T (accurate host RAP) then each level's device arrays are downcast to its target type.
+# Build the device multilevel matrix-free state; also returns the host hierarchy + per-level omega/invdiag for an oracle on the SAME operators.
+# coarse_storage (default T) sets precision of levels 2..M + coarsest buffers; level 1 (A_0) is ALWAYS at T.
+# Operators are built in T (accurate host RAP), then each level's device arrays are downcast to its target type.
 function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2,
                       omega_nominal=4/3, max_coarse::Integer=64, fused_top::Integer=0,
                       coarse_max_rows::Integer=512, scale_correction::Bool=false,
@@ -373,9 +365,8 @@ function smooth_fused_level!(st::MatrixFreeHierarchy, l::Int, rhs, k::Int, cy, c
     return lv.x
 end
 
-# GAMG scale_correction up-sweep. Replaces plain x += P·xc with the energy-minimising x += sf·c,
-# sf=(r_l·c)/(c·Ac). r_l = lv.r, the down-sweep post-pre-smoothing residual (still valid: lv.x is
-# untouched between the down-sweep residual and this call), so no residual recompute is paid.
+# GAMG scale_correction up-sweep: x += sf·c with sf=(r_l·c)/(c·Ac) instead of plain x += P·xc.
+# r_l = lv.r from the down-sweep is still valid (lv.x untouched since), so no residual recompute is paid.
 # Matrix-free levels get Ac via the Galerkin chain (apply_fused_operator!, one fine SpMV).
 function apply_scaled_coarse_correction!(st::MatrixFreeHierarchy, l::Int, child_x, cy, cz, bk, wg)
     lv = st.levels[l]

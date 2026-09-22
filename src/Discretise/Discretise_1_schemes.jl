@@ -89,15 +89,6 @@ end
     (; face_gDiff) = term.phi.mesh
     ap = term.sign*term.flux[fID]*face_gDiff[fID]
 
-    # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
-
-    # ap = term.sign*(term.flux[fID]*Af)/Δ # minimum correction formulation
-
-    # Test formulation using vector d instead of e to explore any stability benefits
-    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
-    # Ef_mag = norm(Ef)
-    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
-    
     # Increment sparse array
     ac = -ap
     an = ap

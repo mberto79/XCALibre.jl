@@ -57,10 +57,10 @@ function setup_incompressible_solvers(
     @info "Pre-allocating fields..."
     
     ∇p = Grad{schemes.p.gradient}(p)
-    mdotf = FaceScalarField(mesh)
-    rDf = FaceScalarField(mesh)
+    mdotf = FaceScalarField(mesh, store_mesh=false)
+    rDf = FaceScalarField(mesh, store_mesh=false)
     initialise!(rDf, 1.0)
-    nueff = FaceScalarField(mesh)
+    nueff = FaceScalarField(mesh, store_mesh=false)
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
@@ -328,11 +328,11 @@ end
 function correct_mass_flux!(
     mdotf, p_eqn, config; previous, time=nothing, nonorthogonal=nothing)
     # sngrad = FaceScalarField(mesh)
-    (; faces, cells, boundary_cellsID) = mdotf.mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     p = p_eqn.model.terms[1].phi
+    (; faces, cells, boundary_cellsID) = p.mesh
     A = _A(p_eqn)
     nzval = _nzval(A)
     colval = _colval(A)
@@ -364,8 +364,8 @@ correct_nonorthogonal_mass_flux!(mdotf, ::Nothing, config) = nothing
 
 function correct_nonorthogonal_mass_flux!(mdotf, correction, config)
     (; backend, workgroup) = config.hardware
-    n_bfaces = length(mdotf.mesh.boundary_cellsID)
-    ndrange = length(mdotf.mesh.faces) - n_bfaces
+    n_bfaces = length(correction.mesh.boundary_cellsID)
+    ndrange = length(correction.mesh.faces) - n_bfaces
     kernel! = _correct_nonorthogonal_mass_flux!(
         _setup(backend, workgroup, ndrange)...)
     kernel!(mdotf, correction, n_bfaces)
@@ -450,8 +450,7 @@ _correct_interpolation_periodic_dispatch(arg...) = nothing
 
 function _correct_interpolation_periodic_dispatch(
     BC::PeriodicParent, phif, phi, backend, workgroup)
-    mesh = phif.mesh
-    (; cells, faces) = mesh
+    (; cells, faces) = phi.mesh
     (; IDs_range, value) = BC
     (; face_map, transform) = value
     ndrange = length(IDs_range)
@@ -505,7 +504,7 @@ function correct_boundary_mass_flux!(
     pflux = pterm.flux
     psign = pterm.sign
 
-    (; faces, boundary_cellsID) = mdotf.mesh
+    (; faces, boundary_cellsID) = p.mesh
     ndrange = length(boundary_cellsID)
     kernel! = _correct_boundary_mass_flux!(_setup(backend, workgroup, ndrange)...)
     kernel!(

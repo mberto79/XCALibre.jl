@@ -111,7 +111,7 @@ function initialise(
 
     (; he, T, S_he) = energy
     (; solvers, schemes, runtime, boundaries) = config
-    mesh = mdotf.mesh
+    mesh = model.domain
     eqn = peqn.equation
 
     keff = FaceScalarField(mesh)

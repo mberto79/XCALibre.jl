@@ -152,7 +152,7 @@ function initialise(
     # unpack turbulent quantities and configuration
     (; k, omega, kl, kf, omegaf, klf, y) = model.turbulence
     (; solvers, schemes, runtime, boundaries) = config
-    mesh = mdotf.mesh
+    mesh = model.domain
     eqn = peqn.equation
 
     nueffkLS = ScalarField(mesh)

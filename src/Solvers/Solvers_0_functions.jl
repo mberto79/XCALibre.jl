@@ -3,7 +3,6 @@ export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, cor
 ## UPDATE EFFECTIVE VISCOSITY
 
 function update_nueff!(nueff, nu, turb_model, config)
-    (; mesh) = nueff
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -52,8 +51,8 @@ end
     i = @index(Global)
 
     @uniform begin
-        (; mesh, values) = phif
-        (; faces) = mesh
+        (; values) = phif
+        (; faces) = psif.mesh
     end
 
     @inbounds begin
@@ -77,8 +76,8 @@ end
     i = @index(Global)
 
     @uniform begin
-        (; mesh, values) = phif
-        (; faces) = mesh
+        (; values) = phif
+        (; faces) = psif.mesh
     end
 
     @inbounds begin

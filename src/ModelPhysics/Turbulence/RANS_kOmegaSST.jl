@@ -108,7 +108,7 @@ function initialise(
     
 
     (; rho) = model.fluid
-    mesh = mdotf.mesh
+    mesh = model.domain
     eqn = peqn.equation
 
     # define fluxes and sources

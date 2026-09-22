@@ -96,14 +96,14 @@ function initialise(
     (; k, omega, nut) = turbulence
     (; rho) = model.fluid
     (; solvers, schemes, runtime, boundaries) = config
-    mesh = mdotf.mesh
+    mesh = model.domain
     eqn = peqn.equation
 
     # define fluxes and sources
-    mueffk = FaceScalarField(mesh)
-    mueffω = FaceScalarField(mesh)
-    Dkf = ScalarField(mesh)
-    Dωf = ScalarField(mesh)
+    mueffk = FaceScalarField(mesh, store_mesh=false)
+    mueffω = FaceScalarField(mesh, store_mesh=false)
+    Dkf = ScalarField(mesh, store_mesh=false)
+    Dωf = ScalarField(mesh, store_mesh=false)
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
     

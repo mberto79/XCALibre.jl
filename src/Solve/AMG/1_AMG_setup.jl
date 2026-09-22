@@ -249,7 +249,6 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
     x = KernelAbstractions.zeros(backend, T, n)
     tmp = KernelAbstractions.zeros(backend, T, n)
     direction = KernelAbstractions.zeros(backend, T, n)
-    coarse_tmp = KernelAbstractions.zeros(backend, T, n)
     lambda = _estimate_lambda_max(A, invdiag)
     has_transfer = _m(P) > 0 && _n(P) > 0 && length(_nzval(P)) > 0
     aggregate = _amg_backend_array(backend, aggregate_ids)
@@ -265,7 +264,6 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
         x,
         tmp,
         direction,
-        coarse_tmp,
         aggregate,
         lambda,
         level_id,
@@ -289,7 +287,6 @@ function _level_to_storage(level::AMGLevel, ::Type{TS}) where {TS}
         convert(Vector{TS}, level.x),
         convert(Vector{TS}, level.tmp),
         convert(Vector{TS}, level.direction),
-        convert(Vector{TS}, level.coarse_tmp),
         level.aggregate_ids,
         TS(level.lambda_max),
         level.level_id,

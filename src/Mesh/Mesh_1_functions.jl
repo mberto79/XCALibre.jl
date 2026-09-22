@@ -19,10 +19,9 @@ _get_backend(mesh) = get_backend(mesh.cells)
 is_boundary(ownerCells::SVector{2,<:Integer}) = ownerCells[1] == ownerCells[2]
 is_boundary(face::Union{Face2D,Face3D}) = is_boundary(face.ownerCells)
 
-# Laplacian face coefficient. Internal faces use norm(((Sf.Sf)/(Sf.e))*e)/delta with
-# Sf = ns*area*normal, which reduces to area/(|normal.e|*delta): ns cancels and both normal
-# and e are unit vectors. Boundary faces keep area/delta, the coefficient every
-# @define_boundary Laplacian block uses; there e points from cell centre to face centre.
+# Laplacian face coefficient. norm(((Sf.Sf)/(Sf.e))*e)/delta reduces to area/(|normal.e|*delta)
+# because ns cancels and normal and e are unit vectors. Boundary faces keep area/delta, which
+# is what every @define_boundary Laplacian block uses.
 _gDiff(ownerCells, normal, e, area, delta) = begin
     den = is_boundary(ownerCells) ? delta : abs(normal ⋅ e)*delta
     den > zero(den) ? area/den : zero(den)

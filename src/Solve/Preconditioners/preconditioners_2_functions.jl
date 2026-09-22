@@ -125,9 +125,8 @@ _n(A::SparseXCSR) = parent(A).n
 
 # DIAGONAL OPERATOR
 
-# LinearOperators' opDiagonal applies the diagonal with a serial broadcast. It runs once (Cg)
-# or twice (Bicgstab) per Krylov iteration over a full-length vector, and at motorBike size
-# that costs a third of a sparse mat-vec; threading it is worth 6% of every Krylov iteration.
+# LinearOperators' opDiagonal applies the diagonal with a serial broadcast, once (Cg) or twice
+# (Bicgstab) per Krylov iteration; threading it is worth 6% of every Krylov iteration.
 function diagonal_operator(d::AbstractVector{T}) where T
     backend = get_backend(d)
     n = length(d)

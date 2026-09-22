@@ -256,9 +256,8 @@ _mesh(field::AbstractField) = field.mesh # catch all accessor to mesh
 
 # VALUE VIEWS
 
-# Returns the bare indexable storage behind a field, indexed exactly as the field itself.
-# Kernels take their arguments by value, so a field captured by a closure carries its mesh
-# (416 B for Mesh3) into per-thread local memory on GPU. Not exported: internal helper.
+# The bare storage behind a field, indexed exactly as the field is. Kernel arguments are passed
+# by value, so a captured field drags its mesh (416 B for Mesh3) into per-thread local memory.
 field_values(f::ConstantScalar) = f # already mesh-free, and its getindex returns the constant
 field_values(f::Union{ScalarField,FaceScalarField}) = f.values
 field_values(t::TensorField) = TensorValues(

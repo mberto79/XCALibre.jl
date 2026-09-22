@@ -74,10 +74,9 @@ wall_cell_accumulators(mesh, config) = begin
     KernelAbstractions.zeros(backend, TF, n), KernelAbstractions.zeros(backend, TF, n)
 end
 
-# Built once by every turbulence model's `initialise` and handed back to the three wall
-# function passes below, which would otherwise allocate and zero two cell-sized arrays on
-# every outer iteration. `nothing` when no patch uses a wall function, which is what those
-# passes already compile to.
+# Built once by every turbulence model's `initialise`, so the three wall function passes below
+# do not allocate and zero two cell-sized arrays on every outer iteration. `nothing` when no
+# patch uses a wall function, which is what those passes already compile to.
 wall_scratch(mesh, boundaries, config) =
     any(BCs -> any(BC -> BC isa AbstractWallFunction, BCs), values(boundaries)) ?
         wall_cell_accumulators(mesh, config) : nothing

@@ -358,18 +358,19 @@ function implicit_relaxation!(
     colval = _colval(A)
     rowptr = _rowptr(A)
     nzval = _nzval(A)
+    diag_nz = phiEqn.equation.diag_nz
 
     ndrange = length(b)
     kernel! = _sized(implicit_relaxation_kernel!, backend, workgroup, ndrange)
-    kernel!(colval, rowptr, nzval, b, field, alpha)
+    kernel!(colval, rowptr, nzval, diag_nz, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function implicit_relaxation_kernel!(colval, rowptr, nzval, b, field, alpha)
+@kernel function implicit_relaxation_kernel!(colval, rowptr, nzval, diag_nz, b, field, alpha)
     i = @index(Global)
     
     @inbounds begin
-        nIndex = spindex(rowptr, colval, i, i)
+        nIndex = diag_nz[i]
         nzval[nIndex] /= alpha
         b[i] += (one(alpha) - alpha)*nzval[nIndex]*field[i]
     end
@@ -390,22 +391,22 @@ function implicit_relaxation_diagdom!(
     colval = _colval(A)
     rowptr = _rowptr(A)
     nzval = _nzval(A)
+    diag_nz = phiEqn.equation.diag_nz
 
     ndrange = length(b)
     kernel! = _sized(_implicit_relaxation_diagdom!, backend, workgroup, ndrange)
-    kernel!(colval, rowptr, nzval, b, field, alpha)
+    kernel!(colval, rowptr, nzval, diag_nz, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _implicit_relaxation_diagdom!(colval, rowptr, nzval, b, field, alpha)
+@kernel function _implicit_relaxation_diagdom!(colval, rowptr, nzval, diag_nz, b, field, alpha)
     i = @index(Global)
     
     sumv = zero(eltype(b))
 
     @inbounds begin
 
-        # Find nzval index relating to A[i,i]
-        cIndex = spindex(rowptr, colval, i, i)
+        cIndex = diag_nz[i]
 
         start_index = rowptr[i]
         end_index = rowptr[i+1] -1

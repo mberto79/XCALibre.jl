@@ -254,6 +254,45 @@ Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
 KA.get_backend(t::AbstractTensorField) = KA.get_backend(t.xx)
 _mesh(field::AbstractField) = field.mesh # catch all accessor to mesh
 
+# VALUE VIEWS
+
+# The bare storage behind a field, indexed exactly as the field is. Kernel arguments are passed
+# by value, so a captured field drags its mesh (416 B for Mesh3) into per-thread local memory.
+field_values(f::ConstantScalar) = f # already mesh-free, and its getindex returns the constant
+field_values(f::Union{ScalarField,FaceScalarField}) = f.values
+field_values(t::TensorField) = TensorValues(
+    t.xx.values, t.xy.values, t.xz.values,
+    t.yx.values, t.yy.values, t.yz.values,
+    t.zx.values, t.zy.values, t.zz.values)
+
+struct TensorValues{A}
+    xx::A
+    xy::A
+    xz::A
+    yx::A
+    yy::A
+    yz::A
+    zx::A
+    zy::A
+    zz::A
+end
+Adapt.@adapt_structure TensorValues
+
+@inline Base.getindex(t::TensorValues, i::Integer) = begin
+    Tf = eltype(t.xx)
+    @inbounds SMatrix{3,3,Tf,9}(
+        t.xx[i],
+        t.yx[i],
+        t.zx[i],
+        t.xy[i],
+        t.yy[i],
+        t.zy[i],
+        t.xz[i],
+        t.yz[i],
+        t.zz[i],
+        )
+end
+
 #Symmetric tensor 
 struct SymmetricTensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
     xx::S1

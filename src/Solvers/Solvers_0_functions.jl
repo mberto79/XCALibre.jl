@@ -4,7 +4,6 @@ export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, cor
 ## UPDATE EFFECTIVE VISCOSITY
 
 function update_nueff!(nueff, nu, turb_model, config)
-    (; mesh) = nueff
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -53,8 +52,8 @@ end
     i = @index(Global)
 
     @uniform begin
-        (; mesh, values) = phif
-        (; faces) = mesh
+        (; values) = phif
+        (; faces) = psif.mesh
     end
 
     @inbounds begin
@@ -78,8 +77,8 @@ end
     i = @index(Global)
 
     @uniform begin
-        (; mesh, values) = phif
-        (; faces) = mesh
+        (; values) = phif
+        (; faces) = psif.mesh
     end
 
     @inbounds begin
@@ -103,12 +102,12 @@ function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}
 
     ndrange = length(rD)
     kernel! = _sized(_inverse_diagonal!, backend, workgroup, ndrange)
-    kernel!(rD, nzval, colval, rowptr)
+    kernel!(rD, nzval, colval, rowptr, eqn.equation.diag_nz)
     # # KernelAbstractions.synchronize(backend)
     halo && sync!(rD, rD.mesh, config) # self-syncing seam (no-op serial)
 end
 
-@kernel function _inverse_diagonal!(rD, nzval, colval, rowptr)
+@kernel function _inverse_diagonal!(rD, nzval, colval, rowptr, diag_nz)
     i = @index(Global)
 
     @uniform begin
@@ -117,7 +116,7 @@ end
     end
 
     @inbounds begin
-        idx = spindex(rowptr, colval, i, i)
+        idx = diag_nz[i]
         D = nzval[idx]
         (; volume) = cells[i]
         values[i] = volume / D
@@ -196,14 +195,14 @@ function H!(Hv, U::VF, U_eqn, config; halo=true) where {VF<:VectorField} # Exten
     ndrange = length(cells)
     kernel! = _sized(_H!, backend, workgroup, ndrange)
     kernel!(cells, cell_neighbours,
-        nzval, rowptr, colval, bx, by, bz, U, Hv)
+        nzval, rowptr, colval, U_eqn.equation.diag_nz, bx, by, bz, U, Hv)
     # # KernelAbstractions.synchronize(backend)
     halo && sync!(Hv, Hv.mesh, config) # self-syncing seam (no-op serial)
 end
 
 # Pressure correction kernel
 @kernel function _H!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_neighbours,
-    nzval, rowptr, colval, bx, by, bz, U, Hv) where {TF,SV,UR}
+    nzval, rowptr, colval, diag_nz, bx, by, bz, U, Hv) where {TF,SV,UR}
     i = @index(Global)
 
     @uniform begin
@@ -227,7 +226,7 @@ end
             sumz += val * Uz[nID]
         end
 
-        DIndex = spindex(rowptr, colval, i, i)
+        DIndex = diag_nz[i]
 
         # remove diagonal contribution
         D = nzval[DIndex]

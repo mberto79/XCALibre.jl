@@ -21,12 +21,13 @@ struct KEquation{S,SF,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure KEquation
 
-struct KEquationModel{T,D,S1,S2, E1}
+struct KEquationModel{T,D,S1,S2,E1,WS}
     turbulence::T
     Δ::D 
     magS::S1
     k_eqn::E1
     state::S2
+    wall_scratch::WS
 end
 Adapt.@adapt_structure KEquationModel
 
@@ -110,7 +111,8 @@ function initialise(
         Δ, 
         magS, 
         k_eqn,
-        ModelState(initial_residual, false)
+        ModelState(initial_residual, false),
+        wall_scratch(mesh, config.boundaries, config)
     ), config
 end
 
@@ -186,7 +188,7 @@ function turbulence!(
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)
-    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config, les.wall_scratch)
 
     # update solver state
     state.residuals = ((:k , k_res),)

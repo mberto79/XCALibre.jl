@@ -79,13 +79,6 @@ end
 end
 
 
-# @inline _nzval(A::SparseArrays.SparseMatrixCSC) = A.nzval
-# @inline _rowptr(A::SparseArrays.SparseMatrixCSC) = A.rowptr
-# @inline _colval(A::SparseArrays.SparseMatrixCSC) = A.colval
-
-# @inline get_sparse_fields(A::SparseArrays.SparseMatrixCSC) = begin
-#     A.nzval, A.colval, A.rowptr
-# end
 
 @inline _nzval(A::SparseXCSR) = parent(A).nzval
 @inline _rowptr(A::SparseXCSR) = parent(A).rowptr

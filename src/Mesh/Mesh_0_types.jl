@@ -132,7 +132,7 @@ end
 
 # 2D and 3D Mesh types
 
-struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR} <: AbstractMesh
+struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI
@@ -140,6 +140,7 @@ struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR} <: AbstractMe
     cell_nsign::VI
     faces::VF
     face_nodes::VI
+    face_gDiff::VTF
     boundaries::VB
     nodes::VN
     node_cells::VI # can be empty for now
@@ -149,9 +150,17 @@ struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VB, VN, SV3, UR} <: AbstractMe
 end
 Adapt.@adapt_structure Mesh2
 
+# face_gDiff is derived here rather than passed in, so no call site can supply a stale array.
+# Readers that fill the face geometry after construction must call update_face_gDiff!
+Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
+      boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID) = Mesh2(
+    cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
+    face_gDiff_coefficients(faces), boundaries, nodes, node_cells, get_float, get_int,
+    boundary_cellsID)
+
 
 """
-    struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMesh
+    struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
         cells::VC           # vector of cells
         cell_nodes::VI      # vector of indices to access cell nodes
         cell_faces::VI      # vector of indices to access cell faces
@@ -159,6 +168,7 @@ Adapt.@adapt_structure Mesh2
         cell_nsign::VI      # vector of indices to with face normal correction (1 or -1 )
         faces::VF           # vector of faces
         face_nodes::VI      # vector of indices to access face nodes
+        face_gDiff::VTF     # Laplacian face coefficient (derived, see `_gDiff`)
         boundaries::VB      # vector of boundaries
         nodes::VN           # vector of nodes
         node_cells::VI      # vector of indices to access node cells
@@ -167,7 +177,7 @@ Adapt.@adapt_structure Mesh2
         boundary_cellsID::VI # vector of indices of boundary cell IDs
     end
 """
-struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMesh
+struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI
@@ -175,6 +185,7 @@ struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMe
     cell_nsign::VI
     faces::VF
     face_nodes::VI
+    face_gDiff::VTF
     boundaries::VB
     nodes::VN
     node_cells::VI # can be empty for now
@@ -183,6 +194,14 @@ struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VB, VN, SV3, UR} <: AbstractMe
     boundary_cellsID::VI
 end
 Adapt.@adapt_structure Mesh3
+
+# face_gDiff is derived here rather than passed in, so no call site can supply a stale array.
+# Readers that fill the face geometry after construction must call update_face_gDiff!
+Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
+      boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID) = Mesh3(
+    cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
+    face_gDiff_coefficients(faces), boundaries, nodes, node_cells, get_float, get_int,
+    boundary_cellsID)
 
 Base.show(io::IO, mesh::AbstractMesh) = begin
     if typeof(mesh) <: Mesh2

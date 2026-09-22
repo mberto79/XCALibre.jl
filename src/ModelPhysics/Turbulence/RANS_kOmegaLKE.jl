@@ -37,7 +37,7 @@ Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,V1,V2,State}
+    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,V1,V2,State,WS}
     turbulence::T
     k_eqn::E1
     ω_eqn::E2
@@ -58,6 +58,7 @@ struct KOmegaLKEModel{
     ∇k::V1
     ∇ω::V2
     state::State
+    wall_scratch::WS
 end 
 Adapt.@adapt_structure KOmegaLKEModel
 
@@ -151,7 +152,7 @@ function initialise(
     # unpack turbulent quantities and configuration
     (; k, omega, kl, kf, omegaf, klf, y) = model.turbulence
     (; solvers, schemes, runtime, boundaries) = config
-    mesh = mdotf.mesh
+    mesh = model.domain
     eqn = peqn.equation
 
     nueffkLS = ScalarField(mesh)
@@ -255,7 +256,8 @@ function initialise(
         ReLambda,
         ∇k,
         ∇ω,
-        state
+        state,
+        wall_scratch(mesh, boundaries, config)
     ), new_config
 end
 
@@ -285,7 +287,7 @@ function turbulence!(
     (; nu) = model.fluid
     (; U, Uf, gradU) = S
     
-    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, ∇k, ∇ω, normU, divU, S2, ReLambda, state) = rans
+    (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, ∇k, ∇ω, normU, divU, S2, ReLambda, state, wall_scratch) = rans
     (; solvers, runtime, boundaries) = config
 
     nueffkL = get_flux(kl_eqn, 3)
@@ -393,7 +395,7 @@ function turbulence!(
     discretise!(ω_eqn, prev, config)
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
-    constrain_equation!(ω_eqn, boundaries.omega, model, config) 
+    constrain_equation!(ω_eqn, boundaries.omega, model, config, wall_scratch) 
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
     bound!(omega, config)
@@ -423,7 +425,7 @@ function turbulence!(
 
     interpolate!(nueffk, nueffkS, config)
     correct_boundaries!(nueffk, nueffkS, boundaries.nut, time, config)
-    correct_production!(Pk, boundaries.k, model, S.gradU, config)
+    correct_production!(Pk, boundaries.k, model, S.gradU, config, wall_scratch)
 
     # Solve k equation
     prev .= k.values
@@ -464,7 +466,7 @@ function turbulence!(
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)
-    correct_eddy_viscosity!(nutf, boundaries.nut, model, config)
+    correct_eddy_viscosity!(nutf, boundaries.nut, model, config, wall_scratch)
 
     # Update Residuals and Convergence Status 
     residuals = ((:k, k_res),(:kl, kl_res),(:omega, ω_res))

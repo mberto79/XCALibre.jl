@@ -1,5 +1,5 @@
 export AbstractScheme, AbstractBoundary
-export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint
+export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint, AbstractWallFunction
 export KWallFunction, OmegaWallFunction, NutWallFunction, NutMixingLengthWallFunction
 # export Constant, Linear, Upwind, LUST
 export Linear, Upwind, LUST

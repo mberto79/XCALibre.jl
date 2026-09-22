@@ -35,12 +35,26 @@ _dynamic_setup(backend, workgroup, ndrange) = begin
 end
 
 xcal_foreach(func, arr, config) = begin
-    hardware = config.hardware
-    (; backend, workgroup) = hardware
-    ndrange = length(arr)
-    backend, workgroup, ndrange = _setup(backend, workgroup, ndrange)
-    # AK.foreachindex(func, arr, backend, min_elems=workgroup, block_size=workgroup)
+    (; backend, workgroup) = config.hardware
+    _xcal_foreach(func, arr, backend, workgroup)
+end
+
+_xcal_foreach(func, arr, backend::CPU, workgroup) = begin
+    _, workgroup, _ = _setup(backend, workgroup, length(arr))
     AK.foreachindex(func, arr, min_elems=workgroup, block_size=workgroup)
+end
+
+# AcceleratedKernels passes the closure to a callee that is not inlined, so its captured
+# environment is copied to per-thread local memory. A kernel that calls it directly is
+# scalarised instead, which matters because closures here capture whole fields.
+_xcal_foreach(func, arr, backend, workgroup) = begin
+    kernel! = _xcal_foreach!(backend)
+    kernel!(func; _dynamic_setup(backend, workgroup, length(arr))...)
+end
+
+@kernel inbounds=true function _xcal_foreach!(func)
+    i = @index(Global)
+    @inline func(i)
 end
 
 end # end module

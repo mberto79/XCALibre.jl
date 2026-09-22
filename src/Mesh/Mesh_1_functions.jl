@@ -4,6 +4,7 @@ export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
+export is_boundary
 export convert_mesh_float
 export validate_single_precision_mesh
 # export x, y, z # access cell centres
@@ -12,6 +13,28 @@ export validate_single_precision_mesh
 _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
 _get_backend(mesh) = get_backend(mesh.cells)
+
+# Boundary faces store their owner cell twice: every mesh reader sets ownerCells this way
+# (UNV2, UNV3, FoamMesh), and the MPI path must do the same for processor faces.
+is_boundary(ownerCells::SVector{2,<:Integer}) = ownerCells[1] == ownerCells[2]
+is_boundary(face::Union{Face2D,Face3D}) = is_boundary(face.ownerCells)
+
+# Laplacian face coefficient. norm(((Sf.Sf)/(Sf.e))*e)/delta reduces to area/(|normal.e|*delta)
+# because ns cancels and normal and e are unit vectors. Boundary faces keep area/delta, which
+# is what every @define_boundary Laplacian block uses.
+_gDiff(ownerCells, normal, e, area, delta) = begin
+    den = is_boundary(ownerCells) ? delta : abs(normal ⋅ e)*delta
+    den > zero(den) ? area/den : zero(den)
+end
+
+_gDiff(face::Union{Face2D,Face3D}) =
+    _gDiff(face.ownerCells, face.normal, face.e, face.area, face.delta)
+
+face_gDiff_coefficients(faces) = _gDiff.(faces)
+
+# the 3D readers build the mesh before filling the face geometry, so the array built with it
+# is refreshed once the geometry is final
+update_face_gDiff!(mesh) = (mesh.face_gDiff .= _gDiff.(mesh.faces); mesh)
 
 # Internal face properties from distance vectors: C1F1/C2F1 = cell1/cell2 centre to face centre,
 # C1C2 = cell1 centre to cell2 centre
@@ -179,6 +202,7 @@ function compute_3d_geometry!(mesh::Mesh3)
             face.area, delta, weight,
         )
     end
+    update_face_gDiff!(mesh)
     return mesh
 end
 
@@ -320,6 +344,7 @@ function float32_representable(mesh::AbstractMesh)
     _count_invalid_positive(c.volume for c in mesh.cells) == 0 || return false
     _count_invalid_positive(f.area for f in mesh.faces) == 0 || return false
     _count_invalid_positive(f.delta for f in mesh.faces) == 0 || return false
+    count(!isfinite, mesh.face_gDiff) == 0 || return false
     count(f -> !isfinite(f.weight), mesh.faces) == 0 || return false
 
     max_coord = 0.0

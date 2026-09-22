@@ -43,7 +43,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
     fvals = phif.values
 
     # Extract faces from mesh
-    mesh = phif.mesh
+    mesh = phi.mesh
     (; cells, faces) = mesh
 
     # Launch interpolate kernel

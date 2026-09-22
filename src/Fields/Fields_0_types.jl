@@ -5,7 +5,6 @@ export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T, SymmetricTensorField
 export StrainRate, Vorticity, Dev, Sqr, MagSqr
 export _mesh
-export field_values, TensorValues
 export initialise!
 
 struct ScalarFloat{DTYPE}
@@ -257,15 +256,9 @@ _mesh(field::AbstractField) = field.mesh # catch all accessor to mesh
 
 # VALUE VIEWS
 
-"""
-    field_values(field)
-
-Return the bare indexable storage behind `field`, indexed exactly as the field itself.
-
-Kernels take their arguments by value, so a field captured by a closure carries its mesh
-(416 bytes for `Mesh3`) into per-thread local memory on GPU. Use `field_values` to bind fields
-outside a kernel or `xcal_foreach` closure whenever only their values are indexed.
-"""
+# Returns the bare indexable storage behind a field, indexed exactly as the field itself.
+# Kernels take their arguments by value, so a field captured by a closure carries its mesh
+# (416 B for Mesh3) into per-thread local memory on GPU. Not exported: internal helper.
 field_values(f::ConstantScalar) = f # already mesh-free, and its getindex returns the constant
 field_values(f::Union{ScalarField,FaceScalarField}) = f.values
 field_values(t::TensorField) = TensorValues(

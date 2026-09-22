@@ -13,6 +13,7 @@ using SparseMatricesCSR
 using XCALibre.Multithread
 using XCALibre.Mesh
 using XCALibre.Fields
+import XCALibre.Fields: field_values # not exported: kernel-argument helper
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve

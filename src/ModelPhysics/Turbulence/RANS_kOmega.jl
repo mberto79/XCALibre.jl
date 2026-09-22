@@ -13,18 +13,14 @@ kOmega model containing all kOmega field parameters.
 - `k` -- Turbulent kinetic energy ScalarField.
 - `omega` -- Specific dissipation rate ScalarField.
 - `nut` -- Eddy viscosity ScalarField.
-- `kf` -- Turbulent kinetic energy FaceScalarField.
-- `omegaf` -- Specific dissipation rate FaceScalarField.
 - `nutf` -- Eddy viscosity FaceScalarField.
 - `coeffs` -- Model coefficients.
 
 """
-struct KOmega{S1,S2,S3,F1,F2,F3,C} <: AbstractRANSModel
+struct KOmega{S1,S2,S3,F3,C} <: AbstractRANSModel
     k::S1
     omega::S2
     nut::S3
-    kf::F1
-    omegaf::F2
     nutf::F3
     coeffs::C
 end
@@ -51,8 +47,6 @@ end
     k = ScalarField(mesh)
     omega = ScalarField(mesh)
     nut = ScalarField(mesh)
-    kf = FaceScalarField(mesh)
-    omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
     scalar = ScalarFloat(mesh)
     coeffs = (
@@ -62,7 +56,7 @@ end
         σk=scalar(rans.args.σk),
         σω=scalar(rans.args.σω),
     )
-    KOmega(k, omega, nut, kf, omegaf, nutf, coeffs)
+    KOmega(k, omega, nut, nutf, coeffs)
 end
 
 # Model initialisation
@@ -167,7 +161,7 @@ function turbulence!(
     mesh = model.domain
     
     (; rho, rhof, nu, nuf) = model.fluid
-    (;k, omega, nut, kf, omegaf, nutf, coeffs) = rans.turbulence
+    (;k, omega, nut, nutf, coeffs) = rans.turbulence
     (; U, Uf, gradU) = S
     (;k_eqn, ω_eqn, state, wall_scratch) = rans
     (; solvers, runtime, boundaries) = config
@@ -188,26 +182,33 @@ function turbulence!(
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     # One pass over the cells and one over the faces: the strain-rate magnitude feeds both
     # productions, so writing it to Pk and reading it back twice was three passes for one.
-    xcal_foreach(Pk.values, config) do i
+    # Every field is bound with `field_values` so the closures carry values, not meshes.
+    gradUv = field_values(gradU.result)
+    rhov, omegav, nutv = field_values(rho), field_values(omega), field_values(nut)
+    Pkv, Pωv, Dkv, Dωv = field_values(Pk), field_values(Pω), field_values(Dkf), field_values(Dωf)
+    xcal_foreach(Pkv, config) do i
         @inbounds begin
-            Sij = S[i]
+            gradi = gradUv[i]
+            Sij = 0.5*(gradi + gradi')
             GbyNu = 2*sum(Sij .* Sij)
-            rhoi = rho[i]
-            omegai = omega[i]
-            Pω[i] = rhoi*coeffs.α1*GbyNu
-            Pk[i] = rhoi*nut[i]*GbyNu
-            Dωf[i] = rhoi*coeffs.β1*omegai
-            Dkf[i] = rhoi*coeffs.β⁺*omegai
+            rhoi = rhov[i]
+            omegai = omegav[i]
+            Pωv[i] = rhoi*coeffs.α1*GbyNu
+            Pkv[i] = rhoi*nutv[i]*GbyNu
+            Dωv[i] = rhoi*coeffs.β1*omegai
+            Dkv[i] = rhoi*coeffs.β⁺*omegai
         end
     end
     correct_production!(Pk, boundaries.k, model, S.gradU, config, wall_scratch) # Must be after previous line
-    xcal_foreach(mueffk.values, config) do i
+    rhofv, nufv, nutfv = field_values(rhof), field_values(nuf), field_values(nutf)
+    mueffkv, mueffωv = field_values(mueffk), field_values(mueffω)
+    xcal_foreach(mueffkv, config) do i
         @inbounds begin
-            rhofi = rhof[i]
-            nufi = nuf[i]
-            nutfi = nutf[i]
-            mueffω[i] = rhofi*(nufi + coeffs.σω*nutfi)
-            mueffk[i] = rhofi*(nufi + coeffs.σk*nutfi)
+            rhofi = rhofv[i]
+            nufi = nufv[i]
+            nutfi = nutfv[i]
+            mueffωv[i] = rhofi*(nufi + coeffs.σω*nutfi)
+            mueffkv[i] = rhofi*(nufi + coeffs.σk*nutfi)
         end
     end
 

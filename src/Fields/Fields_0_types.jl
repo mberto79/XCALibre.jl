@@ -5,6 +5,7 @@ export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T, SymmetricTensorField
 export StrainRate, Vorticity, Dev, Sqr, MagSqr
 export _mesh
+export field_values, TensorValues
 export initialise!
 
 struct ScalarFloat{DTYPE}
@@ -253,6 +254,52 @@ Base.length(t::AbstractTensorField) = length(t.xx)
 Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
 KA.get_backend(t::AbstractTensorField) = KA.get_backend(t.xx)
 _mesh(field::AbstractField) = field.mesh # catch all accessor to mesh
+
+# VALUE VIEWS
+
+"""
+    field_values(field)
+
+Return the bare indexable storage behind `field`, indexed exactly as the field itself.
+
+Kernels take their arguments by value, so a field captured by a closure carries its mesh
+(416 bytes for `Mesh3`) into per-thread local memory on GPU. Use `field_values` to bind fields
+outside a kernel or `xcal_foreach` closure whenever only their values are indexed.
+"""
+field_values(f::ConstantScalar) = f # already mesh-free, and its getindex returns the constant
+field_values(f::Union{ScalarField,FaceScalarField}) = f.values
+field_values(t::TensorField) = TensorValues(
+    t.xx.values, t.xy.values, t.xz.values,
+    t.yx.values, t.yy.values, t.yz.values,
+    t.zx.values, t.zy.values, t.zz.values)
+
+struct TensorValues{A}
+    xx::A
+    xy::A
+    xz::A
+    yx::A
+    yy::A
+    yz::A
+    zx::A
+    zy::A
+    zz::A
+end
+Adapt.@adapt_structure TensorValues
+
+@inline Base.getindex(t::TensorValues, i::Integer) = begin
+    Tf = eltype(t.xx)
+    @inbounds SMatrix{3,3,Tf,9}(
+        t.xx[i],
+        t.yx[i],
+        t.zx[i],
+        t.xy[i],
+        t.yy[i],
+        t.zy[i],
+        t.xz[i],
+        t.yz[i],
+        t.zz[i],
+        )
+end
 
 #Symmetric tensor 
 struct SymmetricTensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField

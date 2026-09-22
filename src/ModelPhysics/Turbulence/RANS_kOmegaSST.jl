@@ -103,7 +103,7 @@ function initialise(
     turbulence::KOmegaSST, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
 
-    (; solvers, schemes, runtime, hardware) = config
+    (; solvers, schemes, runtime, boundaries) = config
     (; k, omega, nut) = turbulence
     
 

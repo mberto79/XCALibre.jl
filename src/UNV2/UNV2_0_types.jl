@@ -112,17 +112,6 @@ function get_xyz(P::Vector{Vector{TF}}) where TF<:AbstractFloat
     return x, y, z
 end
 
-# function midPoint(a::Vector{Point})
-#     sumx, sumy, sumz = 0, 0, 0 
-#     # sum = Point(0,0,0)
-#     N = length(a)
-#     for i ∈ 1:N
-#         sumx += a[i].xyz[1] # x coord
-#         sumy += a[i].xyz[2] # y coord
-#         sumz += a[i].xyz[3] # z coord
-#     end
-#     return Point([sumx/N, sumy/N, sumz/N])
-# end
 
 function midPoint(a::Vector{Vector{TF}}) where TF<:AbstractFloat
     sumx, sumy, sumz = 0, 0, 0 

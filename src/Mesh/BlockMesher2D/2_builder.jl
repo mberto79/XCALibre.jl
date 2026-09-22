@@ -349,32 +349,3 @@ function quad(edges::Vector{Edge{I}}, edgesID::Vector{I}) where I
     inner_points = (nx+1-2)*(ny+1-2)
     Block(IDs, nx, ny, nodesID, elementsID, facesID_NS, facesID_EW, inner_points, true)
 end
-
-# function curve(pts::Vector{Node{F}}, p1_index::I, p2_index::I, ncells::I) where {I,F}
-#     nodesID = fill(zero(I), ncells+1)
-#     # points = fill(Node(zero(F)), ncells-1)
-#     nodesID[1] = p1_index
-#     nodesID[end] = p2_index
-
-#     p1 = pts[p1_index]
-#     p2 = pts[p2_index]
-
-#     # points[1] = p1; points[end] = p2
-
-#     d = p2.coords - p1.coords
-#     d_mag = norm(d)
-#     e1 = d/d_mag
-#     spacing = d_mag/ncells
-#     for j ∈ 2:ncells
-#     # for j ∈ eachindex(points)
-#         # points[j] = Node(spacing*e1*j + p1.coords)
-#         push!(pts, Node(p1.coords +
-#             [spacing*e1*(j-1),
-#             # spacing*e1[2]*(j-1),
-#             spacing*e1[2]*(j-1) + 0.25*sin(pi*spacing*e1[1]*(j-1)),
-#             spacing*e1[3]*(j-1)]))
-#         nodesID[j] = length(pts)
-
-#     end
-#     return Edge(nodesID, ncells, false)
-# end

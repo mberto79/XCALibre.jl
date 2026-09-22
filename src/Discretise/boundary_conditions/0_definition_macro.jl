@@ -77,12 +77,6 @@ macro define_boundary(boundary, operator, FieldType, definition)
     end |> esc
 end
 
-# macro define_boundary(operator, definition)
-#     quote
-#         @inline (bc::AbstractBoundary)(term::Operator{F,P,I,Op}, colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time) where {F,P,I,Op<:$operator} = $definition
-#     end |> esc
-# end
-
 # SHARED PHYSICAL CONSTRAINT ASSEMBLY
 
 # Tangential face projection vc - (vc⋅n)n: same-component implicit on outflow, cross-components and inflow deferred to the source

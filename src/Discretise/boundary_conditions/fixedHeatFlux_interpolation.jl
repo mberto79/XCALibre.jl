@@ -1,12 +1,6 @@
-# Face-value interpolation for `FixedHeatFlux`.
-#
-# The exact face temperature for a prescribed inward flux `q` is
-#
-#     T_f = T_c + q*delta/keff
-#
-# but `keff` is not reachable from this interface (`boundary_interpolation!`
-# receives only the field, the boundary-cell map and the face ID). A
-# zero-gradient face value is used instead.
+# FixedHeatFlux face value: exact is T_f = T_c + q*delta/keff for a prescribed inward flux q,
+# but keff is not reachable from boundary_interpolation! (field, boundary-cell map, face ID only),
+# so a zero-gradient face value is used instead.
 
 @inline function boundary_interpolation!(
     BC::FixedHeatFlux, phif::FaceScalarField, phi, boundary_cellsID, time, fID)

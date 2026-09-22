@@ -13,10 +13,8 @@ _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
 _get_backend(mesh) = get_backend(mesh.cells)
 
-# function to calculate internal face properties
-# C1F1 = distance vector from cell1 centre to face centre
-# C2F1 = distance vector from cell2 centre to face centre
-# C1C2 = distance vector from cell1 to cell2
+# Internal face properties from distance vectors: C1F1/C2F1 = cell1/cell2 centre to face centre,
+# C1C2 = cell1 centre to cell2 centre
 weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
     # weight = norm(C2F1)/(norm(C1F1) + norm(C2F1)) # face-distance based
     projection = C1C2⋅normal
@@ -349,60 +347,6 @@ end
 function _count_invalid_positive(values)
     count(v -> !isfinite(v) || v <= zero(v), values)
 end
-
-# function x(mesh::Mesh2{I,F}) where {I,F}
-#     cells = mesh.cells
-#     out = zeros(F, length(cells))
-#     @inbounds for i ∈ eachindex(cells)
-#         out[i] = cells[i].centre[1]
-#     end
-#     return out
-# end
-
-# function y(mesh::Mesh2{I,F}) where {I,F}
-#     cells = mesh.cells
-#     out = zeros(F, length(cells))
-#     @inbounds for i ∈ eachindex(cells)
-#         out[i] = cells[i].centre[2]
-#     end
-#     return out
-# end
-
-# function z(mesh::Mesh2{I,F}) where {I,F}
-#     cells = mesh.cells
-#     out = zeros(F, length(cells))
-#     @inbounds for i ∈ eachindex(cells)
-#         out[i] = cells[i].centre[3]
-#     end
-#     return out
-# end
-
-# function xf(mesh::Mesh2{I,F}) where {I,F}
-#     faces = mesh.faces
-#     out = zeros(F, length(faces))
-#     @inbounds for i ∈ eachindex(faces)
-#         out[i] = faces[i].centre[1]
-#     end
-#     return out
-# end
-
-# function yf(mesh::Mesh2{I,F}) where {I,F}
-#     faces = mesh.faces
-#     out = zeros(F, length(faces))
-#     @inbounds for i ∈ eachindex(faces)
-#         out[i] = faces[i].centre[2]
-#     end
-#     return out
-# end
-
-# function zf(mesh::Mesh2{I,F}) where {I,F}
-#     faces = mesh.faces
-#     out = zeros(F, length(faces))
-#     @inbounds for i ∈ eachindex(faces)
-#         out[i] = faces[i].centre[3]
-#     end
-#     return out
-# end
 
 # Static normalise function
 function norm_static(arr, p = 2)

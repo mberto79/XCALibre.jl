@@ -20,10 +20,6 @@ end
         cID = face.ownerCells[1]
         cell = cells[cID]
 
-        # delta1 = face.delta #*norm(face.e ⋅ face.normal)
-        # delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
-        # delta = delta1 + delta2
-        # w = delta2/delta
 
         Pf = face.centre - cell.centre
         PN = (pcell.centre - transform.distance) - cell.centre
@@ -54,10 +50,6 @@ end
         cID = face.ownerCells[1]
         cell = cells[cID]
 
-        # delta1 = face.delta #*norm(face.e ⋅ face.normal)
-        # delta2 = pface.delta #*norm(pface.e ⋅ pface.normal)
-        # delta = delta1 + delta2
-        # w = delta2/delta
 
         Pf = face.centre - cell.centre
         PN = (pcell.centre - transform.distance) - cell.centre

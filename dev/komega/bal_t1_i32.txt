@@ -1,3 +1,0 @@
-threads=1 blas=1 index=i32  iterations=500  seconds=166.53  ms/iter=333.1
-final residuals: (2.5618998087910438e-8, 2.7381769122732244e-6, 3.6715075382434194e-6, 1.0105257117037433e-5)
-OpenFOAM same case: 1 core 238.87 s, 2 cores 170.52, 6 cores 90.89, 8 cores 81.66

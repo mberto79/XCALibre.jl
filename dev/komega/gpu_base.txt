@@ -1,3 +1,0 @@
-device=gpu index=i64 reps=20 face_assembly_available=false
-sum column = 2k + p + U, i.e. one SIMPLE iteration's assemblies (k and omega same shape)
-i64  cell   k    6.377 ms   p    2.644 ms   U    6.260 ms   sum   21.657

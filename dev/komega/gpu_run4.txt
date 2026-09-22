@@ -1,8 +1,0 @@
-CUDA RTX 4070 Laptop, motorBike KOmega, 100 iterations, timed with @elapsed run! + synchronize
-i64  cell     9.06 s     90.65 ms/iter   final=(2.0162e-6, 0.00010074, 0.0001309, 0.00014844)
-i64  face    11.61 s    116.09 ms/iter   final=(2.0162e-6, 0.00010074, 0.0001309, 0.00014844)
-i32  cell     8.87 s     88.66 ms/iter   final=(2.0162e-6, 0.00010074, 0.0001309, 0.00014844)
-i32  face    11.68 s    116.80 ms/iter   final=(2.0162e-6, 0.00010074, 0.0001309, 0.00014844)
-
-CPU reference, 500 iterations: t8 i64 194.0 ms/iter, t8 i32 153.4, t1 i64 356.8, t1 i32 328.3
-(iteration counts differ, so per-iteration figures are not directly comparable to the CPU ones)

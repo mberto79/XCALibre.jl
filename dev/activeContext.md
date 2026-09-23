@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-23T18:00:00+01:00
 STATE: BUILDING
 STEP: P1-M28-S7 option B - in-house element containers replacing StructArrays
-HEAD: see git log (S4 commit)
+HEAD: 49c1ff23
 BRANCH: HM/distributed-draft
 GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4` (parts via `motorbike_smoke.jl part 4 <dir>`), compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl`; compile A/B with `XENV=env_base` (875c16bb worktree `~/.cache/xcal_m28/wt_base`), two samples each; bars in plan p1-m28 (D163, D168)
 resume: write `FaceArrays`/`CellArrays`/`NodeArrays` (AbstractVector of the element type, columns grouped so same-typed columns share one type parameter) in `src/Mesh/`, swap `_soa` to build them, drop StructArrays from Project.toml and `src/Mesh/Mesh.jl`, fix the `isa XCALibre.Mesh.StructArray` assertion in `test/distributed/test_offline.jl`, then measure compile against env_base

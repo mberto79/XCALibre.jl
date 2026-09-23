@@ -29,6 +29,11 @@ What is true of the code today. Why a mechanism was chosen belongs in `dev/decis
 - A mesh's cells, faces and nodes are stored one array per field as top-level `Mesh2`/`Mesh3` fields (`cell_volume`, `face_area`, `node_coords`, ...), same-typed arrays sharing one of nine type parameters (D177, D179); `mesh.faces`/`cells`/`nodes` are rebuilt in `getproperty` as zero-copy `FaceArrays`/`CellArrays`/`NodeArrays` views. Constructors take element vectors, readers build plain vectors, `mesh.faces[i]` rebuilds an element, and `mesh.faces.area[i]` reads the array. Anything leaving the device goes through `adapt`, written out per column so it stays inferable (D178); binary part files pack the columns back into element records. `get_float`/`get_int` are one-element arrays stored like `face_area`/`cell_nodes`, carrying only the mesh float and integer types (D182).
 - GPU kernel arguments are copied by value into per-thread local memory, so the discretise kernels receive mesh-free copies of terms, sources and fields (a scheme reaches `term.phi.mesh.face_gDiff` and nothing else of the mesh) plus the cell and face columns they read, never `mesh` or `model` (D184, D187).
 
+## CPU linear solves
+
+- Equation workspaces on the CPU hold `XVector` storage, so Krylov.jl's vector primitives, the CSR SpMV and the Jacobi apply run on Julia's threads over one static row split (chunk c on thread c); calls touching fewer than 2^16 elements stay serial, and BLAS keeps one thread (D196-D198). The distributed path solves through PETSc instead, with stopping tests equivalent to Krylov.jl's (D205).
+- `run!` threads a `progress` switch down to every solver loop; with it off, or on a distributed mesh, no progress display is built (D203).
+
 ## interfaces
 
 - The distributed mesh type is what the solver dispatches on; anything that changes it changes the serial-to-distributed routing.

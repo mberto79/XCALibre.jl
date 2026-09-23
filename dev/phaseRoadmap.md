@@ -8,14 +8,8 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 
 ## Where we are
 
-- Done: M1-M27.
-- Done: M31 flat column mesh (D188).
-- Done: M28 (D189).
-- Done: M29 (D195).
-- Done: M30 (D200).
-- Done: M32 (D203).
-- Done: M33 (D205).
-- Now: P1 exit gate (phase close, user-invoked).
+- Done: M1-M33 (last: M28 D189, M29 D195, M30 D200, M31 D188, M32 D203, M33 D205).
+- Now: pre-merge review of the branch (user request 2026-09-24), then the P1 exit gate (phase close, user-invoked).
 
 ## Ordered work
 

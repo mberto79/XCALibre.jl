@@ -31,7 +31,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - `--heap-size-hint` on MPI ranks is safe once the caches exist: precompile in a plain session first, because a rank that has to precompile the PETSc extension under the flag asks for images built under other cache flags and fails like cache corruption. With caches built it loads them and lowers the 4 mm BFS n=2 peak 1772 → 1667 MB at 1200M (D96). Always `--startup-file=no`.
 - PETSc.jl 0.4.14 with PETSc_jll 3.25.4 offers only Int64-index PETSc libraries, so the MPI path copies Int32 matrices into 64-bit PETSc ones; PETSc.jl 0.4.12 + PETSc_jll 3.22.2 also ships Int32 builds, which `_petsclib` picks (−7.6% at n=4, D205).
 - Stock `PETSc_jll` ships hypre for Float64 only and no CUDA in any of its libraries, so GPU-native solves need a custom PETSc build and Float32 users have no hypre.
-- `activate_multithread(backend::CPU)` pins BLAS to one thread despite its name; without it BLAS takes every core and oversubscribes the ranks.
+- `activate_multithread(backend::CPU)` pins BLAS to one thread (its default since D198); without it BLAS takes every core and oversubscribes the ranks. The CPU Krylov vector work runs on Julia's threads (`-t`), not BLAS.
 - Any keyword `BoomerAMG`/`GAMG` does not know, including a removed `reuse=` or a typo, is forwarded to PETSc as `-pc_<prefix>_<k>` and silently ignored unless `-options_left` is set; it never errors.
 - This shell has the custom OpenMPI `mpiexec` first on PATH, which aborts ranks of the stock (MPICH) env with `internal_Init_thread`; launch stock-env runs through `MPI.mpiexec()` or `mpiexecjl`.
 - `dev/petscenv_f32` goes stale when XCALibre gains a dependency (precompile fails with "Cannot load module ... into XCALibre"); `Pkg.resolve()` in that env fixes it.
@@ -75,3 +75,5 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - GPU 20-iteration `run_s` is mostly host time (discretise kernels ~1% of it), so run_s parity does not bound a kernel's time: any change to kernel arguments or mesh layout reads per-call kernel times from `dev/scripts/gpu_profile.jl` against a same-session base (D184).
 - `test_restart.jl` errors in `dev/petscenv` with no method `MatMPIAIJGetSeqAIJ` (that env's generated wrappers lack it); run it under `dev/petscenv_stock` (D183).
 - `test/Project.toml` has no XCALibre entry, so suite files run under `~/.cache/xcal_m28/env_test` via `dev/scripts/suite_file.jl`.
+- `petsc_options="-log_view"` prints nothing: it only sets a KSP option and PETSc's global log is never started; profile rank 0 with `dev/scripts/mpi_profile.jl` instead (D205).
+- The serial test suite passes `progress=false` to `run!` (except the on/off comparison in `2d_laplace_steady.jl`); new tests should do the same to keep CI logs clean (D203).

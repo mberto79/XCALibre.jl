@@ -141,8 +141,7 @@ ScalarEquation(phi::ScalarField, BCs) = begin
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     i, j = extend_matrix(mesh, BCs, i, j)
-    # i = [i; periodicConnectivity.i]
-    # j = [j; periodicConnectivity.j]
+    _check_index_capacity(eltype(i), length(j) + 1, "the matrix entry count")
     v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
     # A = _convert_array!(sparse(i, j, v), backend)
@@ -182,8 +181,7 @@ VectorEquation(psi::VectorField, BCs) = begin
     mesh_temp = adapt(CPU(), mesh) # WARNING: Temp solution 
     i, j, v = sparse_matrix_connectivity(mesh_temp) # This needs to be a kernel
     i, j = extend_matrix(mesh, BCs, i, j)
-    # i = [i; periodicConnectivity.i]
-    # j = [j; periodicConnectivity.j]
+    _check_index_capacity(eltype(i), length(j) + 1, "the matrix entry count")
     v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
 

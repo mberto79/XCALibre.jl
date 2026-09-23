@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `2D_bump_NASA_kwSST.jl`, `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` solver tolerances and relaxation factors retuned for the corrected fluxes [#158](@ref)
 
 ### Breaking
+* `UNV2D_mesh`, `UNV3D_mesh`, `FOAM3D_mesh` and `FOAMCase` read meshes with `integer_type=Int32` by default instead of `Int64`, which halves the bytes of every mesh and matrix index. Results are unchanged. A mesh whose faces, face-node entries or matrix entries exceed 2^31 stops with an error asking for `integer_type=Int64`; code that builds boundary conditions or mesh arrays with `Int64` type parameters against a default-read mesh must pass `integer_type=Int64` [#160](@ref)
 * `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)
 
 ### Deprecated

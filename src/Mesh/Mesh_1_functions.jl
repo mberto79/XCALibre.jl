@@ -7,12 +7,28 @@ export norm_static
 export is_boundary
 export convert_mesh_float
 export validate_single_precision_mesh
+export _check_index_capacity, _with_index_capacity
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 
 _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
 _get_backend(mesh) = get_backend(mesh.cell_faces)
+
+_index_capacity_error(::Type{TI}, what) where TI = ArgumentError(
+    "$what does not fit the mesh integer type $TI; read the mesh with integer_type=Int64")
+_check_index_capacity(::Type{TI}, n, what) where TI =
+    n <= typemax(TI) || throw(_index_capacity_error(TI, "$what ($n)"))
+
+# a checked integer conversion failing while a narrow-index mesh is built means the index type is too narrow
+function _with_index_capacity(f, ::Type{TI}) where TI
+    try
+        f()
+    catch e
+        TI === Int64 || !(e isa InexactError || e isa OverflowError) ? rethrow() :
+            throw(_index_capacity_error(TI, "a mesh index or count ($(sprint(showerror, e)))"))
+    end
+end
 
 # Boundary faces store their owner cell twice: every mesh reader sets ownerCells this way
 # (UNV2, UNV3, FoamMesh), and the MPI path must do the same for processor faces.

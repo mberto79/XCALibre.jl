@@ -1,20 +1,20 @@
-# Active context - memory-traffic scaling (P1-M29..M30)
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m29-index-widths.md, dev/plans/p1-m30-threaded-krylov.md
-updated: 2026-09-24T18:00:00+01:00
+# Active context - memory-traffic scaling (P1-M30)
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m30-threaded-krylov.md
+updated: 2026-09-24T22:00:00+01:00
 STATE: IDLE
-STEP: P1-M29-S4 Int32 reader default with overflow error (not started)
+STEP: P1-M30-S2 XVector type and k* primitives (not started; M29 closed, D195)
 HEAD: 15c1e8e0
 BRANCH: HM/distributed-draft
-GATE: per plan p1-m29 (strict: CPU residuals bitwise vs preceding step at fixed threads, distributed hashes bitwise at n=2,4); `gate.jl` as two commands under memguard (n=2,3 five files, then n=6 `test_turbulence_sst_wallfn.jl`) via `runtests_mpi.jl` in `~/.cache/xcal_m28/env_test`; `test_restart.jl` under `dev/petscenv_stock` (D183)
-resume: plan p1-m29 S4 row: `integer_type=Int32` default for every mesh reader, clear error when a per-process face count or matrix nnz exceeds `typemax(Int32)`, `Int64` selectable; gate full serial suite by file + docs build
+GATE: per plan p1-m30 (strict: residuals to 8 figures vs pre-M30, 1t not slower beyond ±5%); primitive unit tests at 1 and 8 threads; motorBike 20-iteration smoke 1t/8t via `~/.cache/xcal_m28/chain.sh` vs `dev/telemetry/m28_baseline/`
+resume: plan p1-m30 S2 row: `XVector{T} <: DenseVector{T}` in `src/Multithread/` wrapping a `Vector` plus the static row partition of `xmul!`, with `similar`, `size`, `getindex`, `setindex!`, `unsafe_convert` and Krylov's `k*` primitives; unit tests vs `Vector` at 1 and 8 threads
 
 ## binding
 - User rulings: flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).
 - HARD CAP (D101): every verdict run under five minutes; 500-iteration timings one point per command at milestone close (D160).
-- Order: M29, then M30 (D159). Commit and push each step.
+- Order: M30 (D159), then the P1 phase gate. Commit and push each step.
 
 ## position
-P1-M29-S1..S3 landed (D191-D193; AMG bitwise check: `PSOLVER=amg motorbike_smoke.jl`; part format 5, parts in `~/.cache/xcal_m28/parts_m29_4`). P1-M28 and P1-M31 closed (D188, D189): motorBike 500 iterations 8-rank 53.6 s, 8t 61.4 s, GPU 17.2 s, 1t 135.6 s (`dev/telemetry/memory_scaling.md` § P1-M28-S6 close); scratch drivers for such timings in `~/.cache/xcal_m28/close/`.
+P1-M28, M29, M31 closed (D189, D195, D188): motorBike 500 iterations 8-rank 53.6 s, 8t 61.4 s, GPU 17.2 s, 1t 135.6 s; readers default to Int32 (D194). 8t main-thread profile: Krylov vector work ~22%, progress strings ~8% (D190, `~/.cache/xcal_m28/close/profile_close_8t.txt`). Timing drivers: `~/.cache/xcal_m28/close/`.
 
 ## carried
 - Read GPU `run_s` and the `faces=` tag on every `.time` line, not only residuals (D178).

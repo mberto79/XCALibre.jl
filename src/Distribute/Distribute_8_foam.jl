@@ -3,7 +3,7 @@ export FOAMCase
 # NEW SECTION: decomposed OpenFOAM reader (processor<rank>/constant/polyMesh per rank)
 
 """
-    FOAMCase(dir; scale=1, integer_type=Int64, float_type=Float64)
+    FOAMCase(dir; scale=1, integer_type=Int32, float_type=Float64)
 
 An OpenFOAM case already decomposed into `processor<rank>/` directories (by `decomposePar` or by a
 distributed XCALibre run with `output=OpenFOAM()`). `distribute(FOAMCase(dir))` gives each rank its
@@ -13,7 +13,7 @@ struct FOAMCase{TI<:Integer,TF<:AbstractFloat}
     dir::String
     scale::Float64
 end
-FOAMCase(dir; scale=1, integer_type=Int64, float_type=Float64) =
+FOAMCase(dir; scale=1, integer_type=Int32, float_type=Float64) =
     FOAMCase{integer_type,float_type}(String(dir), Float64(scale))
 
 const _PROC_PATCH = r"^procBoundary(\d+)to(\d+)$"

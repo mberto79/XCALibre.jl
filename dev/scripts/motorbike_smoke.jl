@@ -61,7 +61,7 @@ function bfs2d_case(mesh_dev, hardware)
 end
 
 t_mesh = @elapsed mesh = if mode == "2d"
-    UNV2D_mesh(pkgdir(XCALibre, "examples/0_GRIDS/backwardFacingStep_10mm.unv"), scale=0.001)
+    UNV2D_mesh(pkgdir(XCALibre, "examples/0_GRIDS/backwardFacingStep_10mm.unv"), scale=0.001, integer_type=Int64)
 elseif mode == "mpi"
     MPI.Initialized() || MPI.Init()
     distribute(ARGS[4])

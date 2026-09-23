@@ -9,7 +9,7 @@ export UNV3D_mesh
 # ==============================================================================
 
 """
-    UNV3D_mesh(unv_mesh::String; scale::Real=1.0, integer_type::Type=Int64, float_type::Type=Float64) -> Mesh3
+    UNV3D_mesh(unv_mesh::String; scale::Real=1.0, integer_type::Type=Int32, float_type::Type=Float64) -> Mesh3
 
 Constructs a `Mesh3` object from a Universal (UNV) file format.
 
@@ -18,14 +18,14 @@ Constructs a `Mesh3` object from a Universal (UNV) file format.
 
 # Keyword Arguments
 - `scale::Real=1.0`: A scaling factor applied to the nodal coordinates.
-- `integer_type::Type=Int64`: The integer type used for topological indices and connectivity arrays.
+- `integer_type::Type=Int32`: The integer type used for topological indices and connectivity arrays; `Int64` is needed only when a mesh has more than 2^31 faces, face-node entries or matrix entries, and reading such a mesh as `Int32` stops with an error saying so.
 - `float_type::Type=Float64`: The floating-point type used for coordinates and geometric properties.
 
 # Returns
 - `Mesh3`: A fully constructed 3D mesh object containing nodes, cells, faces, boundaries, and populated geometric properties.
 """
-function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int64, float_type=Float64)
-    return _UNV3D_mesh(unv_mesh, scale, integer_type, float_type)
+function UNV3D_mesh(unv_mesh; scale=1.0, integer_type=Int32, float_type=Float64)
+    return _with_index_capacity(() -> _UNV3D_mesh(unv_mesh, scale, integer_type, float_type), integer_type)
 end
 
 # Type-parameter barrier keeps the build type-stable for non-default integer/float types.

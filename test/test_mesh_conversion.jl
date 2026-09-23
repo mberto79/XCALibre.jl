@@ -291,7 +291,17 @@ for (name, converter, meshFile) in mesh_converters
             )
             test_mesh_precision(mesh, integer_type, float_type)
         end
+        @test XCALibre.Mesh._get_int(converter(meshFile; scale=0.001)) === Int32
     end
+end
+
+@testset "index capacity" begin
+    M = XCALibre.Mesh
+    @test M._check_index_capacity(Int32, typemax(Int32), "n")
+    @test_throws ArgumentError M._check_index_capacity(Int32, Int64(typemax(Int32)) + 1, "n")
+    @test_throws ArgumentError M._with_index_capacity(() -> Int32(Int64(2)^40), Int32)
+    @test_throws InexactError M._with_index_capacity(() -> Int64(1.5), Int64)
+    @test M._with_index_capacity(() -> 7, Int32) == 7
 end
 
 @testset "single precision mesh validation" begin

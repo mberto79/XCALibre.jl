@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m30-threaded-krylov.md
 updated: 2026-09-24T22:00:00+01:00
 STATE: IDLE
-STEP: P1-M30-S5 dead spmvm.jl methods (not started)
+STEP: P1-M30-S6 milestone close (not started)
 HEAD: b9a710a1
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m30 (strict: residuals to 8 figures vs pre-M30, 1t not slower beyond ±5%); primitive unit tests at 1 and 8 threads; motorBike 20-iteration smoke 1t/8t via `~/.cache/xcal_m28/chain.sh` vs `dev/telemetry/m28_baseline/`
-resume: plan p1-m30 S5 row: remove or correct `xmul!(A, x)` (undefined `y`), `xmul(y, A, x)` (discards `y`) and `Base.:*(::SparseMatrixCSR, ::SparseXCSR)` (calls a missing 2-arg `xmul`) in `src/Multithread/spmvm.jl`; bar: Multithread suite files
+resume: plan p1-m30 S6 row: 500-iteration 1t/8t/n=8 timings with `~/.cache/xcal_m28/close/{cpu,mpi}.jl` (one point per command), 8t main-thread profile `close/prof.jl close 100`; exit: 8t vector-op share < 3 s, 8t within 5% of 8-rank MPI; fused CG / persistent team only if vector ops stay > 3 s
 
 ## binding
 - User rulings: flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

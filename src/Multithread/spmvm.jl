@@ -55,14 +55,6 @@ function xmul!(
 
 end
 
-function xmul!(A::SparseXCSR, x::AbstractVector)
-    xmul!(y, parent(A), x, true, false)
-end
-
-function xmul(y::AbstractVector, A::SparseXCSR, x::AbstractVector)
-    y = similar(x)
-    xmul!(y, parent(A), x, true, false)
-end
 
 """
     activate_multithread(backend::CPU; nthreads=1)
@@ -92,6 +84,4 @@ function  LinearAlgebra.mul!(y::AbstractVector, A::SparseXCSR, x::AbstractVector
     return xmul!(y, A, x, true, false)
 end
 
-function  Base.:*(A::SparseMatrixCSR, x::SparseXCSR)
-    return xmul(A, x)
-end
+Base.:*(A::SparseXCSR, x::AbstractVector) = xmul!(similar(x, promote_type(eltype(A), eltype(x)), size(A, 1)), A, x, true, false)

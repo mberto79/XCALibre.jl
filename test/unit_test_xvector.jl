@@ -31,3 +31,11 @@ const XVector = XCALibre.Multithread.XVector
     Krylov.krylov_solve!(ws, A, XVector(copy(b)); rtol=1e-12, atol=0.0)
     @test Krylov.solution(ws) ≈ A \ b
 end
+
+@testset "SparseXCSR product" begin
+    n = 100_003
+    A = SparseXCSR(XCALibre.Multithread.SparseMatricesCSR.sparsecsr(collect(1:n), collect(1:n), fill(2.0, n), n, n))
+    x = rand(n)
+    @test A*x == 2 .* x
+    @test A*XVector(copy(x)) == 2 .* x
+end

@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m30-threaded-krylov.md
 updated: 2026-09-24T22:00:00+01:00
 STATE: IDLE
-STEP: P1-M30-S3 wire XVector into solve_system! on CPU (not started)
+STEP: P1-M30-S4 BLAS defaults to one thread in activate_multithread (not started)
 HEAD: c3b82334
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m30 (strict: residuals to 8 figures vs pre-M30, 1t not slower beyond ±5%); primitive unit tests at 1 and 8 threads; motorBike 20-iteration smoke 1t/8t via `~/.cache/xcal_m28/chain.sh` vs `dev/telemetry/m28_baseline/`
-resume: plan p1-m30 S3 row: in `solve_system!` (CPU backend) wrap `b` and `values` as `XVector` (reference, no copy), build workspaces from the wrapped `b` (`_workspace` sites), partitioned `mul!` and Jacobi `ldiv!` on `XVector`; `krylov_solve!` still resolves the preconditioner; DILU serial; bar: residuals to 8 figures vs pre-M30 at 1t/8t, 1t not slower beyond ±5%
+resume: plan p1-m30 S4 row: `activate_multithread` defaults BLAS to one thread (keyword kept), docstring + benchmark README BLAS section updated; bar: 8t smoke not slower than S3 (`~/.cache/xcal_m28/m30s3/fin/cpu8.time` run_s 4.85)
 
 ## binding
 - User rulings: flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

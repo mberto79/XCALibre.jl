@@ -140,3 +140,9 @@ Scratch drivers: copies of the benchmark `cpu_i32.jl`/`mpi_i32.jl`/`motorBike_gp
 - Main-thread 8t profile, 100 iterations (10,627 samples): `wait` 50%; serial Krylov vector work (BLAS `axpby!` 11%, `bicgstab!` body 7%, `axpy!` 3%, `dot` 2%) ~22%; string building for progress output (`print_to_string`, `join`, `_string_n`) ~8%. Raw: `~/.cache/xcal_m28/close/profile_close_8t.{txt,jlprof}`.
 - Footprint (Int32 serial mesh, column sizes): 223.6 MB (baseline AoS ~230 MB); `cell_nsign` Int8 2.1 MB (was 8.5 MB); face columns 136 MB, of which `face_centre`/`face_normal`/`face_e` 80 MB.
 - Full serial suite by file via `suite_file.jl` (46 files, runtests.jl's list; 13 at S8, 33 here): all pass. Distributed gate: n=2,3 10/10 in 2m53s, n=6 `test_turbulence_sst_wallfn.jl` 1/1 in 56 s (3m59s together; 5m04s after S2, D167).
+
+## P1-M30-S3 XVector wiring (`~/.cache/xcal_m28/m30s3/`)
+
+- motorBike 20 iterations run_s, same session (S3 / pre-S3): 1t 9.57 / 9.57; 8t 4.85 / 5.58 (−13%). Figures vs `m28_baseline`: 1t 10.7, 8t 10.2.
+- 2D BFS SST vs baseline 7.6 figures; the same revision at 1 vs 2 threads 7.6-7.9, so the case amplifies any summation-order change to ~2e-8 in 20 iterations. Pre-S3 at 2 threads and with `OPENBLAS_CORETYPE=Haswell` are bitwise (neither control reordered anything).
+- Fork/join vs serial, kaxpy!+kdot per call, µs (par / ser): 4t n=2^16 8.4/7.3, 2^17 11.4/17.9; 8t 2^16 10.0/8.2, 2^17 11.6/20.9. Without a threshold the Crank-Nicolson BFS suite file took 23.7 s vs 12.4 s pre-S3 at 4t; with serial below 2^16 elements 12.2 s.

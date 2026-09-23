@@ -20,9 +20,12 @@ KernelAbstractions.get_backend(::XVector) = CPU()
     (c - 1)*d + min(c - 1, r) + 1 : c*d + min(c, r)
 end
 
-@inline function _foreach_chunk(f, n)
+# below this many elements touched, one fork/join (5-10 µs) costs more than the loop saves (D197)
+const _MIN_THREADED_WORK = 1 << 16
+
+@inline function _foreach_chunk(f, n, work=n)
     k = Threads.nthreads()
-    k == 1 && return f(1:n)
+    (k == 1 || work < _MIN_THREADED_WORK) && return f(1:n)
     Threads.@threads :static for c ∈ 1:k
         f(_chunk(n, k, c))
     end
@@ -32,7 +35,7 @@ end
 # partials one cache line apart, summed in chunk order: deterministic for a fixed thread count
 function _reduce_chunks(f, n, ::Type{T}) where T
     k = Threads.nthreads()
-    k == 1 && return f(1:n)
+    (k == 1 || n < _MIN_THREADED_WORK) && return f(1:n)
     stride = max(1, 64 ÷ sizeof(T))
     partials = Vector{T}(undef, stride*k)
     Threads.@threads :static for c ∈ 1:k

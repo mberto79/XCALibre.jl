@@ -38,8 +38,8 @@ function xmul!(
 
     o = getoffset(A)
 
-    @sync for r in RangeIterator(size(y, 1), Threads.nthreads())
-        Threads.@spawn for row in r
+    _foreach_chunk(size(y, 1), length(A.nzval)) do r
+        for row in r
             @inbounds begin
                 accu = zero(eltype(y))
                 for nz in nzrange(A, row)

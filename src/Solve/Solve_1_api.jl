@@ -295,7 +295,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
     krylov_solve!(
-        solver, opA, b, values; 
+        solver, opA, _like_workspace(x, b), _like_workspace(x, values); 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
         )
 

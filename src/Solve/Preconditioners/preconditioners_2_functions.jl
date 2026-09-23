@@ -119,10 +119,23 @@ _n(A::SparseXCSR) = parent(A).n
 function diagonal_operator(d::AbstractVector{T}) where T
     backend = get_backend(d)
     n = length(d)
-    workgroup = typeof(backend) <: CPU ? AutoTune() : 256
     apply! = (res, v, α, β) -> begin
-        kernel! = _diagonal_mul!(_setup(backend, workgroup, n)...)
+        kernel! = _diagonal_mul!(_setup(backend, 256, n)...)
         kernel!(res, d, v, α, β)
+        res
+    end
+    LinearOperator{T,typeof(d)}(n, n, true, isreal(d), apply!, apply!, apply!)
+end
+
+# CPU rows in the Krylov vectors' static chunks, so each thread scales the rows it owns
+function diagonal_operator(d::Vector{T}) where T
+    n = length(d)
+    apply! = (res, v, α, β) -> begin
+        _foreach_chunk(n) do r
+            @inbounds for i ∈ r
+                res[i] = iszero(β) ? α*d[i]*v[i] : α*d[i]*v[i] + β*res[i]
+            end
+        end
         res
     end
     LinearOperator{T,typeof(d)}(n, n, true, isreal(d), apply!, apply!, apply!)

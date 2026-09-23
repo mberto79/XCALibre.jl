@@ -4,7 +4,7 @@ const XVector = XCALibre.Multithread.XVector
 
 # XVector primitives against plain Vector; sums differ only in reduction order
 @testset "XVector primitives ($(Threads.nthreads()) threads)" begin
-    for T ∈ (Float64, Float32), n ∈ (1, 7, 10_001)
+    for T ∈ (Float64, Float32), n ∈ (1, 7, 100_003)
         a, b = rand(T, n), rand(T, n)
         x, y = XVector(copy(a)), XVector(copy(b))
         s, t = T(0.7), T(-1.3)

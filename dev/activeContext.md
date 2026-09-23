@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T12:00:00+01:00
 STATE: IDLE
 STEP: P1-M28-S6 close (not started; P1-M31 closed, D188)
-HEAD: ac2d3ba6
+HEAD: 6cf5ae70
 BRANCH: HM/distributed-draft
 GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4` (parts via `motorbike_smoke.jl part 4 <dir>`), compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl`; compile A/B with `XENV=env_base` (875c16bb worktree `~/.cache/xcal_m28/wt_base`), two samples each; bars in plan p1-m28 (D163, D168)
 resume: run plan p1-m28 S6 row: 500-iteration timings one point per command (1t, 8t pinned, n=1, n=8, GPU), footprint after, full serial suite by file via `suite_file.jl`

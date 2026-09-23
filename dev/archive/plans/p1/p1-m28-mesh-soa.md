@@ -33,7 +33,7 @@ StructArrays.jl gave the bandwidth win but its type (one parameter per column pl
 - [-] P1-M28-S9 lazy element view - WITHDRAWN (D172), refused on measurement: compile +27% 1t, +33% 2D same-session; 1t not bitwise (reader aliasing); cause restated.
 - [-] P1-M28-S8 option A - SUPERSEDED BY P1-M31 (D173)
 - [-] P1-M28-S5 fold `face_gDiff` into the face struct - WITHDRAWN (D179): the flat layout (P1-M31-S5) already stores it as a top-level float column sharing the parameter.
-- [ ] P1-M28-S6 close (after P1-M31): 500-iteration per-point timings (1t, 8t, n=1, n=8, GPU), refit `C`/`B`, footprint after, main-thread 8t profile of 100 iterations, GPU workgroup re-sweep; follow-ups (face-based assembly, extra face coefficients) decided only if a kernel still scales below 4x at 8t. Full serial suite by file. Blast radius: none shipped.
+- [x] P1-M28-S6 LANDED (D189): close (after P1-M31): 500-iteration per-point timings (1t, 8t, n=1, n=8, GPU), refit `C`/`B`, footprint after, main-thread 8t profile of 100 iterations, GPU workgroup re-sweep; follow-ups (face-based assembly, extra face coefficients) decided only if a kernel still scales below 4x at 8t. Full serial suite by file. Blast radius: none shipped.
 
 ## pitfalls
 

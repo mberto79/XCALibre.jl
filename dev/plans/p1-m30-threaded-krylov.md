@@ -17,7 +17,7 @@ Unit tests of each primitive against `Vector` at 1 and 8 threads; motorBike 20-i
 
 ## steps
 
-- [ ] P1-M30-S1 baseline: 100-iteration 8t main-thread profile, Krylov vector-op totals (`kaxpby!`, `kaxpy!`, `kdot`, `kfill!`, `mulorldiv!`). A flat per-thread profile charges spawned work to workers and the join to `mul!`; read the main thread only. Blast radius: none shipped.
+- [x] P1-M30-S1 DELIVERED by the M28 close profile (D190): Krylov vector work ~22% of 8t main-thread samples, progress-output strings ~8% (not reached by `XVector`). Baseline: 100-iteration 8t main-thread profile, Krylov vector-op totals (`kaxpby!`, `kaxpy!`, `kdot`, `kfill!`, `mulorldiv!`). A flat per-thread profile charges spawned work to workers and the join to `mul!`; read the main thread only. Blast radius: none shipped.
 - [ ] P1-M30-S2 `XVector` type, partition, `similar`, `size`, `getindex`, `setindex!`, `unsafe_convert`, and the `k*` primitives, in `src/Multithread/`. Blast radius: none until wired. Bar: primitive unit tests.
 - [ ] P1-M30-S3 wire into `solve_system!` for the CPU backend: wrap `b` and `values`, workspaces from the wrapped `b`, partitioned `mul!` and Jacobi `ldiv!`; `krylov_solve!` still resolves the preconditioner method. DILU stays serial. Blast radius: every CPU linear solve. Bar: strict class.
 - [ ] P1-M30-S4 `activate_multithread` defaults BLAS to one thread, keyword kept; docstring and benchmark README BLAS section updated. Blast radius: thread setup. Bar: 8t smoke time not slower.

@@ -121,3 +121,22 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - GPU discretise per call, ms (scalar / vector, `gpu_profile.jl`, same session): 0.66 / 1.73; AoS base 3.50 / 4.94. GPU 20-iteration run_s 3.79 (S6 4.20).
 - Compile s: 1t 11.98, 2D 13.37, GPU 21.78 (S6 12.94 / 14.85 / 23.89). Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 (parts_s7_4) bitwise; GPU 10.6 figures.
 - Suite files pass: `unit_test_laplace.jl`, `test_physical_boundary_conditions.jl`, oscillating cylinder, BFS Crank-Nicolson, rotating flat plate MRF, heated cylinder, KOmega fixedT, multiphase mixture, `unit_test_wall_distance.jl`; Smagorinsky errored in `bounding_box` (`get_backend` on a `FaceArrays` view, a flat-layout regression since S5), fixed to read `face_nodes`.
+
+## P1-M28-S6 close (HEAD 6cf5ae70, flat column mesh, Int32)
+
+Scratch drivers: copies of the benchmark `cpu_i32.jl`/`mpi_i32.jl`/`motorBike_gpu.jl`/`motorBike_profile.jl`/`kernels.jl`/`footprint.jl` in `~/.cache/xcal_m28/close/` (fresh `mesh_close.jld2`, offline parts, rows to `times.txt`); one command per point, unpinned clock, balanced profile, as the Int32 baseline.
+
+| mode | cores | S6 close s | Int32 baseline s |
+|---|---|---|---|
+| threads | 1 | 135.62 | 162.90 |
+| threads | 8 | 61.37 | 77.95 |
+| MPI | 1 | 142.39 | 169.41 |
+| MPI | 8 | 53.58 | 69.66 |
+| GPU wg 32 | - | 17.17 | 22.4 |
+
+- Refit from n = 1, 8 (`s(8)` 1.619): threads C 45.4 B 90.2 (baseline n = 1,6,8 fit B 119.3); MPI C 69.8 B 72.6 (baseline B 98.3). B −24%/−26%; C near the diagnosis fits (threads 34, MPI 64), the two-point fit is not directly comparable.
+- GPU workgroup, 500 iterations, s: 32 17.17, 64 17.39, 128 17.63, 256 17.65; 32 stays the default.
+- Isolated kernels on the real mesh object, 1t / 8t ms (speedup): face interpolation through `mesh.faces` 0.734 / 0.098 (7.5x, was 1.72x); cell gather 2.318 / 0.326 (7.1x, was 2.20x); CSR SpMV Int64 1.672 / 0.310 (5.4x), Int32 8.3x.
+- Main-thread 8t profile, 100 iterations (10,627 samples): `wait` 50%; serial Krylov vector work (BLAS `axpby!` 11%, `bicgstab!` body 7%, `axpy!` 3%, `dot` 2%) ~22%; string building for progress output (`print_to_string`, `join`, `_string_n`) ~8%. Raw: `~/.cache/xcal_m28/close/profile_close_8t.{txt,jlprof}`.
+- Footprint (Int32 serial mesh, column sizes): 223.6 MB (baseline AoS ~230 MB); `cell_nsign` Int8 2.1 MB (was 8.5 MB); face columns 136 MB, of which `face_centre`/`face_normal`/`face_e` 80 MB.
+- Full serial suite by file via `suite_file.jl` (46 files, runtests.jl's list; 13 at S8, 33 here): all pass. Distributed gate: n=2,3 10/10 in 2m53s, n=6 `test_turbulence_sst_wallfn.jl` 1/1 in 56 s (3m59s together; 5m04s after S2, D167).

@@ -11,7 +11,7 @@ end
     BC::Symmetry, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
     @inbounds begin
         cID = boundary_cellsID[fID]
-        normal = psi.mesh.faces[fID].normal
+        normal = psi.mesh.faces.normal[fID]
         psi_cell = psi[cID]
         psif[fID] = psi_cell - (psi_cell⋅normal)*normal
     end

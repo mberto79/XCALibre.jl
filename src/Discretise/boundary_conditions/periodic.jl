@@ -278,13 +278,13 @@ end
     values = get_values(phi, component)
     (; transform) = bc.value
     
-    (; area, normal, e) = face
+    area, normal, e = faces.area[fID], faces.normal[fID], faces.e[fID]
 
     # determine id of periodic cell and interpolate face value
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    C1 = cell.centre
+    C1 = cells.centre[cellID]
     C2 = cells[pcellID].centre - transform.distance
 
     # for improved accuracy this needs to include the discretisation used for noncorrection
@@ -328,17 +328,17 @@ end
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    C1 = cell.centre
+    C1 = cells.centre[cellID]
     C2 = cells[pcellID].centre - transform.distance
-    Cf = face.centre
-    n = face.normal
+    Cf = faces.centre[fID]
+    n = faces.normal[fID]
 
     Pf = Cf - C1
     PN = C2 - C1 
 
     wn = (Pf⋅n)/(PN⋅n)
     w = one(wn) - wn
-    # w = pface.delta/(face.delta + pface.delta)
+    # w = pface.delta/(faces.delta[fID] + pface.delta)
     # wn = one(w) - w
 
     # Calculate link coefficients
@@ -408,10 +408,10 @@ end
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    C1 = cell.centre
+    C1 = cells.centre[cellID]
     C2 = cells[pcellID].centre - transform.distance
-    Cf = face.centre
-    n = face.normal
+    Cf = faces.centre[fID]
+    n = faces.normal[fID]
 
     Pf = Cf - C1
     PN = C2 - C1 

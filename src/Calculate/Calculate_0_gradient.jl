@@ -143,7 +143,7 @@ end
 
     @inbounds begin
         # Extract required fields from work item face and define ownerCell variables
-        (; ownerCells) = faces[i]
+        ownerCells = faces.ownerCells[i]
         c1 = ownerCells[1]
         c2 = ownerCells[2]
 
@@ -181,8 +181,7 @@ end
 
     @inbounds begin
         # Retrieve face, weight and ownerCells for loop iteration
-        face = faces[fID]
-        ownerCells = face.ownerCells
+        ownerCells = faces.ownerCells[fID]
         c1 = ownerCells[1]; c2 = ownerCells[2]
         
         # Set values to interpolate between
@@ -225,15 +224,15 @@ end
     i += nbfaces # Set i such that it does not index boundary faces
 
     # Retrieve fields from work item face
-    (; ownerCells, centre) = faces[i]
+    ownerCells, centre = faces.ownerCells[i], faces.centre[i]
     centre_face = centre
     owner1 = ownerCells[1]
     owner2 = ownerCells[2]
 
     # Retrieve centre from work item cells and redefine variable name 
-    (; centre) = cells[owner1]
+    centre = cells.centre[owner1]
     centre_cell1 = centre
-    (; centre) = cells[owner2]
+    centre = cells.centre[owner2]
     centre_cell2 = centre
 
     # Retrieve values between which to correct interpolation

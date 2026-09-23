@@ -3,8 +3,7 @@
     BC::Neumann, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
     @inbounds begin
         (; faces) = phi.mesh
-        face = faces[fID]
-        (; delta) = face
+        delta = faces.delta[fID]
         cID = boundary_cellsID[fID]
         phif[fID] = phi[cID] + delta*BC.value 
     end

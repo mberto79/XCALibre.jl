@@ -33,7 +33,7 @@ end
     end
      
     @inbounds begin
-        (; volume, faces_range) = cells[i]
+        volume, faces_range = cells.volume[i], cells.faces_range[i]
 
         z = zero(volume)
         res = SVector{3}(z,z,z)
@@ -41,7 +41,7 @@ end
         for fi ∈ faces_range
             fID = cell_faces[fi]
             nsign = cell_nsign[fi]
-            (; area, normal) = faces[fID]
+            area, normal = faces.area[fID], faces.normal[fID]
             
             res += values[fID]*(area*normal*nsign)
         end
@@ -64,9 +64,9 @@ end
     end
 
     @inbounds begin
-        (; ownerCells, area, normal) = faces[i]
+        ownerCells, area, normal = faces.ownerCells[i], faces.area[i], faces.normal[i]
         cID = ownerCells[1]
-        (; volume) = cells[cID]
+        volume = cells.volume[cID]
 
         res = values[i]*(area*normal)
         res /= volume 
@@ -113,14 +113,14 @@ end
     end
      
     @inbounds begin
-        (; volume, faces_range) = cells[i]
+        volume, faces_range = cells.volume[i], cells.faces_range[i]
 
         res = SMatrix{3,3}(z,z,z,z,z,z,z,z,z)
 
         for fi ∈ faces_range
             fID = cell_faces[fi]
             nsign = cell_nsign[fi]
-            (; area, normal) = faces[fID]
+            area, normal = faces.area[fID], faces.normal[fID]
             Sf = area*normal*nsign
             res += psif[fID]*Sf'
         end
@@ -150,9 +150,9 @@ end
     end
 
     @inbounds begin
-        (; ownerCells, area, normal) = faces[i]
+        ownerCells, area, normal = faces.ownerCells[i], faces.area[i], faces.normal[i]
         cID = ownerCells[1]
-        (; volume) = cells[cID]
+        volume = cells.volume[cID]
 
         Sf = area*normal
         res = psif[i]*Sf'

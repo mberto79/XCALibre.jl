@@ -36,3 +36,4 @@ Every helper here is specific to this project. One entry per script: what it ans
 - `gpu_profile.jl` - CUDA profile (kernel times, host API) of 3 motorBike GPU iterations after warm-up; run: `julia --project=~/.cache/xcal_m28/env -t 1 dev/scripts/gpu_profile.jl <out>` (writes `<out>.prof`; use `--project=env_base` for the AoS base).
 - `cmpres.jl` - significant figures agreeing per residual series between two `.res` files; run: `julia dev/scripts/cmpres.jl a.res b.res`.
 - `suite_file.jl` - runs named serial-suite files with runtests.jl's preamble, one PASS/FAIL line each; run: `julia --project=~/.cache/xcal_m28/env_test -t 1 dev/scripts/suite_file.jl test/unit_test_laplace.jl ...`.
+- `ptx_dump.jl` - PTX of every kernel a 1-iteration motorBike GPU run compiles; run: `julia --project=~/.cache/xcal_m28/env -t 1 dev/scripts/ptx_dump.jl <out>` (writes `<out>.ptx`); per-thread local memory: `awk` for `__local_depot` after the kernel's `PTX CompilerJob` line.

@@ -106,3 +106,10 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 
 - Compile s (S7 / AoS base, same chain): 1t 13.38,13.52 / 17.35,17.01; 2D 15.02,15.22 / 20.43,20.32; rerun after tag fix 1t 12.94, 2D 14.76, GPU 23.26.
 - Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 (S5 parts) bitwise; GPU 11.3 figures. `test_offline.jl`, `test_partition.jl` at n=2,3, `test_restart.jl` at n=1,2 (`dev/petscenv_stock`), `test_mesh_conversion.jl` pass.
+
+## P1-M31-S6 column reads in the discretisation path
+
+- GPU discretise per call, ms (scalar / vector, `gpu_profile.jl`, same session): S6 5.90 / 6.90; S7 HEAD 5.87 / 7.60; AoS base 3.50 / 4.95.
+- PTX `__local_depot` per thread, discretise kernels (flat / AoS base): 3984 and 3480 B / 2304 and 1944 B; kernel parameter counts equal, so the rise is the by-value argument structs (mesh plus each term's field mesh) spilled to local memory.
+- Compile s: 1t 12.94, 2D 14.85, GPU 23.89 (S5 12.6-13.4 / 14.7-15.0 / 22.4-23.2). Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 bitwise; 8t 10.8, GPU 10.3 figures; 8t run 5.87 s.
+- Docs build green (after moving the `@define_boundary` helpers above its docstring). Suite files pass: `test_physical_boundary_conditions.jl` (updated to the new BC signature), `test_reconstruct.jl`, `unit_test_wall_function_averaging.jl`, `test_potential_flow.jl`, `unit_test_laplace.jl`, `test_mesh_conversion.jl`, 3D cascade periodic, rotating flat plate MRF, Taylor-Couette, oscillating cylinder, compressible fixedHeatFlux, fixedT, compression corner, 2D EFM.

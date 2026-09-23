@@ -77,13 +77,11 @@ end
                 if start <= fID <= stop
                     i = fID - start + 1
                     cellID = boundary_cellsID[fID]
-                    face = faces[fID]
-                    cell = cells[cellID] 
 
                     zcellID = spindex(rowptr, colval, cellID, cellID)
                     AP, BP = apply!(
                         model, BC, terms, 
-                        colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+                        colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time
                         )
                     Atomix.@atomic nzval[zcellID] += AP
                     Atomix.@atomic b[cellID] += BP
@@ -117,7 +115,7 @@ end
 # Apply generated function definition
 @generated function apply!(
     model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval::AbstractArray{F},
-    cellID, zcellID, cell, face, fID, i, component, time
+    cellID, zcellID, cells, faces, fID, i, component, time
     ) where {TN,SN,T,S,F}
 
     # Definition of main assignment loop (one per patch)
@@ -126,7 +124,7 @@ end
         call = quote
             ap, bp = BC(
                 terms[$t], 
-                colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
+                colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time
                 )
             AP += F(ap)
             BP += F(bp)

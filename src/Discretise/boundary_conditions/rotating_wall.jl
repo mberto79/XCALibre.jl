@@ -48,7 +48,7 @@ RotatingWall(name::Symbol; centre, axis, rpm) = begin
 end
 
 @define_boundary RotatingWall Laplacian{Linear} VectorField begin
-    (; area, delta) = face
+    area, delta = faces.area[fID], faces.delta[fID]
     J = term.flux[fID]
     flux = J*area/delta
     ap = term.sign[1]*(-flux)

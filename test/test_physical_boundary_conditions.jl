@@ -22,6 +22,8 @@
         original.delta,
         original.weight,
     )
+    faces = copy(mesh.faces)
+    faces[fID] = face
     wall_value = SVector(0.5, -0.5, 1.0)
     wall = Wall(1, wall_value, fID:fID)
     fixed = Dirichlet(1, wall_value, fID:fID)
@@ -48,8 +50,8 @@
             empty_values,
             cID,
             cID,
-            mesh.cells[cID],
-            face,
+            mesh.cells,
+            faces,
             fID,
             1,
             component,
@@ -87,8 +89,8 @@
         empty_values,
         cID,
         cID,
-        mesh.cells[cID],
-        face,
+        mesh.cells,
+        faces,
         fID,
         1,
         nothing,
@@ -134,8 +136,8 @@
                 empty_values,
                 cID,
                 cID,
-                mesh.cells[cID],
-                face,
+                mesh.cells,
+                faces,
                 fID,
                 1,
                 component,
@@ -181,8 +183,8 @@
             empty_values,
             cID,
             cID,
-            mesh.cells[cID],
-            face,
+            mesh.cells,
+            faces,
             fID,
             1,
             nothing,

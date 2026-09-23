@@ -57,8 +57,7 @@ end
     cID = @index(Global)
 
     @inbounds begin
-        cell = cells[cID]
-        faces_range = cell.faces_range
+        faces_range = cells.faces_range[cID]
         phiP = F[cID]
         phiMax = phiP
         phiMin = phiP
@@ -72,15 +71,14 @@ end
 
         grad0 = SVector{3}(x[cID], y[cID], z[cID])
 
-        cc = cell.centre
+        cc = cells.centre[cID]
         limiter = one(phiP)
         ϵ = 10 * eps(phiP)
 
         for fi ∈ faces_range
             fID = cell_faces[fi]
-            face = faces[fID]
 
-            fc = face.centre
+            fc = faces.centre[fID]
             δϕ = (fc - cc)⋅grad0
 
             if δϕ > ϵ

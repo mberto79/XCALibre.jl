@@ -42,8 +42,8 @@ end
 
     @inbounds begin
         # Define workitem cell and extract required fields
-        cell = cells[i]
-        (; faces_range, volume) = cell
+        faces_range = cells.faces_range[i]
+        volume = cells.volume[i]
 
 
         cIndex = diag_nz[i]
@@ -54,13 +54,12 @@ end
             # Retrieve indices for discretisation
             fID = cell_faces[fi]
             ns = cell_nsign[fi] # normal sign
-            face = faces[fID]
             nID = cell_neighbours[fi]
             nIndex = face_nz[fi]
 
 
             # Call scheme generated fucntion
-            ac, an = _scheme!(model, terms, nzval0, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = _scheme!(model, terms, nzval0, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval0[nIndex] = an
 
@@ -68,7 +67,7 @@ end
 
         
         # Call scheme source generated function NEEDS UPDATING!
-        ac, bx1, by1, bz1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime, rho_prev)
+        ac, bx1, by1, bz1 = _scheme_source!(model, terms, cells, i, cIndex, prev, runtime, rho_prev)
         
         nzval0[cIndex] = ac_sum + ac
 
@@ -123,8 +122,8 @@ end
 
     @inbounds begin
         # Define workitem cell and extract required fields
-        cell = cells[i]
-        (; faces_range, volume) = cell
+        faces_range = cells.faces_range[i]
+        volume = cells.volume[i]
 
         cIndex = diag_nz[i]
 
@@ -134,18 +133,17 @@ end
             # Retrieve indices for discretisation
             fID = cell_faces[fi]
             ns = cell_nsign[fi] # normal sign
-            face = faces[fID]
             nID = cell_neighbours[fi]
             nIndex = face_nz[fi]
 
             # Call scheme generated fucntion
-            ac, an = _scheme!(model, terms, nzval, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = _scheme!(model, terms, nzval, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval[nIndex] = an
         end
         
         # Call scheme source generated function
-        ac, b1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime, rho_prev)
+        ac, b1 = _scheme_source!(model, terms, cells, i, cIndex, prev, runtime, rho_prev)
         nzval[cIndex] = ac_sum + ac
 
         # Call sources generated function
@@ -159,7 +157,7 @@ return_quote(x, t) = :(nothing)
 # Scheme generated function definition
 # @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
 @generated function _scheme!(
-    model::Model{TN,SN,T,S}, terms::TERMS, nzval::AbstractArray{F}, cell, face,
+    model::Model{TN,SN,T,S}, terms::TERMS, nzval::AbstractArray{F}, cells, faces,
     nID, ns, cIndex, nIndex, fID, prev, runtime
     ) where {TN,SN,T,S,TERMS,F}
     # Allocate expression array to store scheme function
@@ -168,7 +166,7 @@ return_quote(x, t) = :(nothing)
     # Loop over number of terms and store scheme function in array
     for t in 1:TN
         function_call_scheme = quote
-            ac, an = scheme!(terms[$t], nzval, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
+            ac, an = scheme!(terms[$t], nzval, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
             AC += F(ac)
             AN += F(an)
         end
@@ -185,7 +183,7 @@ return_quote(x, t) = :(nothing)
 end
 
 # Scheme source generated function definition
-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cell::Cell{F}, cID, cIndex, prev, runtime, rho_prev) where {TN,SN,T,S,TERMS,F}
+@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cells::AbstractVector{<:Cell{F}}, cID, cIndex, prev, runtime, rho_prev) where {TN,SN,T,S,TERMS,F}
     # Allocate expression array to store scheme_source function
     out = Expr(:block)
     
@@ -193,7 +191,7 @@ end
     if S.parameters[1].parameters[1] <: AbstractScalarField
         for t in 1:TN
             function_call_scheme_source = quote
-                ac, b = scheme_source!(terms[$t], cell, cID, cIndex, prev, runtime, rho_prev)
+                ac, b = scheme_source!(terms[$t], cells, cID, cIndex, prev, runtime, rho_prev)
                 AC += F(ac)
                 B += F(b)
             end
@@ -211,9 +209,9 @@ end
     elseif S.parameters[1].parameters[1] <: AbstractVectorField
         for t in 1:TN
             function_call_scheme_source = quote
-                ac, bx = scheme_source!(terms[$t], cell, cID, cIndex, prev.x, runtime, rho_prev)
-                ac, by = scheme_source!(terms[$t], cell, cID, cIndex, prev.y, runtime, rho_prev)
-                ac, bz = scheme_source!(terms[$t], cell, cID, cIndex, prev.z, runtime, rho_prev)
+                ac, bx = scheme_source!(terms[$t], cells, cID, cIndex, prev.x, runtime, rho_prev)
+                ac, by = scheme_source!(terms[$t], cells, cID, cIndex, prev.y, runtime, rho_prev)
+                ac, bz = scheme_source!(terms[$t], cells, cID, cIndex, prev.z, runtime, rho_prev)
                 AC += F(ac) # assuming ac's for all directions are equal
                 BX += F(bx)
                 BY += F(by)

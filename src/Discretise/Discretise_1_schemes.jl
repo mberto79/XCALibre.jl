@@ -11,27 +11,27 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 # SteadyState
 @inline function scheme!(
     term::Operator{F,P,I,Time{SteadyState}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     # nothing
     z = zero(eltype(nzval_array))
     z, z
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
-    z = zero(cell.volume)
+    term::Operator{F,P,I,Time{SteadyState}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
+    z = zero(eltype(cells.volume))
     z, z
 end
 
 ## Euler
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     0.0, 0.0 # add types if this approach works
 end
 
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
-        volume = cell.volume
+    term::Operator{F,P,I,Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+        volume = cells.volume[cID]
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]
         
@@ -40,8 +40,8 @@ end
         return ac, b
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin # Special case for U_eqn (rho)
-        volume = cell.volume
+    term::Operator{F,P,I,Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin # Special case for U_eqn (rho)
+        volume = cells.volume[cID]
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]
         
@@ -54,13 +54,13 @@ end
 ## Crank-Nicholson
 @inline function scheme!(
     term::Operator{F,P,I,Time{CrankNicolson}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
 
     0.0, 0.0 # add types if this approach works
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
-        volume = cell.volume
+    term::Operator{F,P,I,Time{CrankNicolson}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+        volume = cells.volume[cID]
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]
         
@@ -69,8 +69,8 @@ end
         return ac, b
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin
-        volume = cell.volume
+    term::Operator{F,P,I,Time{CrankNicolson}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin
+        volume = cells.volume[cID]
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]
         
@@ -83,7 +83,7 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
     (; face_gDiff) = term.phi.mesh
@@ -95,7 +95,7 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Laplacian{Linear}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
+    term::Operator{F,P,I,Laplacian{Linear}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -104,10 +104,10 @@ end
 # Linear
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Linear}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
-    w = face.weight
+    w = faces.weight[fID]
     # signbit(ns) ? w = one(w) - w : w
     half = typeof(w)(0.5)
     w = half + ns*(w - half)
@@ -119,14 +119,14 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{Linear}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Linear}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
 # Upwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
@@ -136,17 +136,17 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{Upwind}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{Upwind}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
 # LUST
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{LUST}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     
-    w = face.weight
+    w = faces.weight[fID]
     signbit(ns) ? w = one(w) - w : w
 
     # Calculate link coefficients
@@ -163,14 +163,14 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{LUST}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{LUST}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
 # BoundedUpwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # $$\mathcal{D}_{bounded} = \sum_f \phi_f \psi_f - \psi_P \sum_f \phi_f$$
     # phif =  max(phif, 0) - max(-phi_f, 0)$
@@ -182,7 +182,7 @@ end
     return ac, an
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
 end
 
@@ -190,16 +190,16 @@ end
 # IMPLICIT SOURCE
 @inline function scheme!(
     term::Operator{F,P,I,Si}, 
-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     z = zero(eltype(nzval_array))
     z, z
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Si}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
+    term::Operator{F,P,I,Si}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
     
     # Retrieve and calculate flux for cell 
-    flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
+    flux = term.sign*term.flux[cID]*cells.volume[cID] # indexed with cID
     ac = flux # indexed with cIndex
     ac, zero(ac)
 end

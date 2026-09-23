@@ -57,16 +57,13 @@ end
     fID = i + nbfaces
 
     @inbounds begin
-        face = faces[fID]
-        ownerCells = face.ownerCells
+        ownerCells = faces.ownerCells[fID]
         owner1 = ownerCells[1]
         owner2 = ownerCells[2]
-        cell1 = cells[owner1]
-        cell2 = cells[owner2]
 
-        cf = face.centre
-        c1 = cell1.centre
-        c2 = cell2.centre
+        cf = faces.centre[fID]
+        c1 = cells.centre[owner1]
+        c2 = cells.centre[owner2]
         d1 = (cf - c1)
         d2 = (cf - c2)
 
@@ -98,14 +95,13 @@ end
     fID = i + nbfaces
 
     @inbounds begin
-        face = faces[fID]
-        ownerCells = face.ownerCells
+        ownerCells = faces.ownerCells[fID]
         own = ownerCells[1]
         nei = ownerCells[2]
 
-        cf = face.centre
-        cOwn = cells[own].centre
-        cNei = cells[nei].centre
+        cf = faces.centre[fID]
+        cOwn = cells.centre[own]
+        cNei = cells.centre[nei]
 
         gradOwn = ∇F[own]   # SMatrix{3,3} — gradient tensor
         gradNei = ∇F[nei]

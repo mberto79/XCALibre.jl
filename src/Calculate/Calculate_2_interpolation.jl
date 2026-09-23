@@ -40,8 +40,7 @@ end
 
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
-        face = faces[i]
-        (; weight, ownerCells) = face
+        weight, ownerCells = faces.weight[i], faces.ownerCells[i]
 
         # Calculate initial values based on index queried from ownerCells
         owner1 = ownerCells[1]
@@ -92,8 +91,7 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; ownerCells, e, delta) = face
+        ownerCells, e, delta = faces.ownerCells[i], faces.e[i], faces.delta[i]
 
         owner1 = ownerCells[1]
         owner2 = ownerCells[2]
@@ -152,8 +150,7 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; ownerCells, e, delta) = face
+        ownerCells, e, delta = faces.ownerCells[i], faces.e[i], faces.delta[i]
 
         owner1 = ownerCells[1]
         owner2 = ownerCells[2]
@@ -217,9 +214,8 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; weight, ownerCells, normal) = face
-        F = face.centre
+        weight, ownerCells, normal = faces.weight[i], faces.ownerCells[i], faces.normal[i]
+        F = faces.centre[i]
 
         owner1 = ownerCells[1] # [o]
         owner2 = ownerCells[2] # [n]
@@ -258,9 +254,8 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; weight, ownerCells, normal) = face
-        # F = face.centre
+        weight, ownerCells, normal = faces.weight[i], faces.ownerCells[i], faces.normal[i]
+        # F = faces.centre[i]
 
         owner1 = ownerCells[1] # [o]
         owner2 = ownerCells[2] # [n]
@@ -309,8 +304,7 @@ end
 
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
-        face = faces[i]
-        (; ownerCells) = face
+        ownerCells = faces.ownerCells[i]
 
         # Calculate initial values based on index queried from ownerCells
         owner1 = ownerCells[1]
@@ -357,7 +351,7 @@ end
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
         # @synchronize # commented out on 2024/10/24
-        (; weight, ownerCells) = faces[i]
+        weight, ownerCells = faces.weight[i], faces.ownerCells[i]
 
         # Define indices for initial x and y values from psi struct
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
@@ -386,8 +380,7 @@ function interpolate!(
     nbfaces = total_boundary_faces(mesh)
     start = nbfaces + 1
     @inbounds for fID ∈ start:length(faces)
-        face = faces[fID]
-        (; delta, ownerCells, e) = face
+        delta, ownerCells, e = faces.delta[fID], faces.ownerCells[fID], faces.e[fID]
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         grad1 = grad(cID1)

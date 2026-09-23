@@ -25,35 +25,35 @@ Adapt.@adapt_structure Neumann
     phi = term.phi 
     values = get_values(phi, component)
     J = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     flux = J*area
     0.0, flux*bc.value # draft implementation to test!
 end
 
 @define_boundary Neumann Divergence{Linear} ScalarField begin
     flux = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     ap = term.sign*(flux) 
     ap, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     ap = term.sign*(flux) 
     ap, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Divergence{LUST} ScalarField begin
     flux = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     ap = term.sign*(flux) 
     ap, -bc.value*ap*delta
 end
 
 # Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary Neumann Divergence{BoundedUpwind} ScalarField begin
-    (; delta) = face
+    delta = faces.delta[fID]
     ap = term.sign*(term.flux[fID])
     0.0, -bc.value*ap*delta
 end

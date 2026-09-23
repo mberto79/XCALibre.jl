@@ -1,9 +1,15 @@
 
+# a body that names `face` or `cell` gets the element built; column reads avoid it
+_names(ex, s::Symbol) = ex === s || (ex isa Expr && any(a -> _names(a, s), ex.args))
+_bind_elements(definition) = Expr(:block,
+    _names(definition, :face) ? :(face = faces[fID]) : nothing,
+    _names(definition, :cell) ? :(cell = cells[cellID]) : nothing)
+
 """
     macro define_boundary(boundary, operator, definition)
         quote
             @inline (bc::\$boundary)(
-                term::Operator{F,P,I,\$operator}, cellID, zcellID, cell, face, fID, i, component, time
+                term::Operator{F,P,I,\$operator}, cellID, zcellID, cells, faces, fID, i, component, time
                 ) where {F,P,I} = \$definition
         end |> esc
     end
@@ -21,9 +27,10 @@ Macro to reduce boilerplate code when defining boundary conditions (implemented 
 - `term` reference to operator on which the boundary applies (gives access to the field and mesh) 
 - `cellID` ID of the corresponding boundary cell
 - `zcellID` sparse matrix linear index for the cell
-- `cell` gives access to boundary cell object and corresponding information
-- `face` gives access to boundary face object and corresponding information
-- `fID` ID of the boundary face (to index `Mesh2.faces` vector)
+- `cells` the mesh cells; read a boundary cell property as `cells.volume[cellID]`
+- `faces` the mesh faces; read a boundary face property as `faces.area[fID]`
+- `fID` ID of the boundary face
+- `cell`, `face` whole boundary cell and face elements, built only when the body names them (slower to compile than column reads)
 - `i` local index of the boundary faces within a kernel or loop
 - `component` for vectors this specifies the components being evaluated (access as `component.value`). For scalars `component = nothing`
 - `time` provides the current simulation time. This only applies to time dependent boundary implementation defined as functions or neural networks.
@@ -34,7 +41,7 @@ Below the use of this macro is illustrated for the implementation of a  `Dirichl
 
     @define_boundary Dirichlet Laplacian{Linear} begin
         J = term.flux[fID]      # extract operator flux
-        (; area, delta) = face  # extract boundary face information
+        area, delta = faces.area[fID], faces.delta[fID] # boundary face information
         flux = J*area/delta     # calculate the face flux
         ap = term.sign*(-flux)  # diagonal (cell) matrix coefficient
         ap, ap*bc.value         # return `ap` and `an`
@@ -47,10 +54,11 @@ macro define_boundary(boundary, operator, definition)
     quote
         @inline function (bc::$boundary)(
             term::Operator{F,P,I,$operator}, colval, rowptr, nzval,
-            cellID::TI, zcellID::TZI, cell::Cell{TF}, face, fID::TFI, i::TBI,
+            cellID::TI, zcellID::TZI, cells::AbstractVector{<:Cell{TF}}, faces, fID::TFI, i::TBI,
             component, time
             ) where {F,P,I,TF,TI,TZI,TFI,TBI}
         @inbounds begin
+            $(_bind_elements(definition))
             ap, bp = begin
                 $definition
             end
@@ -64,10 +72,11 @@ macro define_boundary(boundary, operator, FieldType, definition)
     quote
         @inline function (bc::$boundary)(
             term::Operator{F,P,I,$operator}, colval, rowptr, nzval,
-            cellID::TI, zcellID::TZI, cell::Cell{TF}, face, fID::TFI, i::TBI,
+            cellID::TI, zcellID::TZI, cells::AbstractVector{<:Cell{TF}}, faces, fID::TFI, i::TBI,
             component, time
             ) where {F,P<:$FieldType,I,TF,TI,TZI,TFI,TBI}
         @inbounds begin
+            $(_bind_elements(definition))
             ap, bp = begin
                 $definition
             end

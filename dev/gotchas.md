@@ -71,5 +71,6 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - A `mesh_*.jld2` written before P1-M28 still LOADS (JLD2 bypasses constructors) and silently gives the old AoS layout; delete caches, never trust them across a layout change.
 - 8t CPU and GPU runs are not bitwise reproducible (about 10.5 figures, atomic boundary adds); only 1t and MPI runs are.
 - A cleanup that kills by command-line text (`ps aux | grep pattern | kill`) also kills the shell whose command line contains the pattern, silently ending a chained gate; match `ps -C julia -o pid=,args=` instead.
+- GPU 20-iteration `run_s` is mostly host time (discretise kernels ~1% of it), so run_s parity does not bound a kernel's time: any change to kernel arguments or mesh layout reads per-call kernel times from `dev/scripts/gpu_profile.jl` against a same-session base (D184).
 - `test_restart.jl` errors in `dev/petscenv` with no method `MatMPIAIJGetSeqAIJ` (that env's generated wrappers lack it); run it under `dev/petscenv_stock` (D183).
 - `test/Project.toml` has no XCALibre entry, so suite files run under `~/.cache/xcal_m28/env_test` via `dev/scripts/suite_file.jl`.

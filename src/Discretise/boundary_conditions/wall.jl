@@ -24,7 +24,7 @@ Adapt.@adapt_structure Wall
 Wall(name::Symbol) = Wall(name, 0)
 
 @define_boundary Wall Laplacian{Linear} VectorField begin
-    (; area, delta) = face
+    area, delta = faces.area[fID], faces.delta[fID]
     J = term.flux[fID]
     flux = J*area/delta
     ap = term.sign[1]*(-flux)

@@ -24,7 +24,7 @@ Adapt.@adapt_structure Symmetry
 Symmetry(patch::Symbol) = Symmetry(patch, 0)
 
 @define_boundary Symmetry Laplacian{Linear} VectorField begin
-    (; area, delta, normal) = face
+    area, delta, normal = faces.area[fID], faces.delta[fID], faces.normal[fID]
     J = term.flux[fID]
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
@@ -61,17 +61,17 @@ end
 
 @define_boundary Symmetry Divergence{Linear} VectorField begin
     ap = term.sign*term.flux[fID]
-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
+    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
 end
 
 @define_boundary Symmetry Divergence{Upwind} VectorField begin
     ap = term.sign*term.flux[fID]
-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
+    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
 end
 
 @define_boundary Symmetry Divergence{LUST} VectorField begin
     ap = term.sign*term.flux[fID]
-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
+    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
 end
 
 # Scalars cancel exactly. A vector leaves the difference between its tangential
@@ -81,7 +81,7 @@ end
 end
 
 @define_boundary Symmetry Divergence{BoundedUpwind} VectorField begin
-    (; normal) = face
+    normal = faces.normal[fID]
     ap = term.sign*term.flux[fID]
     vc = term.phi[cellID]
     vn = (vc⋅normal)*normal

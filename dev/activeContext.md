@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-23T19:30:00+01:00
 STATE: BUILDING
 STEP: P1-M31-S5 apply the flat mesh layout (adopted by the user, D179)
-HEAD: 61751a58
+HEAD: bdfc8606
 BRANCH: HM/distributed-draft
 GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4` (parts via `motorbike_smoke.jl part 4 <dir>`), compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl`; compile A/B with `XENV=env_base` (875c16bb worktree `~/.cache/xcal_m28/wt_base`), two samples each; bars in plan p1-m28 (D163, D168)
 resume: `git apply dev/archive/patches/p1-m31-flat-mesh-columns.diff`, fix `test/distributed/test_offline.jl` (no `getfield(mesh, :faces)` any more), update architecture § mesh storage, then gate per plan p1-m31 S5 row: one chain `chain.sh s5 cpu1 cpu8 2d gpu cpu1b 2db gpub` + `XENV=env_base chain.sh b5 cpu1 2d gpu cpu1b 2db gpub`, fresh parts + `mpi.sh`, offline/partition tests, 8t pinned 100 iterations; then S6

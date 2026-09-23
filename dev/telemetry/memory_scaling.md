@@ -73,3 +73,8 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - AoS control (S7 source with the element arrays left as plain vectors): 1t 17.58/17.87, 2D 21.27, equal to base. The per-field layout, not its container type, is the whole rise.
 - SnoopCompile (2D whole script, sum of exclusive inference by method): base 22.6 s, S7 29.7 s (+7.1 s, covers the run! compile rise); `KernelAbstractions.__run` +1.7 s, `SIMPLE` +0.8, `turbulence!` +0.5, rest spread over mesh-carrying methods. Julia-level inference/optimisation, not LLVM.
 - MPI n=4 bitwise with fresh parts; `test_offline.jl` + `test_partition.jl` 4/4 at n=2,3 (48.9 s).
+
+## P1-M28-S9 lazy element view (refused, reverted)
+
+- Compile, same session, s: base 1t 16.64/16.57, 2D 20.15/20.14; S9 1t 20.49/21.73 (+27%), 2D 25.82/27.58 (+33%). No better than S7 (+22/+28); base drifted again 18.0 → 16.6 within the day.
+- Strict class broken at 1t (Ux 9.9 figures), 2D bitwise: motorBike mesh columns `faces.e/delta/weight`, `cells.centre/volume`, `face_gDiff` hash differently from S7 on the same load, so a 3D reader read a lazy view after mutating its array in place. Diff kept at scratchpad only; not landed.

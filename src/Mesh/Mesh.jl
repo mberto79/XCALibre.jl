@@ -6,7 +6,6 @@ using Setfield
 using Adapt
 using KernelAbstractions
 using GPUArrays
-using StructArrays
 # using CUDA, AMDGPU
 
 include("Mesh_0_types.jl")

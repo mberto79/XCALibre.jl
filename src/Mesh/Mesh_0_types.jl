@@ -132,9 +132,88 @@ end
 
 # 2D and 3D Mesh types
 
-# element arrays are stored per field so kernels move only the columns they read
-_soa(x::StructArray) = x
-_soa(x::AbstractArray) = StructArray(x)
+# NEW SECTION: element arrays stored per field so kernels move only the columns they read
+# Same-typed columns share one type parameter to keep mesh-carrying types small for inference.
+
+struct FaceArrays{T<:Union{Face2D,Face3D}, VR, VO, VV, VF} <: AbstractVector{T}
+    nodes_range::VR
+    ownerCells::VO
+    centre::VV
+    normal::VV
+    e::VV
+    area::VF
+    delta::VF
+    weight::VF
+end
+
+struct CellArrays{T<:Cell, VV, VF, VR} <: AbstractVector{T}
+    centre::VV
+    volume::VF
+    nodes_range::VR
+    faces_range::VR
+end
+
+struct NodeArrays{T<:Node, VV, VR} <: AbstractVector{T}
+    coords::VV
+    cells_range::VR
+end
+
+const ElementArrays = Union{FaceArrays, CellArrays, NodeArrays}
+
+# element type recovered from the columns, so adapt may change their storage freely
+FaceArrays{D}(nr::VR, oc::VO, c::VV, n::VV, e::VV, a::VF, d::VF, w::VF) where {D, VR, VO, VV, VF} =
+    FaceArrays{D{eltype(a), eltype(oc), eltype(c), eltype(nr)}, VR, VO, VV, VF}(nr, oc, c, n, e, a, d, w)
+CellArrays(c::VV, v::VF, nr::VR, fr::VR) where {VV, VF, VR} =
+    CellArrays{Cell{eltype(v), eltype(c), eltype(nr)}, VV, VF, VR}(c, v, nr, fr)
+NodeArrays(c::VV, r::VR) where {VV, VR} = NodeArrays{Node{eltype(c), eltype(r)}, VV, VR}(c, r)
+
+_rewrap(::FaceArrays{<:Face2D}, cols) = FaceArrays{Face2D}(cols...)
+_rewrap(::FaceArrays{<:Face3D}, cols) = FaceArrays{Face3D}(cols...)
+_rewrap(::CellArrays, cols) = CellArrays(cols...)
+_rewrap(::NodeArrays, cols) = NodeArrays(cols...)
+
+_columns(x::ElementArrays) = ntuple(i -> getfield(x, i), Val(fieldcount(typeof(x))))
+_columns(v::AbstractVector{T}) where T = ntuple(i -> map(e -> getfield(e, i), v), Val(fieldcount(T)))
+
+_soa(x::ElementArrays) = x
+_soa(x::AbstractVector{<:Face2D}) = FaceArrays{Face2D}(_columns(x)...)
+_soa(x::AbstractVector{<:Face3D}) = FaceArrays{Face3D}(_columns(x)...)
+_soa(x::AbstractVector{<:Cell}) = CellArrays(_columns(x)...)
+_soa(x::AbstractVector{<:Node}) = NodeArrays(_columns(x)...)
+
+Base.size(x::ElementArrays) = size(getfield(x, 1))
+Base.IndexStyle(::Type{<:ElementArrays}) = IndexLinear()
+
+Base.@propagate_inbounds Base.getindex(x::FaceArrays{T}, i::Int) where T = T(x.nodes_range[i],
+    x.ownerCells[i], x.centre[i], x.normal[i], x.e[i], x.area[i], x.delta[i], x.weight[i])
+Base.@propagate_inbounds Base.getindex(x::CellArrays{T}, i::Int) where T =
+    T(x.centre[i], x.volume[i], x.nodes_range[i], x.faces_range[i])
+Base.@propagate_inbounds Base.getindex(x::NodeArrays{T}, i::Int) where T = T(x.coords[i], x.cells_range[i])
+
+Base.@propagate_inbounds function Base.setindex!(x::FaceArrays{T}, v, i::Int) where T
+    f = convert(T, v)
+    x.nodes_range[i] = f.nodes_range; x.ownerCells[i] = f.ownerCells
+    x.centre[i] = f.centre; x.normal[i] = f.normal; x.e[i] = f.e
+    x.area[i] = f.area; x.delta[i] = f.delta; x.weight[i] = f.weight
+    x
+end
+Base.@propagate_inbounds function Base.setindex!(x::CellArrays{T}, v, i::Int) where T
+    c = convert(T, v)
+    x.centre[i] = c.centre; x.volume[i] = c.volume
+    x.nodes_range[i] = c.nodes_range; x.faces_range[i] = c.faces_range
+    x
+end
+Base.@propagate_inbounds function Base.setindex!(x::NodeArrays{T}, v, i::Int) where T
+    n = convert(T, v)
+    x.coords[i] = n.coords; x.cells_range[i] = n.cells_range
+    x
+end
+
+Base.similar(x::ElementArrays, ::Type{T}, dims::Tuple{Int}) where T = T === eltype(x) ?
+    _rewrap(x, map(c -> similar(c, dims), _columns(x))) : similar(getfield(x, 1), T, dims)
+Base.copy(x::ElementArrays) = _rewrap(x, map(copy, _columns(x)))
+
+Adapt.adapt_structure(to, x::ElementArrays) = _rewrap(x, map(c -> adapt(to, c), _columns(x)))
 
 # normal signs are only ±1, so one byte each
 _nsign(x::AbstractArray{Int8}) = x

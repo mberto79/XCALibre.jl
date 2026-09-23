@@ -64,3 +64,12 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 
 - Strict class: 1t, 2D and MPI n=4 bitwise equal to the S1 baseline (fresh format-4 parts); `test_mesh_conversion.jl`, `unit_test_laplace.jl`, `2d_godunov_supersonic_cylinder.jl` pass; `test_offline.jl` + `test_partition.jl` 4/4 at n=2,3.
 - Compile (one sample, loaded machine), s: motorBike 1t 21.5 (base 14.2, +51%), 2D 27.5 (base 16.5, +67%), GPU first run 25.8. The extra mesh type parameter moved compile the wrong way; this triggered D168.
+
+## P1-M28-S7 in-house element containers (option B)
+
+- Strict class: 1t and 2D bitwise equal to the S1 baseline; 8t 10.1 and GPU 11.1 significant figures (their own rerun noise).
+- Compile, same session, s (`compile_s`, `~/.cache/xcal_m28/{s7,base_s7,aos_s7}`): motorBike 1t base 18.06/17.94, S7 21.56/22.42/22.02 (+22%); 2D base 21.41, S7 27.40 (+28%, one sample each). Same as S4 (21.5, 27.5), so B recovered nothing.
+- The base itself drifted 14.2 → 18.0 s (1t) since S1: the +51%/+67% quoted at S4 compared a loaded-machine sample against an older base; the same-session layout cost is +22-28%.
+- AoS control (S7 source with the element arrays left as plain vectors): 1t 17.58/17.87, 2D 21.27, equal to base. The per-field layout, not its container type, is the whole rise.
+- SnoopCompile (2D whole script, sum of exclusive inference by method): base 22.6 s, S7 29.7 s (+7.1 s, covers the run! compile rise); `KernelAbstractions.__run` +1.7 s, `SIMPLE` +0.8, `turbulence!` +0.5, rest spread over mesh-carrying methods. Julia-level inference/optimisation, not LLVM.
+- MPI n=4 bitwise with fresh parts; `test_offline.jl` + `test_partition.jl` 4/4 at n=2,3 (48.9 s).

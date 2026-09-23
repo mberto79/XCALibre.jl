@@ -360,11 +360,7 @@ restart_flux!(mesh, mdotf, ::Nothing, config) = nothing
 restart_flux!(mesh, mdotf, restart, config) = restart_fields!(mesh, nothing, restart, config)
 
 # NEW SECTION: distributed support
-
-# Every solver and model is unsupported on a distributed mesh unless declared here. A combination
-# with no distributed linear-solve seam never calls `wrap_eqn`, so each rank would solve its own
-# block and return a plausible wrong answer; it is refused instead. Adding a method is the record
-# that the combination has been wired and tested.
+# Opt-in: a combination without a distributed solve seam would silently solve per-rank blocks.
 distributed_ready(::Any) = false
 distributed_ready(::Nothing) = true                 # a model the case does not define
 distributed_ready(::Incompressible) = true

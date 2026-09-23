@@ -36,7 +36,7 @@ pn = dm_on.partition
         @test getfield(dm_off.mesh, k) == getfield(dm_on.mesh, k)
     end
     @test same_part(dm_off, dm_on)
-    @test all(getfield(dm_off.mesh, k) isa XCALibre.Mesh.StructArray for k ∈ (:cells, :faces, :nodes))
+    @test all(getfield(dm_off.mesh, k) isa XCALibre.Mesh.ElementArrays for k ∈ (:cells, :faces, :nodes))
     @test dm_off.comm == comm
 end
 # the rank-uniform form: every rank runs the same call, only rank 0 reads, and a

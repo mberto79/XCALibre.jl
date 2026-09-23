@@ -78,3 +78,10 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 
 - Compile, same session, s: base 1t 16.64/16.57, 2D 20.15/20.14; S9 1t 20.49/21.73 (+27%), 2D 25.82/27.58 (+33%). No better than S7 (+22/+28); base drifted again 18.0 → 16.6 within the day.
 - Strict class broken at 1t (Ux 9.9 figures), 2D bitwise: motorBike mesh columns `faces.e/delta/weight`, `cells.centre/volume`, `face_gDiff` hash differently from S7 on the same load, so a 3D reader read a lazy view after mutating its array in place. Diff kept at scratchpad only; not landed.
+
+## P1-M31 screens on the S7 source (same-chain base each)
+
+- One bounds check per element access, columns read `@inbounds`: 2D 24.65/25.61 vs base 19.80/19.88 (+27%), 1t 20.11/20.69 vs 16.40/16.53 (+24%). No change.
+- AoS vectors behind a trivial `AbstractVector` wrapper with a user-defined `getindex`: 2D 19.59/20.17 vs 20.12/20.13, 1t 16.36/16.60 vs 16.56/16.64. Equals base.
+- Mesh2 type tree (2D, type nodes/depth/string length): AoS 65/5/417, wrapper 103/6/668, S7 112/5/765; `ScalarField` carries the mesh. The wrapper is nearly as large as S7 and costs nothing.
+- SnoopCompile S7 vs base: methods only in S7 total 0.15 s; the +7.1 s is the same caller methods inferring slower (`__run` +1.7, ModelPhysics +1.25, Solvers +1.0, e.g. the KOmegaSST model constructor 0.18 → 0.49 s).

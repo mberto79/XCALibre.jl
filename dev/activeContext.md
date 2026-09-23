@@ -1,12 +1,12 @@
 # Active context - memory-traffic scaling (P1-M28..M30)
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m28-mesh-soa.md, dev/plans/p1-m31-column-reads.md, dev/plans/p1-m29-index-widths.md, dev/plans/p1-m30-threaded-krylov.md
 updated: 2026-09-23T18:00:00+01:00
-STATE: BUILDING
+STATE: BLOCKED
 STEP: P1-M31-S1 column reads in Discretise, Calculate and Mesh_1_functions (screen)
 HEAD: 49c1ff23
 BRANCH: HM/distributed-draft
 GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4` (parts via `motorbike_smoke.jl part 4 <dir>`), compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl`; compile A/B with `XENV=env_base` (875c16bb worktree `~/.cache/xcal_m28/wt_base`), two samples each; bars in plan p1-m28 (D163, D168)
-resume: rewrite hot element accesses in `src/Discretise/`, `src/Calculate/` and `src/Mesh/Mesh_1_functions.jl` to column reads (`(; area, normal) = faces` then `area[fID]`), keep behaviour bitwise, then `chain.sh s31a 2d cpu1 2db cpu1b` and `XENV=env_base chain.sh b31a 2d cpu1 2db cpu1b` in one run and read the screen bar in plan p1-m31
+resume: user decision (D174): (1) accept the measured +22-33% first-run compile for the −11-13% runtime and close M28 at S7, (2) option A in full incl. the public `@define_boundary` API taking columns, or (3) revert to AoS; M31-S1 waits on it
 
 ## binding
 - User rule (D168): adopt option B if first-run compile is within +10% of 875c16bb on motorBike 1t and 2D; else option A (whole mesh as plain columns, short accessors allowed at ≤1-2% runtime cost). The D164 band is withdrawn.

@@ -113,3 +113,11 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - PTX `__local_depot` per thread, discretise kernels (flat / AoS base): 3984 and 3480 B / 2304 and 1944 B; kernel parameter counts equal, so the rise is the by-value argument structs (mesh plus each term's field mesh) spilled to local memory.
 - Compile s: 1t 12.94, 2D 14.85, GPU 23.89 (S5 12.6-13.4 / 14.7-15.0 / 22.4-23.2). Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 bitwise; 8t 10.8, GPU 10.3 figures; 8t run 5.87 s.
 - Docs build green (after moving the `@define_boundary` helpers above its docstring). Suite files pass: `test_physical_boundary_conditions.jl` (updated to the new BC signature), `test_reconstruct.jl`, `unit_test_wall_function_averaging.jl`, `test_potential_flow.jl`, `unit_test_laplace.jl`, `test_mesh_conversion.jl`, 3D cascade periodic, rotating flat plate MRF, Taylor-Couette, oscillating cylinder, compressible fixedHeatFlux, fixedT, compression corner, 2D EFM.
+
+## P1-M31-S8 kernel argument diet
+
+- Discretise kernels take mesh-free terms, sources, `prev` and `rho_prev` plus `cells`, `faces`, `cell_faces`, `cell_neighbours`, `cell_nsign`; `model` and `mesh` no longer passed; phi keeps only `face_gDiff`.
+- PTX `__local_depot` per thread (scalar / vector): 408 / 880 B (S6 3480 / 3984, AoS base 1944 / 2304).
+- GPU discretise per call, ms (scalar / vector, `gpu_profile.jl`, same session): 0.66 / 1.73; AoS base 3.50 / 4.94. GPU 20-iteration run_s 3.79 (S6 4.20).
+- Compile s: 1t 11.98, 2D 13.37, GPU 21.78 (S6 12.94 / 14.85 / 23.89). Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 (parts_s7_4) bitwise; GPU 10.6 figures.
+- Suite files pass: `unit_test_laplace.jl`, `test_physical_boundary_conditions.jl`, oscillating cylinder, BFS Crank-Nicolson, rotating flat plate MRF, heated cylinder, KOmega fixedT, multiphase mixture, `unit_test_wall_distance.jl`; Smagorinsky errored in `bounding_box` (`get_backend` on a `FaceArrays` view, a flat-layout regression since S5), fixed to read `face_nodes`.

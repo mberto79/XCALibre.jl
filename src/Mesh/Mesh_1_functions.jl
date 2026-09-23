@@ -227,7 +227,7 @@ function bounding_box(mesh::AbstractMesh)
     (; faces, face_nodes, nodes) = mesh
     nbfaces = total_boundary_faces(mesh)
 
-    backend = get_backend(faces)
+    backend = get_backend(face_nodes)
     F = _get_float(mesh)
 
     pmin = KernelAbstractions.zeros(backend, F, 3)

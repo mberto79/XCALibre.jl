@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T03:00:00+01:00
 STATE: IDLE
 STEP: P1-M31-S8 kernel argument diet (not started; user paused after S6)
-HEAD: bdfc8606
+HEAD: 05c3310e
 BRANCH: HM/distributed-draft
 GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4` (parts via `motorbike_smoke.jl part 4 <dir>`), compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl`; compile A/B with `XENV=env_base` (875c16bb worktree `~/.cache/xcal_m28/wt_base`), two samples each; bars in plan p1-m28 (D163, D168)
 resume: per plan p1-m31 S8 row: list what `_discretise_*_model!` and `_scheme!`/BCs read from `mesh` and `terms[t].phi.mesh`, pass those columns instead, then `gpu_profile.jl` vs `env_base` and the PTX depot check (`dev/scripts/ptx_dump.jl`)

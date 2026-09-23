@@ -1,12 +1,12 @@
-# Active context - P1 complete, exit gate pending
+# Active context - P1-M33 MPI path quick wins
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
 updated: 2026-09-25T07:00:00+01:00
-STATE: IDLE
-STEP: P1 exit gate (every P1 milestone closed; M32 D203)
+STATE: PLANNING
+STEP: P1-M33-S1 tolerance comparison and iteration counts (not started)
 HEAD: a0c0f8a4
 BRANCH: HM/distributed-draft
 GATE: `dev/phaseRoadmap.md` § Exit gate: full serial suite, distributed gate within Q2, BFS example on stock binaries from a clean checkout, rank invariance at 1,2,4 (Q1), scaling telemetry (Q3), docs build
-resume: user runs the phase close (`xcalibre-close`, direct invocation only); open finding: VTK `initialise_writer` costs ~3 s per `run!` even with `write_interval=-1` (D202), not yet a milestone
+resume: read the PETSc extension's option mapping (rtol/atol/itmax/norm per solver) against Krylov.jl 0.10.10 `cg!`/`bicgstab!` stopping tests; then iteration counts per equation, motorBike 20 iterations, threads vs MPI n=4
 
 ## binding
 - User rulings: flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

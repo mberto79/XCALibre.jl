@@ -14,7 +14,7 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 - Done: M29 (D195).
 - Done: M30 (D200).
 - Done: M32 (D203).
-- Now: P1 exit gate (phase close, user-invoked).
+- Now: M33 MPI path quick wins (D204). Then: P1 exit gate (phase close, user-invoked).
 
 ## Ordered work
 
@@ -52,6 +52,7 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 - [x] **P1-M29 - index widths** Global IDs Int64 independent of the local index type; AMG and periodic index arrays follow the mesh index type; Int32 the reader default with an overflow error. Exit: residuals bitwise, a partition with global IDs above `typemax(Int32)` builds on an Int32 mesh, suite green by file. Serves R11, R13. Expected 4 steps (D159). CLOSED (D195). Plan: `dev/archive/plans/p1/p1-m29-index-widths.md`.
 - [x] **P1-M30 - threaded linear solve on one thread pool** Krylov vector work and SpMV on Julia threads over one row partition instead of OpenBLAS; BLAS back to one thread. Exit: residuals to 8 significant figures, 8t vector-op share under 3 s, 8t within 5% of 8-rank MPI on the same revision, 1t not slower. Serves R7, R13. Expected 6 steps (D159). CLOSED (D200): 8t 48.1 s, below 8-rank MPI 54.1 s. Plan: `dev/archive/plans/p1/p1-m30-threaded-krylov.md`.
 - [x] **P1-M32 - optional progress output** `run!` takes a `progress` keyword (default `true`); `progress=false` builds and prints no progress output on any solver, and the documentation recommends it for large-scale runs that are not on a local PC. Exit: every `run!` method honours the keyword, residual histories unchanged either way, docs build (profile clause dropped, D202). Expected 2 steps: keyword through every solver loop, then docs and the 8t profile. Opened by the user (D201). CLOSED (D203); tests run with `progress=false`.
+- [ ] **P1-M33 - MPI path quick wins** Investigation: are the distributed (PETSc) and threaded (Krylov.jl) solves given comparable stopping criteria, where does an 8-rank iteration spend its time beyond the threaded one (54.1 vs 48.1 s, D200), and which wins need no or little source change. Exit: a tolerance comparison per solver (norm, rtol/atol meaning, iteration counts per equation on motorBike), a PETSc `-log_view` breakdown at n=4, and a ranked list of easy wins with cost; fixes only if trivial and measured. Expected 2 steps. Opened by the user (D204).
 
 ## Exit gate
 

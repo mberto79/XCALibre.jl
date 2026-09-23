@@ -54,3 +54,8 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - Compile (first `run!` after potential flow, `cumulative_compile_time_ns`), s: motorBike 1t 14.2 → 17.7 (+25%), 2D kwSST 16.5 → 23.3 (+41%), GPU first run 21.9 → 25.8 (+18%), MPI n=4 first run 19.5 → 21.6.
 - Attribution (SnoopCompile, 2D case, whole script): exclusive inference 18.9 → 25.7 s, spread 1.3-1.5x over the same methods (`KernelAbstractions.__run` +1.6 s, `turbulence!` +0.5, `SIMPLE` +0.7); StructArrays internals 0.68 s. The rest of the compile rise is LLVM on per-kernel IR. Cause: every specialisation carrying the mesh type now carries 14 more column types.
 - Footprint (Int32 motorBike serial mesh, `Base.summarysize`): 219 MB total, `faces` 118 MB, `cells` 16 MB, `cell_nsign` 8.1 MB.
+
+## P1-M28-S3 part round trip and distributed gate
+
+- `test_offline.jl` at n=2,3 (offline parts written and read equal online parts array by array, mesh type equal, cells/faces/nodes read back per field): 2/2 in 33 s.
+- `gate.jl`: n=2,3 part 10/10 in 3m40.5s (3m14s before S2, D157); n=6 `test_turbulence_sst_wallfn.jl` 1m23.8s, killed by the 298 s outer timeout inside the gate, 7/7 per rank when run alone. Total 5m04s against Q2 (D167).

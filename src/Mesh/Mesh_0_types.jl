@@ -167,12 +167,14 @@ CellArrays(c::VV, v::VF, nr::VR, fr::VR) where {VV, VF, VR} =
     CellArrays{Cell{eltype(v), eltype(c), eltype(nr)}, VV, VF, VR}(c, v, nr, fr)
 NodeArrays(c::VV, r::VR) where {VV, VR} = NodeArrays{Node{eltype(c), eltype(r)}, VV, VR}(c, r)
 
-_rewrap(::FaceArrays{<:Face2D}, cols) = FaceArrays{Face2D}(cols...)
-_rewrap(::FaceArrays{<:Face3D}, cols) = FaceArrays{Face3D}(cols...)
-_rewrap(::CellArrays, cols) = CellArrays(cols...)
-_rewrap(::NodeArrays, cols) = NodeArrays(cols...)
+# a storage change keeps the element type, so it is carried over rather than recomputed
+_rewrap(::FaceArrays{T}, c) where T = FaceArrays{T, typeof(c[1]), typeof(c[2]), typeof(c[3]), typeof(c[6])}(c...)
+_rewrap(::CellArrays{T}, c) where T = CellArrays{T, typeof(c[1]), typeof(c[2]), typeof(c[3])}(c...)
+_rewrap(::NodeArrays{T}, c) where T = NodeArrays{T, typeof(c[1]), typeof(c[2])}(c...)
 
-_columns(x::ElementArrays) = ntuple(i -> getfield(x, i), Val(fieldcount(typeof(x))))
+_columns(x::FaceArrays) = (x.nodes_range, x.ownerCells, x.centre, x.normal, x.e, x.area, x.delta, x.weight)
+_columns(x::CellArrays) = (x.centre, x.volume, x.nodes_range, x.faces_range)
+_columns(x::NodeArrays) = (x.coords, x.cells_range)
 _columns(v::AbstractVector{T}) where T = ntuple(i -> map(e -> getfield(e, i), v), Val(fieldcount(T)))
 
 _soa(x::ElementArrays) = x
@@ -184,11 +186,19 @@ _soa(x::AbstractVector{<:Node}) = NodeArrays(_columns(x)...)
 Base.size(x::ElementArrays) = size(getfield(x, 1))
 Base.IndexStyle(::Type{<:ElementArrays}) = IndexLinear()
 
-Base.@propagate_inbounds Base.getindex(x::FaceArrays{T}, i::Int) where T = T(x.nodes_range[i],
-    x.ownerCells[i], x.centre[i], x.normal[i], x.e[i], x.area[i], x.delta[i], x.weight[i])
-Base.@propagate_inbounds Base.getindex(x::CellArrays{T}, i::Int) where T =
-    T(x.centre[i], x.volume[i], x.nodes_range[i], x.faces_range[i])
-Base.@propagate_inbounds Base.getindex(x::NodeArrays{T}, i::Int) where T = T(x.coords[i], x.cells_range[i])
+# one bounds check per element, as for a plain vector; columns share its length
+@inline function Base.getindex(x::FaceArrays{T}, i::Int) where T
+    @boundscheck checkbounds(x.area, i)
+    @inbounds T(x.nodes_range[i], x.ownerCells[i], x.centre[i], x.normal[i], x.e[i], x.area[i], x.delta[i], x.weight[i])
+end
+@inline function Base.getindex(x::CellArrays{T}, i::Int) where T
+    @boundscheck checkbounds(x.volume, i)
+    @inbounds T(x.centre[i], x.volume[i], x.nodes_range[i], x.faces_range[i])
+end
+@inline function Base.getindex(x::NodeArrays{T}, i::Int) where T
+    @boundscheck checkbounds(x.coords, i)
+    @inbounds T(x.coords[i], x.cells_range[i])
+end
 
 Base.@propagate_inbounds function Base.setindex!(x::FaceArrays{T}, v, i::Int) where T
     f = convert(T, v)
@@ -213,93 +223,127 @@ Base.similar(x::ElementArrays, ::Type{T}, dims::Tuple{Int}) where T = T === elty
     _rewrap(x, map(c -> similar(c, dims), _columns(x))) : similar(getfield(x, 1), T, dims)
 Base.copy(x::ElementArrays) = _rewrap(x, map(copy, _columns(x)))
 
-Adapt.adapt_structure(to, x::ElementArrays) = _rewrap(x, map(c -> adapt(to, c), _columns(x)))
+# no closure over `to`: a captured type is stored as its kind and adapt stops inferring
+Adapt.adapt_structure(to, x::FaceArrays) = _rewrap(x, (adapt(to, x.nodes_range), adapt(to, x.ownerCells),
+    adapt(to, x.centre), adapt(to, x.normal), adapt(to, x.e), adapt(to, x.area), adapt(to, x.delta), adapt(to, x.weight)))
+Adapt.adapt_structure(to, x::CellArrays) = _rewrap(x, (adapt(to, x.centre), adapt(to, x.volume),
+    adapt(to, x.nodes_range), adapt(to, x.faces_range)))
+Adapt.adapt_structure(to, x::NodeArrays) = _rewrap(x, (adapt(to, x.coords), adapt(to, x.cells_range)))
 
 # normal signs are only ±1, so one byte each
 _nsign(x::AbstractArray{Int8}) = x
 _nsign(x::AbstractArray) = Int8.(x)
 
-struct Mesh2{VC, VI, VS, VF<:AbstractArray{<:Face2D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
-    cells::VC
+struct Mesh2{VV, VTF, VR, VO, VI, VS, VB, SV3, UR} <: AbstractMesh
+    cell_centre::VV
+    cell_volume::VTF
+    cell_nodes_range::VR
+    cell_faces_range::VR
     cell_nodes::VI
     cell_faces::VI
     cell_neighbours::VI
     cell_nsign::VS
-    faces::VF
+    face_nodes_range::VR
+    face_ownerCells::VO
+    face_centre::VV
+    face_normal::VV
+    face_e::VV
+    face_area::VTF
+    face_delta::VTF
+    face_weight::VTF
     face_nodes::VI
     face_gDiff::VTF
     boundaries::VB
-    nodes::VN
-    node_cells::VI # can be empty for now
+    node_coords::VV
+    node_cells_range::VR
+    node_cells::VI
     get_float::SV3
     get_int::UR
     boundary_cellsID::VI
     function Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
         face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
         c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
-        new{typeof(c), typeof(cell_nodes), typeof(s), typeof(f), typeof(face_gDiff), typeof(boundaries),
-            typeof(n), typeof(get_float), typeof(get_int)}(c, cell_nodes, cell_faces, cell_neighbours,
-            s, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
-            boundary_cellsID)
+        fields = (c.centre, c.volume, c.nodes_range, c.faces_range, cell_nodes, cell_faces,
+            cell_neighbours, s, f.nodes_range, f.ownerCells, f.centre, f.normal, f.e, f.area, f.delta,
+            f.weight, face_nodes, face_gDiff, boundaries, n.coords, n.cells_range, node_cells,
+            get_float, get_int, boundary_cellsID)
+        new{typeof(f.centre), typeof(f.area), typeof(f.nodes_range), typeof(f.ownerCells),
+            typeof(cell_nodes), typeof(s), typeof(boundaries), typeof(get_float), typeof(get_int)}(fields...)
     end
 end
-Adapt.@adapt_structure Mesh2
 
-# face_gDiff is derived here rather than passed in, so no call site can supply a stale array.
-# Readers that fill the face geometry after construction must call update_face_gDiff!
+@inline Base.getproperty(m::Mesh2, s::Symbol) =
+    s === :faces ? FaceArrays{Face2D}(getfield(m, :face_nodes_range), getfield(m, :face_ownerCells),
+        getfield(m, :face_centre), getfield(m, :face_normal), getfield(m, :face_e),
+        getfield(m, :face_area), getfield(m, :face_delta), getfield(m, :face_weight)) :
+    s === :cells ? CellArrays(getfield(m, :cell_centre), getfield(m, :cell_volume),
+        getfield(m, :cell_nodes_range), getfield(m, :cell_faces_range)) :
+    s === :nodes ? NodeArrays(getfield(m, :node_coords), getfield(m, :node_cells_range)) :
+    getfield(m, s)
+
+Adapt.adapt_structure(to, m::Mesh2) = Mesh2(adapt(to, m.cells), adapt(to, m.cell_nodes),
+    adapt(to, m.cell_faces), adapt(to, m.cell_neighbours), adapt(to, m.cell_nsign), adapt(to, m.faces),
+    adapt(to, m.face_nodes), adapt(to, m.face_gDiff), adapt(to, m.boundaries), adapt(to, m.nodes),
+    adapt(to, m.node_cells), adapt(to, m.get_float), adapt(to, m.get_int), adapt(to, m.boundary_cellsID))
+
 Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
       boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID) = Mesh2(
     cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
     face_gDiff_coefficients(faces), boundaries, nodes, node_cells, get_float, get_int,
     boundary_cellsID)
 
-
-"""
-    struct Mesh3{VC, VI, VS, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
-        cells::VC           # vector of cells
-        cell_nodes::VI      # vector of indices to access cell nodes
-        cell_faces::VI      # vector of indices to access cell faces
-        cell_neighbours::VI # vector of indices to access cell neighbours
-        cell_nsign::VS      # face normal sign per cell face (Int8, 1 or -1)
-        faces::VF           # vector of faces
-        face_nodes::VI      # vector of indices to access face nodes
-        face_gDiff::VTF     # Laplacian face coefficient (derived, see `_gDiff`)
-        boundaries::VB      # vector of boundaries
-        nodes::VN           # vector of nodes
-        node_cells::VI      # vector of indices to access node cells
-        get_float::SV3      # store mesh float type
-        get_int::UR         # store mesh integer type
-        boundary_cellsID::VI # vector of indices of boundary cell IDs
-    end
-"""
-struct Mesh3{VC, VI, VS, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
-    cells::VC
+struct Mesh3{VV, VTF, VR, VO, VI, VS, VB, SV3, UR} <: AbstractMesh
+    cell_centre::VV
+    cell_volume::VTF
+    cell_nodes_range::VR
+    cell_faces_range::VR
     cell_nodes::VI
     cell_faces::VI
     cell_neighbours::VI
     cell_nsign::VS
-    faces::VF
+    face_nodes_range::VR
+    face_ownerCells::VO
+    face_centre::VV
+    face_normal::VV
+    face_e::VV
+    face_area::VTF
+    face_delta::VTF
+    face_weight::VTF
     face_nodes::VI
     face_gDiff::VTF
     boundaries::VB
-    nodes::VN
-    node_cells::VI # can be empty for now
+    node_coords::VV
+    node_cells_range::VR
+    node_cells::VI
     get_float::SV3
     get_int::UR
     boundary_cellsID::VI
     function Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
         face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
         c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
-        new{typeof(c), typeof(cell_nodes), typeof(s), typeof(f), typeof(face_gDiff), typeof(boundaries),
-            typeof(n), typeof(get_float), typeof(get_int)}(c, cell_nodes, cell_faces, cell_neighbours,
-            s, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
-            boundary_cellsID)
+        fields = (c.centre, c.volume, c.nodes_range, c.faces_range, cell_nodes, cell_faces,
+            cell_neighbours, s, f.nodes_range, f.ownerCells, f.centre, f.normal, f.e, f.area, f.delta,
+            f.weight, face_nodes, face_gDiff, boundaries, n.coords, n.cells_range, node_cells,
+            get_float, get_int, boundary_cellsID)
+        new{typeof(f.centre), typeof(f.area), typeof(f.nodes_range), typeof(f.ownerCells),
+            typeof(cell_nodes), typeof(s), typeof(boundaries), typeof(get_float), typeof(get_int)}(fields...)
     end
 end
-Adapt.@adapt_structure Mesh3
 
-# face_gDiff is derived here rather than passed in, so no call site can supply a stale array.
-# Readers that fill the face geometry after construction must call update_face_gDiff!
+@inline Base.getproperty(m::Mesh3, s::Symbol) =
+    s === :faces ? FaceArrays{Face3D}(getfield(m, :face_nodes_range), getfield(m, :face_ownerCells),
+        getfield(m, :face_centre), getfield(m, :face_normal), getfield(m, :face_e),
+        getfield(m, :face_area), getfield(m, :face_delta), getfield(m, :face_weight)) :
+    s === :cells ? CellArrays(getfield(m, :cell_centre), getfield(m, :cell_volume),
+        getfield(m, :cell_nodes_range), getfield(m, :cell_faces_range)) :
+    s === :nodes ? NodeArrays(getfield(m, :node_coords), getfield(m, :node_cells_range)) :
+    getfield(m, s)
+
+Adapt.adapt_structure(to, m::Mesh3) = Mesh3(adapt(to, m.cells), adapt(to, m.cell_nodes),
+    adapt(to, m.cell_faces), adapt(to, m.cell_neighbours), adapt(to, m.cell_nsign), adapt(to, m.faces),
+    adapt(to, m.face_nodes), adapt(to, m.face_gDiff), adapt(to, m.boundaries), adapt(to, m.nodes),
+    adapt(to, m.node_cells), adapt(to, m.get_float), adapt(to, m.get_int), adapt(to, m.boundary_cellsID))
+
 Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
       boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID) = Mesh3(
     cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,

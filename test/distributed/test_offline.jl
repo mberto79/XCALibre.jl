@@ -18,9 +18,7 @@ MPI.Barrier(comm)
 dm_off = distribute(dir; comm)
 dm_on = distribute(gmesh; comm=comm)
 
-const MESH_ARRAYS = (:cells, :cell_nodes, :cell_faces, :cell_neighbours, :cell_nsign, :faces,
-    :face_nodes, :boundaries, :nodes, :node_cells, :boundary_cellsID, :get_float, :get_int)
-same_mesh(a, b) = all(getfield(a, k) == getfield(b, k) for k ∈ MESH_ARRAYS)
+same_mesh(a, b) = fields_eq(a, b)
 fields_eq(a, b) = all(getfield(a, k) == getfield(b, k) for k ∈ fieldnames(typeof(a)))
 same_part(a, b) = fields_eq(getfield(a, :partition), getfield(b, :partition)) &&
     a.orig_cells == b.orig_cells && a.orig_faces == b.orig_faces &&
@@ -32,11 +30,12 @@ pn = dm_on.partition
     for k ∈ fieldnames(Partition)
         @test getfield(dm_off.partition, k) == getfield(pn, k)
     end
-    for k ∈ MESH_ARRAYS
+    for k ∈ fieldnames(typeof(dm_on.mesh))
         @test getfield(dm_off.mesh, k) == getfield(dm_on.mesh, k)
     end
     @test same_part(dm_off, dm_on)
-    @test all(getfield(dm_off.mesh, k) isa XCALibre.Mesh.ElementArrays for k ∈ (:cells, :faces, :nodes))
+    @test all(hasfield(typeof(dm_off.mesh), k) for k ∈ (:cell_volume, :face_area, :node_coords))
+    @test all(getproperty(dm_off.mesh, k) isa XCALibre.Mesh.ElementArrays for k ∈ (:cells, :faces, :nodes))
     @test dm_off.comm == comm
 end
 # the rank-uniform form: every rank runs the same call, only rank 0 reads, and a

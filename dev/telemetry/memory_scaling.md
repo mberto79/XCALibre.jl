@@ -95,3 +95,9 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - 20-iteration run s: 1t 11.15,11.05 / 10.75,10.37 / 9.64,10.05; 8t 6.27,7.80 / 5.68,5.91 / 5.49,5.91. Flat 1t and 2D bitwise to the S1 baseline, 8t 10.0 figures. GPU, MPI and the suite not run.
 - GPU (20 iterations, same session): flat before fix run 7.47/7.09 s vs base 4.10/4.53; S7 7.47 (S4 StructArrays 4.65). CUDA profile: GPU busy equal (256 vs 261 ms per 3 iterations), extra time on the host in `initialise_writer(VTK)` iterating a host copy of the mesh whose type was not inferred (container `adapt` closed over `to`; `typeof(Array)` is `UnionAll`). Also per call: discretise scalar kernel 5.67 vs 3.50 ms, vector 7.38 vs 4.94 ms; other kernels faster.
 - After type-stable adapt (explicit column adapts, element type carried over; patch updated): GPU run 4.24/4.11 vs base 4.08/4.32 (parity), GPU compile 23.4 vs 26.6 s; 1t compile 13.6 vs 17.4, 2D 15.5 vs 20.8; 1t run 10.3 vs 11.4 s; GPU 10.7 figures, 1t and 2D bitwise.
+
+## P1-M31-S5 flat mesh landed (same-chain base each)
+
+- Compile s (flat / AoS base): 1t 12.61,13.41 / 17.03,17.50; 2D 14.69,14.99 / 20.58,20.86; GPU 22.37,23.17 / 26.23,26.44; 8t 18.29.
+- 20-iteration run s: 1t 9.76,10.49 / 11.57,11.81; GPU 4.17,4.40 / 4.45,4.05; 8t 6.42. 8t pinned 100-iteration run 17.84,17.44 / 20.28,20.62.
+- Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 (fresh parts) bitwise; 8t 10.5, GPU 10.3 figures. `test_offline.jl`, `test_partition.jl` at n=2,3 pass; `test_mesh_conversion.jl`, `unit_test_laplace.jl` pass.

@@ -24,7 +24,7 @@ What is true of the code today. Why a mechanism was chosen belongs in `dev/decis
 
 ## mesh storage
 
-- A mesh's cells, faces and nodes are stored one array per field. On the branch today (P1-M28-S7) the arrays sit in `FaceArrays`/`CellArrays`/`NodeArrays` containers held in `mesh.faces` etc.; adopted next (P1-M31-S5, D179) they become top-level mesh fields sharing type parameters, with `mesh.faces`/`cells`/`nodes` rebuilt on demand as zero-copy views. Either way constructors take element vectors, readers build plain vectors, `mesh.faces[i]` rebuilds an element, and `mesh.faces.area[i]` reads the array. Anything leaving the device goes through `adapt`, which keeps the per-field form and must stay inferable (D178); binary part files pack the columns back into element records.
+- A mesh's cells, faces and nodes are stored one array per field as top-level `Mesh2`/`Mesh3` fields (`cell_volume`, `face_area`, `node_coords`, ...), same-typed arrays sharing one of nine type parameters (D177, D179); `mesh.faces`/`cells`/`nodes` are rebuilt in `getproperty` as zero-copy `FaceArrays`/`CellArrays`/`NodeArrays` views. Constructors take element vectors, readers build plain vectors, `mesh.faces[i]` rebuilds an element, and `mesh.faces.area[i]` reads the array. Anything leaving the device goes through `adapt`, written out per column so it stays inferable (D178); binary part files pack the columns back into element records.
 
 ## interfaces
 

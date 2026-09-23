@@ -37,3 +37,12 @@ Residuals match Int64 to 10+ significant figures. Refit n = 1, 6, 8: threads B 1
 ## footprint, Int32 serial mesh (`footprint.jl`)
 
 Mesh object about 230 MB, `faces` 124 MB, `cell_nsign` 8.5 MB (Int32, values ±1).
+
+## P1-M28-S1 smoke baselines at 875c16bb (20 iterations, `dev/scripts/motorbike_smoke.jl`)
+
+Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.cache/xcal_m28/env` (copy of the benchmark `env_distributed`, XCALibre developed from the checkout).
+
+- Reproducibility: 1t and MPI n=4 reruns bitwise identical; 8t and GPU reruns differ at about 10.5 significant figures (Ux worst; atomic boundary-face adds and GPU reductions), so those compare to ≥8 figures, never bitwise.
+- First `run!` (1 iteration, compile-dominated), s: cpu 1t 12.3, 8t 12.8-13.5, 2d 17.5, gpu 21.9, mpi n=4 19.5. 20-iteration run, s: 1t 9.29, 8t 6.99-7.13, gpu 4.23-4.31, mpi n=4 3.85.
+- MPI n=8 does not fit beside the language server (6.9 GB available); n=4 with offline parts is the MPI smoke point.
+- An MPI run without `activate_multithread` took 241 s for 20 iterations instead of 3.9 s: every rank's BLAS spins on all cores (gotcha).

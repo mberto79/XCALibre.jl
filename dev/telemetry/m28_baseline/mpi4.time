@@ -1,0 +1,1 @@
+mode=mpi threads=1 iterations=20 mesh_s=2.742558303 first_run_s=19.47084756 run_s=3.852872911

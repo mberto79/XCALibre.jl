@@ -101,3 +101,8 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - Compile s (flat / AoS base): 1t 12.61,13.41 / 17.03,17.50; 2D 14.69,14.99 / 20.58,20.86; GPU 22.37,23.17 / 26.23,26.44; 8t 18.29.
 - 20-iteration run s: 1t 9.76,10.49 / 11.57,11.81; GPU 4.17,4.40 / 4.45,4.05; 8t 6.42. 8t pinned 100-iteration run 17.84,17.44 / 20.28,20.62.
 - Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 (fresh parts) bitwise; 8t 10.5, GPU 10.3 figures. `test_offline.jl`, `test_partition.jl` at n=2,3 pass; `test_mesh_conversion.jl`, `unit_test_laplace.jl` pass.
+
+## P1-M31-S7 type tags as one-element vectors
+
+- Compile s (S7 / AoS base, same chain): 1t 13.38,13.52 / 17.35,17.01; 2D 15.02,15.22 / 20.43,20.32; rerun after tag fix 1t 12.94, 2D 14.76, GPU 23.26.
+- Accuracy vs `m28_baseline`: 1t, 2D, MPI n=4 (S5 parts) bitwise; GPU 11.3 figures. `test_offline.jl`, `test_partition.jl` at n=2,3, `test_restart.jl` at n=1,2 (`dev/petscenv_stock`), `test_mesh_conversion.jl` pass.

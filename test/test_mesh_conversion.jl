@@ -3,6 +3,7 @@ test_grids_dir = pkgdir(XCALibre, "test", "grids")
 function test_mesh_precision(mesh, integer_type, float_type)
     @test eltype(mesh.get_int) === integer_type
     @test eltype(mesh.get_float) === float_type
+    @test length(mesh.get_int) == length(mesh.get_float) == 1
     @test eltype(mesh.cell_nodes) === integer_type
     @test eltype(mesh.cell_faces) === integer_type
     @test eltype(mesh.cell_neighbours) === integer_type

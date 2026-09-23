@@ -326,7 +326,7 @@ function _rebuild_mesh_float(mesh::Mesh3, ::Type{TF}) where {TF<:AbstractFloat}
                     SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
     Mesh3(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
           faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
-          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+          zero(TF), mesh.get_int, mesh.boundary_cellsID)
 end
 
 function _rebuild_mesh_float(mesh::Mesh2, ::Type{TF}) where {TF<:AbstractFloat}
@@ -336,7 +336,7 @@ function _rebuild_mesh_float(mesh::Mesh2, ::Type{TF}) where {TF<:AbstractFloat}
                     SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
     Mesh2(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
           faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
-          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+          zero(TF), mesh.get_int, mesh.boundary_cellsID)
 end
 
 # Cheap check: volumes/areas/deltas/weights finite & positive and length scales above Float32 spacing.

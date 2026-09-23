@@ -234,41 +234,45 @@ Adapt.adapt_structure(to, x::NodeArrays) = _rewrap(x, (adapt(to, x.coords), adap
 _nsign(x::AbstractArray{Int8}) = x
 _nsign(x::AbstractArray) = Int8.(x)
 
-struct Mesh2{VV, VTF, VR, VO, VI, VS, VB, SV3, UR} <: AbstractMesh
-    cell_centre::VV
-    cell_volume::VTF
-    cell_nodes_range::VR
-    cell_faces_range::VR
-    cell_nodes::VI
-    cell_faces::VI
-    cell_neighbours::VI
-    cell_nsign::VS
-    face_nodes_range::VR
-    face_ownerCells::VO
-    face_centre::VV
-    face_normal::VV
-    face_e::VV
-    face_area::VTF
-    face_delta::VTF
-    face_weight::VTF
-    face_nodes::VI
-    face_gDiff::VTF
-    boundaries::VB
-    node_coords::VV
-    node_cells_range::VR
-    node_cells::VI
-    get_float::SV3
-    get_int::UR
-    boundary_cellsID::VI
+# float/int type tags are one-element arrays stored like `like`, so they share its type parameter
+_type_tag(like::A, x::A) where A = x
+_type_tag(like, x) = fill!(similar(like, eltype(x), 1), zero(eltype(x)))
+
+struct Mesh2{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
+    cell_centre::VV      # cell centroid coordinates
+    cell_volume::VTF     # cell volumes
+    cell_nodes_range::VR # range of each cell's nodes in cell_nodes
+    cell_faces_range::VR # range of each cell's faces in cell_faces, cell_neighbours, cell_nsign
+    cell_nodes::VI       # node IDs of each cell
+    cell_faces::VI       # internal face IDs of each cell
+    cell_neighbours::VI  # neighbour cell IDs across each cell face
+    cell_nsign::VS       # face normal sign per cell face (1 or -1)
+    face_nodes_range::VR # range of each face's nodes in face_nodes
+    face_ownerCells::VO  # owner cell ID pair of each face (equal on boundary faces)
+    face_centre::VV      # face centre coordinates
+    face_normal::VV      # face unit normals
+    face_e::VV           # unit vectors between owner cell centres
+    face_area::VTF       # face areas
+    face_delta::VTF      # distance between owner cell centres
+    face_weight::VTF     # linear interpolation weights
+    face_nodes::VI       # node IDs of each face
+    face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
+    boundaries::VB       # boundary patches
+    node_coords::VV      # node coordinates
+    node_cells_range::VR # range of each node's cells in node_cells
+    node_cells::VI       # cell IDs around each node
+    get_float::VTF       # one-element array tagging the mesh float type
+    get_int::VI          # one-element array tagging the mesh integer type
+    boundary_cellsID::VI # owner cell ID of each boundary face
     function Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
         face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
         c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
         fields = (c.centre, c.volume, c.nodes_range, c.faces_range, cell_nodes, cell_faces,
             cell_neighbours, s, f.nodes_range, f.ownerCells, f.centre, f.normal, f.e, f.area, f.delta,
             f.weight, face_nodes, face_gDiff, boundaries, n.coords, n.cells_range, node_cells,
-            get_float, get_int, boundary_cellsID)
+            _type_tag(f.area, get_float), _type_tag(cell_nodes, get_int), boundary_cellsID)
         new{typeof(f.centre), typeof(f.area), typeof(f.nodes_range), typeof(f.ownerCells),
-            typeof(cell_nodes), typeof(s), typeof(boundaries), typeof(get_float), typeof(get_int)}(fields...)
+            typeof(cell_nodes), typeof(s), typeof(boundaries)}(fields...)
     end
 end
 
@@ -292,41 +296,76 @@ Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_no
     face_gDiff_coefficients(faces), boundaries, nodes, node_cells, get_float, get_int,
     boundary_cellsID)
 
-struct Mesh3{VV, VTF, VR, VO, VI, VS, VB, SV3, UR} <: AbstractMesh
-    cell_centre::VV
-    cell_volume::VTF
-    cell_nodes_range::VR
-    cell_faces_range::VR
-    cell_nodes::VI
-    cell_faces::VI
-    cell_neighbours::VI
-    cell_nsign::VS
-    face_nodes_range::VR
-    face_ownerCells::VO
-    face_centre::VV
-    face_normal::VV
-    face_e::VV
-    face_area::VTF
-    face_delta::VTF
-    face_weight::VTF
-    face_nodes::VI
-    face_gDiff::VTF
-    boundaries::VB
-    node_coords::VV
-    node_cells_range::VR
-    node_cells::VI
-    get_float::SV3
-    get_int::UR
-    boundary_cellsID::VI
+"""
+    struct Mesh3{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
+
+3D unstructured mesh. `Mesh2` has identical fields. Each cell, face and node property is stored as
+its own array; `mesh.cells`, `mesh.faces` and `mesh.nodes` return views that index as `Cell`,
+`Face3D` and `Node` elements. Boundary faces come first in the face arrays.
+
+```julia
+    cell_centre::VV      # cell centroid coordinates
+    cell_volume::VTF     # cell volumes
+    cell_nodes_range::VR # range of each cell's nodes in cell_nodes
+    cell_faces_range::VR # range of each cell's faces in cell_faces, cell_neighbours, cell_nsign
+    cell_nodes::VI       # node IDs of each cell
+    cell_faces::VI       # internal face IDs of each cell
+    cell_neighbours::VI  # neighbour cell IDs across each cell face
+    cell_nsign::VS       # face normal sign per cell face (1 or -1)
+    face_nodes_range::VR # range of each face's nodes in face_nodes
+    face_ownerCells::VO  # owner cell ID pair of each face (equal on boundary faces)
+    face_centre::VV      # face centre coordinates
+    face_normal::VV      # face unit normals
+    face_e::VV           # unit vectors between owner cell centres
+    face_area::VTF       # face areas
+    face_delta::VTF      # distance between owner cell centres
+    face_weight::VTF     # linear interpolation weights
+    face_nodes::VI       # node IDs of each face
+    face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
+    boundaries::VB       # boundary patches
+    node_coords::VV      # node coordinates
+    node_cells_range::VR # range of each node's cells in node_cells
+    node_cells::VI       # cell IDs around each node
+    get_float::VTF       # one-element array tagging the mesh float type
+    get_int::VI          # one-element array tagging the mesh integer type
+    boundary_cellsID::VI # owner cell ID of each boundary face
+```
+"""
+struct Mesh3{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
+    cell_centre::VV      # cell centroid coordinates
+    cell_volume::VTF     # cell volumes
+    cell_nodes_range::VR # range of each cell's nodes in cell_nodes
+    cell_faces_range::VR # range of each cell's faces in cell_faces, cell_neighbours, cell_nsign
+    cell_nodes::VI       # node IDs of each cell
+    cell_faces::VI       # internal face IDs of each cell
+    cell_neighbours::VI  # neighbour cell IDs across each cell face
+    cell_nsign::VS       # face normal sign per cell face (1 or -1)
+    face_nodes_range::VR # range of each face's nodes in face_nodes
+    face_ownerCells::VO  # owner cell ID pair of each face (equal on boundary faces)
+    face_centre::VV      # face centre coordinates
+    face_normal::VV      # face unit normals
+    face_e::VV           # unit vectors between owner cell centres
+    face_area::VTF       # face areas
+    face_delta::VTF      # distance between owner cell centres
+    face_weight::VTF     # linear interpolation weights
+    face_nodes::VI       # node IDs of each face
+    face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
+    boundaries::VB       # boundary patches
+    node_coords::VV      # node coordinates
+    node_cells_range::VR # range of each node's cells in node_cells
+    node_cells::VI       # cell IDs around each node
+    get_float::VTF       # one-element array tagging the mesh float type
+    get_int::VI          # one-element array tagging the mesh integer type
+    boundary_cellsID::VI # owner cell ID of each boundary face
     function Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
         face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
         c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
         fields = (c.centre, c.volume, c.nodes_range, c.faces_range, cell_nodes, cell_faces,
             cell_neighbours, s, f.nodes_range, f.ownerCells, f.centre, f.normal, f.e, f.area, f.delta,
             f.weight, face_nodes, face_gDiff, boundaries, n.coords, n.cells_range, node_cells,
-            get_float, get_int, boundary_cellsID)
+            _type_tag(f.area, get_float), _type_tag(cell_nodes, get_int), boundary_cellsID)
         new{typeof(f.centre), typeof(f.area), typeof(f.nodes_range), typeof(f.ownerCells),
-            typeof(cell_nodes), typeof(s), typeof(boundaries), typeof(get_float), typeof(get_int)}(fields...)
+            typeof(cell_nodes), typeof(s), typeof(boundaries)}(fields...)
     end
 end
 

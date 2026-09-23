@@ -72,8 +72,9 @@ function _write_xdm(path, mesh, part=nothing)
         _xdm_write_array(io, mesh.nodes, T.node)
         _xdm_write_array(io, mesh.node_cells, TI)
         _xdm_write_array(io, mesh.boundary_cellsID, TI)
-        _xdm_write_array(io, [SVector{3,_get_float(mesh)}(mesh.get_float)], SVector{3,_get_float(mesh)})
-        _xdm_write_array(io, [mesh.get_int], UnitRange{TI})
+        # type tags only: placeholders keep the part format
+        _xdm_write_array(io, [zero(SVector{3,_get_float(mesh)})], SVector{3,_get_float(mesh)})
+        _xdm_write_array(io, [UnitRange{TI}(0, 0)], UnitRange{TI})
         part === nothing && return
         p = getfield(part, :partition)
         procs = getfield(part, :procs)

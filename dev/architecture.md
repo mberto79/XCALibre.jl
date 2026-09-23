@@ -24,7 +24,7 @@ What is true of the code today. Why a mechanism was chosen belongs in `dev/decis
 
 ## mesh storage
 
-- A mesh's cells, faces and nodes are stored one array per field as top-level `Mesh2`/`Mesh3` fields (`cell_volume`, `face_area`, `node_coords`, ...), same-typed arrays sharing one of nine type parameters (D177, D179); `mesh.faces`/`cells`/`nodes` are rebuilt in `getproperty` as zero-copy `FaceArrays`/`CellArrays`/`NodeArrays` views. Constructors take element vectors, readers build plain vectors, `mesh.faces[i]` rebuilds an element, and `mesh.faces.area[i]` reads the array. Anything leaving the device goes through `adapt`, written out per column so it stays inferable (D178); binary part files pack the columns back into element records.
+- A mesh's cells, faces and nodes are stored one array per field as top-level `Mesh2`/`Mesh3` fields (`cell_volume`, `face_area`, `node_coords`, ...), same-typed arrays sharing one of nine type parameters (D177, D179); `mesh.faces`/`cells`/`nodes` are rebuilt in `getproperty` as zero-copy `FaceArrays`/`CellArrays`/`NodeArrays` views. Constructors take element vectors, readers build plain vectors, `mesh.faces[i]` rebuilds an element, and `mesh.faces.area[i]` reads the array. Anything leaving the device goes through `adapt`, written out per column so it stays inferable (D178); binary part files pack the columns back into element records. `get_float`/`get_int` are one-element arrays stored like `face_area`/`cell_nodes`, carrying only the mesh float and integer types (D182).
 
 ## interfaces
 

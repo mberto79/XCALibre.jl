@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T22:00:00+01:00
 STATE: IDLE
 STEP: P1-M30-S2 XVector type and k* primitives (not started; M29 closed, D195)
-HEAD: 15c1e8e0
+HEAD: c0fc53b7
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m30 (strict: residuals to 8 figures vs pre-M30, 1t not slower beyond ±5%); primitive unit tests at 1 and 8 threads; motorBike 20-iteration smoke 1t/8t via `~/.cache/xcal_m28/chain.sh` vs `dev/telemetry/m28_baseline/`
 resume: plan p1-m30 S2 row: `XVector{T} <: DenseVector{T}` in `src/Multithread/` wrapping a `Vector` plus the static row partition of `xmul!`, with `similar`, `size`, `getindex`, `setindex!`, `unsafe_convert` and Krylov's `k*` primitives; unit tests vs `Vector` at 1 and 8 threads

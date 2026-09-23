@@ -59,3 +59,8 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 
 - `test_offline.jl` at n=2,3 (offline parts written and read equal online parts array by array, mesh type equal, cells/faces/nodes read back per field): 2/2 in 33 s.
 - `gate.jl`: n=2,3 part 10/10 in 3m40.5s (3m14s before S2, D157); n=6 `test_turbulence_sst_wallfn.jl` 1m23.8s, killed by the 298 s outer timeout inside the gate, 7/7 per rank when run alone. Total 5m04s against Q2 (D167).
+
+## P1-M28-S4 cell_nsign Int8
+
+- Strict class: 1t, 2D and MPI n=4 bitwise equal to the S1 baseline (fresh format-4 parts); `test_mesh_conversion.jl`, `unit_test_laplace.jl`, `2d_godunov_supersonic_cylinder.jl` pass; `test_offline.jl` + `test_partition.jl` 4/4 at n=2,3.
+- Compile (one sample, loaded machine), s: motorBike 1t 21.5 (base 14.2, +51%), 2D 27.5 (base 16.5, +67%), GPU first run 25.8. The extra mesh type parameter moved compile the wrong way; this triggered D168.

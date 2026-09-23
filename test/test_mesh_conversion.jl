@@ -6,7 +6,7 @@ function test_mesh_precision(mesh, integer_type, float_type)
     @test eltype(mesh.cell_nodes) === integer_type
     @test eltype(mesh.cell_faces) === integer_type
     @test eltype(mesh.cell_neighbours) === integer_type
-    @test eltype(mesh.cell_nsign) === integer_type
+    @test eltype(mesh.cell_nsign) === Int8
     @test eltype(mesh.face_nodes) === integer_type
     @test eltype(mesh.node_cells) === integer_type
     @test eltype(mesh.boundary_cellsID) === integer_type

@@ -136,12 +136,16 @@ end
 _soa(x::StructArray) = x
 _soa(x::AbstractArray) = StructArray(x)
 
-struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
+# normal signs are only ±1, so one byte each
+_nsign(x::AbstractArray{Int8}) = x
+_nsign(x::AbstractArray) = Int8.(x)
+
+struct Mesh2{VC, VI, VS, VF<:AbstractArray{<:Face2D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI
     cell_neighbours::VI
-    cell_nsign::VI
+    cell_nsign::VS
     faces::VF
     face_nodes::VI
     face_gDiff::VTF
@@ -153,10 +157,10 @@ struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VTF, VB, VN, SV3, UR} <: Abstr
     boundary_cellsID::VI
     function Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
         face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
-        c, f, n = _soa(cells), _soa(faces), _soa(nodes)
-        new{typeof(c), typeof(cell_nodes), typeof(f), typeof(face_gDiff), typeof(boundaries),
+        c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
+        new{typeof(c), typeof(cell_nodes), typeof(s), typeof(f), typeof(face_gDiff), typeof(boundaries),
             typeof(n), typeof(get_float), typeof(get_int)}(c, cell_nodes, cell_faces, cell_neighbours,
-            cell_nsign, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
+            s, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
             boundary_cellsID)
     end
 end
@@ -172,12 +176,12 @@ Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_no
 
 
 """
-    struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
+    struct Mesh3{VC, VI, VS, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
         cells::VC           # vector of cells
         cell_nodes::VI      # vector of indices to access cell nodes
         cell_faces::VI      # vector of indices to access cell faces
         cell_neighbours::VI # vector of indices to access cell neighbours
-        cell_nsign::VI      # vector of indices to with face normal correction (1 or -1 )
+        cell_nsign::VS      # face normal sign per cell face (Int8, 1 or -1)
         faces::VF           # vector of faces
         face_nodes::VI      # vector of indices to access face nodes
         face_gDiff::VTF     # Laplacian face coefficient (derived, see `_gDiff`)
@@ -189,12 +193,12 @@ Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_no
         boundary_cellsID::VI # vector of indices of boundary cell IDs
     end
 """
-struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
+struct Mesh3{VC, VI, VS, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
     cell_faces::VI
     cell_neighbours::VI
-    cell_nsign::VI
+    cell_nsign::VS
     faces::VF
     face_nodes::VI
     face_gDiff::VTF
@@ -206,10 +210,10 @@ struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: Abstr
     boundary_cellsID::VI
     function Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
         face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
-        c, f, n = _soa(cells), _soa(faces), _soa(nodes)
-        new{typeof(c), typeof(cell_nodes), typeof(f), typeof(face_gDiff), typeof(boundaries),
+        c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
+        new{typeof(c), typeof(cell_nodes), typeof(s), typeof(f), typeof(face_gDiff), typeof(boundaries),
             typeof(n), typeof(get_float), typeof(get_int)}(c, cell_nodes, cell_faces, cell_neighbours,
-            cell_nsign, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
+            s, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
             boundary_cellsID)
     end
 end

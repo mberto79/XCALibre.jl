@@ -5,7 +5,7 @@ export mesh_info
 # layout: magic, header (Int64 per key), mesh block (raw isbits arrays), partition block (empty
 # when serial); one code path for both kinds, only the format number is checked for layout (D122)
 const _XDM_MAGIC = b"XCALMESH"
-const _XDM_FORMAT = 3
+const _XDM_FORMAT = 4
 const _XDM_BOM = 0x0102030405060708
 const _XDM_KEYS = (:bom, :format, :xcalibre_major, :xcalibre_minor, :xcalibre_patch,
     :julia_major, :julia_minor, :julia_patch, :kind, :dim, :TI, :TF,
@@ -63,8 +63,8 @@ function _write_xdm(path, mesh, part=nothing)
         write(io, _XDM_MAGIC)
         write(io, collect(values(h)))
         _xdm_write_array(io, mesh.cells, T.cell)
-        foreach(v -> _xdm_write_array(io, v, TI),
-            (mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign))
+        foreach(v -> _xdm_write_array(io, v, TI), (mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours))
+        _xdm_write_array(io, mesh.cell_nsign, Int8)
         _xdm_write_array(io, mesh.faces, T.face)
         _xdm_write_array(io, mesh.face_nodes, TI)
         write(io, names)
@@ -119,7 +119,8 @@ function _read_xdm_body(io, h)
     T = _xdm_types(h.dim, TI, TF)
     cells = _xdm_read_array(io, T.cell, h.ncells)
     cell_nodes = _xdm_read_array(io, TI, h.ncell_nodes)
-    cell_faces, cell_neighbours, cell_nsign = (_xdm_read_array(io, TI, h.ncell_faces) for _ ∈ 1:3)
+    cell_faces, cell_neighbours = (_xdm_read_array(io, TI, h.ncell_faces) for _ ∈ 1:2)
+    cell_nsign = _xdm_read_array(io, Int8, h.ncell_faces)
     faces = _xdm_read_array(io, T.face, h.nfaces)
     face_nodes = _xdm_read_array(io, TI, h.nface_nodes)
     names = h.nboundaries == 0 ? String[] : split(String(read(io, h.nboundary_name_bytes)), '\n')

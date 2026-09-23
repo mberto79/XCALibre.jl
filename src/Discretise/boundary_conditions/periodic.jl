@@ -113,9 +113,9 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol; tol=1
         F = _get_float(mesh)
         transform = LinearTransform(SVector{3,F}(0, 0, 0))
         values1 = PeriodicValue(
-            patchID=idx2, transform=transform, face_map=Int64[], isparent=true)
+            patchID=idx2, transform=transform, face_map=_get_int(mesh)[], isparent=true)
         values2 = PeriodicValue(
-            patchID=idx1, transform=transform, face_map=Int64[], isparent=false)
+            patchID=idx1, transform=transform, face_map=_get_int(mesh)[], isparent=false)
         return (adapt(backend, PeriodicParent(patch1, values1)),
                 adapt(backend, Periodic(patch2, values2)))
     end
@@ -150,8 +150,8 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol; tol=1
     targets_sorted = targets[p1_idx]
     sources_sorted = centers2[p2_idx]
 
-    faceAddress1 = zeros(Int64, nfaces)
-    faceAddress2 = zeros(Int64, nfaces)
+    faceAddress1 = zeros(_get_int(mesh), nfaces)
+    faceAddress2 = zeros(_get_int(mesh), nfaces)
     
     # Sliding Window Search
     search_start = 1
@@ -243,8 +243,8 @@ function periodic_matrix_connectivity(BC::PeriodicParent, mesh)
     BC1 = boundaries_cpu[BC.ID].IDs_range
 
     fmap1 = BC_cpu.value.face_map
-    i = zeros(Int, 2*length(fmap1))
-    j = zeros(Int, 2*length(fmap1))
+    i = zeros(_get_int(mesh), 2*length(fmap1))
+    j = zeros(_get_int(mesh), 2*length(fmap1))
 
     nindex = 0
     for (fID1, fID2) ∈ zip(BC1, fmap1)

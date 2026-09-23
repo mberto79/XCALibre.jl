@@ -11,7 +11,7 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 - Done: M1-M27.
 - Done: M31 flat column mesh (D188).
 - Done: M28 (D189).
-- Now: M29 index widths (S1 D191, S2 D192). Then: M30 (S1 delivered, D190).
+- Now: M29 index widths (S1 D191, S2 D192, S3 D193). Then: M30 (S1 delivered, D190).
 
 ## Ordered work
 

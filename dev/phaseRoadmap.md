@@ -12,7 +12,7 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 - Done: M31 flat column mesh (D188).
 - Done: M28 (D189).
 - Done: M29 (D195).
-- Now: M30 threaded linear solve (S1 delivered, D190).
+- Now: M30 threaded linear solve (S1 D190, S2 D196).
 
 ## Ordered work
 

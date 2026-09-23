@@ -54,6 +54,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_AMG_matrices.jl")
     end
 
+    @testset "XVector Unit Test" begin
+        include("unit_test_xvector.jl")
+    end
+
     @testset "Laplace Unit Test" begin
         include("unit_test_laplace.jl")
     end

@@ -8,6 +8,7 @@ import AcceleratedKernels as AK
 using SparseArrays
 using SparseMatricesCSR
 using LinearAlgebra
+import Krylov
 
 import Base
 import LinearAlgebra
@@ -15,6 +16,7 @@ import SparseArrays
 import KernelAbstractions
 
 include("spmvm.jl")
+include("xvector.jl")
 
 struct AutoTune end
 

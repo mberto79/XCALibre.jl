@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T22:00:00+01:00
 STATE: IDLE
 STEP: P1-M30-S5 dead spmvm.jl methods (not started)
-HEAD: 28532fbc
+HEAD: b9a710a1
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m30 (strict: residuals to 8 figures vs pre-M30, 1t not slower beyond ±5%); primitive unit tests at 1 and 8 threads; motorBike 20-iteration smoke 1t/8t via `~/.cache/xcal_m28/chain.sh` vs `dev/telemetry/m28_baseline/`
 resume: plan p1-m30 S5 row: remove or correct `xmul!(A, x)` (undefined `y`), `xmul(y, A, x)` (discards `y`) and `Base.:*(::SparseMatrixCSR, ::SparseXCSR)` (calls a missing 2-arg `xmul`) in `src/Multithread/spmvm.jl`; bar: Multithread suite files

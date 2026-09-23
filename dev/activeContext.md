@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T22:00:00+01:00
 STATE: IDLE
 STEP: P1-M30-S3 wire XVector into solve_system! on CPU (not started)
-HEAD: c0fc53b7
+HEAD: c3b82334
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m30 (strict: residuals to 8 figures vs pre-M30, 1t not slower beyond ±5%); primitive unit tests at 1 and 8 threads; motorBike 20-iteration smoke 1t/8t via `~/.cache/xcal_m28/chain.sh` vs `dev/telemetry/m28_baseline/`
 resume: plan p1-m30 S3 row: in `solve_system!` (CPU backend) wrap `b` and `values` as `XVector` (reference, no copy), build workspaces from the wrapped `b` (`_workspace` sites), partitioned `mul!` and Jacobi `ldiv!` on `XVector`; `krylov_solve!` still resolves the preconditioner; DILU serial; bar: residuals to 8 figures vs pre-M30 at 1t/8t, 1t not slower beyond ±5%

@@ -87,3 +87,9 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - SnoopCompile S7 vs base: methods only in S7 total 0.15 s; the +7.1 s is the same caller methods inferring slower (`__run` +1.7, ModelPhysics +1.25, Solvers +1.0, e.g. the KOmegaSST model constructor 0.18 → 0.49 s).
 - P1-M31-S1 (Discretise schemes, BC functors and bodies, boundary interpolation, Calculate kernels read columns; diff `dev/archive/patches/p1-m31-s1-column-reads.diff`): 2D 24.92/26.71 vs base 19.95/20.23 (+28%), 1t 20.49/21.04 vs 16.61/16.71 (+25%); 1t and 2D bitwise. Snoop delta vs base 6.76 s (S7 6.68): Discretise +0.60 (S7 +0.46), Calculate +0.35 (+0.37), `__run` +1.88, turbulence! +0.42, KOmegaSST constructor +0.31; the discretise kernel body itself +0.02.
 - AoS wrapper also carrying the (unused) columns as a tuple: 2D 27.75/28.33 vs 20.11/20.17 (+39%), 1t 22.18/22.36 vs 16.62/16.61 (+34%). Carrying the column arrays in the mesh type is the cost, whether or not anything reads them.
+
+## Flat mesh experiment (columns as top-level Mesh2/Mesh3 fields)
+
+- Shape: per-field arrays as `Mesh3` fields (`face_centre`, `face_area`, `cell_volume`, `node_coords`, ...), same-typed arrays share one of 9 type parameters; `mesh.faces`/`cells`/`nodes` rebuilt on demand as views, no solver code changed. Diff: `dev/archive/patches/p1-m31-flat-mesh-columns.diff` (not landed).
+- Compile s (base AoS / S7 containers / flat), same session: 1t 16.65,16.79 / 22.84,21.87 / 12.12,13.08; 2D 20.08,20.36 / 28.04,27.57 / 13.43,14.33; 8t 27.66,27.47 / 40.63,42.14 / 18.38,18.44. Mesh load 1t 2.7 / 4.0 / 3.7 s.
+- 20-iteration run s: 1t 11.15,11.05 / 10.75,10.37 / 9.64,10.05; 8t 6.27,7.80 / 5.68,5.91 / 5.49,5.91. Flat 1t and 2D bitwise to the S1 baseline, 8t 10.0 figures. GPU, MPI and the suite not run.

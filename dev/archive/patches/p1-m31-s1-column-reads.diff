@@ -1,0 +1,1538 @@
+diff --git a/src/Calculate/Calculate_0_divergence.jl b/src/Calculate/Calculate_0_divergence.jl
+index 0ff9c87a..71c6745c 100644
+--- a/src/Calculate/Calculate_0_divergence.jl
++++ b/src/Calculate/Calculate_0_divergence.jl
+@@ -53,7 +53,7 @@ end
+     
+     @inbounds begin
+         # Extract required fields from cells structure
+-        (; volume, faces_range) = cells[i]
++        volume, faces_range = cells.volume[i], cells.faces_range[i]
+         
+         # Set work item scalar field value as zero
+         # phi.values[i] = 0.0 #zero(TF)
+@@ -65,7 +65,7 @@ end
+             nsign = cell_nsign[fi]
+ 
+             # Extract required fields from faces structure
+-            (; area, normal) = faces[fID]
++            area, normal = faces.area[fID], faces.normal[fID]
+ 
+             # Scalar field values calculation
+             Sf = area*normal
+@@ -83,9 +83,9 @@ end
+     
+     @inbounds begin
+         # Retreive variables from work item boundary face
+-        cID = faces[i].ownerCells[1]
+-        volume = cells[cID].volume
+-        (; area, normal) = faces[i]
++        cID = faces.ownerCells[i][1]
++        volume = cells.volume[cID]
++        area, normal = faces.area[i], faces.normal[i]
+ 
+         # Boundary contribution calculation (boundary normals are correct by definition)
+         Sf = area*normal
+@@ -130,7 +130,7 @@ end
+     
+     @inbounds begin
+         # Extract required fields from cells structure
+-        (; volume, faces_range) = cells[i]
++        volume, faces_range = cells.volume[i], cells.faces_range[i]
+         
+         # Set work item scalar field value as zero
+         # phi.values[i] = 0.0 #zero(TF)
+@@ -142,7 +142,7 @@ end
+             nsign = cell_nsign[fi]
+ 
+             # Extract required fields from faces structure
+-            (; area, normal) = faces[fID]
++            area, normal = faces.area[fID], faces.normal[fID]
+ 
+             # Atomix.@atomic phi.values[i] += psif[fID]⋅Sf*nsign/volume
+             reduction += psif[fID]*nsign
+@@ -158,9 +158,9 @@ end
+     
+     @inbounds begin
+         # Retreive variables from work item boundary face
+-        cID = faces[i].ownerCells[1]
+-        volume = cells[cID].volume
+-        (; area, normal) = faces[i]
++        cID = faces.ownerCells[i][1]
++        volume = cells.volume[cID]
++        area, normal = faces.area[i], faces.normal[i]
+ 
+         # Boundary contribution calculation (boundary normals are correct by definition)
+         # Sf = area*normal
+diff --git a/src/Calculate/Calculate_0_gradient.jl b/src/Calculate/Calculate_0_gradient.jl
+index e1928018..a263300e 100644
+--- a/src/Calculate/Calculate_0_gradient.jl
++++ b/src/Calculate/Calculate_0_gradient.jl
+@@ -143,7 +143,7 @@ end
+ 
+     @inbounds begin
+         # Extract required fields from work item face and define ownerCell variables
+-        (; ownerCells) = faces[i]
++        ownerCells = faces.ownerCells[i]
+         c1 = ownerCells[1]
+         c2 = ownerCells[2]
+ 
+@@ -181,8 +181,7 @@ end
+ 
+     @inbounds begin
+         # Retrieve face, weight and ownerCells for loop iteration
+-        face = faces[fID]
+-        ownerCells = face.ownerCells
++        ownerCells = faces.ownerCells[fID]
+         c1 = ownerCells[1]; c2 = ownerCells[2]
+         
+         # Set values to interpolate between
+@@ -225,15 +224,15 @@ end
+     i += nbfaces # Set i such that it does not index boundary faces
+ 
+     # Retrieve fields from work item face
+-    (; ownerCells, centre) = faces[i]
++    ownerCells, centre = faces.ownerCells[i], faces.centre[i]
+     centre_face = centre
+     owner1 = ownerCells[1]
+     owner2 = ownerCells[2]
+ 
+     # Retrieve centre from work item cells and redefine variable name 
+-    (; centre) = cells[owner1]
++    centre = cells.centre[owner1]
+     centre_cell1 = centre
+-    (; centre) = cells[owner2]
++    centre = cells.centre[owner2]
+     centre_cell2 = centre
+ 
+     # Retrieve values between which to correct interpolation
+diff --git a/src/Calculate/Calculate_0_gradient_cell_limiter.jl b/src/Calculate/Calculate_0_gradient_cell_limiter.jl
+index 52c33fc8..9ecf7cac 100644
+--- a/src/Calculate/Calculate_0_gradient_cell_limiter.jl
++++ b/src/Calculate/Calculate_0_gradient_cell_limiter.jl
+@@ -57,8 +57,7 @@ end
+     cID = @index(Global)
+ 
+     @inbounds begin
+-        cell = cells[cID]
+-        faces_range = cell.faces_range
++        faces_range = cells.faces_range[cID]
+         phiP = F[cID]
+         phiMax = phiP
+         phiMin = phiP
+@@ -72,15 +71,14 @@ end
+ 
+         grad0 = SVector{3}(x[cID], y[cID], z[cID])
+ 
+-        cc = cell.centre
++        cc = cells.centre[cID]
+         limiter = one(phiP)
+         ϵ = 10 * eps(phiP)
+ 
+         for fi ∈ faces_range
+             fID = cell_faces[fi]
+-            face = faces[fID]
+ 
+-            fc = face.centre
++            fc = faces.centre[fID]
+             δϕ = (fc - cc)⋅grad0
+ 
+             if δϕ > ϵ
+diff --git a/src/Calculate/Calculate_0_gradient_face_limiter.jl b/src/Calculate/Calculate_0_gradient_face_limiter.jl
+index de25c064..aaa2c1e1 100644
+--- a/src/Calculate/Calculate_0_gradient_face_limiter.jl
++++ b/src/Calculate/Calculate_0_gradient_face_limiter.jl
+@@ -57,16 +57,13 @@ end
+     fID = i + nbfaces
+ 
+     @inbounds begin
+-        face = faces[fID]
+-        ownerCells = face.ownerCells
++        ownerCells = faces.ownerCells[fID]
+         owner1 = ownerCells[1]
+         owner2 = ownerCells[2]
+-        cell1 = cells[owner1]
+-        cell2 = cells[owner2]
+ 
+-        cf = face.centre
+-        c1 = cell1.centre
+-        c2 = cell2.centre
++        cf = faces.centre[fID]
++        c1 = cells.centre[owner1]
++        c2 = cells.centre[owner2]
+         d1 = (cf - c1)
+         d2 = (cf - c2)
+ 
+@@ -98,14 +95,13 @@ end
+     fID = i + nbfaces
+ 
+     @inbounds begin
+-        face = faces[fID]
+-        ownerCells = face.ownerCells
++        ownerCells = faces.ownerCells[fID]
+         own = ownerCells[1]
+         nei = ownerCells[2]
+ 
+-        cf = face.centre
+-        cOwn = cells[own].centre
+-        cNei = cells[nei].centre
++        cf = faces.centre[fID]
++        cOwn = cells.centre[own]
++        cNei = cells.centre[nei]
+ 
+         gradOwn = ∇F[own]   # SMatrix{3,3} — gradient tensor
+         gradNei = ∇F[nei]
+diff --git a/src/Calculate/Calculate_0_gradient_mface_limiter.jl b/src/Calculate/Calculate_0_gradient_mface_limiter.jl
+index e2928c57..a2dbeabf 100644
+--- a/src/Calculate/Calculate_0_gradient_mface_limiter.jl
++++ b/src/Calculate/Calculate_0_gradient_mface_limiter.jl
+@@ -25,16 +25,13 @@ end
+     i = @index(Global)
+     fID = i + nbfaces
+ 
+-    face = faces[fID]
+-    ownerCells = face.ownerCells
++    ownerCells = faces.ownerCells[fID]
+     owner1 = ownerCells[1]
+     owner2 = ownerCells[2]
+-    cell1 = cells[owner1]
+-    cell2 = cells[owner2]
+ 
+-    cf = face.centre 
+-    c1 = cell1.centre
+-    c2 = cell2.centre
++    cf = faces.centre[fID] 
++    c1 = cells.centre[owner1]
++    c2 = cells.centre[owner2]
+     d1 = (cf - c1)
+     d2 = (cf - c2)
+ 
+diff --git a/src/Calculate/Calculate_0_laplacian.jl b/src/Calculate/Calculate_0_laplacian.jl
+index b4207e1c..5dfd88fc 100644
+--- a/src/Calculate/Calculate_0_laplacian.jl
++++ b/src/Calculate/Calculate_0_laplacian.jl
+@@ -22,8 +22,7 @@ end
+     end
+ 
+     @inbounds begin
+-        face = faces[fID]
+-        (; ownerCells, normal, delta) = face
++        ownerCells, normal, delta = faces.ownerCells[fID], faces.normal[fID], faces.delta[fID]
+         snGrad = if fID <= n_bfaces
+             (phif[fID] - phi[boundary_cellsID[fID]]) / delta
+         else
+@@ -46,19 +45,17 @@ function laplacian!(phi_out, phif_in ,phi_in, BCs, time, config; disp_warn=true)
+     n_bfaces = length(mesh.boundary_cellsID)
+ 
+     for fID ∈ 1:n_bfaces
+-        face = mesh.faces[fID]
+         cID = mesh.boundary_cellsID[fID]
+-        flux = face.area * (phif_in[fID] - phi_in[cID]) / face.delta
+-        phi_out[cID] += flux / mesh.cells[cID].volume
++        flux = mesh.faces.area[fID] * (phif_in[fID] - phi_in[cID]) / mesh.faces.delta[fID]
++        phi_out[cID] += flux / mesh.cells.volume[cID]
+     end
+ 
+     for fID ∈ (n_bfaces + 1):length(mesh.faces)
+-        face = mesh.faces[fID]
+-        cID1 = face.ownerCells[1]
+-        cID2 = face.ownerCells[2]
+-        flux = face.area * (phi_in[cID2] - phi_in[cID1]) / face.delta
+-        phi_out[cID1] += flux / mesh.cells[cID1].volume
+-        phi_out[cID2] -= flux / mesh.cells[cID2].volume
++        cID1 = mesh.faces.ownerCells[fID][1]
++        cID2 = mesh.faces.ownerCells[fID][2]
++        flux = mesh.faces.area[fID] * (phi_in[cID2] - phi_in[cID1]) / mesh.faces.delta[fID]
++        phi_out[cID1] += flux / mesh.cells.volume[cID1]
++        phi_out[cID2] -= flux / mesh.cells.volume[cID2]
+     end
+ 
+ end
+diff --git a/src/Calculate/Calculate_1_green_gauss.jl b/src/Calculate/Calculate_1_green_gauss.jl
+index ba45c851..04730a55 100644
+--- a/src/Calculate/Calculate_1_green_gauss.jl
++++ b/src/Calculate/Calculate_1_green_gauss.jl
+@@ -33,7 +33,7 @@ end
+     end
+      
+     @inbounds begin
+-        (; volume, faces_range) = cells[i]
++        volume, faces_range = cells.volume[i], cells.faces_range[i]
+ 
+         z = zero(volume)
+         res = SVector{3}(z,z,z)
+@@ -41,7 +41,7 @@ end
+         for fi ∈ faces_range
+             fID = cell_faces[fi]
+             nsign = cell_nsign[fi]
+-            (; area, normal) = faces[fID]
++            area, normal = faces.area[fID], faces.normal[fID]
+             
+             res += values[fID]*(area*normal*nsign)
+         end
+@@ -64,9 +64,9 @@ end
+     end
+ 
+     @inbounds begin
+-        (; ownerCells, area, normal) = faces[i]
++        ownerCells, area, normal = faces.ownerCells[i], faces.area[i], faces.normal[i]
+         cID = ownerCells[1]
+-        (; volume) = cells[cID]
++        volume = cells.volume[cID]
+ 
+         res = values[i]*(area*normal)
+         res /= volume 
+@@ -113,14 +113,14 @@ end
+     end
+      
+     @inbounds begin
+-        (; volume, faces_range) = cells[i]
++        volume, faces_range = cells.volume[i], cells.faces_range[i]
+ 
+         res = SMatrix{3,3}(z,z,z,z,z,z,z,z,z)
+ 
+         for fi ∈ faces_range
+             fID = cell_faces[fi]
+             nsign = cell_nsign[fi]
+-            (; area, normal) = faces[fID]
++            area, normal = faces.area[fID], faces.normal[fID]
+             Sf = area*normal*nsign
+             res += psif[fID]*Sf'
+         end
+@@ -150,9 +150,9 @@ end
+     end
+ 
+     @inbounds begin
+-        (; ownerCells, area, normal) = faces[i]
++        ownerCells, area, normal = faces.ownerCells[i], faces.area[i], faces.normal[i]
+         cID = ownerCells[1]
+-        (; volume) = cells[cID]
++        volume = cells.volume[cID]
+ 
+         Sf = area*normal
+         res = psif[i]*Sf'
+diff --git a/src/Calculate/Calculate_2_interpolation.jl b/src/Calculate/Calculate_2_interpolation.jl
+index 276ee7b2..4f5448f9 100644
+--- a/src/Calculate/Calculate_2_interpolation.jl
++++ b/src/Calculate/Calculate_2_interpolation.jl
+@@ -40,8 +40,7 @@ end
+ 
+     @inbounds begin
+         # Deconstruct faces to use weight and ownerCells in calculations
+-        face = faces[i]
+-        (; weight, ownerCells) = face
++        weight, ownerCells = faces.weight[i], faces.ownerCells[i]
+ 
+         # Calculate initial values based on index queried from ownerCells
+         owner1 = ownerCells[1]
+@@ -92,8 +91,7 @@ end
+     i = @index(Global)
+ 
+     @inbounds begin
+-        face = faces[i]
+-        (; ownerCells, e, delta) = face
++        ownerCells, e, delta = faces.ownerCells[i], faces.e[i], faces.delta[i]
+ 
+         owner1 = ownerCells[1]
+         owner2 = ownerCells[2]
+@@ -152,8 +150,7 @@ end
+     i = @index(Global)
+ 
+     @inbounds begin
+-        face = faces[i]
+-        (; ownerCells, e, delta) = face
++        ownerCells, e, delta = faces.ownerCells[i], faces.e[i], faces.delta[i]
+ 
+         owner1 = ownerCells[1]
+         owner2 = ownerCells[2]
+@@ -217,9 +214,8 @@ end
+     i = @index(Global)
+ 
+     @inbounds begin
+-        face = faces[i]
+-        (; weight, ownerCells, normal) = face
+-        F = face.centre
++        weight, ownerCells, normal = faces.weight[i], faces.ownerCells[i], faces.normal[i]
++        F = faces.centre[i]
+ 
+         owner1 = ownerCells[1] # [o]
+         owner2 = ownerCells[2] # [n]
+@@ -258,9 +254,8 @@ end
+     i = @index(Global)
+ 
+     @inbounds begin
+-        face = faces[i]
+-        (; weight, ownerCells, normal) = face
+-        # F = face.centre
++        weight, ownerCells, normal = faces.weight[i], faces.ownerCells[i], faces.normal[i]
++        # F = faces.centre[i]
+ 
+         owner1 = ownerCells[1] # [o]
+         owner2 = ownerCells[2] # [n]
+@@ -309,8 +304,7 @@ end
+ 
+     @inbounds begin
+         # Deconstruct faces to use weight and ownerCells in calculations
+-        face = faces[i]
+-        (; ownerCells) = face
++        ownerCells = faces.ownerCells[i]
+ 
+         # Calculate initial values based on index queried from ownerCells
+         owner1 = ownerCells[1]
+@@ -357,7 +351,7 @@ end
+     @inbounds begin
+         # Deconstruct faces to use weight and ownerCells in calculations
+         # @synchronize # commented out on 2024/10/24
+-        (; weight, ownerCells) = faces[i]
++        weight, ownerCells = faces.weight[i], faces.ownerCells[i]
+ 
+         # Define indices for initial x and y values from psi struct
+         cID1 = ownerCells[1]; cID2 = ownerCells[2]
+@@ -386,8 +380,7 @@ function interpolate!(
+     nbfaces = total_boundary_faces(mesh)
+     start = nbfaces + 1
+     @inbounds for fID ∈ start:length(faces)
+-        face = faces[fID]
+-        (; delta, ownerCells, e) = face
++        delta, ownerCells, e = faces.delta[fID], faces.ownerCells[fID], faces.e[fID]
+         cID1 = ownerCells[1]
+         cID2 = ownerCells[2]
+         grad1 = grad(cID1)
+diff --git a/src/Calculate/Calculate_3_orthogonality_correction.jl b/src/Calculate/Calculate_3_orthogonality_correction.jl
+index 2a53128e..edeb313e 100644
+--- a/src/Calculate/Calculate_3_orthogonality_correction.jl
++++ b/src/Calculate/Calculate_3_orthogonality_correction.jl
+@@ -11,8 +11,7 @@ function correct!(eqn::ScalarEquation{I,F}, term, corr_flux::FaceScalarField{I,F
+     (; b) = eqn 
+     (; values) = corr_flux
+     for fID ∈ eachindex(faces)
+-        face = faces[fID]
+-        owners = face.ownerCells
++        owners = faces.ownerCells[fID]
+         cell1 = owners[1]
+         cell2 = owners[2]
+         correction = -sign*J(fID)*values[fID]
+@@ -37,8 +36,7 @@ function nonorthogonal_flux!(phif::FaceScalarField{I,F}, gradf) where{I,F}
+     start = total_boundary_faces(mesh) + 1
+     for fi ∈ start:length(faces)
+     # for fi ∈ eachindex(faces)
+-        face = faces[fi]
+-        (; area, normal, e) = face
++        area, normal, e = faces.area[fi], faces.normal[fi], faces.e[fi]
+         T = (normal-e)*area
+         phif.values[fi] = gradf(fi)⋅T
+     end
+@@ -47,11 +45,11 @@ end
+ ### Weight functions
+ 
+ function weight(::Type{Linear}, cells, faces, fi)
+-    (; ownerCells, centre) = faces[fi]
++    ownerCells, centre = faces.ownerCells[fi], faces.centre[fi]
+     cID1 = ownerCells[1]
+     cID2 = ownerCells[2]
+-    c1 = cells[cID1].centre
+-    c2 = cells[cID2].centre
++    c1 = cells.centre[cID1]
++    c2 = cells.centre[cID2]
+     c1_f = centre - c1
+     c1_c2 = c2 - c1
+     q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)
+diff --git a/src/Calculate/Calculate_5_surface_normal_gradient.jl b/src/Calculate/Calculate_5_surface_normal_gradient.jl
+index 1462cd74..903334d6 100644
+--- a/src/Calculate/Calculate_5_surface_normal_gradient.jl
++++ b/src/Calculate/Calculate_5_surface_normal_gradient.jl
+@@ -10,8 +10,7 @@ surface_flux!(snflux, phi, IDs_range) = begin
+         # cID = cellsID[i]
+         fID = IDs_range[i]
+         cID = boundary_cellsID[fID]
+-        face = faces[fID]
+-        (; area, normal) = face
++        area, normal = faces.area[fID], faces.normal[fID]
+         Sf = area*normal
+         flux = phi[cID]*Sf
+         snflux.x[i] = flux[1]
+@@ -29,8 +28,7 @@ surface_normal_gradient!(snGrad, U, Uw, IDs_range) = begin
+         # fID = facesID[i]
+         fID = IDs_range[i]
+         cID = boundary_cellsID[fID]
+-        face = faces[fID]
+-        (; normal, delta, e) = face
++        normal, delta, e = faces.normal[fID], faces.delta[fID], faces.e[fID]
+         Ui = U[cID]
+         Udiff = (Ui - Uw)
+         Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
+diff --git a/src/Discretise/Discretise_1_schemes.jl b/src/Discretise/Discretise_1_schemes.jl
+index f32335ad..dcffdb63 100644
+--- a/src/Discretise/Discretise_1_schemes.jl
++++ b/src/Discretise/Discretise_1_schemes.jl
+@@ -11,27 +11,27 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
+ # SteadyState
+ @inline function scheme!(
+     term::Operator{F,P,I,Time{SteadyState}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+     # nothing
+     z = zero(eltype(nzval_array))
+     z, z
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Time{SteadyState}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
+-    z = zero(cell.volume)
++    term::Operator{F,P,I,Time{SteadyState}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
++    z = zero(eltype(cells.volume))
+     z, z
+ end
+ 
+ ## Euler
+ @inline function scheme!(
+     term::Operator{F,P,I,Time{Euler}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+     0.0, 0.0 # add types if this approach works
+ end
+ 
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+-        volume = cell.volume
++    term::Operator{F,P,I,Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
++        volume = cells.volume[cID]
+         vol_rdt = volume/runtime.dt[1]
+         rho = term.flux[cID]
+         
+@@ -40,8 +40,8 @@ end
+         return ac, b
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Time{Euler}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin # Special case for U_eqn (rho)
+-        volume = cell.volume
++    term::Operator{F,P,I,Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin # Special case for U_eqn (rho)
++        volume = cells.volume[cID]
+         vol_rdt = volume/runtime.dt[1]
+         rho = term.flux[cID]
+         
+@@ -54,13 +54,13 @@ end
+ ## Crank-Nicholson
+ @inline function scheme!(
+     term::Operator{F,P,I,Time{CrankNicolson}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+ 
+     0.0, 0.0 # add types if this approach works
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+-        volume = cell.volume
++    term::Operator{F,P,I,Time{CrankNicolson}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
++        volume = cells.volume[cID]
+         vol_rdt = volume/runtime.dt[1]
+         rho = term.flux[cID]
+         
+@@ -69,8 +69,8 @@ end
+         return ac, b
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Time{CrankNicolson}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin
+-        volume = cell.volume
++    term::Operator{F,P,I,Time{CrankNicolson}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin
++        volume = cells.volume[cID]
+         vol_rdt = volume/runtime.dt[1]
+         rho = term.flux[cID]
+         
+@@ -83,7 +83,7 @@ end
+ 
+ @inline function scheme!(
+     term::Operator{F,P,I,Laplacian{Linear}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+     )  where {F,P,I}
+ 
+     (; face_gDiff) = term.phi.mesh
+@@ -95,7 +95,7 @@ end
+     return ac, an
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Laplacian{Linear}}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
++    term::Operator{F,P,I,Laplacian{Linear}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
+     0.0, 0.0
+ end
+ 
+@@ -104,10 +104,10 @@ end
+ # Linear
+ @inline function scheme!(
+     term::Operator{F,P,I,Divergence{Linear}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+     )  where {F,P,I}
+ 
+-    w = face.weight
++    w = faces.weight[fID]
+     # signbit(ns) ? w = one(w) - w : w
+     half = typeof(w)(0.5)
+     w = half + ns*(w - half)
+@@ -119,14 +119,14 @@ end
+     return ac, an
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Divergence{Linear}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
++    term::Operator{F,P,I,Divergence{Linear}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+     0.0, 0.0
+ end
+ 
+ # Upwind
+ @inline function scheme!(
+     term::Operator{F,P,I,Divergence{Upwind}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+     )  where {F,P,I}
+     # Calculate link coefficients
+     ap = term.sign*(term.flux[fID]*ns)
+@@ -136,17 +136,17 @@ end
+     return ac, an
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Divergence{Upwind}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
++    term::Operator{F,P,I,Divergence{Upwind}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+     0.0, 0.0
+ end
+ 
+ # LUST
+ @inline function scheme!(
+     term::Operator{F,P,I,Divergence{LUST}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+     )  where {F,P,I}
+     
+-    w = face.weight
++    w = faces.weight[fID]
+     signbit(ns) ? w = one(w) - w : w
+ 
+     # Calculate link coefficients
+@@ -163,14 +163,14 @@ end
+     return ac, an
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Divergence{LUST}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
++    term::Operator{F,P,I,Divergence{LUST}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+     0.0, 0.0
+ end
+ 
+ # BoundedUpwind
+ @inline function scheme!(
+     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+     )  where {F,P,I}
+     # $$\mathcal{D}_{bounded} = \sum_f \phi_f \psi_f - \psi_P \sum_f \phi_f$$
+     # phif =  max(phif, 0) - max(-phi_f, 0)$
+@@ -182,7 +182,7 @@ end
+     return ac, an
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cell, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
++    term::Operator{F,P,I,Divergence{BoundedUpwind}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
+     0.0, 0.0
+ end
+ 
+@@ -190,16 +190,16 @@ end
+ # IMPLICIT SOURCE
+ @inline function scheme!(
+     term::Operator{F,P,I,Si}, 
+-    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
++    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+     )  where {F,P,I}
+     z = zero(eltype(nzval_array))
+     z, z
+ end
+ @inline scheme_source!(
+-    term::Operator{F,P,I,Si}, cell, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
++    term::Operator{F,P,I,Si}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
+     
+     # Retrieve and calculate flux for cell 
+-    flux = term.sign*term.flux[cID]*cell.volume # indexed with cID
++    flux = term.sign*term.flux[cID]*cells.volume[cID] # indexed with cID
+     ac = flux # indexed with cIndex
+     ac, zero(ac)
+ end
+diff --git a/src/Discretise/Discretise_2_generated_distretisation.jl b/src/Discretise/Discretise_2_generated_distretisation.jl
+index 4af75004..a05a3fc9 100644
+--- a/src/Discretise/Discretise_2_generated_distretisation.jl
++++ b/src/Discretise/Discretise_2_generated_distretisation.jl
+@@ -42,8 +42,8 @@ end
+ 
+     @inbounds begin
+         # Define workitem cell and extract required fields
+-        cell = cells[i]
+-        (; faces_range, volume) = cell
++        faces_range = cells.faces_range[i]
++        volume = cells.volume[i]
+ 
+ 
+         cIndex = diag_nz[i]
+@@ -54,13 +54,12 @@ end
+             # Retrieve indices for discretisation
+             fID = cell_faces[fi]
+             ns = cell_nsign[fi] # normal sign
+-            face = faces[fID]
+             nID = cell_neighbours[fi]
+             nIndex = face_nz[fi]
+ 
+ 
+             # Call scheme generated fucntion
+-            ac, an = _scheme!(model, terms, nzval0, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
++            ac, an = _scheme!(model, terms, nzval0, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
+             ac_sum += ac
+             nzval0[nIndex] = an
+ 
+@@ -68,7 +67,7 @@ end
+ 
+         
+         # Call scheme source generated function NEEDS UPDATING!
+-        ac, bx1, by1, bz1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime, rho_prev)
++        ac, bx1, by1, bz1 = _scheme_source!(model, terms, cells, i, cIndex, prev, runtime, rho_prev)
+         
+         nzval0[cIndex] = ac_sum + ac
+ 
+@@ -123,8 +122,8 @@ end
+ 
+     @inbounds begin
+         # Define workitem cell and extract required fields
+-        cell = cells[i]
+-        (; faces_range, volume) = cell
++        faces_range = cells.faces_range[i]
++        volume = cells.volume[i]
+ 
+         cIndex = diag_nz[i]
+ 
+@@ -134,18 +133,17 @@ end
+             # Retrieve indices for discretisation
+             fID = cell_faces[fi]
+             ns = cell_nsign[fi] # normal sign
+-            face = faces[fID]
+             nID = cell_neighbours[fi]
+             nIndex = face_nz[fi]
+ 
+             # Call scheme generated fucntion
+-            ac, an = _scheme!(model, terms, nzval, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
++            ac, an = _scheme!(model, terms, nzval, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
+             ac_sum += ac
+             nzval[nIndex] = an
+         end
+         
+         # Call scheme source generated function
+-        ac, b1 = _scheme_source!(model, terms, cell, i, cIndex, prev, runtime, rho_prev)
++        ac, b1 = _scheme_source!(model, terms, cells, i, cIndex, prev, runtime, rho_prev)
+         nzval[cIndex] = ac_sum + ac
+ 
+         # Call sources generated function
+@@ -159,7 +157,7 @@ return_quote(x, t) = :(nothing)
+ # Scheme generated function definition
+ # @generated function _scheme!(model::Model{TN,SN,T,S}, terms, nzval, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime) where {TN,SN,T,S}
+ @generated function _scheme!(
+-    model::Model{TN,SN,T,S}, terms::TERMS, nzval::AbstractArray{F}, cell, face,
++    model::Model{TN,SN,T,S}, terms::TERMS, nzval::AbstractArray{F}, cells, faces,
+     nID, ns, cIndex, nIndex, fID, prev, runtime
+     ) where {TN,SN,T,S,TERMS,F}
+     # Allocate expression array to store scheme function
+@@ -168,7 +166,7 @@ return_quote(x, t) = :(nothing)
+     # Loop over number of terms and store scheme function in array
+     for t in 1:TN
+         function_call_scheme = quote
+-            ac, an = scheme!(terms[$t], nzval, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)
++            ac, an = scheme!(terms[$t], nzval, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
+             AC += F(ac)
+             AN += F(an)
+         end
+@@ -185,7 +183,7 @@ return_quote(x, t) = :(nothing)
+ end
+ 
+ # Scheme source generated function definition
+-@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cell::Cell{F}, cID, cIndex, prev, runtime, rho_prev) where {TN,SN,T,S,TERMS,F}
++@generated function _scheme_source!(model::Model{TN,SN,T,S}, terms::TERMS, cells::AbstractVector{<:Cell{F}}, cID, cIndex, prev, runtime, rho_prev) where {TN,SN,T,S,TERMS,F}
+     # Allocate expression array to store scheme_source function
+     out = Expr(:block)
+     
+@@ -193,7 +191,7 @@ end
+     if S.parameters[1].parameters[1] <: AbstractScalarField
+         for t in 1:TN
+             function_call_scheme_source = quote
+-                ac, b = scheme_source!(terms[$t], cell, cID, cIndex, prev, runtime, rho_prev)
++                ac, b = scheme_source!(terms[$t], cells, cID, cIndex, prev, runtime, rho_prev)
+                 AC += F(ac)
+                 B += F(b)
+             end
+@@ -211,9 +209,9 @@ end
+     elseif S.parameters[1].parameters[1] <: AbstractVectorField
+         for t in 1:TN
+             function_call_scheme_source = quote
+-                ac, bx = scheme_source!(terms[$t], cell, cID, cIndex, prev.x, runtime, rho_prev)
+-                ac, by = scheme_source!(terms[$t], cell, cID, cIndex, prev.y, runtime, rho_prev)
+-                ac, bz = scheme_source!(terms[$t], cell, cID, cIndex, prev.z, runtime, rho_prev)
++                ac, bx = scheme_source!(terms[$t], cells, cID, cIndex, prev.x, runtime, rho_prev)
++                ac, by = scheme_source!(terms[$t], cells, cID, cIndex, prev.y, runtime, rho_prev)
++                ac, bz = scheme_source!(terms[$t], cells, cID, cIndex, prev.z, runtime, rho_prev)
+                 AC += F(ac) # assuming ac's for all directions are equal
+                 BX += F(bx)
+                 BY += F(by)
+diff --git a/src/Discretise/Discretise_3_boundary_conditions.jl b/src/Discretise/Discretise_3_boundary_conditions.jl
+index f17dd66c..1c79620f 100644
+--- a/src/Discretise/Discretise_3_boundary_conditions.jl
++++ b/src/Discretise/Discretise_3_boundary_conditions.jl
+@@ -2,7 +2,7 @@
+ # TRANSIENT TERM 
+ @inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
+     term::Operator{F,P,I,Time{T}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,T,TF} = begin
+     # nothing
+     z = zero(TF)
+@@ -12,12 +12,12 @@ end
+ # KWallFunction
+ @inline (bc::KWallFunction)(
+     term::Operator{F,P,I,Laplacian{T}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,T,TF}  = begin
+     phi = term.phi 
+     values = get_values(phi, component)
+     J = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     flux = -J*area/delta
+     ap = term.sign*(flux)
+     ap, ap*values[cellID] # original
+@@ -28,12 +28,12 @@ end
+ # OmegaWallFunction
+ @inline (bc::OmegaWallFunction)(
+     term::Operator{F,P,I,Laplacian{T}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,T,TF} = begin
+     phi = term.phi 
+     values = get_values(phi, component)
+     J = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     flux = -J*area/delta
+     ap = term.sign*(flux)
+     TF(ap), TF(ap*values[cellID]) # original
+@@ -43,7 +43,7 @@ end
+ # KWallFunction 
+ @inline (bc::KWallFunction)(
+     term::Operator{F,P,I,Divergence{Linear}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF} = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux) 
+@@ -53,7 +53,7 @@ end
+ # OmegaWallFunction 
+ @inline (bc::OmegaWallFunction)(
+     term::Operator{F,P,I,Divergence{Linear}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF}  = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux) 
+@@ -63,7 +63,7 @@ end
+ # KWallFunction
+ @inline (bc::KWallFunction)(
+     term::Operator{F,P,I,Divergence{LUST}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF} = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux) 
+@@ -72,7 +72,7 @@ end
+ 
+ @inline (bc::KWallFunction)(
+     term::Operator{F,P,I,Divergence{Upwind}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF} = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux) 
+@@ -81,7 +81,7 @@ end
+ 
+ @inline (bc::KWallFunction)(
+     term::Operator{F,P,I,Divergence{BoundedUpwind}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF} = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux)
+@@ -91,7 +91,7 @@ end
+ # OmegaWallFunction
+ @inline (bc::OmegaWallFunction)(
+     term::Operator{F,P,I,Divergence{LUST}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF}  = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux) 
+@@ -100,7 +100,7 @@ end
+ 
+ @inline (bc::OmegaWallFunction)(
+     term::Operator{F,P,I,Divergence{Upwind}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF}  = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux) 
+@@ -109,7 +109,7 @@ end
+ 
+ @inline (bc::OmegaWallFunction)(
+     term::Operator{F,P,I,Divergence{BoundedUpwind}}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF}  = begin
+     flux = term.flux[fID]
+     ap = term.sign*(flux)
+@@ -119,7 +119,7 @@ end
+ # KWallFunction 
+ @inline (bc::KWallFunction)(
+     term::Operator{F,P,I,Si}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF} = begin
+     z = zero(TF)
+     z, z
+@@ -128,7 +128,7 @@ end
+ # OmegaWallFunction 
+ @inline (bc::OmegaWallFunction)(
+     term::Operator{F,P,I,Si}, colval, rowptr, nzval, cellID, zcellID,
+-    cell::Cell{TF}, face, fID, i, component, time
++    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+     ) where {F,P,I,TF} = begin
+ 
+     # phi = term.phi[cellID] 
+diff --git a/src/Discretise/Discretise_5_apply_bcs.jl b/src/Discretise/Discretise_5_apply_bcs.jl
+index add4c45d..26184f15 100644
+--- a/src/Discretise/Discretise_5_apply_bcs.jl
++++ b/src/Discretise/Discretise_5_apply_bcs.jl
+@@ -77,13 +77,11 @@ end
+                 if start <= fID <= stop
+                     i = fID - start + 1
+                     cellID = boundary_cellsID[fID]
+-                    face = faces[fID]
+-                    cell = cells[cellID] 
+ 
+                     zcellID = spindex(rowptr, colval, cellID, cellID)
+                     AP, BP = apply!(
+                         model, BC, terms, 
+-                        colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
++                        colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time
+                         )
+                     Atomix.@atomic nzval[zcellID] += AP
+                     Atomix.@atomic b[cellID] += BP
+@@ -117,7 +115,7 @@ end
+ # Apply generated function definition
+ @generated function apply!(
+     model::Model{TN,SN,T,S}, BC, terms, colval, rowptr, nzval::AbstractArray{F},
+-    cellID, zcellID, cell, face, fID, i, component, time
++    cellID, zcellID, cells, faces, fID, i, component, time
+     ) where {TN,SN,T,S,F}
+ 
+     # Definition of main assignment loop (one per patch)
+@@ -126,7 +124,7 @@ end
+         call = quote
+             ap, bp = BC(
+                 terms[$t], 
+-                colval, rowptr, nzval, cellID, zcellID, cell, face, fID, i, component, time
++                colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time
+                 )
+             AP += F(ap)
+             BP += F(bp)
+diff --git a/src/Discretise/boundary_conditions/0_definition_macro.jl b/src/Discretise/boundary_conditions/0_definition_macro.jl
+index fd5368b1..f8d817ec 100644
+--- a/src/Discretise/boundary_conditions/0_definition_macro.jl
++++ b/src/Discretise/boundary_conditions/0_definition_macro.jl
+@@ -3,7 +3,7 @@
+     macro define_boundary(boundary, operator, definition)
+         quote
+             @inline (bc::\$boundary)(
+-                term::Operator{F,P,I,\$operator}, cellID, zcellID, cell, face, fID, i, component, time
++                term::Operator{F,P,I,\$operator}, cellID, zcellID, cells, faces, fID, i, component, time
+                 ) where {F,P,I} = \$definition
+         end |> esc
+     end
+@@ -21,9 +21,10 @@ Macro to reduce boilerplate code when defining boundary conditions (implemented
+ - `term` reference to operator on which the boundary applies (gives access to the field and mesh) 
+ - `cellID` ID of the corresponding boundary cell
+ - `zcellID` sparse matrix linear index for the cell
+-- `cell` gives access to boundary cell object and corresponding information
+-- `face` gives access to boundary face object and corresponding information
+-- `fID` ID of the boundary face (to index `Mesh2.faces` vector)
++- `cells` the mesh cells; read a boundary cell property as `cells.volume[cellID]`
++- `faces` the mesh faces; read a boundary face property as `faces.area[fID]`
++- `fID` ID of the boundary face
++- `cell`, `face` whole boundary cell and face elements, built only when the body names them (slower to compile than column reads)
+ - `i` local index of the boundary faces within a kernel or loop
+ - `component` for vectors this specifies the components being evaluated (access as `component.value`). For scalars `component = nothing`
+ - `time` provides the current simulation time. This only applies to time dependent boundary implementation defined as functions or neural networks.
+@@ -34,7 +35,7 @@ Below the use of this macro is illustrated for the implementation of a  `Dirichl
+ 
+     @define_boundary Dirichlet Laplacian{Linear} begin
+         J = term.flux[fID]      # extract operator flux
+-        (; area, delta) = face  # extract boundary face information
++        area, delta = faces.area[fID], faces.delta[fID] # boundary face information
+         flux = J*area/delta     # calculate the face flux
+         ap = term.sign*(-flux)  # diagonal (cell) matrix coefficient
+         ap, ap*bc.value         # return `ap` and `an`
+@@ -43,14 +44,21 @@ Below the use of this macro is illustrated for the implementation of a  `Dirichl
+ When called, this functor will return two values `ap` and `an`, where `ap` is the cell contribution for approximating the boundary face value, and `an` is the explicit part of the face value approximation i.e. `ap` contributes to the diagonal of the sparse matrix (left-hand side) and `an` is the explicit contribution assigned to the solution vector `b` on the right-hand of the linear system of equations ``Ax = b``
+ 
+ """
++# a body that names `face` or `cell` gets the element built; column reads avoid it
++_names(ex, s::Symbol) = ex === s || (ex isa Expr && any(a -> _names(a, s), ex.args))
++_bind_elements(definition) = Expr(:block,
++    _names(definition, :face) ? :(face = faces[fID]) : nothing,
++    _names(definition, :cell) ? :(cell = cells[cellID]) : nothing)
++
+ macro define_boundary(boundary, operator, definition)
+     quote
+         @inline function (bc::$boundary)(
+             term::Operator{F,P,I,$operator}, colval, rowptr, nzval,
+-            cellID::TI, zcellID::TZI, cell::Cell{TF}, face, fID::TFI, i::TBI,
++            cellID::TI, zcellID::TZI, cells::AbstractVector{<:Cell{TF}}, faces, fID::TFI, i::TBI,
+             component, time
+             ) where {F,P,I,TF,TI,TZI,TFI,TBI}
+         @inbounds begin
++            $(_bind_elements(definition))
+             ap, bp = begin
+                 $definition
+             end
+@@ -64,10 +72,11 @@ macro define_boundary(boundary, operator, FieldType, definition)
+     quote
+         @inline function (bc::$boundary)(
+             term::Operator{F,P,I,$operator}, colval, rowptr, nzval,
+-            cellID::TI, zcellID::TZI, cell::Cell{TF}, face, fID::TFI, i::TBI,
++            cellID::TI, zcellID::TZI, cells::AbstractVector{<:Cell{TF}}, faces, fID::TFI, i::TBI,
+             component, time
+             ) where {F,P<:$FieldType,I,TF,TI,TZI,TFI,TBI}
+         @inbounds begin
++            $(_bind_elements(definition))
+             ap, bp = begin
+                 $definition
+             end
+diff --git a/src/Discretise/boundary_conditions/dirichlet.jl b/src/Discretise/boundary_conditions/dirichlet.jl
+index 505c9953..dfc11e8f 100644
+--- a/src/Discretise/boundary_conditions/dirichlet.jl
++++ b/src/Discretise/boundary_conditions/dirichlet.jl
+@@ -18,7 +18,7 @@ Adapt.@adapt_structure Dirichlet
+ 
+ @define_boundary Dirichlet Laplacian{Linear} begin
+     J = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     flux = J*area/delta
+     ap = term.sign*(-flux)
+     ap, ap*bc.value
+@@ -44,7 +44,7 @@ end
+ 
+ @define_boundary Dirichlet Laplacian{Linear} VectorField begin
+     J = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     flux = J*area/delta
+     ap = term.sign*(-flux)
+     ap, ap*bc.value[component.value]
+diff --git a/src/Discretise/boundary_conditions/dirichletFunction.jl b/src/Discretise/boundary_conditions/dirichletFunction.jl
+index 14c10a45..f1082d59 100644
+--- a/src/Discretise/boundary_conditions/dirichletFunction.jl
++++ b/src/Discretise/boundary_conditions/dirichletFunction.jl
+@@ -38,7 +38,7 @@ end
+ 
+ @define_boundary DirichletFunction Laplacian{Linear} VectorField begin
+     J = term.flux[fID]
+-    (; area, delta, centre) = face 
++    area, delta, centre = faces.area[fID], faces.delta[fID], faces.centre[fID]
+     flux = J*area/delta
+     ap = term.sign*(-flux)
+     # bc.value.update!(bc.value, centre, time, i)
+@@ -49,21 +49,21 @@ end
+ @define_boundary DirichletFunction Divergence{Linear} VectorField begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)[component.value]
++    value = bc.value(faces.centre[fID], time, i)[component.value]
+     0.0, ap*value
+ end
+ 
+ @define_boundary DirichletFunction Divergence{Upwind} VectorField begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)[component.value]
++    value = bc.value(faces.centre[fID], time, i)[component.value]
+     0.0, ap*value
+ end
+ 
+ @define_boundary DirichletFunction Divergence{LUST} VectorField begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)[component.value]
++    value = bc.value(faces.centre[fID], time, i)[component.value]
+     0.0, ap*value
+ end
+ 
+@@ -71,13 +71,13 @@ end
+ @define_boundary DirichletFunction Divergence{BoundedUpwind} VectorField begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)[component.value]
++    value = bc.value(faces.centre[fID], time, i)[component.value]
+     ap, ap*value
+ end
+ 
+ @define_boundary DirichletFunction Laplacian{Linear} begin
+     J = term.flux[fID]
+-    (; area, delta, centre) = face 
++    area, delta, centre = faces.area[fID], faces.delta[fID], faces.centre[fID]
+     flux = J*area/delta
+     ap = term.sign*(-flux)
+     # bc.value.update!(bc.value, centre, time, i)
+@@ -88,21 +88,21 @@ end
+ @define_boundary DirichletFunction Divergence{Linear} begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)
++    value = bc.value(faces.centre[fID], time, i)
+     0.0, ap*value
+ end
+ 
+ @define_boundary DirichletFunction Divergence{Upwind} begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)
++    value = bc.value(faces.centre[fID], time, i)
+     0.0, ap*value
+ end
+ 
+ @define_boundary DirichletFunction Divergence{LUST} begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)
++    value = bc.value(faces.centre[fID], time, i)
+     0.0, ap*value
+ end
+ 
+@@ -110,7 +110,7 @@ end
+ @define_boundary DirichletFunction Divergence{BoundedUpwind} begin
+     flux = -term.flux[fID]
+     ap = term.sign*(flux)
+-    value = bc.value(face.centre, time, i)
++    value = bc.value(faces.centre[fID], time, i)
+     ap, ap*value
+ end
+ 
+diff --git a/src/Discretise/boundary_conditions/dirichletFunction_interpolation.jl b/src/Discretise/boundary_conditions/dirichletFunction_interpolation.jl
+index cb25ad50..106482f6 100644
+--- a/src/Discretise/boundary_conditions/dirichletFunction_interpolation.jl
++++ b/src/Discretise/boundary_conditions/dirichletFunction_interpolation.jl
+@@ -2,9 +2,8 @@
+     BC::DirichletFunction{T,Test,R}, phif::FaceScalarField, phi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+     (; faces) = phi.mesh
+     @inbounds begin
+-        face = faces[fID]
+         i = fID - BC.IDs_range.start + 1
+-        phif[fID] = BC.value(face.centre, time, i)
++        phif[fID] = BC.value(faces.centre[fID], time, i)
+     end
+     nothing
+ end
+@@ -13,9 +12,8 @@ end
+     BC::DirichletFunction{T,Test,R}, psif::FaceVectorField, psi, boundary_cellsID, time, fID) where {T,Test<:Function,R}
+     (; faces) = psi.mesh
+     @inbounds begin
+-        face = faces[fID]
+         i = fID - BC.IDs_range.start + 1
+-        psif[fID] = BC.value(face.centre, time, i)
++        psif[fID] = BC.value(faces.centre[fID], time, i)
+     end
+     nothing
+ end
+@@ -27,9 +25,8 @@ end
+     end
+     (; faces) = phi.mesh
+     @inbounds begin
+-        face = faces[fID]
+         i = fID - BC.IDs_range.start + 1
+-        phif[fID] = BC.value(face.centre, time, i)
++        phif[fID] = BC.value(faces.centre[fID], time, i)
+     end
+     nothing
+ end
+@@ -41,9 +38,8 @@ end
+     end
+     (; faces) = psi.mesh
+     @inbounds begin
+-        face = faces[fID]
+         i = fID - BC.IDs_range.start + 1
+-        psif[fID] = BC.value(face.centre, time, i)
++        psif[fID] = BC.value(faces.centre[fID], time, i)
+     end
+     nothing
+ end
+diff --git a/src/Discretise/boundary_conditions/extrapolated.jl b/src/Discretise/boundary_conditions/extrapolated.jl
+index 54a2ff4d..c1545676 100644
+--- a/src/Discretise/boundary_conditions/extrapolated.jl
++++ b/src/Discretise/boundary_conditions/extrapolated.jl
+@@ -23,7 +23,7 @@ Extrapolated(name::Symbol) = Extrapolated(name , 0)
+     phi = term.phi
+     values = get_values(phi, component)
+     J = term.flux[fID]
+-    (; area, delta) = face
++    area, delta = faces.area[fID], faces.delta[fID]
+     flux = -J*area/delta
+     ap = term.sign*flux
+     ap, ap*values[cellID]
+diff --git a/src/Discretise/boundary_conditions/fixedHeatFlux.jl b/src/Discretise/boundary_conditions/fixedHeatFlux.jl
+index e4b86a44..2fd87c55 100644
+--- a/src/Discretise/boundary_conditions/fixedHeatFlux.jl
++++ b/src/Discretise/boundary_conditions/fixedHeatFlux.jl
+@@ -40,7 +40,7 @@ Adapt.@adapt_structure FixedHeatFlux
+ 
+ 
+ @define_boundary FixedHeatFlux Laplacian{Linear} begin
+-    (; area) = face
++    area = faces.area[fID]
+     0.0, -term.sign*bc.value*area
+ end
+ 
+diff --git a/src/Discretise/boundary_conditions/fixedTemperature.jl b/src/Discretise/boundary_conditions/fixedTemperature.jl
+index eff15262..9790aed9 100644
+--- a/src/Discretise/boundary_conditions/fixedTemperature.jl
++++ b/src/Discretise/boundary_conditions/fixedTemperature.jl
+@@ -121,7 +121,7 @@ end
+ 
+ @define_boundary FixedTemperature Laplacian{Linear} begin
+     J = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     (; T, energy_model) = bc.value
+     flux = J*area/delta
+     ap = term.sign[1]*(-flux)
+diff --git a/src/Discretise/boundary_conditions/neumann.jl b/src/Discretise/boundary_conditions/neumann.jl
+index 13c5d2f7..d64887f3 100644
+--- a/src/Discretise/boundary_conditions/neumann.jl
++++ b/src/Discretise/boundary_conditions/neumann.jl
+@@ -25,35 +25,35 @@ Adapt.@adapt_structure Neumann
+     phi = term.phi 
+     values = get_values(phi, component)
+     J = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     flux = J*area
+     0.0, flux*bc.value # draft implementation to test!
+ end
+ 
+ @define_boundary Neumann Divergence{Linear} ScalarField begin
+     flux = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     ap = term.sign*(flux) 
+     ap, -bc.value*ap*delta
+ end
+ 
+ @define_boundary Neumann Divergence{Upwind} ScalarField begin
+     flux = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     ap = term.sign*(flux) 
+     ap, -bc.value*ap*delta
+ end
+ 
+ @define_boundary Neumann Divergence{LUST} ScalarField begin
+     flux = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     ap = term.sign*(flux) 
+     ap, -bc.value*ap*delta
+ end
+ 
+ # Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
+ @define_boundary Neumann Divergence{BoundedUpwind} ScalarField begin
+-    (; delta) = face
++    delta = faces.delta[fID]
+     ap = term.sign*(term.flux[fID])
+     0.0, -bc.value*ap*delta
+ end
+diff --git a/src/Discretise/boundary_conditions/neumannFunction.jl b/src/Discretise/boundary_conditions/neumannFunction.jl
+index 599942ad..6fa8906c 100644
+--- a/src/Discretise/boundary_conditions/neumannFunction.jl
++++ b/src/Discretise/boundary_conditions/neumannFunction.jl
+@@ -27,7 +27,7 @@ Adapt.@adapt_structure NeumannFunction
+     phi = term.phi 
+     values = get_values(phi, component)
+     J = term.flux[fID]
+-    (; area, delta) = face 
++    area, delta = faces.area[fID], faces.delta[fID]
+     flux = -J*area/delta
+     ap = term.sign*(flux)
+     ap, ap*values[cellID] # original
+diff --git a/src/Discretise/boundary_conditions/neumann_interpolation.jl b/src/Discretise/boundary_conditions/neumann_interpolation.jl
+index 58d4a8da..0a60088a 100644
+--- a/src/Discretise/boundary_conditions/neumann_interpolation.jl
++++ b/src/Discretise/boundary_conditions/neumann_interpolation.jl
+@@ -3,8 +3,7 @@
+     BC::Neumann, phif::FaceScalarField, phi, boundary_cellsID, time, fID)
+     @inbounds begin
+         (; faces) = phi.mesh
+-        face = faces[fID]
+-        (; delta) = face
++        delta = faces.delta[fID]
+         cID = boundary_cellsID[fID]
+         phif[fID] = phi[cID] + delta*BC.value 
+     end
+diff --git a/src/Discretise/boundary_conditions/periodic.jl b/src/Discretise/boundary_conditions/periodic.jl
+index 4aaed04b..9c555698 100644
+--- a/src/Discretise/boundary_conditions/periodic.jl
++++ b/src/Discretise/boundary_conditions/periodic.jl
+@@ -278,13 +278,13 @@ end
+     values = get_values(phi, component)
+     (; transform) = bc.value
+     
+-    (; area, normal, e) = face
++    area, normal, e = faces.area[fID], faces.normal[fID], faces.e[fID]
+ 
+     # determine id of periodic cell and interpolate face value
+     pfID = bc.value.face_map[i] # id of periodic face 
+     pface = faces[pfID]
+     pcellID = pface.ownerCells[1]
+-    C1 = cell.centre
++    C1 = cells.centre[cellID]
+     C2 = cells[pcellID].centre - transform.distance
+ 
+     # for improved accuracy this needs to include the discretisation used for noncorrection
+@@ -328,17 +328,17 @@ end
+     pfID = bc.value.face_map[i] # id of periodic face 
+     pface = faces[pfID]
+     pcellID = pface.ownerCells[1]
+-    C1 = cell.centre
++    C1 = cells.centre[cellID]
+     C2 = cells[pcellID].centre - transform.distance
+-    Cf = face.centre
+-    n = face.normal
++    Cf = faces.centre[fID]
++    n = faces.normal[fID]
+ 
+     Pf = Cf - C1
+     PN = C2 - C1 
+ 
+     wn = (Pf⋅n)/(PN⋅n)
+     w = one(wn) - wn
+-    # w = pface.delta/(face.delta + pface.delta)
++    # w = pface.delta/(faces.delta[fID] + pface.delta)
+     # wn = one(w) - w
+ 
+     # Calculate link coefficients
+@@ -408,10 +408,10 @@ end
+     pfID = bc.value.face_map[i] # id of periodic face 
+     pface = faces[pfID]
+     pcellID = pface.ownerCells[1]
+-    C1 = cell.centre
++    C1 = cells.centre[cellID]
+     C2 = cells[pcellID].centre - transform.distance
+-    Cf = face.centre
+-    n = face.normal
++    Cf = faces.centre[fID]
++    n = faces.normal[fID]
+ 
+     Pf = Cf - C1
+     PN = C2 - C1 
+diff --git a/src/Discretise/boundary_conditions/periodic_interpolation.jl b/src/Discretise/boundary_conditions/periodic_interpolation.jl
+index c1307acf..e0f35241 100644
+--- a/src/Discretise/boundary_conditions/periodic_interpolation.jl
++++ b/src/Discretise/boundary_conditions/periodic_interpolation.jl
+@@ -12,18 +12,15 @@ end
+         (; transform ) = BC.value
+         (; faces, cells) = phif.mesh
+         pfID = BC.value.face_map[i] # id of periodic face
+-        pface = faces[pfID]
+-        pcID = pface.ownerCells[1]
+-        pcell = cells[pcID]
+-        face = faces[fID]
++        pcID = faces.ownerCells[pfID][1]
+         # cID = boundary_cellsID[fID]
+-        cID = face.ownerCells[1]
+-        cell = cells[cID]
++        cID = faces.ownerCells[fID][1]
+ 
+ 
+-        Pf = face.centre - cell.centre
+-        PN = (pcell.centre - transform.distance) - cell.centre
+-        normal = face.normal
++        C1 = cells.centre[cID]
++        Pf = faces.centre[fID] - C1
++        PN = (cells.centre[pcID] - transform.distance) - C1
++        normal = faces.normal[fID]
+         wn = (Pf⋅normal)/(PN⋅normal)
+         w = one(wn) - wn
+ 
+@@ -42,18 +39,15 @@ end
+         (; transform ) = BC.value
+         (; faces, cells) = psif.mesh
+         pfID = BC.value.face_map[i] # id of periodic face
+-        pface = faces[pfID]
+-        pcID = pface.ownerCells[1]
+-        pcell = cells[pcID]
+-        face = faces[fID]
++        pcID = faces.ownerCells[pfID][1]
+         # cID = boundary_cellsID[fID]
+-        cID = face.ownerCells[1]
+-        cell = cells[cID]
++        cID = faces.ownerCells[fID][1]
+ 
+ 
+-        Pf = face.centre - cell.centre
+-        PN = (pcell.centre - transform.distance) - cell.centre
+-        normal = face.normal
++        C1 = cells.centre[cID]
++        Pf = faces.centre[fID] - C1
++        PN = (cells.centre[pcID] - transform.distance) - C1
++        normal = faces.normal[fID]
+         wn = (Pf⋅normal)/(PN⋅normal)
+         w = one(wn) - wn
+ 
+diff --git a/src/Discretise/boundary_conditions/rotating_wall.jl b/src/Discretise/boundary_conditions/rotating_wall.jl
+index 0d768190..b8ed815a 100644
+--- a/src/Discretise/boundary_conditions/rotating_wall.jl
++++ b/src/Discretise/boundary_conditions/rotating_wall.jl
+@@ -48,7 +48,7 @@ RotatingWall(name::Symbol; centre, axis, rpm) = begin
+ end
+ 
+ @define_boundary RotatingWall Laplacian{Linear} VectorField begin
+-    (; area, delta) = face
++    area, delta = faces.area[fID], faces.delta[fID]
+     J = term.flux[fID]
+     flux = J*area/delta
+     ap = term.sign[1]*(-flux)
+diff --git a/src/Discretise/boundary_conditions/slip.jl b/src/Discretise/boundary_conditions/slip.jl
+index d1072963..4880fe97 100644
+--- a/src/Discretise/boundary_conditions/slip.jl
++++ b/src/Discretise/boundary_conditions/slip.jl
+@@ -30,7 +30,7 @@ Slip(name::Symbol) = Slip(name, 0)
+ end
+ 
+ @define_boundary Slip Laplacian{Linear} VectorField begin
+-    (; area, delta, normal) = face
++    area, delta, normal = faces.area[fID], faces.delta[fID], faces.normal[fID]
+     J = term.flux[fID]
+     flux = J*area/delta
+     ap = term.sign[1]*(-flux)
+@@ -43,7 +43,7 @@ end
+ 
+ @define_boundary Slip Divergence{Upwind} VectorField begin
+     ap = term.sign*term.flux[fID]
+-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
++    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
+ end
+ 
+ @define_boundary Slip Divergence{Upwind} ScalarField begin
+@@ -58,7 +58,7 @@ end
+ # Scalars cancel exactly. For vectors, the projected face value leaves the normal
+ # component from div(phi,U) - Sp(div(phi),U).
+ @define_boundary Slip Divergence{BoundedUpwind} VectorField begin
+-    (; normal) = face
++    normal = faces.normal[fID]
+     ap = term.sign*term.flux[fID]
+     vc = term.phi[cellID]
+     vn = (vc⋅normal)*normal
+@@ -90,12 +90,12 @@ end
+ 
+ @define_boundary Slip Divergence{Linear} VectorField begin
+     ap = term.sign*term.flux[fID]
+-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
++    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
+ end
+ 
+ @define_boundary Slip Divergence{LUST} VectorField begin
+     ap = term.sign*term.flux[fID]
+-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
++    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
+ end
+ 
+ @define_boundary Slip Si begin
+diff --git a/src/Discretise/boundary_conditions/slip_interpolation.jl b/src/Discretise/boundary_conditions/slip_interpolation.jl
+index 06589da9..8b8ad6f4 100644
+--- a/src/Discretise/boundary_conditions/slip_interpolation.jl
++++ b/src/Discretise/boundary_conditions/slip_interpolation.jl
+@@ -11,8 +11,7 @@ end
+     BC::Slip, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+     @inbounds begin
+         cID = boundary_cellsID[fID]
+-        face = psi.mesh.faces[fID]
+-        (; normal) = face
++        normal = psi.mesh.faces.normal[fID]
+ 
+         psi_cell = psi[cID]
+         psi_normal = (psi_cell⋅normal)*normal
+diff --git a/src/Discretise/boundary_conditions/symmetry.jl b/src/Discretise/boundary_conditions/symmetry.jl
+index 9a480427..cfa1a2af 100644
+--- a/src/Discretise/boundary_conditions/symmetry.jl
++++ b/src/Discretise/boundary_conditions/symmetry.jl
+@@ -24,7 +24,7 @@ Adapt.@adapt_structure Symmetry
+ Symmetry(patch::Symbol) = Symmetry(patch, 0)
+ 
+ @define_boundary Symmetry Laplacian{Linear} VectorField begin
+-    (; area, delta, normal) = face
++    area, delta, normal = faces.area[fID], faces.delta[fID], faces.normal[fID]
+     J = term.flux[fID]
+     flux = J*area/delta
+     ap = term.sign[1]*(-flux)
+@@ -61,17 +61,17 @@ end
+ 
+ @define_boundary Symmetry Divergence{Linear} VectorField begin
+     ap = term.sign*term.flux[fID]
+-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
++    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
+ end
+ 
+ @define_boundary Symmetry Divergence{Upwind} VectorField begin
+     ap = term.sign*term.flux[fID]
+-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
++    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
+ end
+ 
+ @define_boundary Symmetry Divergence{LUST} VectorField begin
+     ap = term.sign*term.flux[fID]
+-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
++    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
+ end
+ 
+ # Scalars cancel exactly. A vector leaves the difference between its tangential
+@@ -81,7 +81,7 @@ end
+ end
+ 
+ @define_boundary Symmetry Divergence{BoundedUpwind} VectorField begin
+-    (; normal) = face
++    normal = faces.normal[fID]
+     ap = term.sign*term.flux[fID]
+     vc = term.phi[cellID]
+     vn = (vc⋅normal)*normal
+diff --git a/src/Discretise/boundary_conditions/symmetry_interpolation.jl b/src/Discretise/boundary_conditions/symmetry_interpolation.jl
+index ecc8f089..8705f50d 100644
+--- a/src/Discretise/boundary_conditions/symmetry_interpolation.jl
++++ b/src/Discretise/boundary_conditions/symmetry_interpolation.jl
+@@ -11,7 +11,7 @@ end
+     BC::Symmetry, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
+     @inbounds begin
+         cID = boundary_cellsID[fID]
+-        normal = psi.mesh.faces[fID].normal
++        normal = psi.mesh.faces.normal[fID]
+         psi_cell = psi[cID]
+         psif[fID] = psi_cell - (psi_cell⋅normal)*normal
+     end
+diff --git a/src/Discretise/boundary_conditions/wall.jl b/src/Discretise/boundary_conditions/wall.jl
+index 0a0578e7..72dc609c 100644
+--- a/src/Discretise/boundary_conditions/wall.jl
++++ b/src/Discretise/boundary_conditions/wall.jl
+@@ -24,7 +24,7 @@ Adapt.@adapt_structure Wall
+ Wall(name::Symbol) = Wall(name, 0)
+ 
+ @define_boundary Wall Laplacian{Linear} VectorField begin
+-    (; area, delta) = face
++    area, delta = faces.area[fID], faces.delta[fID]
+     J = term.flux[fID]
+     flux = J*area/delta
+     ap = term.sign[1]*(-flux)

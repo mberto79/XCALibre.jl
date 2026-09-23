@@ -94,6 +94,6 @@ if mode != "mpi" || is_root()
         end
     end
     open(out * ".time", "w") do io
-        println(io, "mode=$mode threads=$(Threads.nthreads()) iterations=$iterations mesh_s=$t_mesh first_run_s=$t_first run_s=$t_run load_s=$T_LOAD pre_s=$t_pre compile_s=$comp_s")
+        println(io, "mode=$mode threads=$(Threads.nthreads()) iterations=$iterations mesh_s=$t_mesh first_run_s=$t_first run_s=$t_run load_s=$T_LOAD pre_s=$t_pre compile_s=$comp_s faces=$(nameof(typeof(XCALibre.Solvers._base_mesh(mesh).faces)))")
     end
 end

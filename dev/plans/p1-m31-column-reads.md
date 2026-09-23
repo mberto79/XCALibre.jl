@@ -16,9 +16,9 @@ motorBike KOmega (3D, Int32, 1t/8t/GPU/MPI n=4) and 2D BFS KOmegaSST (Int64) thr
 
 ## Steps
 
-Expected 4 steps (D175).
+Expected 4 steps (D175). S2-S4 wait on the user's ruling after D176.
 
-- [ ] **P1-M31-S1** Discretise kernels, `_scheme!`/`_scheme_source!` and every `scheme!`, BC signatures (macro with conditional binding, `Discretise_3` functors), the BCs the gate cases use, Calculate kernels and `Mesh_1_functions` read columns - mechanism: per-access IR is one array load per field read (D174) - cost: none at runtime - verdict: SCREEN: 2D and 1t compile close ≥3 s of the ~6 s 2D gap against same-chain base; strict class bitwise at 1t and 2D; if compile does not move, stop and report to the user.
+- [-] **P1-M31-S1** hot-path column reads - WITHDRAWN (D176): screen missed (2D +28%, 1t +25%, bitwise); carrying the columns unread costs +34-39%, so access rewrites cannot reach the cost. Diff: `dev/archive/patches/p1-m31-s1-column-reads.diff`.
 - [ ] **P1-M31-S2** Solvers (SIMPLE, PISO, shared functions), turbulence models, wall functions, wall distance, ModelFramework - verdict: P1-M28 strict class (1t, 2D, MPI n=4 bitwise; 8t, GPU ≥8 figures); compile within +10% of same-chain base on 1t and 2D, two samples each; 8t pinned 100-iteration within noise of 16.5 s.
 - [ ] **P1-M31-S3** remaining BC bodies, other solvers (CSIMPLE, Godunov, film, multiphase, MRF), Postprocess, IO, Distribute runtime paths - verdict: strict class; suite files reached, each a separate command.
 - [ ] **P1-M31-S4** docs (BC-definition page: column reads preferred, element binding still accepted) and CHANGELOG - verdict: docs build.

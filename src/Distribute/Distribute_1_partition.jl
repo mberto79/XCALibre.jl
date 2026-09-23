@@ -306,7 +306,7 @@ function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD, inde
         mesh.get_float, mesh.get_int, new_boundary_cellsID)
 
     # global block renumbering: new id = part offset + position within part (orig order)
-    l2g = TI[offs[parts[c]] + pos[c] for c ∈ local_cells]
+    l2g = GlobalInt[offs[parts[c]] + pos[c] for c ∈ local_cells]
     owner = TI[parts[c] - 1 for c ∈ local_cells]
     partition = Partition(part - 1, nparts, n_owned, n_ghost, l2g, owner,
         offs[part] + 1, offs[part] + (index.cell_ptr[part+1] - index.cell_ptr[part]))
@@ -338,7 +338,7 @@ function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD, inde
 
     # halo caches are lazily built on first sync! (per rank/backend) so a DistributedMesh can be
     # MPI.send-ed intact and adapted to a GPU backend without shipping rank-local MPI state
-    DistributedMesh(lmesh, partition, procs, TI.(local_cells), TI.(local_faces), HaloCache(), comm)
+    DistributedMesh(lmesh, partition, procs, GlobalInt.(local_cells), GlobalInt.(local_faces), HaloCache(), comm)
 end
 
 # NEW SECTION: entry points

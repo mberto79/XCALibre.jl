@@ -5,7 +5,7 @@ export mesh_info
 # layout: magic, header (Int64 per key), mesh block (raw isbits arrays), partition block (empty
 # when serial); one code path for both kinds, only the format number is checked for layout (D122)
 const _XDM_MAGIC = b"XCALMESH"
-const _XDM_FORMAT = 4
+const _XDM_FORMAT = 5
 const _XDM_BOM = 0x0102030405060708
 const _XDM_KEYS = (:bom, :format, :xcalibre_major, :xcalibre_minor, :xcalibre_patch,
     :julia_major, :julia_minor, :julia_patch, :kind, :dim, :TI, :TF,
@@ -78,8 +78,9 @@ function _write_xdm(path, mesh, part=nothing)
         part === nothing && return
         p = getfield(part, :partition)
         procs = getfield(part, :procs)
-        foreach(v -> _xdm_write_array(io, v, TI), (p.local_to_global, p.owner,
-            getfield(part, :orig_cells), getfield(part, :orig_faces)))
+        _xdm_write_array(io, p.local_to_global, GlobalInt)
+        _xdm_write_array(io, p.owner, TI)
+        foreach(v -> _xdm_write_array(io, v, GlobalInt), (getfield(part, :orig_cells), getfield(part, :orig_faces)))
         _xdm_write_array(io, TI[pp.neighbour for pp ∈ procs], TI)
         for f ∈ (:faces, :send_cells, :recv_ghosts)
             _xdm_write_array(io, TI[length(getfield(pp, f)) for pp ∈ procs], TI)
@@ -136,8 +137,10 @@ function _read_xdm_body(io, h)
         boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
     h.kind == 0 && return mesh
     nlocal = h.n_owned + h.n_ghost
-    l2g, owner, orig_cells = (_xdm_read_array(io, TI, nlocal) for _ ∈ 1:3)
-    orig_faces = _xdm_read_array(io, TI, h.nfaces)
+    l2g = _xdm_read_array(io, GlobalInt, nlocal)
+    owner = _xdm_read_array(io, TI, nlocal)
+    orig_cells = _xdm_read_array(io, GlobalInt, nlocal)
+    orig_faces = _xdm_read_array(io, GlobalInt, h.nfaces)
     neighbours = _xdm_read_array(io, TI, h.nprocs)
     lists = map((h.nproc_faces, h.nproc_send, h.nproc_recv)) do total
         lens = _xdm_read_array(io, TI, h.nprocs)

@@ -40,7 +40,7 @@ function distribute(case::FOAMCase{TI,TF}; comm=MPI.COMM_WORLD) where {TI,TF}
         FOAM3D_mesh(poly; scale=case.scale, integer_type=TI, float_type=Float64)
     end
     addr = joinpath(poly, "cellProcAddressing")
-    orig = isfile(addr) ? redirect_stdout(() -> read_neighbour(addr, TI, Float64), devnull) : nothing
+    orig = isfile(addr) ? redirect_stdout(() -> read_neighbour(addr, GlobalInt, Float64), devnull) : nothing
     dm = _attach_ghosts(mesh, orig, rank, comm)
     TF === Float64 && return dm
     DistributedMesh(convert_mesh_float(getfield(dm, :mesh), TF), getfield(dm, :partition),
@@ -65,7 +65,7 @@ function _attach_ghosts(mesh::Mesh3, orig, rank, comm)
 
     counts = MPI.Allgather(n_owned, comm)
     row_start = sum(counts[1:rank]; init=0) + 1
-    l2g_owned = collect(TI, row_start:row_start+n_owned-1)
+    l2g_owned = collect(GlobalInt, row_start:row_start+n_owned-1)
     orig_owned = orig === nothing ? l2g_owned : orig
 
     # one record per interface face: owner centre, volume, global id, original id (ids exact in Float64)
@@ -86,7 +86,7 @@ function _attach_ghosts(mesh::Mesh3, orig, rank, comm)
     issorted(first.(patches)) || error("processor patches of processor$rank are not in neighbour order")
     ghost_of = Dict{Int,Int}()
     gcells = eltype(cells)[]
-    l2g_ghost, owner_ghost, orig_ghost = TI[], TI[], TI[]
+    l2g_ghost, owner_ghost, orig_ghost = GlobalInt[], TI[], GlobalInt[]
     recv_ghosts = Vector{TI}[]
     for (i, (q, _)) ∈ enumerate(patches)
         r = recv[i]
@@ -97,7 +97,7 @@ function _attach_ghosts(mesh::Mesh3, orig, rank, comm)
             k = col[g]
             push!(gcells, Cell(SVector{3,TF}(r[1, k], r[2, k], r[3, k]), TF(r[4, k]),
                 UnitRange{TI}(1, 0), UnitRange{TI}(1, 0)))
-            push!(l2g_ghost, g); push!(owner_ghost, q); push!(orig_ghost, TI(r[6, k]))
+            push!(l2g_ghost, g); push!(owner_ghost, q); push!(orig_ghost, GlobalInt(r[6, k]))
             ghost_of[g] = n_owned + length(gcells)
         end
         push!(recv_ghosts, collect(TI, first_g:n_owned+length(gcells)))
@@ -145,6 +145,6 @@ function _attach_ghosts(mesh::Mesh3, orig, rank, comm)
         vcat(fill(TI(rank), n_owned), owner_ghost), row_start, row_start + n_owned - 1)
     procs = [ProcessorPatch(q, collect(TI, fs), sort!(unique(TI[faces[f].ownerCells[1] for f ∈ fs])),
         recv_ghosts[i]) for (i, (q, fs)) ∈ enumerate(patches)]
-    DistributedMesh(lmesh, partition, procs, vcat(TI.(orig_owned), orig_ghost),
-        zeros(TI, length(new_faces)), HaloCache(), comm)
+    DistributedMesh(lmesh, partition, procs, vcat(GlobalInt.(orig_owned), orig_ghost),
+        zeros(GlobalInt, length(new_faces)), HaloCache(), comm)
 end

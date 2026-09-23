@@ -245,7 +245,7 @@ function _migrate(dm::DistributedMesh, dest::Vector{Int})
         face_nodes, boundaries, new_nodes, node_cells, mesh.get_float, mesh.get_int, boundary_cellsID)
 
     gowner = TI[Int(ghost_info[g][2]) for g ∈ ghosts]
-    l2g = vcat(collect(TI, row_start:row_start+n_owned-1), TI[new_gid[g] for g ∈ ghosts])
+    l2g = vcat(collect(GlobalInt, row_start:row_start+n_owned-1), GlobalInt[new_gid[g] for g ∈ ghosts])
     partition = Partition(rank, nranks, n_owned, length(ghosts), l2g, vcat(fill(TI(rank), n_owned), gowner),
         row_start, row_start + n_owned - 1)
     procs = map(sort!(unique(gowner))) do q
@@ -253,6 +253,6 @@ function _migrate(dm::DistributedMesh, dest::Vector{Int})
         send = sort!(unique(TI[minimum(new_faces[f].ownerCells) for f ∈ pf]))
         ProcessorPatch(Int(q), pf, send, TI[n_owned + i for i ∈ eachindex(ghosts) if gowner[i] == q])
     end
-    orig_cells = vcat(TI[r.orig for r ∈ recs], TI[Int(ghost_info[g][3]) for g ∈ ghosts])
-    DistributedMesh(lmesh, partition, procs, orig_cells, TI[fr.orig for fr ∈ allf], HaloCache(), comm)
+    orig_cells = vcat(GlobalInt[r.orig for r ∈ recs], GlobalInt[ghost_info[g][3] for g ∈ ghosts])
+    DistributedMesh(lmesh, partition, procs, orig_cells, GlobalInt[fr.orig for fr ∈ allf], HaloCache(), comm)
 end

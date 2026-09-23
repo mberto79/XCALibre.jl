@@ -106,6 +106,20 @@ if rank == 0
             path = D._write_xdm(joinpath(bad, "box_part.xdm"), getfield(dm, :mesh), dm)
             @test same_part(D._read_part_file(path, 3), dm)
         end
+        # global ids past typemax(Int32) on an Int32-indexed part survive the file unchanged
+        box32 = UNV3D_mesh(joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), "3d_box_1000x1000x1000mm_10.unv"),
+            scale=0.001, integer_type=Int32)
+        dm = first(decompose(box32, 3))
+        off = D.GlobalInt(typemax(Int32)) + 1
+        p = getfield(dm, :partition)
+        pbig = Partition(p.rank, p.nranks, p.n_owned, p.n_ghost, p.local_to_global .+ off, p.owner,
+            p.row_start + off, p.row_end + off)
+        big = D.DistributedMesh(getfield(dm, :mesh), pbig, getfield(dm, :procs), dm.orig_cells .+ off,
+            dm.orig_faces .+ off, D.HaloCache(), MPI.COMM_NULL)
+        path = D._write_xdm(joinpath(bad, "big_part.xdm"), getfield(big, :mesh), big)
+        back = D._read_part_file(path, 3)
+        @test XCALibre.Mesh._get_int(back.mesh) == Int32 && eltype(back.orig_cells) == Int64
+        @test same_part(back, big) && minimum(back.partition.local_to_global) > typemax(Int32)
     end
     rm(bad; recursive=true)
 end

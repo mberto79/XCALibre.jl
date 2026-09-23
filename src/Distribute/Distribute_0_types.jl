@@ -12,12 +12,15 @@ Cell ownership metadata for one rank: owned cells occupy local ids `1:n_owned`, 
 cells `n_owned+1:n_owned+n_ghost`. `local_to_global` maps local ids to the
 block-contiguous global numbering where this rank owns rows `row_start:row_end`.
 """
-struct Partition{VI<:AbstractVector{<:Integer}}
+# global ids outgrow Int32 before any per-rank count does, so they never follow the mesh index type
+const GlobalInt = Int64
+
+struct Partition{VI<:AbstractVector{<:Integer}, VG<:AbstractVector{GlobalInt}}
     rank::Int                 # MPI rank (0-based)
     nranks::Int
     n_owned::Int
     n_ghost::Int
-    local_to_global::VI       # length n_owned+n_ghost, owned block first
+    local_to_global::VG       # length n_owned+n_ghost, owned block first
     owner::VI                 # owning MPI rank per local cell
     row_start::Int
     row_end::Int
@@ -54,12 +57,12 @@ mutable struct HaloCache
 end
 HaloCache() = HaloCache(nothing, nothing, nothing)
 
-struct DistributedMesh{M<:AbstractMesh,P<:Partition,PP<:ProcessorPatch,VI} <: AbstractMesh
+struct DistributedMesh{M<:AbstractMesh,P<:Partition,PP<:ProcessorPatch,VG<:AbstractVector{GlobalInt}} <: AbstractMesh
     mesh::M                   # local Mesh3/Mesh2
     partition::P
     procs::Vector{PP}
-    orig_cells::VI            # original global cell id per local cell (I/O, gather)
-    orig_faces::VI            # original global face id per local face
+    orig_cells::VG            # original global cell id per local cell (I/O, gather)
+    orig_faces::VG            # original global face id per local face
     halos::HaloCache          # lazily-built width-1/3 halo caches for self-syncing sync!
     comm::MPI.Comm            # communicator the partition was made for; every exchange and reduction uses it
 end

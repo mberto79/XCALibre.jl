@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T18:00:00+01:00
 STATE: IDLE
 STEP: P1-M29-S3 periodic BC maps follow TI + src sweep for stored Int arrays (not started)
-HEAD: e87a6ab6
+HEAD: adb32dbf
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m29 (strict: CPU residuals bitwise vs preceding step at fixed threads, distributed hashes bitwise at n=2,4); `gate.jl` as two commands under memguard (n=2,3 five files, then n=6 `test_turbulence_sst_wallfn.jl`) via `runtests_mpi.jl` in `~/.cache/xcal_m28/env_test`; `test_restart.jl` under `dev/petscenv_stock` (D183)
 resume: plan p1-m29 S3 row: periodic `face_map`, `faceAddress1/2`, `i`/`j` in the mesh `TI`; sweep `src/` for `zeros(Int`, `Int64[`, `Int[`, `Vector{Int}` stored on mesh/equation/solver structs; gate periodic tests bitwise (`3d_incompressible_laminar_cascade_periodic.jl`, distributed `test_periodic.jl`)

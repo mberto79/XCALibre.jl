@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-25T07:00:00+01:00
 STATE: PLANNING
 STEP: P1-M32-S1 `progress` keyword through every `run!` method and solver loop (not started)
-HEAD: 9f731499
+HEAD: 4de3bf76
 BRANCH: HM/distributed-draft
 GATE: residual histories bitwise with progress on and off (motorBike 1t smoke, 2d smoke); suite files of each solver family touched; docs build; 8t main-thread profile `~/.cache/xcal_m28/close/prof.jl` with progress off
 resume: list where progress output is built (ProgressMeter use in `src/Solvers/Solvers_1_*.jl`, `Solvers_2_*.jl`, `Solvers_4_Godunov.jl`) and how `run!` in `Solvers_3_solver_dispatch.jl` forwards keywords; then thread `progress=true` through

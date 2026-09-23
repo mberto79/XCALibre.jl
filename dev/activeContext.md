@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T18:00:00+01:00
 STATE: IDLE
 STEP: P1-M29-S2 AMG hierarchy index arrays in the finest matrix index type (not started)
-HEAD: 4a2f2bdf
+HEAD: e87a6ab6
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m29 (strict: CPU residuals bitwise vs preceding step at fixed threads, distributed hashes bitwise at n=2,4); `gate.jl` as two commands under memguard (n=2,3 five files, then n=6 `test_turbulence_sst_wallfn.jl`) via `runtests_mpi.jl` in `~/.cache/xcal_m28/env_test`; `test_restart.jl` under `dev/petscenv_stock` (D183)
 resume: plan p1-m29 S2 row: list AMG hierarchy index arrays (`I`, `J`, `diag_index`, `marker`, aggregation maps, `AMGMatrixCSR` rowptr/colval) typed `Int`, build them in the finest matrix's index type; gate AMG unit tests + AMG case residuals bitwise

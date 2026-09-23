@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T12:00:00+01:00
 STATE: REVIEWING
 STEP: pre-merge review of HM/distributed-draft (user request; every P1 milestone closed, last D207)
-HEAD: c925df98
+HEAD: c0ef5101
 BRANCH: HM/distributed-draft
 GATE: `dev/phaseRoadmap.md` § Exit gate: full serial suite, distributed gate within Q2, BFS example on stock binaries from a clean checkout, rank invariance at 1,2,4 (Q1), scaling telemetry (Q3), docs build
 resume: collect the review agents' findings (performance, behaviour changes vs main, production robustness), report them to the user, who decides which become milestones before `xcalibre-close`

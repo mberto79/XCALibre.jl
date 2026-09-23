@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-25T06:00:00+01:00
 STATE: IDLE
 STEP: P1 exit gate (every P1 milestone closed; M30 D200)
-HEAD: 64b59139
+HEAD: 9f731499
 BRANCH: HM/distributed-draft
 GATE: `dev/phaseRoadmap.md` § Exit gate: full serial suite, distributed gate within Q2, BFS example on stock binaries from a clean checkout, rank invariance at 1,2,4 (Q1), scaling telemetry (Q3), docs build
 resume: user runs the phase close (`xcalibre-close`, direct invocation only); until then nothing is open in P1

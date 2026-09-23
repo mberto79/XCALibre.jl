@@ -56,3 +56,9 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - Pin the clock before measuring and revert afterwards with `dev/scripts/pin_clock.sh pin|revert`.
 - conda CUDA PETSc envs: micromamba at `~/.local/micromamba` (envs `petsc-cuda` mpich, `petsc-cuda-ompi` openmpi); Julia envs `dev/petscenv_conda*`; openmpi runs need `OMPI_MCA_opal_cuda_support=true` (D69).
 - `typeof(mesh) <: Mesh2` and `<: Mesh3` are FALSE on a `DistributedMesh`, which is `<: AbstractMesh` and forwards `getproperty` to its local mesh: a dimension test written that way silently takes the wrong branch. Use `_base_mesh(mesh) isa Mesh3`. It cost `reconstruct!` a singular 2D moment matrix and a wrong velocity field with no error (D147).
+
+## motorBike benchmark (P1-M28..M30)
+
+- The case lives in `~/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS`; its `env_distributed` pulls the branch from GitHub, so local work uses a COPY of that env with `Pkg.develop(path=~/Julia/XCALibre.jl)`; the stock drivers append to the recorded datasets, so time with scratch copies writing elsewhere; `run_openfoam.sh` deletes `openfoam_motorBike.txt` first, never run it for one count.
+- Any mesh type change invalidates `mesh_*.jld2` and `parts_*/` caches; delete and regenerate before comparing.
+- Timing noise on this laptop is about ±5% at one core; only differences clear of it count.

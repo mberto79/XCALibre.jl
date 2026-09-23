@@ -27,18 +27,20 @@ Correctness (R3, R8) outranks everything. Then the stock-binary and serial-cost 
 
 ## requirements
 
-R1 STOCK BINARIES SUFFICE — a distributed Float64 CPU simulation runs on the packages' own bundled MPI and PETSc binaries with no machine-specific configuration and no separate project environment.
-R2 NO ENVIRONMENT-VARIABLE CONTROL — every option that changes what a distributed simulation computes is reachable from the documented Julia interface, and no environment variable must be set for a supported configuration to behave correctly.
-R3 RANK-UNIFORM SETUP — the documented way to set up a distributed case cannot be written so that ranks follow different paths through it, and a case that runs on one rank runs unchanged on many.
-R4 THE SERIAL COST OF DISTRIBUTED SUPPORT IS SMALL AND KNOWN — what a serial install pays in load time and download size for dependencies only distributed runs call is measured, recorded and a small fraction of the package's own, rather than assumed to be zero.
-R5 FAMILIAR INTERFACE — a distributed case differs from its serial counterpart only in how the mesh is obtained and how the run is launched; physics, boundary, scheme, solver and runtime setup are written identically.
-R6 LAUNCH IS ONE COMMAND — starting a distributed simulation from a shell is a single documented command naming the script, the rank count and the environment.
-R7 PARALLEL SPEEDUP — wall-clock time per iteration falls as ranks are added over the supported range, and any departure from ideal is attributed to a measured cause.
-R8 RESULTS ARE RANK-INVARIANT — converged fields and residual histories agree across rank counts to solver tolerance.
-R9 REGRESSION NET — the distributed feature has an automated gate that runs in ordinary developer and continuous-integration time.
-R10 DOCUMENTED SCOPE — the supported and unsupported distributed physics models, floating-point precisions and hardware paths are stated in user documentation.
-R11 NO RANK IS A BOTTLENECK — the memory and time any one rank spends preparing, running or writing a distributed simulation are bounded by its own share of the mesh, not by the global mesh or the rank count.
-R12 RESTART — a distributed run can be checkpointed and resumed from its written state, and the resumed run continues the interrupted one to solver tolerance.
+R1 STOCK BINARIES SUFFICE - a distributed Float64 CPU simulation runs on the packages' own bundled MPI and PETSc binaries with no machine-specific configuration and no separate project environment.
+R2 NO ENVIRONMENT-VARIABLE CONTROL - every option that changes what a distributed simulation computes is reachable from the documented Julia interface, and no environment variable must be set for a supported configuration to behave correctly.
+R3 RANK-UNIFORM SETUP - the documented way to set up a distributed case cannot be written so that ranks follow different paths through it, and a case that runs on one rank runs unchanged on many.
+R4 THE SERIAL COST OF DISTRIBUTED SUPPORT IS SMALL AND KNOWN - what a serial install pays in load time and download size for dependencies only distributed runs call is measured, recorded and a small fraction of the package's own, rather than assumed to be zero.
+R5 FAMILIAR INTERFACE - a distributed case differs from its serial counterpart only in how the mesh is obtained and how the run is launched; physics, boundary, scheme, solver and runtime setup are written identically.
+R6 LAUNCH IS ONE COMMAND - starting a distributed simulation from a shell is a single documented command naming the script, the rank count and the environment.
+R7 PARALLEL SPEEDUP - wall-clock time per iteration falls as ranks are added over the supported range, and any departure from ideal is attributed to a measured cause.
+R8 RESULTS ARE RANK-INVARIANT - converged fields and residual histories agree across rank counts to solver tolerance.
+R9 REGRESSION NET - the distributed feature has an automated gate that runs in ordinary developer and continuous-integration time.
+R10 DOCUMENTED SCOPE - the supported and unsupported distributed physics models, floating-point precisions and hardware paths are stated in user documentation.
+R11 NO RANK IS A BOTTLENECK - the memory and time any one rank spends preparing, running or writing a distributed simulation are bounded by its own share of the mesh, not by the global mesh or the rank count.
+R12 RESTART - a distributed run can be checkpointed and resumed from its written state, and the resumed run continues the interrupted one to solver tolerance.
+R13 STORAGE CHANGES PRESERVE RESULTS - a change to how mesh or solver data is stored or indexed leaves residual histories and forces unchanged: bitwise on the CPU at a fixed thread count when only storage changes, and to at least eight significant figures when the order of a reduction changes, on every supported backend.
+R14 ELEMENT ACCESS IS STABLE - user code that reads a mesh cell, face or node by index and takes its geometric properties keeps working unchanged across storage changes.
 
 ## acceptance
 

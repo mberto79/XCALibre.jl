@@ -1,29 +1,23 @@
-# Active context - distributed module release polish
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
-updated: 2026-09-20T18:30:00+01:00
-STATE: IDLE
-STEP: P1 exit gate and close (all milestones closed; M27 D158)
-HEAD: dcf93e0b
+# Active context - memory-traffic scaling (P1-M28..M30)
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m28-mesh-soa.md, dev/plans/p1-m29-index-widths.md, dev/plans/p1-m30-threaded-krylov.md
+updated: 2026-09-23T12:00:00+01:00
+STATE: BUILDING
+STEP: P1-M28-S1 baselines at 875c16bb
+HEAD: 875c16bb
 BRANCH: HM/distributed-draft
-GATE: test/distributed/gate.jl (about 3.3 min) plus only the suite files the change reaches, each a separate command under MIN_MB=2500 memguard.sh; every verdict run under five minutes (D101)
-resume: every P1 milestone is closed; the phase exit gate and close are the user's call through the xcalibre-close skill, and the long comment blocks left on main are in PR #160 from `HM/comment-blocks` (D137)
+GATE: M28 smoke set (plan p1-m28 § gate): 20-iteration motorBike residuals at 1t and 8t, one 2D example, GPU, n=8 MPI, each a separate command under five minutes (D160)
+resume: write the smoke script in `dev/scripts/` and record 20-iteration residual baselines at 875c16bb (1t, 8t, 2D, GPU, n=8) before any source change
+
 ## binding
-- HARD CAP (D101, user): every gate or experiment deciding a verdict finishes in five minutes of wall clock; `dev/gotchas.md` § time budget has the measured durations and the levers.
-- M22 closed (D118), M23 closed (D129), M24 closed (D132), M26 closed (D135), M15 closed (D136), M25 closed (D109); M26 (shipped precompile, user-opened D108) runs after M24.
-## implementer
-- These milestones are implemented by Opus 5 in the current session (D121 amends D75), in roadmap order, committing and pushing each step and not stopping at milestone boundaries (D75). Every plan states mechanism, cost and verdict per step; verdicts are measurable on this machine. Multi-node, multi-GPU and AMD validation is P2 on the HPC (D73), so nothing here waits for hardware that is not present.
-- Source of the work: `dev/archive/reviews/p1/audit-2026-09-18.md` (archived at M18 close, D77). Its three structural changes are M20+M23 (preprocessing), M21 (memory), M22 (communication); its release-blocker list is M18.
-- Bars that gate every step: residual hashes bitwise equal under Jacobi at n=2 and n=4 on CPU (n=8 with PETSc does not fit beside the language server; GPU residuals are tolerance-checked, D116; R8 binding; `mem_probe.jl` on 10 mm parts fits the cap), `check_ghosts` zero (M19-S2), the M19-S4 round and all-reduce counters, and `gate.jl`. The full serial suite exceeds the five-minute cap and runs only at phase close.
+- HARD CAP (D101): every verdict run finishes in five minutes; 500-iteration timings run one point per command at milestone close only (D160).
+- Order M28 then M29 then M30 (D159); each step committed and pushed, no stop at milestone boundaries. The user expects all three in one session.
+- Baselines must be text residual files, not `mesh_*.jld2` or `parts_*`: both die with the mesh type change.
+
 ## position
-M1-M26 closed (M12 superseded by M13; M22 on 2026-09-19 with S6-S8 withdrawn on bounds, D110-D118). M27 closed (D158). Open: none. The distributed gate is now 4m38s of the five-minute cap, so the next gate addition must displace something (D157).
-## evidence
-- The scaling attribution in D16 was WRONG and is withdrawn. With the clock pinned the module scales at 102/94/71% (n=2/4/8) and mesh size does not move it (D20, D21). Do not reopen this without reading `dev/telemetry/scaling_attribution.md` first.
-- This machine throttles 4400 to 3100 MHz as rank count rises. ANY timing comparison across rank counts is meaningless unless the clock is pinned or the package power held constant; `dev/gotchas.md` carries both methods.
-- `dev/petscenv_stock` (XCALibre, MPI, PETSc, Test; no preferences) runs the CPU path; `dev/petscenv_conda_ompi` runs the GPU path with a CUDA-aware Open MPI (`OMPI_MCA_opal_cuda_support=true`); `dev/petscenv` is the custom CUDA-hypre build.
-- Memory baseline after M21 (D99): 1772 MB peak per rank at 4 mm n=2 (1667 MB with `--heap-size-hint=1200M`); header-checked 5 mm parts for n=1,2,4,8 are in `~/.cache/xcal_mem_probe/` and copied to `~/.cache/xcal_scaling_probe/bfs5h_n*` for `equal_thermal.sh bfs5h`. n=8 timing needs the language server closed (about 7 GB).
-## blocked/carried
-- CHANGELOG cites `[#160](@ref)` 12 times for the distributed feature, but #160 is now the comment-blocks PR off main (D137); replace them with the distributed PR's number when it is opened, then rebuild docs so `release_notes.md` follows.
-- Parts are `.xdm` format 3 since M23-S1 (D122, D123); every `.jls` cache is obsolete. Current: `~/.cache/xcal_m23/bfs10_n8`, `bfs4_n8`; regenerate others with `mem_probe.jl part`.
-- Memory: 14 GB box. Wrap every large-mesh run in `dev/scripts/memguard.sh`.
-- Machine partly reverted at 2026-09-18: turbo on, min_perf 15, governor powersave, but `powerprofilesctl get` still says performance; run `powerprofilesctl set balanced` before timing.
-- `xcalibre-dev check` stays INVALID here on the 45 files the `HM/comment-blocks` PR fixes (D137).
+M1-M27 closed; P1 exit gate and close remain the user's call (xcalibre-close). M28-M30 opened by D159.
+
+## carried
+- CHANGELOG cites `[#160](@ref)` 12 times for the distributed feature; #160 is the comment-blocks PR (D137); replace with the distributed PR number when opened.
+- Parts are `.xdm` format 3; M28-S4/S5 bump it.
+- Memory: 14 GB box; wrap large-mesh and MPI runs in `dev/scripts/memguard.sh`. Run `powerprofilesctl set balanced` before timing.
+- Benchmark case: `~/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS`; its stock drivers append to recorded datasets, so use scratch copies (gotchas).

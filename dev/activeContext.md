@@ -6,7 +6,7 @@ STEP: flat-mesh result (D177) awaiting the user
 HEAD: 49c1ff23
 BRANCH: HM/distributed-draft
 GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4` (parts via `motorbike_smoke.jl part 4 <dir>`), compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl`; compile A/B with `XENV=env_base` (875c16bb worktree `~/.cache/xcal_m28/wt_base`), two samples each; bars in plan p1-m28 (D163, D168)
-resume: user decides on D177; if adopted, apply `dev/archive/patches/p1-m31-flat-mesh-columns.diff` as a new P1-M31 step, then run GPU, MPI n=4 with fresh parts, `test_offline.jl`/`test_partition.jl`, and the suite files the mesh reaches
+resume: user decides on D177/D178; if adopted, apply `dev/archive/patches/p1-m31-flat-mesh-columns.diff` (includes the type-stable adapt fix) as a new P1-M31 step, then MPI n=4 with fresh parts, `test_offline.jl`/`test_partition.jl`, 8t pinned 100 iterations, and the suite files the mesh reaches
 
 ## binding
 - User rule (D168): adopt option B if first-run compile is within +10% of 875c16bb on motorBike 1t and 2D; else option A (whole mesh as plain columns, short accessors allowed at ≤1-2% runtime cost). The D164 band is withdrawn.

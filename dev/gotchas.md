@@ -65,6 +65,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - First-run compile drifts ~10-25% within a day (1t base 14.2, 18.0, 16.6 s): compare compile only against `XENV=env_base` samples taken in the same chain run.
 - The per-field layout's compile cost sits in every specialisation whose argument types carry the column arrays (launchers, model constructors), not at element-access sites: converting ~80 hot sites to column reads moved nothing, and carrying the columns unread costs more (D176).
 - `motorbike_smoke.jl` writes `faces=<container>` on the `.time` line; check it before reading a screen, since an env can silently load another source.
+- Never close over a type in `adapt_structure` (`map(c -> adapt(to, c), cols)`): `typeof(Array)` is `UnionAll`, the result goes uninferred and host loops over the copy dispatch per element (D178). Read the GPU `run_s` at every gate, not only its residuals.
 - A lazy element view (`faces[i]` returning a reference into the columns) aliases in-place mutation: a 3D reader that reads a face after writing its array silently changes the mesh (D172).
 - Threaded timings must pin to P-cores (`pinthreads(:cores)`, `mpi_pinthreads(:cores)` under MPI): unpinned 8t lands on E-cores and reads 22.4 s where pinned reads 19.0 s per 100 iterations.
 - A `mesh_*.jld2` written before P1-M28 still LOADS (JLD2 bypasses constructors) and silently gives the old AoS layout; delete caches, never trust them across a layout change.

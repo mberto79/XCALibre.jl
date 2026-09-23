@@ -207,7 +207,7 @@ function _empty_matrix_free_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T
                    Ref{Any}(nothing), 0, 0, true, 0.0, 256)
 end
 
-_amg_empty_hierarchy(::MatrixFreeAMG, backend, ::Type{T}, ::Type{TS}) where {T,TS} =
+_amg_empty_hierarchy(::MatrixFreeAMG, backend, ::Type{T}, ::Type{TS}, ::Type) where {T,TS} =
     _empty_matrix_free_hierarchy(backend, T, TS)
 
 # Coarsest solve, zero-alloc per cycle. GEMV branch: on-device dense inverse (no host sync). LU branch:
@@ -237,7 +237,7 @@ function build_galerkin_operators(Am, merge_levels::Integer, max_coarse::Integer
         agg, P, _ = build_prolongation(A_cur, Geometric(merge_levels=Int(merge_levels)))
         nc = maximum(agg)
         nc >= _m(A_cur) && break              # no further coarsening possible
-        A_next = _amg_matrix(sparse(P') * _csr_to_csc(A_cur) * P)
+        A_next = _amg_matrix(sparse(P') * _csr_to_csc(A_cur) * P, eltype(_rowptr(Am)))
         push!(aggs, agg); push!(Ps, P); push!(operators, A_next)
         A_cur = A_next
     end
@@ -278,7 +278,8 @@ function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int
 
     fused_top = clamp(Int(fused_top), 0, M - 1)  # level 1 (fine A_0) is never matrix-free
     dev(v) = backend isa CPU ? copy(v) : Adapt.adapt(backend, v)
-    empty_csr(n) = AMGMatrixCSR(dev(Int32[]), dev(Int32[]), dev(T[]), n, n)
+    TI = eltype(_rowptr(Am))
+    empty_csr(n) = AMGMatrixCSR(dev(TI[]), dev(TI[]), dev(T[]), n, n)
     levels = MatrixFreeLevel[]
     for l in 1:M
         Tl = l == 1 ? T : TC                                  # finest stays T; coarse levels at TC
@@ -289,7 +290,7 @@ function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int
         is_mf = 2 <= l <= fused_top + 1                        # apply A_l matrix-free -> don't store it
         Adev = is_mf ? empty_csr(n) :
                AMGMatrixCSR(dev(_rowptr(Ap)), dev(_colval(Ap)), dev(Tl.(_nzval(Ap))), n, n)
-        diag_index_perm = is_mf ? dev(Int[]) : dev(_diag_index(Ap))
+        diag_index_perm = is_mf ? dev(TI[]) : dev(_diag_index(Ap))
         sc = scale_correction ? dev(zeros(Tl, n)) : dev(Tl[])  # Ac scratch (matfree levels too)
         push!(levels, MatrixFreeLevel(Adev, dev(Tl.(invdiag_perm)), diag_index_perm, Tl(omegas[l]),
                               dev(aos[l]), dev(inv_sqrt_w), dev(coarse_pos), dev(row_macro),

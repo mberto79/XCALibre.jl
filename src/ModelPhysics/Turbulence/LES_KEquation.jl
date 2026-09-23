@@ -103,7 +103,7 @@ function initialise(
         ) → eqn
 
     @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
+    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
     
     initial_residual = ((:k, 1.0),)
     return KEquationModel(

@@ -60,7 +60,7 @@ config = Configuration(
 
 @reset eqn.preconditioner = set_preconditioner(
     solvers.phi.preconditioner, eqn)
-@reset eqn.solver = _workspace(solvers.phi.solver, _b(eqn))
+@reset eqn.solver = _workspace(solvers.phi.solver, _b(eqn), _index_type(_A(eqn)))
 
 gammaf.values .= 1
 prev = zeros(length(phi.values))

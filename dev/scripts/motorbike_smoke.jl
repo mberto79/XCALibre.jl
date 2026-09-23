@@ -26,7 +26,10 @@ function motorbike_case(mesh_dev, hardware)
         omega = [Dirichlet(:inlet, w_in), Zerogradient(:outlet), OmegaWallFunction(:lowerWall), OmegaWallFunction(:motorBike), side...],
         nut = [Dirichlet(:inlet, nut_in), Zerogradient(:outlet), NutWallFunction(:lowerWall), NutWallFunction(:motorBike), side...]))
     ss(s, r) = SolverSetup(solver=s, preconditioner=Jacobi(), convergence=1e-14, relax=r, rtol=0.1, itmax=1000)
-    solvers = (U=ss(Bicgstab(), 0.7), p=ss(Cg(), 0.3), k=ss(Bicgstab(), 0.3), omega=ss(Bicgstab(), 0.3))
+    # PSOLVER=amg selects the benchmark's AMG pressure solver
+    ps = get(ENV, "PSOLVER", "cg") == "amg" ?
+        AMG(mode=Cg(), coarsening=Geometric(), smoother=AMGJacobi(), fuse_levels=0) : Cg()
+    solvers = (U=ss(Bicgstab(), 0.7), p=ss(ps, 0.3), k=ss(Bicgstab(), 0.3), omega=ss(Bicgstab(), 0.3))
     schemes = (U=Schemes(time=SteadyState, divergence=LUST, gradient=Gauss), p=Schemes(time=SteadyState, gradient=Gauss),
         k=Schemes(time=SteadyState, divergence=Upwind, gradient=Gauss), omega=Schemes(time=SteadyState, divergence=Upwind, gradient=Gauss))
     init!() = (initialise!(model.momentum.U, velocity); initialise!(model.momentum.p, 0.0);

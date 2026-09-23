@@ -161,8 +161,8 @@ function initialise(
     if !is_distributed_mesh(mesh)
         @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
         @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
-        @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
-        @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
+        @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
+        @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn), _index_type(_A(ω_eqn)))
     end
 
     # wrap transported-scalar eqns for the distributed solve seam (identity serial)

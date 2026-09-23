@@ -82,7 +82,7 @@ function setup_laplace_solver(
         @reset T_eqn.preconditioner = set_preconditioner(solvers.preconditioner, T_eqn)
 
         @info "Pre-allocating solvers..."
-        @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn))
+        @reset T_eqn.solver = _workspace(solvers.solver, _b(T_eqn), _index_type(_A(T_eqn)))
     end
 
     @info "Initialising energy model..."

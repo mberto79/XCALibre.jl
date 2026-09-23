@@ -34,8 +34,8 @@ function _device_copyto!(backend, dest, src)
     return dest
 end
 
-function _pattern_signature(A)
-    return Int.(_cpu_vector(_rowptr(A))), Int.(_cpu_vector(_colval(A)))
+function _pattern_signature(A, ::Type{TI}=Int) where {TI}
+    return TI.(_cpu_vector(_rowptr(A))), TI.(_cpu_vector(_colval(A)))
 end
 
 function _amg_setup_backend(backend)
@@ -90,19 +90,19 @@ function _wrap_sparse(A::SparseMatrixCSC)
     return SparseXCSR(sparsecsr(I, J, V, size(A, 1), size(A, 2)))
 end
 
-function _amg_matrix(A)
-    rowptr = Int.(_cpu_vector(_rowptr(A)))
-    colval = Int.(_cpu_vector(_colval(A)))
+function _amg_matrix(A, ::Type{TI}=eltype(_rowptr(A))) where {TI}
+    rowptr = TI.(_cpu_vector(_rowptr(A)))
+    colval = TI.(_cpu_vector(_colval(A)))
     nzval = copy(_cpu_vector(_nzval(A)))
     return AMGMatrixCSR(rowptr, colval, nzval, _m(A), _n(A))
 end
 
-function _amg_matrix(A::SparseMatrixCSC)
-    return _amg_matrix(_wrap_sparse(A))
+function _amg_matrix(A::SparseMatrixCSC, ::Type{TI}=Int) where {TI}
+    return _amg_matrix(_wrap_sparse(A), TI)
 end
 
-function _amg_matrix(A::Transpose{T,SparseMatrixCSC{T,Int}}) where {T}
-    return _amg_matrix(sparse(A))
+function _amg_matrix(A::Transpose{T,<:SparseMatrixCSC{T}}, ::Type{TI}=Int) where {T,TI}
+    return _amg_matrix(sparse(A), TI)
 end
 
 function _diag_inverse(A)
@@ -157,7 +157,7 @@ function _diag_index(A)
     rowptr = _rowptr(A)
     colval = _colval(A)
     n = _m(A)
-    diag_index = zeros(Int, n)
+    diag_index = zeros(eltype(rowptr), n)
     @inbounds for i in 1:n
         for p in rowptr[i]:(rowptr[i + 1] - 1)
             if colval[p] == i
@@ -236,8 +236,8 @@ function _estimate_lambda_max(A, invdiag)
     return _estimate_lambda_max!(v, w, A, invdiag)
 end
 
-function _empty_transfer_matrix(T)
-    return AMGMatrixCSR([1], Int[], T[], 0, 0)
+function _empty_transfer_matrix(T, ::Type{TI}=Int) where {TI}
+    return AMGMatrixCSR(TI[1], TI[], T[], 0, 0)
 end
 
 function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
@@ -251,7 +251,7 @@ function _allocate_level(A, P, R, level_id, aggregate_ids, backend, smoother)
     direction = KernelAbstractions.zeros(backend, T, n)
     lambda = _estimate_lambda_max(A, invdiag)
     has_transfer = _m(P) > 0 && _n(P) > 0 && length(_nzval(P)) > 0
-    aggregate = _amg_backend_array(backend, aggregate_ids)
+    aggregate = _amg_backend_array(backend, convert(Vector{eltype(_colval(A))}, aggregate_ids))
     is_cpu = backend isa CPU
     return AMGLevel(
         is_cpu ? A : adapt(backend, A),
@@ -352,7 +352,7 @@ function _refresh_coarse_operators!(::Any, hierarchy::AMGHierarchy, solver::AMG)
 end
 
 function _regalerkin_cached!(fine_level::AMGLevel, P_csc, R_csc)
-    return _amg_matrix(R_csc * _csr_to_csc(fine_level.A) * P_csc)
+    return _amg_matrix(R_csc * _csr_to_csc(fine_level.A) * P_csc, eltype(_rowptr(fine_level.A)))
 end
 
 @inline function _csr_find_index(rowptr, colval, row::Integer, col::Integer)
@@ -453,7 +453,7 @@ function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc)
 end
 
 function _build_ra_pattern(R, A)
-    I = Int32
+    I = eltype(_rowptr(A))
     R_rowptr = _rowptr(R); R_colval = _colval(R)
     A_rowptr = _rowptr(A); A_colval = _colval(A)
     n_coarse = _m(R); n_fine = _m(A)
@@ -473,7 +473,7 @@ function _build_ra_pattern(R, A)
         end
     end
 
-    ra_rowptr = Vector{Int}(undef, n_coarse + 1)
+    ra_rowptr = Vector{I}(undef, n_coarse + 1)
     ra_rowptr[1] = 1
     for r in 1:n_coarse
         ra_rowptr[r+1] = ra_rowptr[r] + nnz_per_row[r]
@@ -509,8 +509,8 @@ function _build_rap_plan_cpu(R, A, P)
     ra_nzval      = zeros(T, length(ra_colval))
     workspace_ra  = zeros(T, n_fine)
     workspace_rap = zeros(T, n_coarse_out)
-    flag_ra  = zeros(Int, n_fine)
-    flag_rap = zeros(Int, n_coarse_out)
+    flag_ra  = zeros(eltype(ra_rowptr), n_fine)
+    flag_rap = zeros(eltype(ra_rowptr), n_coarse_out)
     return AMGRAPPlanCPU(ra_rowptr, ra_colval, ra_nzval,
                          workspace_ra, workspace_rap, flag_ra, flag_rap)
 end
@@ -781,20 +781,21 @@ function setup_hierarchy(A, solver::AMG, backend; log_diagnostics=true)
     return setup_hierarchy(A, solver, backend, AutoTune(); log_diagnostics=log_diagnostics)
 end
 
-function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=true)
+function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=true, index_type=eltype(_rowptr(A)))
     _validate_amg_smoother_backend(backend, solver.smoother)
     host_levels = nothing
     transfer_csc = Any[]
     galerkin_caches = Any[]
-    current_A = _amg_matrix(A)
+    TI = index_type
+    current_A = _amg_matrix(A, TI)
     current_candidates = _initial_candidates(solver.coarsening)
     level_id = 1
     T = eltype(_nzval(current_A))
     while true
         aggregate_ids, P_csc, current_candidates = build_prolongation(current_A, solver.coarsening, current_candidates, level_id)
         if isnothing(P_csc)
-            P = _empty_transfer_matrix(T)
-            R = _empty_transfer_matrix(T)
+            P = _empty_transfer_matrix(T, TI)
+            R = _empty_transfer_matrix(T, TI)
             level = _allocate_level(current_A, P, R, level_id, aggregate_ids, CPU(), solver.smoother)
             if isnothing(host_levels)
                 host_levels = typeof(level)[]
@@ -805,9 +806,9 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
 
         R_csc_lazy = transpose(P_csc)
         R_csc = sparse(R_csc_lazy)
-        coarse_A = _amg_matrix(R_csc * _csr_to_csc(current_A) * P_csc)
-        P = _amg_matrix(P_csc)
-        R = _amg_matrix(R_csc)
+        coarse_A = _amg_matrix(R_csc * _csr_to_csc(current_A) * P_csc, TI)
+        P = _amg_matrix(P_csc, TI)
+        R = _amg_matrix(R_csc, TI)
         plan = _build_rap_plan_cpu(R, current_A, P)
         push!(galerkin_caches, nothing)
         P_csc = nothing; R_csc = nothing  # CSC matrices no longer needed
@@ -821,8 +822,8 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
 
         coarse_rows = _m(coarse_A)
         if coarse_rows <= solver.max_coarse_rows || _should_stop_coarsening(_m(current_A), coarse_rows, solver, level_id)
-            P_last = _empty_transfer_matrix(T)
-            R_last = _empty_transfer_matrix(T)
+            P_last = _empty_transfer_matrix(T, TI)
+            R_last = _empty_transfer_matrix(T, TI)
             push!(host_levels, _allocate_level(coarse_A, P_last, R_last, level_id + 1, collect(1:coarse_rows), CPU(), solver.smoother))
             break
         end
@@ -831,9 +832,9 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         level_id += 1
     end
 
-    coarse_cpu = _empty_cpu_coarse_level(T)
+    coarse_cpu = _empty_cpu_coarse_level(T, TI)
     _refresh_coarse_cpu!(coarse_cpu, host_levels[end].A)
-    rowptr_pattern, colval_pattern = _pattern_signature(A)
+    rowptr_pattern, colval_pattern = _pattern_signature(A, TI)
     pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
     is_symmetric = solver.mode isa Cg ? _is_symmetric(host_levels[1].A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)

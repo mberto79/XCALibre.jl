@@ -18,6 +18,6 @@ Named test files the step reaches, each a separate command; `gate.jl` for distri
 ## steps
 
 - [x] P1-M29-S1 LANDED (D191): global IDs Int64: `local_to_global`, `orig_cells`, `orig_faces` get their own type parameter, decoupled from the mesh's `VI`; test with synthetic offsets above `typemax(Int32)`. Blast radius: distributed setup, writer, restart. Bar: strict class, `gate.jl`, `test_restart.jl`.
-- [ ] P1-M29-S2 AMG hierarchy index arrays (`I`, `J`, `diag_index`, `marker`, aggregation maps, `AMGMatrixCSR` `rowptr`/`colval`) built in the finest matrix's index type; matrix-free path made consistent. Blast radius: `AMG()` users. Bar: AMG unit tests, AMG case residuals bitwise.
+- [x] P1-M29-S2 LANDED (D192; coarsening scratch and SuiteSparse CSC stay `Int`): AMG hierarchy index arrays (`I`, `J`, `diag_index`, `marker`, aggregation maps, `AMGMatrixCSR` `rowptr`/`colval`) built in the finest matrix's index type; matrix-free path made consistent. Blast radius: `AMG()` users. Bar: AMG unit tests, AMG case residuals bitwise.
 - [ ] P1-M29-S3 periodic BC maps (`face_map`, `faceAddress1/2`, `i`/`j`) follow `TI`; one sweep of `src/` for `zeros(Int`, `Int64[`, `Int[`, `Vector{Int}` stored on a mesh, equation or solver struct. Blast radius: periodic cases. Bar: periodic tests bitwise.
 - [ ] P1-M29-S4 `integer_type=Int32` default for mesh readers, with a clear error when a per-process face count or matrix nnz exceeds `typemax(Int32)`; `Int64` stays selectable. Blast radius: every reader and the whole suite. Bar: full serial suite by file, docs build.

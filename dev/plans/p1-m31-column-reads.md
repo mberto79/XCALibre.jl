@@ -1,6 +1,6 @@
-# P1-M31 - column reads at element access sites (plan)
+# P1-M31 - flat column mesh and column reads (plan)
 
-Linked from `dev/phaseRoadmap.md`. Requirements: R7, R13, R14. Governing decisions: D168, D170, D172-D175.
+Linked from `dev/phaseRoadmap.md`. Requirements: R7, R13, R14. Governing decisions: D168, D170, D172-D179.
 
 ## Problem, quantified
 
@@ -8,7 +8,9 @@ Per-field mesh storage costs +22-33% first-run compile against a same-session Ao
 
 ## Approach
 
-Option A in full (D175). Scheme and BC functions receive the `faces`/`cells` containers plus `fID`/`cellID` instead of whole elements and read columns (`faces.area[fID]`); kernels read `cells.volume[i]` etc. The float type comes from the container's element type. `@define_boundary` scans its body and binds `face = faces[fID]` / `cell = cells[cellID]` only if the body names them, so unconverted and user BCs still work (at the old compile cost). Containers, `Mesh2`/`Mesh3`, readers, parts and adapt stay as P1-M28-S7; `mesh.faces[i].area` still works for cold code (R14). Readers on plain vectors are not touched.
+Adopted by the user (D179). `Mesh2`/`Mesh3` hold every per-field array as a top-level field (`face_centre`, `face_area`, `cell_volume`, `node_coords`, ...); same-typed arrays share one of 9 type parameters (VV SVector3 arrays, VTF float arrays incl. `face_gDiff`, VR range arrays, VO owner pairs, VI, VS, VB, SV3, UR). `mesh.faces`/`cells`/`nodes` are rebuilt in `getproperty` as zero-copy `FaceArrays`/`CellArrays`/`NodeArrays` views, so readers, parts, Distribute and every `mesh.faces[i].area` site run unchanged (R14). Constructors keep their positional signature. `adapt` is written out per column with the element type carried over: a closure over `to` loses inference (D178). The nested S7 containers cost +22-33% compile (D176, D177); the flat struct compiles 25-35% below AoS.
+
+Patches, both applying to 61751a58 and stacking in this order: `dev/archive/patches/p1-m31-flat-mesh-columns.diff` (S5), `dev/archive/patches/p1-m31-s1-column-reads.diff` (S6 starting point: scheme/BC signatures take `cells, faces`, `@define_boundary` binds `face`/`cell` only when a body names them, Calculate and boundary interpolation read columns).
 
 ## Configuration space
 
@@ -16,16 +18,18 @@ motorBike KOmega (3D, Int32, 1t/8t/GPU/MPI n=4) and 2D BFS KOmegaSST (Int64) thr
 
 ## Steps
 
-Expected 4 steps (D175). S2-S4 wait on the user's ruling after D176.
+Expected 4 steps (D175); restated to S5-S6 after the user adopted the flat layout (D179).
 
 - [-] **P1-M31-S1** hot-path column reads - WITHDRAWN (D176): screen missed (2D +28%, 1t +25%, bitwise); carrying the columns unread costs +34-39%, so access rewrites cannot reach the cost. Diff: `dev/archive/patches/p1-m31-s1-column-reads.diff`.
-- [ ] **P1-M31-S2** Solvers (SIMPLE, PISO, shared functions), turbulence models, wall functions, wall distance, ModelFramework - verdict: P1-M28 strict class (1t, 2D, MPI n=4 bitwise; 8t, GPU ≥8 figures); compile within +10% of same-chain base on 1t and 2D, two samples each; 8t pinned 100-iteration within noise of 16.5 s.
-- [ ] **P1-M31-S3** remaining BC bodies, other solvers (CSIMPLE, Godunov, film, multiphase, MRF), Postprocess, IO, Distribute runtime paths - verdict: strict class; suite files reached, each a separate command.
-- [ ] **P1-M31-S4** docs (BC-definition page: column reads preferred, element binding still accepted) and CHANGELOG - verdict: docs build.
+- [-] **P1-M31-S2** column reads in solvers/turbulence - WITHDRAWN (D179): nested-container reads cannot move compile (D176); superseded by S5.
+- [-] **P1-M31-S3** remaining column reads - WITHDRAWN (D179): as S2.
+- [-] **P1-M31-S4** docs for column-read BCs - WITHDRAWN (D179): moves into S6 with the API change it documents.
+- [ ] **P1-M31-S5** apply `p1-m31-flat-mesh-columns.diff`; fix `test/distributed/test_offline.jl` (`getfield(mesh, :cells/:faces/:nodes)` no longer exists: compare via `getproperty` and assert the flat fields); update `dev/architecture.md` § mesh storage - mechanism: flat fields sharing type parameters (D177) - blast radius: every mesh consumer; readers, parts and Distribute unchanged by construction - verdict: strict class (1t, 2D, MPI n=4 with fresh parts bitwise; 8t, GPU ≥8 figures); compile ≤ same-chain AoS base +10% on 1t, 2D (two samples; measured −22-35%); GPU 20-iteration `run_s` within ±5% of base; 8t pinned 100-iteration within noise of 16.5 s; `test_offline.jl` + `test_partition.jl` at n=2,3; suite files `test_mesh_conversion.jl`, `unit_test_laplace.jl` via `suite_file.jl`.
+- [ ] **P1-M31-S6** discretisation path reads arrays directly: apply `p1-m31-s1-column-reads.diff` on S5, `_discretise_*_model!` read `cells.volume[i]`/`faces_range`, `_scheme!`/`scheme!`/BCs take `cells, faces`; docs BC page + CHANGELOG note the `scheme!`/BC signature change - mechanism: no element built per face in the GPU discretise kernels - verdict: GPU `gpu__discretise_scalar_model_` and `_vector_model_` per call ≤ base 3.50 / 4.94 ms (`dev/scripts/gpu_profile.jl`, base with `--project=env_base`), strict class, compile not worse than S5 beyond noise; docs build.
 
 ## Exit criterion
 
-S2's bar met and S3 landed; P1-M28-S5 re-scoped and P1-M28-S6 (close) runs next.
+S5 and S6 landed on their bars; then P1-M28-S6 (close) runs.
 
 ## Open questions
 

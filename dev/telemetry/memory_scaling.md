@@ -157,3 +157,13 @@ Scratch drivers: copies of the benchmark `cpu_i32.jl`/`mpi_i32.jl`/`motorBike_gp
 
 - 8t now 11% below 8-rank MPI (was 15% above); 1t +1.4% (inside ±5% noise).
 - Main-thread 8t profile, 100 iterations (7,557 samples over 14.3 s, ~1.9 ms each): inclusive in the Krylov vector primitives (`kaxpy!` 330, `kdot` 263, `kcopy!` 126, `kaxpby!` 120) ≈ 1.6 s, Jacobi apply 237 ≈ 0.45 s; the same reading of the M28 close profile ≈ 4 s. `wait` 67% (workers busy); string building for progress output (`print_to_string`, `sprint(join)`, `_string_n`) still ~8% of main-thread samples. Raw: `~/.cache/xcal_m28/close/profile_m30_8t.{txt,jlprof}`.
+
+## P1-M33 MPI path quick wins (`~/.cache/xcal_m28/m33/`)
+
+- Stopping tests. Krylov.jl 0.10.10: CG stops on sqrt(r'M⁻¹r) ≤ atol + rtol·r0, BiCGStab (left M) on ‖M⁻¹r‖ ≤ atol + rtol·r0, r0 of the warm start. PETSc (`XCALibrePETScExt`): `KSPSetTolerances(rtol, atol)`, `KSPConvergedDefaultSetUIRNorm` (relative to the initial residual), CG `ksp_norm_type=natural`, bcgs default left-preconditioned norm; test max(rtol·r0, atol). Same norms and reference; only sum vs max at atol (≤2x, and atol is 8e-15 here).
+- Iteration counts per solve, motorBike 20 iterations (threads 8t via `krylov_iters.jl`; MPI n=4 `-ksp_converged_reason`): U x/y/z 2/2/2 and p 12, 22, ... identical sequences; k, omega 1 each on threads (their PETSc KSPs did not print). The MPI path does no extra iterations.
+- Rank-0 profile, n=4, 20 iterations (`mpi_profile.jl`): `KSPSolve` 1704 of 3268 samples (52%), `passemble!` 119 (4%), the rest the same kernels as the threaded path.
+- The benchmark env (PETSc.jl 0.4.14, PETSc_jll 3.25.4) offers only Int64-index PETSc libraries; `dev/petscenv_stock` (0.4.12, 3.22.2) offers Int32 too, and `_petsclib` takes the narrowest that fits.
+- A/B, MPI n=4, 20 iterations, same parts, two samples each (run_s): benchmark env (PETSc_jll 3.25.4, Int64 PetscInt) 3.23 / 3.09; copy pinned to PETSc.jl 0.4.12 + PETSc_jll 3.22.2 (`~/.cache/xcal_m28/env_p322`, `_petsclib` picks Int32) 2.92 / 2.93: −7.6%, residuals bitwise.
+- Not paid by the MPI path: VTK `initialise_writer` (D202) does not appear in the rank-0 profile; it costs the threaded path ~3 s per run.
+- Remaining small source-level candidates: U's y and z solves copy the whole matrix into PETSc again though only the relaxed diagonal changed (`passemble!` 4% of rank 0 in total).

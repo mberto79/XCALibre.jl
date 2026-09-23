@@ -29,6 +29,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 
 - Julia resolves `Preferences` per project environment and `PETSc.jl`'s low-level wrappers are generated at precompilation for the configured library only, so the scalar precision and the library path are an environment choice and cannot be switched at runtime.
 - `--heap-size-hint` on MPI ranks is safe once the caches exist: precompile in a plain session first, because a rank that has to precompile the PETSc extension under the flag asks for images built under other cache flags and fails like cache corruption. With caches built it loads them and lowers the 4 mm BFS n=2 peak 1772 → 1667 MB at 1200M (D96). Always `--startup-file=no`.
+- PETSc.jl 0.4.14 with PETSc_jll 3.25.4 offers only Int64-index PETSc libraries, so the MPI path copies Int32 matrices into 64-bit PETSc ones; PETSc.jl 0.4.12 + PETSc_jll 3.22.2 also ships Int32 builds, which `_petsclib` picks (−7.6% at n=4, D205).
 - Stock `PETSc_jll` ships hypre for Float64 only and no CUDA in any of its libraries, so GPU-native solves need a custom PETSc build and Float32 users have no hypre.
 - `activate_multithread(backend::CPU)` pins BLAS to one thread despite its name; without it BLAS takes every core and oversubscribes the ranks.
 - Any keyword `BoomerAMG`/`GAMG` does not know, including a removed `reuse=` or a typo, is forwarded to PETSc as `-pc_<prefix>_<k>` and silently ignored unless `-options_left` is set; it never errors.

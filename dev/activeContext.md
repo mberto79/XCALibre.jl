@@ -1,20 +1,20 @@
-# Active context - memory-traffic scaling (P1-M30)
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m30-threaded-krylov.md
-updated: 2026-09-24T22:00:00+01:00
+# Active context - P1 complete, exit gate pending
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
+updated: 2026-09-25T06:00:00+01:00
 STATE: IDLE
-STEP: P1-M30-S6 milestone close (not started)
+STEP: P1 exit gate (every P1 milestone closed; M30 D200)
 HEAD: 64b59139
 BRANCH: HM/distributed-draft
-GATE: per plan p1-m30 (strict: residuals to 8 figures vs pre-M30, 1t not slower beyond ±5%); primitive unit tests at 1 and 8 threads; motorBike 20-iteration smoke 1t/8t via `~/.cache/xcal_m28/chain.sh` vs `dev/telemetry/m28_baseline/`
-resume: plan p1-m30 S6 row: 500-iteration 1t/8t/n=8 timings with `~/.cache/xcal_m28/close/{cpu,mpi}.jl` (one point per command), 8t main-thread profile `close/prof.jl close 100`; exit: 8t vector-op share < 3 s, 8t within 5% of 8-rank MPI; fused CG / persistent team only if vector ops stay > 3 s
+GATE: `dev/phaseRoadmap.md` § Exit gate: full serial suite, distributed gate within Q2, BFS example on stock binaries from a clean checkout, rank invariance at 1,2,4 (Q1), scaling telemetry (Q3), docs build
+resume: user runs the phase close (`xcalibre-close`, direct invocation only); until then nothing is open in P1
 
 ## binding
 - User rulings: flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).
 - HARD CAP (D101): every verdict run under five minutes; 500-iteration timings one point per command at milestone close (D160).
-- Order: M30 (D159), then the P1 phase gate. Commit and push each step.
+- Order: P1 phase gate via `xcalibre-close`, then the distributed PR (CHANGELOG `[#160](@ref)` placeholders, D137).
 
 ## position
-P1-M28, M29, M31 closed (D189, D195, D188): motorBike 500 iterations 8-rank 53.6 s, 8t 61.4 s, GPU 17.2 s, 1t 135.6 s; readers default to Int32 (D194). 8t main-thread profile: Krylov vector work ~22%, progress strings ~8% (D190, `~/.cache/xcal_m28/close/profile_close_8t.txt`). Timing drivers: `~/.cache/xcal_m28/close/`.
+All P1 milestones closed. motorBike 500 iterations: 8t 48.1 s, 8-rank MPI 54.1 s, GPU 17.2 s, 1t 137.6 s (`dev/telemetry/memory_scaling.md` § P1-M30-S6 close). Open finding for a later milestone: progress-output strings ~8% of 8t main thread (D200).
 
 ## carried
 - Read GPU `run_s` and the `faces=` tag on every `.time` line, not only residuals (D178).

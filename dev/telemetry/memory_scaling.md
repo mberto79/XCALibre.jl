@@ -146,3 +146,14 @@ Scratch drivers: copies of the benchmark `cpu_i32.jl`/`mpi_i32.jl`/`motorBike_gp
 - motorBike 20 iterations run_s, same session (S3 / pre-S3): 1t 9.57 / 9.57; 8t 4.85 / 5.58 (−13%). Figures vs `m28_baseline`: 1t 10.7, 8t 10.2.
 - 2D BFS SST vs baseline 7.6 figures; the same revision at 1 vs 2 threads 7.6-7.9, so the case amplifies any summation-order change to ~2e-8 in 20 iterations. Pre-S3 at 2 threads and with `OPENBLAS_CORETYPE=Haswell` are bitwise (neither control reordered anything).
 - Fork/join vs serial, kaxpy!+kdot per call, µs (par / ser): 4t n=2^16 8.4/7.3, 2^17 11.4/17.9; 8t 2^16 10.0/8.2, 2^17 11.6/20.9. Without a threshold the Crank-Nicolson BFS suite file took 23.7 s vs 12.4 s pre-S3 at 4t; with serial below 2^16 elements 12.2 s.
+
+## P1-M30-S6 close (HEAD 64b59139, same drivers as § P1-M28-S6 close, parts regenerated at format 5)
+
+| mode | cores | M30 close s | M28 close s | Int32 baseline s |
+|---|---|---|---|---|
+| threads | 1 | 137.55 | 135.62 | 162.90 |
+| threads | 8 | 48.06 | 61.37 | 77.95 |
+| MPI | 8 | 54.06 | 53.58 | 69.66 |
+
+- 8t now 11% below 8-rank MPI (was 15% above); 1t +1.4% (inside ±5% noise).
+- Main-thread 8t profile, 100 iterations (7,557 samples over 14.3 s, ~1.9 ms each): inclusive in the Krylov vector primitives (`kaxpy!` 330, `kdot` 263, `kcopy!` 126, `kaxpby!` 120) ≈ 1.6 s, Jacobi apply 237 ≈ 0.45 s; the same reading of the M28 close profile ≈ 4 s. `wait` 67% (workers busy); string building for progress output (`print_to_string`, `sprint(join)`, `_string_n`) still ~8% of main-thread samples. Raw: `~/.cache/xcal_m28/close/profile_m30_8t.{txt,jlprof}`.

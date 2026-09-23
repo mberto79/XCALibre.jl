@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T16:00:00+01:00
 STATE: IDLE
 STEP: P1-M29-S1 global IDs Int64 (not started; P1-M28 closed, D189)
-HEAD: 6cf5ae70
+HEAD: 4a2f2bdf
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m29 (strict: CPU residuals bitwise vs preceding step at fixed threads, distributed hashes bitwise at n=2,4); `gate.jl` as two commands under memguard (n=2,3 five files, then n=6 `test_turbulence_sst_wallfn.jl`) via `runtests_mpi.jl` in `~/.cache/xcal_m28/env_test`; `test_restart.jl` under `dev/petscenv_stock` (D183)
 resume: plan p1-m29 S1 row: give `local_to_global`, `orig_cells`, `orig_faces` their own Int64 type parameter decoupled from the mesh `VI`; test with synthetic offsets above `typemax(Int32)`

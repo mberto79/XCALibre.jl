@@ -71,7 +71,7 @@ config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardwa
 
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
-residuals = run!(model, config);
+residuals = run!(model, config; progress=false);
 
 
 @test postprocess[1].field isa VectorField

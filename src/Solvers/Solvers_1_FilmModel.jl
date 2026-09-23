@@ -3,20 +3,20 @@ export filmModel!
 function filmModel!(
     model, config;
     output=VTK(),#, pref=nothing, ncorrectors=
-    inner_loops=2
+    inner_loops=2, progress=true
 )
     check_distributed_support(:FilmModel, model)
     residuals = setup_FilmModel_Solver(
         FilmModel, model, config,
         output=output,
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
     )
     
     return residuals
 end
 
 function setup_FilmModel_Solver(solver_variant, model, config;
-    output=VTK(), inner_loops=2)
+    output=VTK(), inner_loops=2, progress=true)
 
     (; solvers, schemes, boundaries) = config
 
@@ -86,14 +86,14 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     residuals = solver_variant(
         model, #turbulenceModel,
-         U_eqn, h_eqn, config; output=output, inner_loops=inner_loops
+         U_eqn, h_eqn, config; output=output, inner_loops=inner_loops, progress=progress
     )
 end
 
 function FilmModel(
     model, #turbulenceModel,
      U_eqn, h_eqn, config;
-    output=VTK(), ncorrectors=0, inner_loops=2
+    output=VTK(), ncorrectors=0, inner_loops=2, progress=true
 )
     (; U, h, Uf, hf, coeffs) = model.momentum
     (; rho, nu) = model.fluid
@@ -226,7 +226,7 @@ function FilmModel(
 
     @info "Starting EFM loops"
     
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
             
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
@@ -351,8 +351,8 @@ function FilmModel(
             config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
         )
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:time, time),
                 (:dt, step_dt),
                 (:Co, limitingCourant),

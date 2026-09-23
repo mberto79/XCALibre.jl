@@ -2,7 +2,7 @@ export simple_MRF!
 
 """
     simple!(model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -27,7 +27,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple_MRF!(
     model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
     check_distributed_support(:SIMPLE_MRF, model)
 
@@ -36,7 +36,7 @@ function simple_MRF!(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
     )
 
     return residuals
@@ -44,7 +44,7 @@ end
 
 function setup_incompressible_solvers_MRF(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -97,7 +97,7 @@ function setup_incompressible_solvers_MRF(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
+        inner_loops=inner_loops, progress=progress)
 
     return residuals
 end # end function
@@ -105,7 +105,7 @@ end # end function
 
 function SIMPLE_MRF(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
     
     # Extract model variables and configuration
@@ -163,7 +163,7 @@ function SIMPLE_MRF(
 
     @info "Starting SIMPLE_MRF loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -242,8 +242,7 @@ function SIMPLE_MRF(
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            progress.n = iteration
-            finish!(progress)
+            isnothing(bar) || (bar.n = iteration; finish!(bar))
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 if refFrames.polar == false
@@ -256,8 +255,8 @@ function SIMPLE_MRF(
             break
         end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),

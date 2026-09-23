@@ -3,7 +3,7 @@ export csimple!
 """
     csimple!(
         model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
@@ -26,7 +26,7 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `e` Vector of energy residuals for each iteration.
 
 """
-function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0) 
+function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true) 
     check_distributed_support(:CSIMPLE, model)
 
     residuals = setup_compressible_solvers(
@@ -34,7 +34,7 @@ function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inne
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -42,7 +42,7 @@ end
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -114,14 +114,14 @@ function setup_compressible_solvers(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
+        inner_loops=inner_loops, progress=progress)
 
     return residuals    
 end # end function
 
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
     
     # Extract model variables and configuration
@@ -203,7 +203,7 @@ function CSIMPLE(
 
     @info "Starting CSIMPLE loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -355,8 +355,7 @@ function CSIMPLE(
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            progress.n = iteration
-            finish!(progress)
+            isnothing(bar) || (bar.n = iteration; finish!(bar))
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 save_output(model, outputWriter, iteration, time, config)
@@ -364,8 +363,8 @@ function CSIMPLE(
             break
         end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),

@@ -2,7 +2,7 @@ export simple!
 
 """
     simple!(model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -27,7 +27,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
     petsc_options="", restart=nothing
     )
     check_distributed_support(:SIMPLE, model)
@@ -37,7 +37,7 @@ function simple!(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops,
+        inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
         restart=restart
         )
@@ -48,7 +48,7 @@ end
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
     petsc_options="", restart=nothing
     )
 
@@ -106,7 +106,7 @@ function setup_incompressible_solvers(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops,
+        inner_loops=inner_loops, progress=progress,
         restart=restart)
 
     return residuals
@@ -114,7 +114,7 @@ end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, restart=nothing
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing
     )
     
     # Extract model variables and configuration
@@ -182,7 +182,7 @@ function SIMPLE(
 
     @info "Starting SIMPLE loops..."
 
-    progress = distributed ? nothing : Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress && !distributed)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -258,9 +258,9 @@ function SIMPLE(
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            if !distributed
-                progress.n = iteration
-                finish!(progress)
+            if !isnothing(bar)
+                bar.n = iteration
+                finish!(bar)
             end
             is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
@@ -270,8 +270,8 @@ function SIMPLE(
             break
         end
 
-        distributed || ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),

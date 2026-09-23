@@ -107,7 +107,7 @@ config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardwa
 
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
-residuals = run!(model, config);
+residuals = run!(model, config; progress=false);
 
 
 #check middle 10 cells of inlet agree with analytical mean

@@ -81,7 +81,7 @@ GC.gc(true)
 
 @test initialise!(model.energy.T, 100.0) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 wall_L = boundary_average(:left_wall, model.energy.T, BCs.T, config)
 wall_R = boundary_average(:right_wall, model.energy.T, BCs.T, config)

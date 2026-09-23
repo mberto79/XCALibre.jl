@@ -29,6 +29,9 @@ using XCALibre.ReferenceFrames
 
 import XCALibre.ModelPhysics as ModelPhysics
 
+# no display object is built when progress output is off
+_progress_bar(iterations, show::Bool) = show ? Progress(iterations; dt=1.0, showspeed=true) : nothing
+
 include("Solvers_0_functions.jl")
 include("Solvers_1_SIMPLE-MRF.jl")
 include("Solvers_1_SIMPLE.jl")

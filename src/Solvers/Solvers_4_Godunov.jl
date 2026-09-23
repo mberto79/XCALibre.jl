@@ -1099,9 +1099,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 - `rho` Vector of density residuals for each time step.
 """
-function godunov!(model, config; output=VTK())
+function godunov!(model, config; output=VTK(), progress=true)
     check_distributed_support(:Godunov, model)
-    residuals = _setup_godunov(model, config; output=output)
+    residuals = _setup_godunov(model, config; output=output, progress=progress)
     return residuals
 end
 
@@ -1116,7 +1116,7 @@ function update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
     @. kappa_eff.values = mueff.values * cp_val / Pr_val
 end
 
-function _setup_godunov(model, config; output=VTK())
+function _setup_godunov(model, config; output=VTK(), progress=true)
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu) = model.fluid
     mesh = model.domain
@@ -1181,7 +1181,7 @@ function _setup_godunov(model, config; output=VTK())
     residuals = GODUNOV(
         model, workspace, turbulenceModel,
         S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
-        config; output=output
+        config; output=output, progress=progress
     )
     return residuals
 end
@@ -1326,7 +1326,7 @@ end
 function GODUNOV(
     model, workspace, turbulenceModel,
     S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
-    config; output=VTK()
+    config; output=VTK(), progress=true
 )
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu, R) = model.fluid
@@ -1382,7 +1382,7 @@ function GODUNOV(
 
     @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     for iteration ∈ 1:iterations
 
@@ -1423,7 +1423,7 @@ function GODUNOV(
         # 10. Cell-level ν_eff for next iteration's diffusive CFL
         update_nu_eff_cell!(workspace.nu_eff, nu_mol, model.turbulence, backend, workgroup, n_cells)
 
-        ProgressMeter.next!(progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(bar, showvalues = [
             (:time, time), (:iter, iteration), (:dt, dt), (:continuity_error, rho_res),
             turbulenceModel.state.residuals...
         ])

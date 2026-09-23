@@ -125,6 +125,14 @@ In XCALibre.jl the `run!` function is used to start a simulation, which will dis
 run!()
 ```
 
+`run!` shows a progress bar with the current iteration and residuals. Pass `progress=false` to turn it off:
+
+```julia
+residuals = run!(model, config; progress=false)
+```
+
+We recommend `progress=false` for large-scale runs that are not on a local PC, such as batch jobs on a cluster, where the progress bar only fills the job's log. The residual history returned by `run!` is the same either way.
+
 ## Restarting simulations
 ---
 

@@ -13,7 +13,8 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 - Done: M28 (D189).
 - Done: M29 (D195).
 - Done: M30 (D200).
-- Now: M32 optional progress output (D201). Then: P1 exit gate (phase close, user-invoked).
+- Done: M32 (D203).
+- Now: P1 exit gate (phase close, user-invoked).
 
 ## Ordered work
 
@@ -50,7 +51,7 @@ The distributed module becomes an ordinary, documented XCALibre feature: it inst
 - [x] **P1-M31 - flat column mesh** `Mesh2`/`Mesh3` hold every per-field array as a top-level field sharing type parameters, with `mesh.faces`/`cells`/`nodes` as on-demand views (R14), then the discretisation path reads arrays directly. Exit: compile within +10% of the same-session AoS base on motorBike 1t and 2D (measured −22-35%), P1-M28 strict class, GPU run within ±5% of base, GPU discretise kernels no slower than base per call. Serves R7, R13, R14. Expected 3 steps (D173), 4 (D175), restated to S5-S6 on adoption (D179), S7 added by the user (D181). S5 LANDED (D180), S7 LANDED (D182), S6 LANDED (D185), S8 added (D186) and LANDED (D187); CLOSED (D188). Plan: `dev/archive/plans/p1/p1-m31-column-reads.md`.
 - [x] **P1-M29 - index widths** Global IDs Int64 independent of the local index type; AMG and periodic index arrays follow the mesh index type; Int32 the reader default with an overflow error. Exit: residuals bitwise, a partition with global IDs above `typemax(Int32)` builds on an Int32 mesh, suite green by file. Serves R11, R13. Expected 4 steps (D159). CLOSED (D195). Plan: `dev/archive/plans/p1/p1-m29-index-widths.md`.
 - [x] **P1-M30 - threaded linear solve on one thread pool** Krylov vector work and SpMV on Julia threads over one row partition instead of OpenBLAS; BLAS back to one thread. Exit: residuals to 8 significant figures, 8t vector-op share under 3 s, 8t within 5% of 8-rank MPI on the same revision, 1t not slower. Serves R7, R13. Expected 6 steps (D159). CLOSED (D200): 8t 48.1 s, below 8-rank MPI 54.1 s. Plan: `dev/archive/plans/p1/p1-m30-threaded-krylov.md`.
-- [ ] **P1-M32 - optional progress output** `run!` takes a `progress` keyword (default `true`); `progress=false` builds and prints no progress output on any solver, and the documentation recommends it for large-scale runs that are not on a local PC. Exit: every `run!` method honours the keyword, residual histories unchanged either way, the 8t main-thread string-building share (~8%, D200) gone with `progress=false`, docs build. Expected 2 steps: keyword through every solver loop, then docs and the 8t profile. Opened by the user (D201).
+- [x] **P1-M32 - optional progress output** `run!` takes a `progress` keyword (default `true`); `progress=false` builds and prints no progress output on any solver, and the documentation recommends it for large-scale runs that are not on a local PC. Exit: every `run!` method honours the keyword, residual histories unchanged either way, docs build (profile clause dropped, D202). Expected 2 steps: keyword through every solver loop, then docs and the 8t profile. Opened by the user (D201). CLOSED (D203); tests run with `progress=false`.
 
 ## Exit gate
 

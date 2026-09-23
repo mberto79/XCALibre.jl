@@ -2,7 +2,7 @@ export multiphase!
 
 function multiphase!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true)
     check_distributed_support(:multiphase, model)
 
     residuals = setup_multiphase_solvers(
@@ -10,7 +10,7 @@ function multiphase!(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
 
     return residuals
@@ -25,7 +25,7 @@ end
 
 function setup_multiphase_solvers(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -159,7 +159,7 @@ function setup_multiphase_solvers(
         model, turbulenceModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
         mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, extra_models, mules, config;
         output=output, pref=pref,
-        ncorrectors=ncorrectors, inner_loops=inner_loops)
+        ncorrectors=ncorrectors, inner_loops=inner_loops, progress=progress)
 
     return residuals
 end
@@ -170,7 +170,7 @@ function MULTIPHASE(
     model, turbulenceModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
     mdotf, rhoPhi, gh, ghf, phi_g, phi_gf,
     extra_models, mules, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3, progress=true
     )
 
     (; alpha_prev, div_alpha, div_mdotf, alpha_fluxf,
@@ -289,7 +289,7 @@ function MULTIPHASE(
 
     @info "Starting multiphase solver..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     @time for iteration ∈ 1:iterations
 
@@ -410,8 +410,8 @@ function MULTIPHASE(
         R_p[iteration]     = rp
         R_alpha[iteration] = ralpha
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:dt, dt_cpu[1]),
                 (:time, time),
                 (:Courant, courant),

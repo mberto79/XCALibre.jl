@@ -97,6 +97,6 @@ using Test
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-@test run!(model, config) isa NamedTuple{(:Ux, :Uy, :Uz, :p)}
+@test run!(model, config; progress=false) isa NamedTuple{(:Ux, :Uy, :Uz, :p)}
 
 

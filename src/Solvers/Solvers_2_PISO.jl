@@ -2,7 +2,7 @@ export piso!
 
 """
     cpiso!(model, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
 
 Incompressible and transient variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations. 
 
@@ -24,7 +24,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 """
 function piso!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
     petsc_options="", restart=nothing)
     check_distributed_support(:PISO, model)
 
@@ -33,7 +33,7 @@ function piso!(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops,
+        inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
         restart=restart
         )
@@ -43,7 +43,7 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, restart=nothing
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true, restart=nothing
     )
     
     # Extract model variables and configuration
@@ -118,7 +118,7 @@ function PISO(
 
     @info "Starting PISO loops..."
 
-    progress = distributed ? nothing : Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress && !distributed)
 
 
     for iteration ∈ start+1:iterations
@@ -200,8 +200,8 @@ function PISO(
     R_uz[iteration] = rz
     R_p[iteration] = rp
 
-    distributed || ProgressMeter.next!(
-        progress, showvalues = [
+    isnothing(bar) || ProgressMeter.next!(
+        bar, showvalues = [
             (:dt, dt_cpu[1]),
             (:time, time),
             (:Courant, courant),

@@ -5,7 +5,7 @@ export setup_laplace_solver
 
 """
     laplace!(model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
 
 
 Top-level entry point for solving the Laplace (heat conduction) equation on `model.domain`.  
@@ -30,7 +30,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function laplace!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
     petsc_options=""
     )
     check_distributed_support(:Laplace, model)
@@ -40,7 +40,7 @@ function laplace!(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops,
+        inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options
         )
 
@@ -50,7 +50,7 @@ end
 
 function setup_laplace_solver(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
     petsc_options=""
     )
 
@@ -113,7 +113,7 @@ function setup_laplace_solver(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops,
+        inner_loops=inner_loops, progress=progress,
         outputWriter, R_T, time)
 
     return residuals
@@ -121,7 +121,7 @@ end
 
 function LAPLACE(
     model, T_eqn, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
     outputWriter, R_T, time
     )
 
@@ -139,7 +139,7 @@ function LAPLACE(
 
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     @info "Starting LAPLACE loops..."
-    progress = distributed ? nothing : Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress && !distributed)
 
     sync!(T, mesh, config) # prime ghosts (no-op serial)
     for iteration ∈ 1:iterations
@@ -154,9 +154,9 @@ function LAPLACE(
         R_T[iteration] = rt
 
         if (R_T[iteration] <= solvers.convergence) && (typeof(model.time) <: Steady)
-            if !distributed
-                progress.n = iteration
-                finish!(progress)
+            if !isnothing(bar)
+                bar.n = iteration
+                finish!(bar)
             end
             is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
@@ -166,8 +166,8 @@ function LAPLACE(
             break
         end
 
-        distributed || ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:time, iteration*dt_cpu[1]),
                 (:T_residual, R_T[iteration])
                 ]

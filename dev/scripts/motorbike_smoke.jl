@@ -84,7 +84,7 @@ t_first = @elapsed run!(model, config(1))
 comp_s = (Base.cumulative_compile_time_ns()[1] - c0)/1e9
 GC.gc(true)
 init!(); pre!(model, config(iterations))
-t_run = @elapsed residuals = run!(model, config(iterations))
+t_run = @elapsed residuals = run!(model, config(iterations); progress=get(ENV, "PROGRESS", "true") == "true")
 
 if mode != "mpi" || is_root()
     open(out * ".res", "w") do io

@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T18:00:00+01:00
 STATE: IDLE
 STEP: P1-M29-S4 Int32 reader default with overflow error (not started)
-HEAD: adb32dbf
+HEAD: 15c1e8e0
 BRANCH: HM/distributed-draft
 GATE: per plan p1-m29 (strict: CPU residuals bitwise vs preceding step at fixed threads, distributed hashes bitwise at n=2,4); `gate.jl` as two commands under memguard (n=2,3 five files, then n=6 `test_turbulence_sst_wallfn.jl`) via `runtests_mpi.jl` in `~/.cache/xcal_m28/env_test`; `test_restart.jl` under `dev/petscenv_stock` (D183)
 resume: plan p1-m29 S4 row: `integer_type=Int32` default for every mesh reader, clear error when a per-process face count or matrix nnz exceeds `typemax(Int32)`, `Int64` selectable; gate full serial suite by file + docs build

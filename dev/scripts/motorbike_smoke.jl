@@ -1,11 +1,12 @@
-# Residual-history smoke run for layout changes (P1-M28..M30); writes <out>.res and <out>.time.
-#   julia --project=<env> -t N motorbike_smoke.jl cpu|gpu|2d <iterations> <out>
-#   mpiexecjl -n N julia --project=<env> -t 1 motorbike_smoke.jl mpi <iterations> <out> <partsdir>
-#   julia --project=<env> motorbike_smoke.jl part <nparts> <partsdir>   (offline partition, then exits)
+# Smoke run writing <out>.res (residuals, field hashes) and <out>.time; usage in dev/scripts/INDEX.md.
+const T0 = time()
 using XCALibre
+const T_LOAD = time() - T0
+Base.cumulative_compile_timing(true)
 mode, iterations, out = ARGS[1], parse(Int, ARGS[2]), ARGS[3]
 mode == "gpu" && @eval using CUDA
 mode == "mpi" && @eval using PETSc, MPI
+mode in ("cpu", "2d", "mpi") && @eval using ThreadPinning
 const POLYMESH = expanduser("~/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS/OpenFOAM/constant/polyMesh")
 if mode == "part"
     partition_mesh(FOAM3D_mesh(POLYMESH, scale=1, integer_type=Int32), iterations; dir=out)
@@ -68,12 +69,16 @@ end
 backend = mode == "gpu" ? CUDABackend() : CPU(static=true)
 workgroup = mode == "gpu" ? 32 : AutoTune()
 mode == "gpu" || activate_multithread(backend)
+mode in ("cpu", "2d") && pinthreads(:cores)
+mode == "mpi" && mpi_pinthreads(:cores)
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = mode == "gpu" ? adapt(backend, mesh) : mesh
 model, init!, config, pre! = (mode == "2d" ? bfs2d_case : motorbike_case)(mesh_dev, hardware)
 
-init!(); pre!(model, config(1))
+c0 = Base.cumulative_compile_time_ns()[1]
+t_pre = @elapsed (init!(); pre!(model, config(1)))
 t_first = @elapsed run!(model, config(1))
+comp_s = (Base.cumulative_compile_time_ns()[1] - c0)/1e9
 GC.gc(true)
 init!(); pre!(model, config(iterations))
 t_run = @elapsed residuals = run!(model, config(iterations))
@@ -89,6 +94,6 @@ if mode != "mpi" || is_root()
         end
     end
     open(out * ".time", "w") do io
-        println(io, "mode=$mode threads=$(Threads.nthreads()) iterations=$iterations mesh_s=$t_mesh first_run_s=$t_first run_s=$t_run")
+        println(io, "mode=$mode threads=$(Threads.nthreads()) iterations=$iterations mesh_s=$t_mesh first_run_s=$t_first run_s=$t_run load_s=$T_LOAD pre_s=$t_pre compile_s=$comp_s")
     end
 end

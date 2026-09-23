@@ -9,7 +9,7 @@ Hot kernels build a `Face3D`/`Cell` and read two or three fields inside one inli
 ## bars (ranked)
 
 - STRICT (D163): residual histories and field hashes bitwise equal to `dev/telemetry/m28_baseline/` at 1t, 2D 1t and MPI n=4; 8t and GPU to at least 8 significant figures (their own rerun noise is 10.5); `mesh.faces[i].area` style access still works (R14).
-- Banded: 1t 500-iteration time ≤ 162.9 s ±5%; first `run!` compile time ≤ +10%; equation `mesh_temp.faces` stays a StructArray (a materialised AoS copy per equation would OOM this box).
+- Banded: 1t 500-iteration time ≤ 162.9 s ±5%; first `run!` compile time within the D164 band (+25% motorBike, +41% 2D); equation `mesh_temp.faces` stays a StructArray (a materialised AoS copy per equation would OOM this box).
 - Objective, read at close: 8-rank MPI clearly below 69.7 s, 8t below 78.0 s, GPU below 22.4 s, `B` falls with `C` roughly unchanged; isolated face interpolation ≥5x at 8t and cell gather ≥3.5x on the real mesh object.
 
 ## gate (per step, each command under five minutes, D160)
@@ -20,8 +20,8 @@ Hot kernels build a `Face3D`/`Cell` and read two or three fields inside one inli
 ## steps
 
 - [x] P1-M28-S1 baselines at 875c16bb - `dev/telemetry/m28_baseline/`, reproducibility and compile times in `dev/telemetry/memory_scaling.md` (D163); footprint table deferred to S6 with the after table.
-- [ ] P1-M28-S2 StructArrays dependency with compat, `_soa` wrap of `faces`, `cells`, `nodes` in the `Mesh2`/`Mesh3` outer constructors, and whatever the wrap breaks (plain-`Vector` assumptions, `similar`, `collect`, `pointer`/`reinterpret`/`unsafe_wrap`/`sizeof` on mesh arrays; `adapt(CPU(), mesh)` must keep a StructArray). `Pkg.resolve()` every `dev/petscenv*` env. Blast radius: every mesh consumer. Bar: full strict class plus 1t/8t 100-iteration quick timing.
-- [ ] P1-M28-S3 `.xdm` writer writes a StructArray column-safe (`collect` per rank part); write/read round trip compares every column bit for bit. Format unchanged (same bytes). Blast radius: distributed parts. Bar: round trip exact, n=4 smoke bitwise.
+- [x] P1-M28-S2 StructArray wrap in the Mesh2/Mesh3 inner constructors, `.xdm` writer packs columns, VTK host copies via `adapt`, `_get_backend` off element arrays (D166); strict class passed, 8t −13%, 1t −11% per 100 iterations (D165), compile +25-41% accepted with attribution (D164); 12 suite files green, petscenv envs resolved.
+- [ ] P1-M28-S3 `.xdm` write/read round trip compares every column bit for bit (the writer already packs columns since S2); `gate.jl`. Format unchanged (same bytes). Blast radius: distributed parts. Bar: round trip exact, n=4 smoke bitwise.
 - [ ] P1-M28-S4 `cell_nsign` as `Int8` in every reader's connectivity step, `extract_subdomain` and the `.xdm` reader/writer; its own mesh type parameter; `_XDM_FORMAT` bumped. Check integer arithmetic on `ns`. Blast radius: every gather loop. Bar: strict class.
 - [ ] P1-M28-S5 fold `face_gDiff` into `Face2D`/`Face3D` as last field with a positional constructor that derives it; drop the `Mesh2`/`Mesh3` field and type parameter and `update_face_gDiff!`; Laplacian reads `face.gDiff`; `_XDM_FORMAT` bumped. Blast radius: Laplacian, readers, parts. Bar: strict class, 8t time within noise of S4.
 - [ ] P1-M28-S6 close: 500-iteration per-point timings (1t, 8t, n=1, n=8, GPU), refit `C`/`B`, footprint after, main-thread 8t profile of 100 iterations, GPU workgroup re-sweep; follow-ups (face-based assembly, extra face coefficients) decided only if a kernel still scales below 4x at 8t. Full serial suite by file. Blast radius: none shipped.

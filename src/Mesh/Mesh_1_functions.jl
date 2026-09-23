@@ -12,7 +12,7 @@ export validate_single_precision_mesh
 
 _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
-_get_backend(mesh) = get_backend(mesh.cells)
+_get_backend(mesh) = get_backend(mesh.cell_faces)
 
 # Boundary faces store their owner cell twice: every mesh reader sets ownerCells this way
 # (UNV2, UNV3, FoamMesh), and the MPI path must do the same for processor faces.

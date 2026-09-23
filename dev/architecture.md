@@ -22,6 +22,10 @@ What is true of the code today. Why a mechanism was chosen belongs in `dev/decis
 - The solver entry point routes to the distributed path on the mesh type, so physics, boundary, scheme and runtime setup are shared with the serial path unchanged.
 - Results are written per rank in OpenFOAM's decomposed binary layout, including the face flux and the loop position, which is also the restart checkpoint: a restart restores cell fields, time and time step before the solver's initial calculations and the face flux after them, so the resumed loop state equals the written one.
 
+## mesh storage
+
+- A mesh's cells, faces and nodes are stored one array per field: the mesh constructor wraps whatever element vector it is given, so readers build plain vectors and kernels index elements as before while reading only the columns they touch. Nested small vectors (owner pair, normal, centre) stay packed as one column each. Anything leaving the device goes through `adapt`, which keeps the per-field form; binary part files pack the columns back into element records.
+
 ## interfaces
 
 - The distributed mesh type is what the solver dispatches on; anything that changes it changes the serial-to-distributed routing.

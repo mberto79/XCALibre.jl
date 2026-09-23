@@ -56,7 +56,7 @@ end
 
 function get_normal(mesh, BC)
     (; faces) = mesh
-    backend = get_backend(faces)
+    backend = _get_backend(mesh)
 
     n = KernelAbstractions.zeros(backend, _get_float(mesh), 3)
 

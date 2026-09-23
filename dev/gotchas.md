@@ -62,3 +62,7 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - The case lives in `~/casesXCALibre/XCALibre_benchmarks/3D_motorBike_RANS`; its `env_distributed` pulls the branch from GitHub, so local work uses a COPY of that env with `Pkg.develop(path=~/Julia/XCALibre.jl)`; the stock drivers append to the recorded datasets, so time with scratch copies writing elsewhere; `run_openfoam.sh` deletes `openfoam_motorBike.txt` first, never run it for one count.
 - Any mesh type change invalidates `mesh_*.jld2` and `parts_*/` caches; delete and regenerate before comparing.
 - Timing noise on this laptop is about ±5% at one core; only differences clear of it count.
+- Threaded timings must pin to P-cores (`pinthreads(:cores)`, `mpi_pinthreads(:cores)` under MPI): unpinned 8t lands on E-cores and reads 22.4 s where pinned reads 19.0 s per 100 iterations.
+- A `mesh_*.jld2` written before P1-M28 still LOADS (JLD2 bypasses constructors) and silently gives the old AoS layout; delete caches, never trust them across a layout change.
+- 8t CPU and GPU runs are not bitwise reproducible (about 10.5 figures, atomic boundary adds); only 1t and MPI runs are.
+- `test/Project.toml` has no XCALibre entry, so suite files run under `~/.cache/xcal_m28/env_test` via `dev/scripts/suite_file.jl`.

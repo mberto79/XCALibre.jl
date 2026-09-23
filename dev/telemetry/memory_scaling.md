@@ -46,3 +46,11 @@ Files: `dev/telemetry/m28_baseline/{cpu1,cpu8,2d,gpu,mpi4}.{res,time}`. Env `~/.
 - First `run!` (1 iteration, compile-dominated), s: cpu 1t 12.3, 8t 12.8-13.5, 2d 17.5, gpu 21.9, mpi n=4 19.5. 20-iteration run, s: 1t 9.29, 8t 6.99-7.13, gpu 4.23-4.31, mpi n=4 3.85.
 - MPI n=8 does not fit beside the language server (6.9 GB available); n=4 with offline parts is the MPI smoke point.
 - An MPI run without `activate_multithread` took 241 s for 20 iterations instead of 3.9 s: every rank's BLAS spins on all cores (gotcha).
+
+## P1-M28-S2 StructArray wrap (same session, base = 875c16bb worktree env)
+
+- Strict class: 1t, 2D and MPI n=4 residuals and field hashes bitwise equal to the S1 baseline; 8t 10.7 and GPU 11.2 significant figures (inside rerun noise).
+- 100 iterations, threads pinned to P-cores (`pinthreads(:cores)`), run s: 8t 19.18/18.85 base, 16.61/16.36 S2 (−13%); 1t 39.3 base, 35.0 S2 (−11%, one sample). Unpinned 8t runs land on E-cores and read 22.4 vs 19.6. 20-iteration MPI n=4 3.85 → 3.27 s.
+- Compile (first `run!` after potential flow, `cumulative_compile_time_ns`), s: motorBike 1t 14.2 → 17.7 (+25%), 2D kwSST 16.5 → 23.3 (+41%), GPU first run 21.9 → 25.8 (+18%), MPI n=4 first run 19.5 → 21.6.
+- Attribution (SnoopCompile, 2D case, whole script): exclusive inference 18.9 → 25.7 s, spread 1.3-1.5x over the same methods (`KernelAbstractions.__run` +1.6 s, `turbulence!` +0.5, `SIMPLE` +0.7); StructArrays internals 0.68 s. The rest of the compile rise is LLVM on per-kernel IR. Cause: every specialisation carrying the mesh type now carries 14 more column types.
+- Footprint (Int32 motorBike serial mesh, `Base.summarysize`): 219 MB total, `faces` 118 MB, `cells` 16 MB, `cell_nsign` 8.1 MB.

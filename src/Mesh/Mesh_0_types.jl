@@ -132,6 +132,10 @@ end
 
 # 2D and 3D Mesh types
 
+# element arrays are stored per field so kernels move only the columns they read
+_soa(x::StructArray) = x
+_soa(x::AbstractArray) = StructArray(x)
+
 struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VTF, VB, VN, SV3, UR} <: AbstractMesh
     cells::VC
     cell_nodes::VI
@@ -147,6 +151,14 @@ struct Mesh2{VC, VI, VF<:AbstractArray{<:Face2D}, VTF, VB, VN, SV3, UR} <: Abstr
     get_float::SV3
     get_int::UR
     boundary_cellsID::VI
+    function Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
+        face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
+        c, f, n = _soa(cells), _soa(faces), _soa(nodes)
+        new{typeof(c), typeof(cell_nodes), typeof(f), typeof(face_gDiff), typeof(boundaries),
+            typeof(n), typeof(get_float), typeof(get_int)}(c, cell_nodes, cell_faces, cell_neighbours,
+            cell_nsign, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
+            boundary_cellsID)
+    end
 end
 Adapt.@adapt_structure Mesh2
 
@@ -192,6 +204,14 @@ struct Mesh3{VC, VI, VF<:AbstractArray{<:Face3D}, VTF, VB, VN, SV3, UR} <: Abstr
     get_float::SV3
     get_int::UR
     boundary_cellsID::VI
+    function Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
+        face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
+        c, f, n = _soa(cells), _soa(faces), _soa(nodes)
+        new{typeof(c), typeof(cell_nodes), typeof(f), typeof(face_gDiff), typeof(boundaries),
+            typeof(n), typeof(get_float), typeof(get_int)}(c, cell_nodes, cell_faces, cell_neighbours,
+            cell_nsign, f, face_nodes, face_gDiff, boundaries, n, node_cells, get_float, get_int,
+            boundary_cellsID)
+    end
 end
 Adapt.@adapt_structure Mesh3
 

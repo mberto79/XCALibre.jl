@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m28-mesh-soa.md, dev/plans/p1-m29-index-widths.md, dev/plans/p1-m30-threaded-krylov.md
 updated: 2026-09-23T12:00:00+01:00
 STATE: BUILDING
-STEP: P1-M28-S2 StructArray wrap in the mesh constructors
+STEP: P1-M28-S3 .xdm round trip of a StructArray mesh
 HEAD: 875c16bb
 BRANCH: HM/distributed-draft
-GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4`, compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl` (bars D163)
-resume: add StructArrays to Project.toml and wrap `faces`, `cells`, `nodes` in the Mesh2/Mesh3 constructors; `get_backend` has no StructArray method, so the three `get_backend(cells|faces)` sites must use a plain array
+GATE: `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` (ITER, XENV=env_base for the 875c16bb worktree) then `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 <parts> 4`, compared to `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl` (bars D163)
+resume: write a round-trip check (write a StructArray mesh part, read it, compare every column) and run `gate.jl` under memguard; then S4 `cell_nsign` Int8
 
 ## binding
 - HARD CAP (D101): every verdict run finishes in five minutes; 500-iteration timings run one point per command at milestone close only (D160).

@@ -1,10 +1,7 @@
 export initialise_writer
 
-get_data(arr, backend::KernelAbstractions.GPU) = begin
-    arr_cpu = Array{eltype(arr)}(undef, length(arr))
-    copyto!(arr_cpu, arr)
-    arr_cpu
-end
+# adapt keeps a StructArray per field instead of gathering its elements one by one
+get_data(arr, backend::KernelAbstractions.GPU) = adapt(Array, arr)
 
 get_data(arr, backend::KernelAbstractions.CPU) = begin
     arr

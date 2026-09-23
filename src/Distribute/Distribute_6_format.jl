@@ -46,7 +46,7 @@ end
 
 function _xdm_write_array(io, v, ::Type{T}) where T
     isbitstype(T) && eltype(v) === T || error("cannot write $(eltype(v)) as $T")
-    write(io, v)
+    write(io, convert(Vector{T}, v)) # packs a StructArray into records; a no-op on a Vector
 end
 
 function _xdm_read_array(io, ::Type{T}, n) where T

@@ -384,6 +384,19 @@ function quiet_nonroot!(comm)
     nothing
 end
 
+# every rank enters, so a failure on some ranks is an error on all of them rather than a hang
+function _on_all_ranks(f, comm, what)
+    res, err = try
+        f(), nothing
+    catch e
+        nothing, e
+    end
+    failed = MPI.Allgather(err !== nothing, comm)
+    any(failed) || return res
+    err === nothing || throw(err)
+    error("$what failed on rank(s) $(join(findall(failed) .- 1, ", "))")
+end
+
 """
     distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
 
@@ -401,10 +414,13 @@ function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     nranks = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
     nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1; comm)
+    prep = _on_all_ranks(comm, "partitioning") do
+        rank == 0 || return nothing
+        parts = partition_cells(mesh, nranks; cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
+        parts, _PartIndex(mesh, parts)
+    end
     if rank == 0
-        parts = partition_cells(mesh, nranks;
-            cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
-        index = _PartIndex(mesh, parts)
+        parts, index = prep
         for q ∈ 1:nranks-1
             MPI.send(extract_subdomain(mesh, parts, q + 1; comm, index), comm; dest=q, tag=0)
         end
@@ -439,16 +455,17 @@ MPI is initialised if it is not already.
 function distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
     MPI.Initialized() || MPI.Init()
     if dir === nothing
-        mesh = MPI.Comm_rank(comm) == 0 ? reader() : nothing
+        mesh = _on_all_ranks(() -> MPI.Comm_rank(comm) == 0 ? reader() : nothing, comm, "reader")
         return distribute(mesh; comm, periodic_patches)
     end
     nranks = MPI.Comm_size(comm)
-    if MPI.Comm_rank(comm) == 0 && !_parts_match(dir, nranks)
+    # the all-gather also holds every rank until the parts are on disk
+    _on_all_ranks(comm, "reading and partitioning the mesh") do
+        (MPI.Comm_rank(comm) == 0 && !_parts_match(dir, nranks)) || return
         foreach(f -> rm(joinpath(dir, f)), _part_files(dir; ext=(".xdm", ".jls"))) # a stale part count would be reused
         partition_mesh(reader(), nranks; dir, periodic_patches)
         GC.gc(true) # drop the global mesh before the ranks claim memory for their own parts
     end
-    MPI.Barrier(comm) # every part must be on disk before any rank reads
     distribute(dir; comm)
 end
 
@@ -486,7 +503,10 @@ function distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
     MPI.Initialized() || MPI.Init()
     quiet_nonroot!(comm)
     rank = MPI.Comm_rank(comm)
-    dm = _read_part_file(joinpath(dir, "rank_$rank.xdm"), MPI.Comm_size(comm))
-    getfield(dm, :partition).rank == rank || error("rank_$rank.xdm in $dir holds another rank's part")
+    dm = _on_all_ranks(comm, "reading parts from $dir") do
+        dm = _read_part_file(joinpath(dir, "rank_$rank.xdm"), MPI.Comm_size(comm))
+        getfield(dm, :partition).rank == rank || error("rank_$rank.xdm in $dir holds another rank's part")
+        dm
+    end
     _with_comm(dm, comm)
 end

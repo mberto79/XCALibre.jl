@@ -10,7 +10,7 @@ catch err
     false
 end
 
-function run_mpi_tests(files; ranks=[1, 2])
+function run_mpi_tests(files; ranks=[1, 2], timeout=1200)
     dir = @__DIR__
     project = dirname(Base.active_project())
     julia = Base.julia_cmd()
@@ -22,7 +22,11 @@ function run_mpi_tests(files; ranks=[1, 2])
         @testset "mpi $file n=$n" for file ∈ files, n ∈ ranks
             cmd = `$(Base.invokelatest(MPI.mpiexec)) -n $n $julia --project=$project --startup-file=no $(joinpath(dir, file))`
             out = IOBuffer()
-            ok = success(pipeline(cmd; stdout=out, stderr=out))
+            proc = run(pipeline(cmd; stdout=out, stderr=out); wait=false)
+            # a rank left waiting in a collective must fail the file, not hang the suite
+            timedwait(() -> process_exited(proc), timeout) == :ok || (kill(proc); println("TIMEOUT $file n=$n"))
+            wait(proc)
+            ok = success(proc)
             ok || print(String(take!(out)))
             @test ok
         end

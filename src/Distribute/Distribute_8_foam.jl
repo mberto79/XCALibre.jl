@@ -36,11 +36,16 @@ function distribute(case::FOAMCase{TI,TF}; comm=MPI.COMM_WORLD) where {TI,TF}
     nd == nranks || error("$(case.dir) is decomposed into $nd processor directories but this run has " *
         "$nranks ranks; run under mpiexec -n $nd or decompose with numberOfSubdomains $nranks")
     poly = joinpath(case.dir, "processor$rank", "constant", "polyMesh")
-    mesh = redirect_stdout(devnull) do
-        FOAM3D_mesh(poly; scale=case.scale, integer_type=TI, float_type=Float64)
+    mesh, orig = _on_all_ranks(comm, "reading $(case.dir)") do
+        mesh = redirect_stdout(devnull) do
+            FOAM3D_mesh(poly; scale=case.scale, integer_type=TI, float_type=Float64)
+        end
+        addr = joinpath(poly, "cellProcAddressing")
+        orig = isfile(addr) ? redirect_stdout(() -> read_neighbour(addr, GlobalInt, Float64), devnull) : nothing
+        orig === nothing || length(orig) == length(mesh.cells) || error("$addr lists $(length(orig)) cells " *
+            "but the mesh beside it has $(length(mesh.cells)); decompose the case again")
+        mesh, orig
     end
-    addr = joinpath(poly, "cellProcAddressing")
-    orig = isfile(addr) ? redirect_stdout(() -> read_neighbour(addr, GlobalInt, Float64), devnull) : nothing
     dm = _attach_ghosts(mesh, orig, rank, comm)
     TF === Float64 && return dm
     DistributedMesh(convert_mesh_float(getfield(dm, :mesh), TF), getfield(dm, :partition),

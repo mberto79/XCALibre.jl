@@ -347,22 +347,26 @@ _restart_targets(model) = vcat(["U" => model.momentum.U, "p" => model.momentum.p
 
 function Solvers.restart_fields!(dm::DistributedMesh, model, restart::Union{Real,AbstractString}, config)
     dir = _restart_dir(dm, restart)
-    t = _read_uniform_time(joinpath(dir, "uniform", "time"))
     n = dm.partition.n_owned
-    for (name, f) ∈ _restart_targets(model)
-        path = joinpath(dir, name)
-        isfile(path) || (name ∈ ("U", "p") ? error("restart: $path is missing") : continue)
-        v = _read_foam_lists(path, f isa ScalarField ? Float64 : SVector{3,Float64})[1]
-        length(v) == n || error("restart: $path holds $(length(v)) cells, this rank owns $n")
-        if f isa ScalarField
-            copyto!(view(f.values, 1:n), convert(Vector{eltype(f.values)}, v))
-        else
-            for (i, c) ∈ enumerate((f.x, f.y, f.z))
-                copyto!(view(c.values, 1:n), eltype(c.values)[x[i] for x ∈ v])
+    t, fields = _on_all_ranks(getfield(dm, :comm), "restart") do
+        fields = []
+        for (name, f) ∈ _restart_targets(model)
+            path = joinpath(dir, name)
+            isfile(path) || (name ∈ ("U", "p") ? error("restart: $path is missing") : continue)
+            v = _read_foam_lists(path, f isa ScalarField ? Float64 : SVector{3,Float64})[1]
+            length(v) == n || error("restart: $path holds $(length(v)) cells, this rank owns $n")
+            if f isa ScalarField
+                copyto!(view(f.values, 1:n), convert(Vector{eltype(f.values)}, v))
+            else
+                for (i, c) ∈ enumerate((f.x, f.y, f.z))
+                    copyto!(view(c.values, 1:n), eltype(c.values)[x[i] for x ∈ v])
+                end
             end
+            push!(fields, f)
         end
-        sync!(f, dm, config)
+        _read_uniform_time(joinpath(dir, "uniform", "time")), fields
     end
+    foreach(f -> sync!(f, dm, config), fields)
     copyto!(config.runtime.dt, fill(eltype(config.runtime.dt)(t.deltaT), 1))
     restart_turbulence!(model.turbulence, model, config, t.value)
     t.index, t.value

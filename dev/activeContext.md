@@ -1,12 +1,12 @@
 # Active context - P1-M34..M36 pre-merge fixes
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m34-robustness.md, dev/plans/p1-m35-behaviour-docs.md, dev/plans/p1-m36-cheap-perf.md
-updated: 2026-09-24T14:00:00+01:00
-STATE: PLANNING
-STEP: P1-M34-S1 `:static` fallback inside threaded regions + AutoTune empty range (not started)
-HEAD: ed68bd4b
+updated: 2026-09-24T16:00:00+01:00
+STATE: BUILDING
+STEP: P1-M34-S2 A3 distributed error paths (gating) then S3 A4 part fingerprint
+HEAD: pending-S2
 BRANCH: HM/distributed-draft
-GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m29_4 4` vs `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl` (1t/MPI bitwise vs baseline; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
-resume: read `dev/plans/p1-m34-robustness.md` S1, write the nested/concurrent and empty-range repros into `test/unit_test_xvector.jl` first (they must fail), then change `_foreach_chunk`/`_reduce_chunks` in `src/Multithread/xvector.jl` and `_setup` in `src/Multithread/Multithread.jl`
+GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m29_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
+resume: S2 diff in tree (`_on_all_ranks`, `test_failure.jl`, driver timeout): if uncommitted, rerun `test_failure.jl` and `test_restart.jl` (petscenv_stock) and land; then S3 per plan (fingerprint at write + `key=` on `distribute(reader; dir)`, advisor 2026-09-24)
 
 ## binding
 - User rulings: stock Int64 PETSc stays (D205); diagonal-only PETSc writes refused (D207); flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

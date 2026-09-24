@@ -18,7 +18,7 @@ using Krylov
 
 using XCALibre.Multithread
 using XCALibre.Multithread: _sized
-import XCALibre.Multithread: XVector, _foreach_chunk
+import XCALibre.Multithread: XVector, _foreach_chunk, _each_chunk_task, _chunk, _MIN_THREADED_WORK
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework

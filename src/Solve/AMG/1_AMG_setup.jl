@@ -196,20 +196,29 @@ function _estimate_lambda_max!(v, w, A, invdiag; iters::Int=5)
         v[i] /= vnorm
     end
     lambda = one(T)
-    @inbounds for _ in 1:iters
-        for i in 1:n
-            wi = zero(T)
-            for p in rowptr[i]:(rowptr[i + 1] - 1)
-                wi += nzval[p] * v[colval[p]]
+    for _ in 1:iters
+        _foreach_chunk(n, length(nzval)) do rows
+            @inbounds for i in rows
+                wi = zero(T)
+                for p in rowptr[i]:(rowptr[i + 1] - 1)
+                    wi += nzval[p] * v[colval[p]]
+                end
+                w[i] = wi * invdiag[i]
             end
-            w[i] = wi * invdiag[i]
         end
         lambda = max(norm(w), eps(T))
-        for i in 1:n
+        _scale_into!(v, w, lambda)
+    end
+    return max(lambda, _scaled_gershgorin_bound(A, invdiag), one(T))
+end
+
+function _scale_into!(v, w, lambda)
+    _foreach_chunk(length(v)) do rows
+        @inbounds for i in rows
             v[i] = w[i] / lambda
         end
     end
-    return max(lambda, _scaled_gershgorin_bound(A, invdiag), one(T))
+    return v
 end
 
 function _scaled_gershgorin_bound(A, invdiag)
@@ -507,26 +516,39 @@ function _build_rap_plan_cpu(R, A, P)
     n_coarse_out = _n(P)
     ra_rowptr, ra_colval = _build_ra_pattern(R, A)
     ra_nzval      = zeros(T, length(ra_colval))
-    workspace_ra  = zeros(T, n_fine)
-    workspace_rap = zeros(T, n_coarse_out)
-    flag_ra  = zeros(eltype(ra_rowptr), n_fine)
-    flag_rap = zeros(eltype(ra_rowptr), n_coarse_out)
+    I = eltype(ra_rowptr)
+    # one dense scratch per chunk; rows are independent, so the result is bitwise at any thread count
+    k = length(ra_colval) < _MIN_THREADED_WORK ? 1 : Threads.nthreads()
+    workspace_ra  = [zeros(T, n_fine) for _ in 1:k]
+    workspace_rap = [zeros(T, n_coarse_out) for _ in 1:k]
+    flag_ra  = [zeros(I, n_fine) for _ in 1:k]
+    flag_rap = [zeros(I, n_coarse_out) for _ in 1:k]
     return AMGRAPPlanCPU(ra_rowptr, ra_colval, ra_nzval,
                          workspace_ra, workspace_rap, flag_ra, flag_rap)
 end
 
 function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU)
+    n_coarse = length(plan.ra_rowptr) - 1
+    k = length(plan.workspace_ra)
+    if k == 1
+        _refresh_rap_rows!(coarse_A, fine_level, plan, 1:n_coarse, 1)
+    else
+        _each_chunk_task(c -> _refresh_rap_rows!(coarse_A, fine_level, plan, _chunk(n_coarse, k, c), c), k)
+    end
+    return coarse_A
+end
+
+function _refresh_rap_rows!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU, rows, c)
     R = fine_level.R; A = fine_level.A; P = fine_level.P
     R_rowptr = _rowptr(R); R_colval = _colval(R); R_nzval = _nzval(R)
     A_rowptr = _rowptr(A); A_colval = _colval(A); A_nzval = _nzval(A)
     P_rowptr = _rowptr(P); P_colval = _colval(P); P_nzval = _nzval(P)
     C_rowptr = _rowptr(coarse_A); C_colval = _colval(coarse_A); C_nzval = _nzval(coarse_A)
     ra_rowptr = plan.ra_rowptr; ra_colval = plan.ra_colval; ra_nzval = plan.ra_nzval
-    wra = plan.workspace_ra; wrap = plan.workspace_rap
-    fra = plan.flag_ra;      frap = plan.flag_rap
-    n_coarse = length(ra_rowptr) - 1
+    wra = plan.workspace_ra[c]; wrap = plan.workspace_rap[c]
+    fra = plan.flag_ra[c];      frap = plan.flag_rap[c]
 
-    @inbounds for r in 1:n_coarse
+    @inbounds for r in rows
         for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
             i = Int(R_colval[rp]); Rri = R_nzval[rp]
             for ap in A_rowptr[i]:(A_rowptr[i+1]-1)
@@ -538,22 +560,23 @@ function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanC
         for p in ra_rowptr[r]:(ra_rowptr[r+1]-1)
             j = Int(ra_colval[p])
             ra_nzval[p] = fra[j] == r ? wra[j] : zero(eltype(ra_nzval))
+            fra[j] = 0 # flags outlive the refresh; a stale match would skip the reset next time
         end
-    end
-
-    @inbounds for r in 1:n_coarse
         for rp in ra_rowptr[r]:(ra_rowptr[r+1]-1)
             j = Int(ra_colval[rp]); RAij = ra_nzval[rp]
             iszero(RAij) && continue
             for pp in P_rowptr[j]:(P_rowptr[j+1]-1)
-                c = Int(P_colval[pp])
-                frap[c] != r && (frap[c] = r; wrap[c] = zero(eltype(wrap)))
-                wrap[c] += RAij * P_nzval[pp]
+                cc = Int(P_colval[pp])
+                frap[cc] != r && (frap[cc] = r; wrap[cc] = zero(eltype(wrap)))
+                wrap[cc] += RAij * P_nzval[pp]
             end
         end
         for p in C_rowptr[r]:(C_rowptr[r+1]-1)
-            c = Int(C_colval[p])
-            C_nzval[p] = frap[c] == r ? wrap[c] : zero(eltype(C_nzval))
+            cc = Int(C_colval[p])
+            C_nzval[p] = frap[cc] == r ? wrap[cc] : zero(eltype(C_nzval))
+        end
+        for rp in ra_rowptr[r]:(ra_rowptr[r+1]-1), pp in P_rowptr[Int(ra_colval[rp])]:(P_rowptr[Int(ra_colval[rp])+1]-1)
+            frap[Int(P_colval[pp])] = 0
         end
     end
     return coarse_A

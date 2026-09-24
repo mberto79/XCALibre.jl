@@ -275,3 +275,20 @@ end
     @test ws3.iterations == ws0.iterations
 end
 
+
+@testset "repeated coarse refresh is idempotent" begin
+    # RAP scratch outlives a refresh; 1D end nodes lie wholly in one aggregate, the case a stale flag corrupts
+    for (A, b) in (poisson1d(400), poisson2d(64), poisson2d(150)), coarsening in (Geometric(), SmoothAggregation())
+        s = AMG(mode=Cg(), coarsening=coarsening, smoother=AMGJacobi())
+        fresh = XCALibre.Solve.update!(_workspace(s, b), A, s, _config)
+        ws = XCALibre.Solve.update!(_workspace(s, b), A, s, _config)
+        coarse(w) = [copy(XCALibre.Solve._nzval(l.A)) for l in w.hierarchy.host_levels[2:end]]
+        ws = XCALibre.Solve.update!(ws, A, s, _config)
+        first_refresh = coarse(ws)
+        for _ in 1:3
+            ws = XCALibre.Solve.update!(ws, A, s, _config)
+        end
+        @test coarse(ws) == first_refresh
+        @test all(isapprox.(coarse(ws), coarse(fresh); rtol=1e-12))
+    end
+end

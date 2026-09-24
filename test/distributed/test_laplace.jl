@@ -59,3 +59,29 @@ model1, config1 = laplace_case(dm, box_bcs; iterations=2, itmax=1)
         @test_logs min_level=Base.CoreLogging.Warn run!(model1, config1)
     end
 end
+
+# a frozen hierarchy must stay one fixed SPD operator when the matrix grows past the one it was
+# built from: stale coarse operators paired with the new fine matrix make the V-cycle indefinite
+ext = Base.get_extension(XCALibre, :XCALibrePETScExt)
+import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval
+model2, config2 = laplace_case(dm, box_bcs; precon=GAMG(freeze=5), itmax=200)
+deqn = build_deqn(dm, model2, config2)
+A = _A(deqn.eqn); rowptr, colval, nzval = _rowptr(A), _colval(A), _nzval(A)
+function fill_spd!(shift)
+    for r ∈ 1:n
+        ks = rowptr[r]:rowptr[r+1]-1
+        for k ∈ ks
+            nzval[k] = colval[k] == r ? (length(ks) - 1)*(1 + shift) : -1.0
+        end
+    end
+end
+_b(deqn.eqn, nothing) .= 1.0
+reasons = map((1e-3, 10.0, 10.0)) do shift
+    fill_spd!(shift)
+    XCALibre.Distribute.passemble!(deqn.solver, deqn.eqn, deqn.partition)
+    XCALibre.Distribute.psolve!(deqn.solver, zeros(nloc))
+    Int(ext.LibPETSc.KSPGetConvergedReason(deqn.solver.petsclib, deqn.solver.ksp))
+end
+@testset "frozen GAMG stays SPD across matrix changes (rank $rank)" begin
+    @test all(>(0), reasons)
+end

@@ -17,7 +17,7 @@ fine2d_bcs(mesh) = assign(region=mesh, (
         Dirichlet(:bottom_wall, 10.0), Zerogradient(:upper_wall)
     ],))
 
-function laplace_case(mesh, bcs; iterations=20, convergence=1e-10, itmax=1000)
+function laplace_case(mesh, bcs; iterations=20, convergence=1e-10, itmax=1000, precon=Jacobi())
     hardware = Hardware(backend=CPU(), workgroup=64)
     model = Physics(
         time = Steady(),
@@ -25,7 +25,7 @@ function laplace_case(mesh, bcs; iterations=20, convergence=1e-10, itmax=1000)
         energy = Energy{Conduction}(),
         domain = mesh)
     solvers = SolverSetup(
-        solver=Cg(), preconditioner=Jacobi(),
+        solver=Cg(), preconditioner=precon,
         convergence=convergence, relax=1.0, rtol=1e-12, atol=1e-14, itmax=itmax)
     schemes = Schemes(laplacian=Linear)
     runtime = Runtime(iterations=iterations, write_interval=-1, time_step=1)

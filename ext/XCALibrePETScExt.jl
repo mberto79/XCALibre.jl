@@ -60,9 +60,10 @@ end
 
 # NEW SECTION: solver type
 
-struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
+struct XPETScSolver{PL,TM,TP,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     petsclib::PL
     A::TM
+    P::TP              # PC operator of a frozen PC, refreshed from A on rebuilds only; nothing when unfrozen
     b::TV
     x::TV
     ksp::TK
@@ -167,6 +168,7 @@ _release!(::Nothing) = nothing
 function _release!(s)
     isnothing(s.ksp.opts) || PETSc.destroy(s.ksp.opts)
     foreach(PETSc.destroy, (s.ksp, s.A, s.x, s.b))
+    isnothing(s.P) || PETSc.destroy(s.P)
 end
 
 function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
@@ -206,8 +208,10 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     _set_values!(petsclib, Amat, _nzval(A), sync, fill)
     vec = device_solve ? dev.vec : _HOST_VEC
     x, b = (_vec_without_array(petsclib, comm, n, N, vec.create) for _ ∈ 1:2)
+    frozen = _pc_freeze(setup.preconditioner) > 1
+    # PCMG smooths the finest level with Amat by default; a frozen hierarchy must smooth its own P
     curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner)),
-        _pc_options(setup.preconditioner))
+        _pc_options(setup.preconditioner), frozen ? (pc_use_amat="false",) : (;))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
     # Krylov.jl's CG stops on sqrt(r'Mr), PETSc's natural norm; keyed on the resolved type so a
@@ -251,7 +255,9 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
     setup_every = _pc_freeze(setup.preconditioner)
-    XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
+    Pmat = frozen ? _duplicate(petsclib, Amat) : nothing
+    isnothing(Pmat) || LibPETSc.KSPSetOperators(petsclib, ksp, Amat, Pmat)
+    XPETScSolver(petsclib, Amat, Pmat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
         _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0), String(label),
         MPI.Comm_rank(comm) == 0)
 end
@@ -262,6 +268,14 @@ _sync(::Nothing) = nothing
 _sync(f) = f()
 
 _host(x) = x isa Array ? x : Array(x)
+
+# PETSc.jl's MatDuplicate wrapper discards the new matrix, so it is called direct
+function _duplicate(petsclib, A)
+    p = Ref{LibPETSc.CMat}(C_NULL)
+    ccall(_petsc_sym(petsclib, :MatDuplicate), Cint, (LibPETSc.CMat, Cint, Ptr{LibPETSc.CMat}),
+        A, Cint(LibPETSc.MAT_COPY_VALUES), p) == 0 || error("PETSc: MatDuplicate failed")
+    typeof(A)(p[])
+end
 
 _petsc_sym(petsclib, name) = Base.Libc.Libdl.dlsym(Base.Libc.Libdl.dlopen(petsclib.petsc_library), name)
 
@@ -392,12 +406,14 @@ function _with_placed(f, s::XPETScSolver, x)
     x
 end
 
-# rebuild the PC every `setup_every` solves; apply the frozen (cheap-to-apply) hierarchy in between.
-# Krylov still uses the updated matrix, so it converges to the current system's solution.
+# rebuild the PC every `setup_every` solves; apply the frozen hierarchy in between. The PC reads P,
+# not the in-place-updated A, so a frozen PC stays one fixed SPD operator (CG needs that)
 function _maybe_freeze_pc!(s::XPETScSolver)
     s.setup_every <= 1 && return
     n = s.nsolve[]; s.nsolve[] = n + 1
-    flag = (n % s.setup_every == 0) ? LibPETSc.PETSC_FALSE : LibPETSc.PETSC_TRUE
+    rebuild = n % s.setup_every == 0
+    rebuild && LibPETSc.MatCopy(s.petsclib, s.A, s.P, LibPETSc.SAME_NONZERO_PATTERN)
+    flag = rebuild ? LibPETSc.PETSC_FALSE : LibPETSc.PETSC_TRUE
     LibPETSc.KSPSetReusePreconditioner(s.petsclib, s.ksp, flag)
 end
 

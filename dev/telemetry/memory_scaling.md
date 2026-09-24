@@ -167,3 +167,15 @@ Scratch drivers: copies of the benchmark `cpu_i32.jl`/`mpi_i32.jl`/`motorBike_gp
 - A/B, MPI n=4, 20 iterations, same parts, two samples each (run_s): benchmark env (PETSc_jll 3.25.4, Int64 PetscInt) 3.23 / 3.09; copy pinned to PETSc.jl 0.4.12 + PETSc_jll 3.22.2 (`~/.cache/xcal_m28/env_p322`, `_petsclib` picks Int32) 2.92 / 2.93: −7.6%, residuals bitwise.
 - Not paid by the MPI path: VTK `initialise_writer` (D202) does not appear in the rank-0 profile; it costs the threaded path ~3 s per run.
 - Remaining small source-level candidates: U's y and z solves copy the whole matrix into PETSc again though only the relaxed diagonal changed (`passemble!` 4% of rank 0 in total).
+
+## P1-M36 close (HEAD 0259d4c0, same drivers as § P1-M30-S6 close, parts regenerated at format 6)
+
+| mode | cores | M36 close s | M30 close s |
+|---|---|---|---|
+| threads | 1 | 137.29 | 137.55 |
+| threads | 8 | 45.62 | 48.06 |
+| MPI | 8 | 54.58 | 54.06 |
+| GPU | 1 | 14.00 | 17.17 |
+
+- 8t −5% and GPU −18% come from S3's skipped writer (~2.5 s per `run!` of VTK host mesh copy and string building, D221); S1's removed passes and syncs sit inside noise at 500 iterations; 1t and MPI move inside the ±5% repeat noise (MPI never built the VTK writer).
+- 20-iteration smokes (`~/.cache/xcal_m28/m36base`, `m36s1`, `m36s3`): S1 1t/2D/MPI bitwise; S3 run_s GPU 3.69 → 1.06, 1t 9.62 → 7.10, 8t 4.56 → 2.30 s.

@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m36-cheap-perf.md
 updated: 2026-09-24T16:00:00+01:00
 STATE: BUILDING
-STEP: P1-M36-S1..S3 (diff drafted in worktree ~/Julia/xcal_m36: C2+C5, C1, C6+D202)
-HEAD: d667cb22
+STEP: P1-M36-S2 C1 fused residual sums (diff in worktree ~/Julia/xcal_m36: Solve.jl, Solve_1_api.jl)
+HEAD: 147576e4
 BRANCH: HM/distributed-draft
 GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m34_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
-resume: base smokes at M35 HEAD (`chain.sh m36base cpu1 cpu8 2d gpu` + `mpi.sh m36base/mpi4 parts_m34_4 4`), then apply the worktree diff per step (S1 files: Discretise_2, RANS_kOmega, RANS_functions, SIMPLE copy; S2: Solve.jl, Solve_1_api.jl; S3: apply_bcs, SIMPLE syncs, SIMPLE/PISO writer) and smoke each against its plan bar
+resume: copy `src/Solve/Solve.jl` and `src/Solve/Solve_1_api.jl` from the worktree, smoke `cpu1 cpu8 cpu8b 2d gpu` vs `m36s1` (1t/2D within R13 band, 8t run_s must improve beyond noise, else refuse); then S3 (apply_bcs, SIMPLE syncs + writer, PISO writer)
 
 ## binding
 - User rulings: stock Int64 PETSc stays (D205); diagonal-only PETSc writes refused (D207); flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

@@ -87,8 +87,12 @@ wall_scratch(mesh, boundaries, config) =
 
 reset_wall_scratch(mesh, config, ::Nothing) = wall_cell_accumulators(mesh, config)
 reset_wall_scratch(mesh, config, scratch) = begin
-    fill!(scratch[1], zero(eltype(scratch[1])))
-    fill!(scratch[2], zero(eltype(scratch[2])))
+    s1, s2 = scratch
+    z = zero(eltype(s1))
+    xcal_foreach(s1, config) do i
+        s1[i] = z
+        s2[i] = z
+    end
     scratch
 end
 

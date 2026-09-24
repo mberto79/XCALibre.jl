@@ -36,11 +36,7 @@ function discretise!(
     nzval0 = _nzval(A0)
     (; diag_nz, face_nz) = eqn.equation
 
-    # reset storage of sparse matrix
-    z = zero(eltype(nzval))
-    xcal_foreach(nzval, config) do i
-        nzval0[i] = z 
-    end
+    _pattern_extended(nzval0, mesh) && fill_nzval!(nzval0, config)
 
     terms, sources = _kernel_model(model, mesh)
     (; cells, faces, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -113,11 +109,7 @@ function discretise!(
     nzval = _nzval(A)
     (; diag_nz, face_nz) = eqn.equation
 
-    # reset storage of sparse matrix
-    z = zero(eltype(nzval))
-    xcal_foreach(nzval, config) do i
-        nzval[i] = z 
-    end
+    _pattern_extended(nzval, mesh) && fill_nzval!(nzval, config)
 
     terms, sources = _kernel_model(model, mesh)
     (; cells, faces, cell_faces, cell_neighbours, cell_nsign) = mesh
@@ -126,6 +118,17 @@ function discretise!(
     kernel!(terms, sources, cells, faces, cell_faces, cell_neighbours, cell_nsign, nzval,
         diag_nz, face_nz, b, _kernel_field(prev), runtime, _kernel_field(rho_prev))
     # # KernelAbstractions.synchronize(backend)
+end
+
+# the kernels assign every diagonal and one entry per cell face, which is the whole pattern unless a
+# boundary condition added entries (periodic) or two faces share a cell pair; only then is a reset needed
+_pattern_extended(nzval, mesh) = length(nzval) != length(mesh.cells) + length(mesh.cell_faces)
+
+fill_nzval!(nzval, config) = begin
+    z = zero(eltype(nzval))
+    xcal_foreach(nzval, config) do i
+        nzval[i] = z
+    end
 end
 
 @kernel function _discretise_scalar_model!(

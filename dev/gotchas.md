@@ -76,4 +76,5 @@ One line per trap. Reasoning lives in `dev/decisions.md`; this file is how to WO
 - `test_restart.jl` errors in `dev/petscenv` with no method `MatMPIAIJGetSeqAIJ` (that env's generated wrappers lack it); run it under `dev/petscenv_stock` (D183).
 - `test/Project.toml` has no XCALibre entry, so suite files run under `~/.cache/xcal_m28/env_test` via `dev/scripts/suite_file.jl`.
 - `petsc_options="-log_view"` prints nothing: it only sets a KSP option and PETSc's global log is never started; profile rank 0 with `dev/scripts/mpi_profile.jl` instead (D205).
+- Never rebind a local that an earlier `xcal_foreach`/`do` closure in the same function captured: Julia boxes it and every closure using it goes type-unstable per element, with no error (P1-M36-S1: +13% motorBike 1t, D219). Pick a new name.
 - The serial test suite passes `progress=false` to `run!` (except the on/off comparison in `2d_laplace_steady.jl`); new tests should do the same to keep CI logs clean (D203).

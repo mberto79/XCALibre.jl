@@ -212,8 +212,10 @@ function SIMPLE(
         div!(divHv, mdotf, config)
 
         # Pressure calculations
-        @. prev = p.values
-        @. p_boundary_reference = p.values
+        pv = p.values
+        xcal_foreach(prev, config) do i
+            prev[i] = p_boundary_reference[i] = pv[i]
+        end
         rp = solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref)
 
         # non-orthogonal correction

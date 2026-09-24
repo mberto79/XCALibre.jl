@@ -244,7 +244,10 @@ function turbulence!(
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    @. nut.values = k.values/omega.values
+    kv = k.values # nutv and omegav are bound above; rebinding a captured name boxes it
+    xcal_foreach(nutv, config) do i
+        nutv[i] = kv[i]/omegav[i]
+    end
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)

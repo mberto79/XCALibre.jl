@@ -23,13 +23,31 @@ end
 # below this many elements touched, one fork/join (5-10 µs) costs more than the loop saves (D197)
 const _MIN_THREADED_WORK = 1 << 16
 
+# :static pins chunk c to thread c for cache reuse only; Base refuses it nested or concurrent
+_in_threaded_region() = ccall(:jl_in_threaded_region, Cint, ()) != 0
+
+# Base's own check can still race a concurrent :static loop; its error comes before any chunk runs
+function _each_chunk_task(g::G, k) where G
+    if !_in_threaded_region()
+        try
+            Threads.@threads :static for c ∈ 1:k
+                g(c)
+            end
+            return nothing
+        catch e
+            e isa ErrorException && occursin(":static", e.msg) || rethrow()
+        end
+    end
+    Threads.@threads :dynamic for c ∈ 1:k
+        g(c)
+    end
+    nothing
+end
+
 @inline function _foreach_chunk(f, n, work=n)
     k = Threads.nthreads()
     (k == 1 || work < _MIN_THREADED_WORK) && return f(1:n)
-    Threads.@threads :static for c ∈ 1:k
-        f(_chunk(n, k, c))
-    end
-    nothing
+    _each_chunk_task(c -> f(_chunk(n, k, c)), k)
 end
 
 # partials one cache line apart, summed in chunk order: deterministic for a fixed thread count
@@ -38,7 +56,7 @@ function _reduce_chunks(f, n, ::Type{T}) where T
     (k == 1 || n < _MIN_THREADED_WORK) && return f(1:n)
     stride = max(1, 64 ÷ sizeof(T))
     partials = Vector{T}(undef, stride*k)
-    Threads.@threads :static for c ∈ 1:k
+    _each_chunk_task(k) do c
         @inbounds partials[stride*(c - 1) + 1] = f(_chunk(n, k, c))
     end
     s = zero(T)

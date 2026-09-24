@@ -21,7 +21,7 @@ include("xvector.jl")
 struct AutoTune end
 
 _setup(backend::CPU, workgroup::AutoTune, ndrange::I) where {I<: Integer} = begin
-    (backend, cld(ndrange, Threads.nthreads()), ndrange)
+    (backend, cld(max(ndrange, one(I)), Threads.nthreads()), ndrange)
 end
 
 _setup(backend, workgroup::I, ndrange::I) where {I<: Integer} = begin

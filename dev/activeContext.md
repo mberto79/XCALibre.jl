@@ -1,12 +1,12 @@
 # Active context - P1-M34..M36 pre-merge fixes
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m35-behaviour-docs.md, dev/plans/p1-m36-cheap-perf.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m36-cheap-perf.md
 updated: 2026-09-24T16:00:00+01:00
 STATE: BUILDING
-STEP: P1-M35-S2 docs (CHANGELOG Breaking/B4/deps done, guide B3 done, contributor guide done); S3 CI
-HEAD: 7112c9fa
+STEP: P1-M36-S1..S3 (diff drafted in worktree ~/Julia/xcal_m36: C2+C5, C1, C6+D202)
+HEAD: d667cb22
 BRANCH: HM/distributed-draft
 GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m34_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
-resume: M35-S3: CI already has a Julia 1.10 job and docs doctests execute PETSc code, so S3 closes with no change; then M35 close = full serial suite (`suite.sh` in scratch, recreate from D214 groups) + docs build (regenerates release_notes.md; commit it) + grep for stale mesh text
+resume: base smokes at M35 HEAD (`chain.sh m36base cpu1 cpu8 2d gpu` + `mpi.sh m36base/mpi4 parts_m34_4 4`), then apply the worktree diff per step (S1 files: Discretise_2, RANS_kOmega, RANS_functions, SIMPLE copy; S2: Solve.jl, Solve_1_api.jl; S3: apply_bcs, SIMPLE syncs, SIMPLE/PISO writer) and smoke each against its plan bar
 
 ## binding
 - User rulings: stock Int64 PETSc stays (D205); diagonal-only PETSc writes refused (D207); flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

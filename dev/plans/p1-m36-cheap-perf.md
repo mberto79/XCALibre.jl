@@ -26,8 +26,8 @@ motorBike 1t, 8t, GPU, MPI n=4 (20 iterations, `~/.cache/xcal_m28/chain.sh` + `m
 Expected 4 steps.
 
 - [x] **P1-M36-S1** LANDED (D219). C2 + C5: zero `nzval` only for extended patterns; drop the duplicate `p` copy, `nut` and wall scratch via `xcal_foreach` - mechanism: the discretise kernel writes every entry of an unextended pattern - cost: none - verdict: bitwise 1t/2D/MPI; cascade periodic suite file passes; 8t run_s not slower.
-- [ ] **P1-M36-S2** C1: residual numerator/denominator from one fused pass with chunk partials (CPU) and one device reduction (GPU) - mechanism: the residual is a reduction and reductions are chunk-ordered (D196) - cost: none - verdict: 1t bitwise when serial path is taken; 8t within the R13 band; 8t run_s improves beyond noise, else refuse.
-- [ ] **P1-M36-S3** C6 + D202: remove redundant `synchronize` calls (keep the one before host reads and inside the periodic BC method), skip VTK writer initialisation when nothing will be written - mechanism: KA launches on one stream are ordered; a writer that never writes needs no state - cost: none - verdict: GPU residuals within rerun spread, GPU run_s from `gpu_profile.jl` not slower; VTK output still written when `write_interval > 0` (writer test files).
+- [-] **P1-M36-S2** WITHDRAWN (D220), refused on its bar. C1: residual numerator/denominator from one fused pass with chunk partials (CPU) and one device reduction (GPU) - mechanism: the residual is a reduction and reductions are chunk-ordered (D196) - cost: none - verdict: 1t bitwise when serial path is taken; 8t within the R13 band; 8t run_s improves beyond noise, else refuse.
+- [x] **P1-M36-S3** LANDED (D221). C6 + D202: remove redundant `synchronize` calls (keep the one before host reads and inside the periodic BC method), skip VTK writer initialisation when nothing will be written - mechanism: KA launches on one stream are ordered; a writer that never writes needs no state - cost: none - verdict: GPU residuals within rerun spread, GPU run_s from `gpu_profile.jl` not slower; VTK output still written when `write_interval > 0` (writer test files).
 - [ ] **P1-M36-S4** close: 500-iteration 1t/8t/MPI 8/GPU timings with `~/.cache/xcal_m28/close/` drivers, one point per command; full serial suite.
 
 ## Exit criterion
@@ -36,4 +36,4 @@ S1-S3 landed on their bars; 8t 500-iteration time recorded against 48.1 s; no st
 
 ## Open questions
 
-- D202 fix shape: skip vs lazy writer — decide by reading `initialise_writer` callers at S3.
+- SETTLED (D221): skip; SIMPLE and PISO write nothing when `write_interval` is negative.

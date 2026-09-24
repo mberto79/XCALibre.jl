@@ -69,7 +69,8 @@ function PISO(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    outputWriter = initialise_writer(output, model.domain)
+    # a negative write_interval writes nothing, so the writer (host mesh copy, VTK strings) is never built
+    outputWriter = signbit(write_interval) ? nothing : initialise_writer(output, model.domain)
     attach_state!(outputWriter, mdotf, config.runtime.dt)
 
     @info "Allocating working memory..."

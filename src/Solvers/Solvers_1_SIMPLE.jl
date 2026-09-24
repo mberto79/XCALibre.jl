@@ -142,7 +142,8 @@ function SIMPLE(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    outputWriter = initialise_writer(output, model.domain)
+    # a negative write_interval writes nothing, so the writer (host mesh copy, VTK strings) is never built
+    outputWriter = signbit(write_interval) ? nothing : initialise_writer(output, model.domain)
     attach_state!(outputWriter, mdotf, config.runtime.dt)
 
     @info "Allocating working memory..."
@@ -369,7 +370,6 @@ function correct_mass_flux!(
     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
     kernel! = _sized(_correct_mass_flux!, backend, workgroup, ndrange)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
-    KernelAbstractions.synchronize(backend)
 
     correct_nonorthogonal_mass_flux!(mdotf, nonorthogonal, config)
 
@@ -392,7 +392,6 @@ function correct_nonorthogonal_mass_flux!(mdotf, correction, config)
     ndrange = length(correction.mesh.faces) - n_bfaces
     kernel! = _sized(_correct_nonorthogonal_mass_flux!, backend, workgroup, ndrange)
     kernel!(mdotf, correction, n_bfaces)
-    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _correct_nonorthogonal_mass_flux!(mdotf, correction, n_bfaces)
@@ -532,7 +531,6 @@ function correct_boundary_mass_flux!(
     kernel!(
         p_BCs, U_BCs, mdotf, p, previous, pflux, psign,
         faces, boundary_cellsID, time)
-    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _correct_boundary_mass_flux!(

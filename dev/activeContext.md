@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m36-cheap-perf.md
 updated: 2026-09-24T16:00:00+01:00
 STATE: BUILDING
-STEP: P1-M36-S2 C1 fused residual sums (diff in worktree ~/Julia/xcal_m36: Solve.jl, Solve_1_api.jl)
-HEAD: 147576e4
+STEP: P1-M36-S4 close: 500-iteration timings (1t, 8t, MPI 8, GPU) + full serial suite
+HEAD: b88fbfbb
 BRANCH: HM/distributed-draft
 GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m34_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
-resume: copy `src/Solve/Solve.jl` and `src/Solve/Solve_1_api.jl` from the worktree, smoke `cpu1 cpu8 cpu8b 2d gpu` vs `m36s1` (1t/2D within R13 band, 8t run_s must improve beyond noise, else refuse); then S3 (apply_bcs, SIMPLE syncs + writer, PISO writer)
+resume: run the `~/.cache/xcal_m28/close/` drivers one point per command (read each driver's usage first), record in `dev/telemetry/memory_scaling.md` § P1-M36, full serial suite via the 5-group runner (D214 groups), then close M36 and hand the P1 exit gate to `xcalibre-close`
 
 ## binding
 - User rulings: stock Int64 PETSc stays (D205); diagonal-only PETSc writes refused (D207); flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

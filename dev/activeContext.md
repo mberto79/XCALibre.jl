@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T16:00:00+01:00
 STATE: IDLE
 STEP: none (P1-M34..M36 closed); next is the P1 exit gate
-HEAD: 0259d4c0
+HEAD: 00404861
 BRANCH: HM/distributed-draft
 GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m34_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
 resume: user runs `xcalibre-close` for the P1 exit gate (direct invocation only), then the distributed PR (D209); CHANGELOG `[#160]` placeholders get the PR number when it opens (D137)

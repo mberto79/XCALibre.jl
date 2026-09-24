@@ -11,7 +11,7 @@ Active phase and its exit gate: `dev/phaseRoadmap.md`. Current step and state: `
 ## phases
 
 - [x] P0 - build the distributed module over eight phases, then a five-phase round of configuration, launch, logging, HYPRE and SST work | archived, `archive/dev_distributed/`
-- [ ] P1 - release polish: make the module stock-installable, environment-variable free, rank-uniform by construction, scaling-attributed, gated and documented, then structurally ready to scale (D72), then moving fewer bytes per iteration on every backend (M28-M31, D159), progress switch (M32) and MPI-path audit (M33); all milestones closed, exit gate pending | `dev/phaseRoadmap.md`
+- [ ] P1 - release polish: make the module stock-installable, environment-variable free, rank-uniform by construction, scaling-attributed, gated and documented, then structurally ready to scale (D72), then moving fewer bytes per iteration on every backend (M28-M31, D159), progress switch (M32), MPI-path audit (M33), then pre-merge fixes M34-M36 from the review (D208, D209) | `dev/phaseRoadmap.md`
 - [ ] P2 - HPC validation: multi-node CPU, multi-GPU and AMD runs of the M18-M24 code, scaling recorded against R7/Q3, then M22-S6 (overlap), M22-S8 (owned-row kernels at n=64) and M23-S4 (parallel repartition) if withdrawn locally (D73, D115, D117) | opens when P1 closes
 
 ## flagged

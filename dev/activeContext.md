@@ -1,12 +1,12 @@
 # Active context - P1 complete, pre-merge review
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md
 updated: 2026-09-24T12:00:00+01:00
-STATE: REVIEWING
+STATE: BLOCKED
 STEP: pre-merge review of HM/distributed-draft (user request; every P1 milestone closed, last D207)
 HEAD: c0ef5101
 BRANCH: HM/distributed-draft
 GATE: `dev/phaseRoadmap.md` § Exit gate: full serial suite, distributed gate within Q2, BFS example on stock binaries from a clean checkout, rank invariance at 1,2,4 (Q1), scaling telemetry (Q3), docs build
-resume: collect the review agents' findings (performance, behaviour changes vs main, production robustness), report them to the user, who decides which become milestones before `xcalibre-close`
+resume: user triages `dev/archive/reviews/p1/pre-merge-review-2026-09-24.md` (A1 confirmed crash) into milestones; nothing else proceeds before that decision
 
 ## binding
 - User rulings: flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

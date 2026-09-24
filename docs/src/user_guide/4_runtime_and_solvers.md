@@ -91,6 +91,17 @@ SolverSetup(
 )
 ```
 
+### Refreshing the hierarchy
+
+The AMG hierarchy is built once, on the first solve. On later solves the matrix coefficients change but its sparsity does not, so the coarsening and the transfer operators are kept and only their values are refreshed. The finest level is refreshed on every solve. The coarse operators are recomputed every `coarse_refresh_interval` solves; in between, the coarse levels from the last refresh are reused. The default is `1`, which refreshes every solve, as OpenFOAM's GAMG does.
+
+Every solve still converges to the requested tolerance, so a longer interval changes only the cost of each solve, not its result: fewer refreshes, possibly more iterations while the coarse levels are out of date. For steady incompressible simulations, where the pressure matrix changes slowly between iterations, an interval of 5 to 10 is safe. On the 354k-cell motorBike case (steady k-omega, `SmoothAggregation()` with `AMGChebyshev()`, 500 iterations on 8 threads), intervals of 5 and 10 each ran in 57.7 s against 66.9 s at the default. Pressure iterations per solve did not grow between refreshes, and the final residuals matched the default to within 0.5%. Longer intervals have not been checked on transient or compressible cases; keep the default there unless you have measured your case.
+
+```julia
+AMG(mode = Cg(), coarsening = SmoothAggregation(), smoother = AMGChebyshev(),
+    coarse_refresh_interval = 5)
+```
+
 ### Solving the coarsest level
 
 The coarsest level of the hierarchy is small but is visited on every V-cycle, so on a GPU the

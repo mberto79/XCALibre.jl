@@ -431,7 +431,7 @@ function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
 end
 
 """
-    distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
+    distribute(reader::Function; dir=nothing, key=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
 
 Read and distribute a mesh from a call every rank makes identically. Rank 0 runs `reader()` to
 build the global mesh and the other ranks skip it, so no `rank == 0` guard appears in the script
@@ -443,16 +443,17 @@ and no value can differ in type between ranks:
 
 With `dir`, the decomposition is written there once and every rank then loads only its own part,
 which removes rank 0's global-mesh memory ceiling from later runs. A decomposition already in
-`dir` for the same number of ranks is reused and `reader()` is never called; one for a different
-number of ranks is replaced:
+`dir` for the same number of ranks and the same `key` is reused and `reader()` is never called;
+otherwise it is replaced. Without a `key` only the rank count is compared, so pass one that names
+the mesh (any hashable value, e.g. the reader's arguments) whenever `dir` may hold another mesh's parts:
 
-    mesh = distribute(dir="parts") do
+    mesh = distribute(dir="parts", key=(path, 0.001)) do
         UNV3D_mesh(path, scale=0.001)
     end
 
 MPI is initialised if it is not already.
 """
-function distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
+function distribute(reader::Function; dir=nothing, key=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
     MPI.Initialized() || MPI.Init()
     if dir === nothing
         mesh = _on_all_ranks(() -> MPI.Comm_rank(comm) == 0 ? reader() : nothing, comm, "reader")
@@ -461,9 +462,11 @@ function distribute(reader::Function; dir=nothing, comm=MPI.COMM_WORLD, periodic
     nranks = MPI.Comm_size(comm)
     # the all-gather also holds every rank until the parts are on disk
     _on_all_ranks(comm, "reading and partitioning the mesh") do
-        (MPI.Comm_rank(comm) == 0 && !_parts_match(dir, nranks)) || return
-        foreach(f -> rm(joinpath(dir, f)), _part_files(dir; ext=(".xdm", ".jls"))) # a stale part count would be reused
-        partition_mesh(reader(), nranks; dir, periodic_patches)
+        (MPI.Comm_rank(comm) == 0 && !_parts_match(dir, nranks, key)) || return
+        stale = _part_files(dir; ext=(".xdm", ".jls"))
+        isempty(stale) || @info "replacing the decomposition in $dir: another rank count, mesh or key"
+        foreach(f -> rm(joinpath(dir, f)), stale)
+        partition_mesh(reader(), nranks; dir, periodic_patches, key)
         GC.gc(true) # drop the global mesh before the ranks claim memory for their own parts
     end
     distribute(dir; comm)
@@ -472,23 +475,26 @@ end
 _part_files(dir; ext=(".xdm",)) = isdir(dir) ?
     filter(f -> startswith(f, "rank_") && any(e -> endswith(f, e), ext), readdir(dir)) : String[]
 
-_parts_match(dir, nranks) = length(_part_files(dir)) == nranks &&
-    all(f -> _part_header_ok(joinpath(dir, f), nranks), _part_files(dir))
+function _parts_match(dir, nranks, key=nothing)
+    hs = [_part_header(joinpath(dir, f), nranks) for f ∈ _part_files(dir)]
+    length(hs) == nranks && all(!isnothing, hs) && allequal(_source.(hs)) && hs[1].key_hash == _key_hash(key)
+end
 
 # NEW SECTION: offline partitioning
 
 """
-    partition_mesh(mesh, nparts; dir, periodic_patches=())
+    partition_mesh(mesh, nparts; dir, periodic_patches=(), key=nothing)
 
 Offline decomposition: partition `mesh` into `nparts` rank-local meshes and write one
-`rank_<r>.xdm` per rank into `dir`. Load with `distribute(dir; comm)` under `mpiexec -n nparts`. Each
+`rank_<r>.xdm` per rank into `dir`, recording `key` for `distribute(reader; dir, key)`. Load with `distribute(dir; comm)` under `mpiexec -n nparts`. Each
 file is binary with a header ([`mesh_info`](@ref)) naming its format, kind and rank count; a part of
 another format or rank count is refused at load with the call that fixes it.
 """
-function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=())
+function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=(), key=nothing)
     mkpath(dir)
+    source = _mesh_fingerprint(mesh)
     for (r, dm) ∈ enumerate(decompose(mesh, nparts; periodic_patches))
-        _write_xdm(joinpath(dir, "rank_$(r-1).xdm"), getfield(dm, :mesh), dm)
+        _write_xdm(joinpath(dir, "rank_$(r-1).xdm"), getfield(dm, :mesh), dm; source, key)
     end
     dir
 end
@@ -504,9 +510,13 @@ function distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
     quiet_nonroot!(comm)
     rank = MPI.Comm_rank(comm)
     dm = _on_all_ranks(comm, "reading parts from $dir") do
-        dm = _read_part_file(joinpath(dir, "rank_$rank.xdm"), MPI.Comm_size(comm))
+        path = joinpath(dir, "rank_$rank.xdm")
+        dm = _read_part_file(path, MPI.Comm_size(comm))
         getfield(dm, :partition).rank == rank || error("rank_$rank.xdm in $dir holds another rank's part")
-        dm
+        dm, hash(_source(open(io -> _read_xdm_header(io, path), path)))
     end
+    allequal(MPI.Allgather(dm[2], comm)) || error("the parts in $dir were cut from different meshes or " *
+        "decompositions; regenerate them with partition_mesh")
+    dm = dm[1]
     _with_comm(dm, comm)
 end

@@ -195,13 +195,16 @@ For a large mesh, also give `dir`. Rank 0 decomposes the mesh into that director
 rank then loads only its own part, so after the first run no rank ever holds the global mesh:
 
 ```julia
-mesh = distribute(dir="parts") do
+mesh = distribute(dir="parts", key=("path/to/mesh.unv", 0.001)) do
     UNV3D_mesh("path/to/mesh.unv", scale=0.001)
 end
 ```
 
-If `dir` already holds a decomposition for the same number of ranks, it is reused and the reader is
-never called; one for a different number of ranks, or of an older file format, is replaced.
+If `dir` already holds a decomposition for the same number of ranks and the same `key`, it is reused
+and the reader is never called; one for a different number of ranks, another key, or an older file
+format is replaced. The key is any hashable value naming the mesh; without it only the rank count is
+compared, so another mesh's parts left in `dir` would be reused. Parts cut from different meshes
+mixed in one directory are refused at load.
 [`partition_mesh`](@ref) writes the same layout from a standalone process if you want to decompose
 ahead of time, and `distribute(dir; comm)` loads it. Each part is a binary `rank_<r>.xdm` file that
 survives XCALibre and Julia upgrades; [`mesh_info`](@ref) reads its header (kind, rank count, integer

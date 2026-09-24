@@ -5,14 +5,15 @@ export mesh_info
 # layout: magic, header (Int64 per key), mesh block (raw isbits arrays), partition block (empty
 # when serial); one code path for both kinds, only the format number is checked for layout (D122)
 const _XDM_MAGIC = b"XCALMESH"
-const _XDM_FORMAT = 5
+const _XDM_FORMAT = 6
 const _XDM_BOM = 0x0102030405060708
 const _XDM_KEYS = (:bom, :format, :xcalibre_major, :xcalibre_minor, :xcalibre_patch,
     :julia_major, :julia_minor, :julia_patch, :kind, :dim, :TI, :TF,
     :nranks, :rank, :n_owned, :n_ghost,
     :ncells, :ncell_nodes, :ncell_faces, :nfaces, :nface_nodes, :nboundaries, :nboundary_name_bytes,
     :nnodes, :nnode_cells, :nbfaces,
-    :row_start, :row_end, :nprocs, :nproc_faces, :nproc_send, :nproc_recv)
+    :row_start, :row_end, :nprocs, :nproc_faces, :nproc_send, :nproc_recv,
+    :source_cells, :source_nodes, :source_hash, :key_hash)
 const _XDM_KINDS = (:serial, :partitioned)
 
 _xdm_float(bits) = bits == 32 ? Float32 : bits == 64 ? Float64 : error("unsupported float width $bits")
@@ -24,7 +25,18 @@ _xdm_types(dim, TI, TF) = (
     node=Node{SVector{3,TF},UnitRange{TI}},
     mesh=dim == 2 ? Mesh2 : Mesh3)
 
-function _xdm_header(mesh, part)
+# identifies the mesh a part was cut from, and the caller's key, without reading that mesh again
+function _mesh_fingerprint(mesh)
+    h = hash(length(mesh.cells))
+    for x ∈ mesh.node_coords
+        h = hash(x, h)
+    end
+    (length(mesh.cells), length(mesh.node_coords), reinterpret(Int64, h))
+end
+_key_hash(key) = key === nothing ? 0 : reinterpret(Int64, hash(key))
+_source(h) = (h.source_cells, h.source_nodes, h.source_hash, h.key_hash)
+
+function _xdm_header(mesh, part, source, key)
     TI, TF = _get_int(mesh), _get_float(mesh)
     xv = pkgversion(parentmodule(@__MODULE__))
     names = join(string.(getfield.(mesh.boundaries, :name)), '\n')
@@ -40,7 +52,7 @@ function _xdm_header(mesh, part)
         length(mesh.boundary_cellsID),
         p === nothing ? 1 : p.row_start, p === nothing ? ncells : p.row_end, length(procs),
         sum(pp -> length(pp.faces), procs; init=0), sum(pp -> length(pp.send_cells), procs; init=0),
-        sum(pp -> length(pp.recv_ghosts), procs; init=0))
+        sum(pp -> length(pp.recv_ghosts), procs; init=0), source..., _key_hash(key))
     NamedTuple{_XDM_KEYS}(Int64.(vals)), names
 end
 
@@ -55,8 +67,8 @@ function _xdm_read_array(io, ::Type{T}, n) where T
 end
 
 # mesh arrays in header order, then the partition block when `part` is a DistributedMesh
-function _write_xdm(path, mesh, part=nothing)
-    h, names = _xdm_header(mesh, part)
+function _write_xdm(path, mesh, part=nothing; source=_mesh_fingerprint(mesh), key=nothing)
+    h, names = _xdm_header(mesh, part, source, key)
     TI = _get_int(mesh)
     T = _xdm_types(h.dim, TI, _get_float(mesh))
     open(path, "w") do io
@@ -176,8 +188,9 @@ _write_mesh_file(path, mesh) = _write_xdm(path, mesh)
 _read_mesh_file(path) = _read_xdm(path, h -> h.kind == 0 || error("$path is part $(h.rank) of a " *
     "$(h.nranks)-rank decomposition; load it with distribute(dir) under mpiexec -n $(h.nranks)"))
 
-_part_header_ok(path, nranks) = try
-    open(io -> (_check_part(path, nranks)(_read_xdm_header(io, path)); true), path)
+_part_header(path, nranks) = try
+    open(io -> (h = _read_xdm_header(io, path); _check_part(path, nranks)(h); h), path)
 catch
-    false
+    nothing
 end
+_part_header_ok(path, nranks) = _part_header(path, nranks) !== nothing

@@ -7,8 +7,8 @@ mesh_file = isempty(ARGS) ?
     joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), "bfs_unv_tet_10mm.unv") : ARGS[1]
 
 # every rank makes this identical call: rank 0 decomposes into `dir` the first time, the rest
-# wait, and each then loads only its own part. A decomposition already there is reused.
-mesh_dist = distribute(dir=joinpath(pwd(), "parts")) do
+# wait, and each then loads only its own part. A decomposition there is reused for the same key.
+mesh_dist = distribute(dir=joinpath(pwd(), "parts"), key=(mesh_file, 0.001)) do
     UNV3D_mesh(mesh_file, scale=0.001)
 end
 

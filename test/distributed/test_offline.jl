@@ -67,6 +67,31 @@ end
     @test reads[] == 0
 end
 
+# a key names the mesh: the same key reuses without reading, another key or mesh repartitions
+dir3 = MPI.bcast(rank == 0 ? mktempdir() : nothing, comm; root=0)
+reads[] = 0
+keyed(key, m) = distribute(() -> (reads[] += 1; m()); dir=dir3, key, comm)
+dm_a = keyed(:bfs, bfs_mesh)
+dm_a2 = keyed(:bfs, bfs_mesh)
+dm_b = keyed(:cavity, cavity_mesh)
+@testset "keyed decomposition (rank $rank)" begin
+    @test reads[] == (rank == 0 ? 2 : 0)
+    @test dm_a2.mesh.cells == dm_a.mesh.cells
+    @test MPI.Allreduce(length(dm_b.mesh.cells), +, comm) != MPI.Allreduce(length(dm_a.mesh.cells), +, comm)
+    @test dm_b.mesh.cells == distribute(cavity_mesh(); comm).mesh.cells
+end
+# parts of two decompositions mixed in one directory are refused at load on every rank
+if rank == 0 && nranks > 1
+    partition_mesh(bfs_mesh(), nranks; dir=dir3)
+    partition_mesh(cavity_mesh(), nranks; dir=dir2)
+    cp(joinpath(dir2, "rank_0.xdm"), joinpath(dir3, "rank_0.xdm"); force=true)
+end
+MPI.Barrier(comm)
+nranks > 1 && @testset "mixed parts refused (rank $rank)" begin
+    err = try (distribute(dir3; comm); nothing) catch e e end
+    @test err isa ErrorException && occursin("different meshes", err.msg)
+end
+
 # format, kind and rank count are checked at load; the serial kind shares the layout
 const D = XCALibre.Distribute
 if rank == 0
@@ -126,4 +151,4 @@ end
 
 rank == 0 && println("OFFLINE == ONLINE n=$nranks")
 MPI.Barrier(comm)
-rank == 0 && (rm(dir; recursive=true); rm(dir2; recursive=true))
+rank == 0 && foreach(d -> rm(d; recursive=true), (dir, dir2, dir3))

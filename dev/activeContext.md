@@ -2,10 +2,10 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m34-robustness.md, dev/plans/p1-m35-behaviour-docs.md, dev/plans/p1-m36-cheap-perf.md
 updated: 2026-09-24T16:00:00+01:00
 STATE: BUILDING
-STEP: P1-M34-S2 A3 distributed error paths (gating) then S3 A4 part fingerprint
-HEAD: pending-S2
+STEP: P1-M34-S4 A5 Int32 counters checked before narrowing
+HEAD: 0c0458d3
 BRANCH: HM/distributed-draft
-GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m29_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
+GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m34_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
 resume: S2 diff in tree (`_on_all_ranks`, `test_failure.jl`, driver timeout): if uncommitted, rerun `test_failure.jl` and `test_restart.jl` (petscenv_stock) and land; then S3 per plan (fingerprint at write + `key=` on `distribute(reader; dir)`, advisor 2026-09-24)
 
 ## binding

@@ -469,7 +469,13 @@ effect only with the first solver built, and an entry for a later equation (for 
 | `DILU()`, `ILU0GPU()`, `IC0GPU()` | running serial scripts unchanged; each becomes a per-rank incomplete factorisation and warns once | you expect the serial method itself: the substitute weakens as ranks are added, because each block ignores its neighbours |
 
 For momentum and turbulence, `Bicgstab()` with `Jacobi()` is the usual choice. For pressure, start
-with `Cg()` and `Jacobi()` on small cases and `Cg()` and `GAMG()` on large ones.
+with `Cg()` and `Jacobi()`, and try `Cg()` with `GAMG()` only when each rank holds a large
+partition, measuring both. On the motorBike benchmark (353,830 cells, steady k-omega, pressure
+`rtol = 0.01`), `Jacobi()` was the fastest pressure preconditioner at 2, 4 and 8 ranks: the best
+`GAMG` setting, `GAMG(freeze = 3)`, tied it at 2 ranks (177,000 cells per rank) and was 7% and 12%
+slower at 4 and 8 ranks, the default `GAMG()` was 44% slower at 4 ranks, and `BoomerAMG()` 3 to 4 times
+slower. There the AMG preconditioner converges each solve in 3 to 6 iterations instead of about 67,
+but each rebuild costs more than a whole Jacobi-preconditioned solve.
 
 ## Algebraic multigrid for pressure (GAMG and BoomerAMG)
 
@@ -617,8 +623,8 @@ again after any of those.
 
 ### Rebuilding vs freezing the hierarchy
 
-In SIMPLE, the pressure matrix keeps a fixed sparsity pattern while its coefficients change
-slightly from one outer iteration to the next. Rebuilding the whole AMG hierarchy for every solve
+In SIMPLE, the pressure matrix keeps a fixed sparsity pattern while its coefficients change from
+one outer iteration to the next. Rebuilding the whole AMG hierarchy for every solve
 is expensive, so both preconditioners avoid it, in different ways:
 
 - `GAMG()` sets `reuse_interpolation = true` by default. It builds the aggregation and
@@ -632,8 +638,12 @@ is expensive, so both preconditioners avoid it, in different ways:
   cannot partially reuse a hierarchy, so this all-or-nothing freeze is the only option.
 
 The Krylov solver always uses the current matrix, so a frozen preconditioner changes how fast each
-solve converges but not the solution it converges to. A longer freeze saves setup time and can cost
-residual reduction per outer iteration. The defaults balance the two.
+solve converges but not the solution it converges to. A frozen preconditioner keeps its own copy of
+the matrix from its last rebuild, so it costs one extra matrix in memory. A longer freeze saves
+setup time, but when the coefficients change quickly, as in the early iterations of a steady run,
+the number of iterations per solve grows with the age of the hierarchy: on the motorBike case a
+fresh `GAMG` hierarchy needed 3 iterations and one frozen for a few solves up to about 60, so
+`freeze = 3` was faster there than the default `25`. Measure a few values on your case.
 
 ### Tuning keywords
 

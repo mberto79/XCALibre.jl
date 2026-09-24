@@ -75,9 +75,9 @@ keeps a FIXED sparsity pattern, so GAMG builds the aggregation + prolongation P 
 recomputes only the coarse operators (RAP) and smoothers each solve — the hierarchy stays
 numerically current at a fraction of a full setup. `freeze=N` additionally holds the whole
 preconditioner fixed for `N` solves, skipping even that update, and rebuilds it on the `N`th
-(default 25; `freeze=1` updates every solve). Because the coefficient drift between rebuilds is
-small, the freeze leaves the pressure residual essentially unchanged while removing most of the
-setup cost.
+(default 25; `freeze=1` updates every solve). A frozen preconditioner keeps its own copy of the
+matrix, and its iteration count grows as the coefficients drift from those it was built on; see
+the distributed simulations page of the documentation for choosing `N`.
 
 Each keyword `k=v` overrides a default and is passed as `-pc_gamg_<k> v`, e.g.
 `GAMG(threshold=0.02, square_graph=1)`. See the PETSc `-pc_gamg_*` options.

@@ -258,16 +258,16 @@ function read_faces(file_path, TI, TF)
     face_nodes = Vector{TI}(undef, 0)
     sizehint!(face_nodes, 4 * Int(nfaces))
     face_nodes_range = Vector{UnitRange{TI}}(undef, nfaces)
-    startIdx = one(TI)
+    startIdx = 1 # Int: the checked conversion to TI below is what catches overflow
     for facei ∈ 1:nfaces
         nnodes, pos = _next_uint(bytes, pos, len) # per-face node count
         for i ∈ 1:nnodes
             nid, pos = _next_uint(bytes, pos, len)
             push!(face_nodes, TI(nid) + one(TI)) # +1 shift
         end
-        endIdx = startIdx + TI(nnodes) - one(TI)
+        endIdx = startIdx + Int(nnodes) - 1
         face_nodes_range[facei] = UnitRange{TI}(startIdx, endIdx)
-        startIdx = endIdx + one(TI)
+        startIdx = endIdx + 1
     end
 
     return face_nodes, face_nodes_range

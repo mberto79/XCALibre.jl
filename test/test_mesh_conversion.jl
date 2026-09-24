@@ -302,6 +302,15 @@ end
     @test_throws ArgumentError M._with_index_capacity(() -> Int32(Int64(2)^40), Int32)
     @test_throws InexactError M._with_index_capacity(() -> Int64(1.5), Int64)
     @test M._with_index_capacity(() -> 7, Int32) == 7
+    # totals past typemax(Int32) are refused before any Int32 offset or cursor can wrap
+    big = Int64(typemax(Int32)) + 1
+    F, U = XCALibre.FoamMesh, XCALibre.UNV3
+    @test_throws ArgumentError F.connect_cell_faces(
+        (n_cells=1, n_ifaces=big ÷ 2, n_bfaces=0, face_owner=Int32[], face_neighbour=Int32[]), Int32, Float64)
+    @test_throws ArgumentError F.connect_cell_nodes((n_cells=1, face_nodes=Int32[], face_owner=Int32[1],
+        face_neighbour=Int32[1], face_nodes_range=[Int32(1):typemax(Int32)], points=[]), Int32, Float64)
+    @test_throws ArgumentError U._compute_flat_offsets(Int32[typemax(Int32), 1])
+    @test U._compute_flat_offsets(Int32[2, 3])[3] == 5
 end
 
 @testset "single precision mesh validation" begin

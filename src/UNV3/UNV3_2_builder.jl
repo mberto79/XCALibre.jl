@@ -207,6 +207,7 @@ function _identify_and_concatenate_faces(cells_UNV, boundaryElements, efaces, no
     total_fnodes = sum(@view iface_sizes[1:iface_count])
     for i in 1:n_bfaces; total_fnodes += length(bface_nodes_list[i]); end
     
+    _check_index_capacity(I, total_fnodes, "the face-node count") # the cursor below is unchecked
     face_nodes = Vector{I}(undef, total_fnodes)
     face_nodes_range = Vector{UnitRange{I}}(undef, total_faces)
     
@@ -286,7 +287,8 @@ function _construct_mesh_entities(points, cells_UNV, boundaryElements,
         @inbounds nodes[i] = Node(svec_coords, node_cells_range[i])
     end
 
-    tot_c_nodes = sum(c -> c.nodeCount, cells_UNV)
+    tot_c_nodes = sum(c -> Int(c.nodeCount), cells_UNV)
+    _check_index_capacity(I, tot_c_nodes, "the cell-node count")
     all_cell_nodes = Vector{I}(undef, tot_c_nodes)
     
     proto_cell = Cell(SVector{3, F}(zero(F),zero(F),zero(F)), zero(F), I(1):I(0), I(1):I(0))
@@ -331,6 +333,7 @@ end
 # ==============================================================================
 
 function _compute_flat_offsets(counts::Vector{I}) where I
+    _check_index_capacity(I, sum(Int, counts; init=0), "a connectivity count")
     n = length(counts)
     ranges = Vector{UnitRange{I}}(undef, n)
     cursors = zeros(I, n)

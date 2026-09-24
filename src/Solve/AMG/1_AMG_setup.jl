@@ -476,7 +476,6 @@ function _build_rap_plan_cpu(R, A, P)
     n_fine = _m(A)
     n_coarse_out = _n(P)
     ra_rowptr, ra_colval = _build_ra_pattern(R, A)
-    ra_nzval      = zeros(T, length(ra_colval))
     I = eltype(ra_rowptr)
     # one dense scratch per chunk; rows are independent, so the result is bitwise at any thread count
     k = length(ra_colval) < _MIN_THREADED_WORK ? 1 : Threads.nthreads()
@@ -484,8 +483,9 @@ function _build_rap_plan_cpu(R, A, P)
     workspace_rap = [zeros(T, n_coarse_out) for _ in 1:k]
     flag_ra  = [zeros(I, n_fine) for _ in 1:k]
     flag_rap = [zeros(I, n_coarse_out) for _ in 1:k]
-    return AMGRAPPlanCPU(ra_rowptr, ra_colval, ra_nzval,
-                         workspace_ra, workspace_rap, flag_ra, flag_rap)
+    touched_rap = [zeros(I, n_coarse_out) for _ in 1:k]
+    return AMGRAPPlanCPU(ra_rowptr, ra_colval,
+                         workspace_ra, workspace_rap, flag_ra, flag_rap, touched_rap)
 end
 
 function _refresh_rap_numeric!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU)
@@ -505,10 +505,12 @@ function _refresh_rap_rows!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU,
     A_rowptr = _rowptr(A); A_colval = _colval(A); A_nzval = _nzval(A)
     P_rowptr = _rowptr(P); P_colval = _colval(P); P_nzval = _nzval(P)
     C_rowptr = _rowptr(coarse_A); C_colval = _colval(coarse_A); C_nzval = _nzval(coarse_A)
-    ra_rowptr = plan.ra_rowptr; ra_colval = plan.ra_colval; ra_nzval = plan.ra_nzval
+    ra_rowptr = plan.ra_rowptr; ra_colval = plan.ra_colval
     wra = plan.workspace_ra[c]; wrap = plan.workspace_rap[c]
     fra = plan.flag_ra[c];      frap = plan.flag_rap[c]
+    touched = plan.touched_rap[c]
 
+    # RA row r lives only in scratch: it is multiplied by P as it is read, never stored
     @inbounds for r in rows
         for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
             i = Int(R_colval[rp]); Rri = R_nzval[rp]
@@ -518,17 +520,18 @@ function _refresh_rap_rows!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU,
                 wra[j] += Rri * A_nzval[ap]
             end
         end
+        nt = 0
         for p in ra_rowptr[r]:(ra_rowptr[r+1]-1)
             j = Int(ra_colval[p])
-            ra_nzval[p] = fra[j] == r ? wra[j] : zero(eltype(ra_nzval))
+            RAij = fra[j] == r ? wra[j] : zero(eltype(wra))
             fra[j] = 0 # flags outlive the refresh; a stale match would skip the reset next time
-        end
-        for rp in ra_rowptr[r]:(ra_rowptr[r+1]-1)
-            j = Int(ra_colval[rp]); RAij = ra_nzval[rp]
             iszero(RAij) && continue
             for pp in P_rowptr[j]:(P_rowptr[j+1]-1)
                 cc = Int(P_colval[pp])
-                frap[cc] != r && (frap[cc] = r; wrap[cc] = zero(eltype(wrap)))
+                if frap[cc] != r
+                    frap[cc] = r; wrap[cc] = zero(eltype(wrap))
+                    nt += 1; touched[nt] = cc
+                end
                 wrap[cc] += RAij * P_nzval[pp]
             end
         end
@@ -536,8 +539,8 @@ function _refresh_rap_rows!(coarse_A, fine_level::AMGLevel, plan::AMGRAPPlanCPU,
             cc = Int(C_colval[p])
             C_nzval[p] = frap[cc] == r ? wrap[cc] : zero(eltype(C_nzval))
         end
-        for rp in ra_rowptr[r]:(ra_rowptr[r+1]-1), pp in P_rowptr[Int(ra_colval[rp])]:(P_rowptr[Int(ra_colval[rp])+1]-1)
-            frap[Int(P_colval[pp])] = 0
+        for t in 1:nt
+            frap[touched[t]] = 0
         end
     end
     return coarse_A

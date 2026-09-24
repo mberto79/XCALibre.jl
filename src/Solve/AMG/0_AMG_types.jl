@@ -414,11 +414,11 @@ end
 struct AMGRAPPlanCPU{I, T}
     ra_rowptr::Vector{I}
     ra_colval::Vector{I}
-    ra_nzval::Vector{T}
     workspace_ra::Vector{Vector{T}}
     workspace_rap::Vector{Vector{T}}
     flag_ra::Vector{Vector{I}}
     flag_rap::Vector{Vector{I}}
+    touched_rap::Vector{Vector{I}}
 end
 
 mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}

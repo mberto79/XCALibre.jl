@@ -182,67 +182,28 @@ function _diag_inverse!(diag, invdiag, A, diag_index)
     return diag, invdiag
 end
 
-function _estimate_lambda_max!(v, w, A, invdiag; iters::Int=5)
-    T = eltype(invdiag)
-    n = _m(A)
-    rowptr = _rowptr(A)
-    colval = _colval(A)
-    nzval = _nzval(A)
-    @inbounds for i in 1:n
-        v[i] = isodd(i) ? one(T) : -one(T)
-    end
-    vnorm = sqrt(T(n))
-    @inbounds for i in 1:n
-        v[i] /= vnorm
-    end
-    lambda = one(T)
-    for _ in 1:iters
-        _foreach_chunk(n, length(nzval)) do rows
-            @inbounds for i in rows
-                wi = zero(T)
-                for p in rowptr[i]:(rowptr[i + 1] - 1)
-                    wi += nzval[p] * v[colval[p]]
-                end
-                w[i] = wi * invdiag[i]
-            end
-        end
-        lambda = max(norm(w), eps(T))
-        _scale_into!(v, w, lambda)
-    end
-    return max(lambda, _scaled_gershgorin_bound(A, invdiag), one(T))
-end
-
-function _scale_into!(v, w, lambda)
-    _foreach_chunk(length(v)) do rows
-        @inbounds for i in rows
-            v[i] = w[i] / lambda
-        end
-    end
-    return v
-end
-
-function _scaled_gershgorin_bound(A, invdiag)
-    rowptr = _rowptr(A)
-    nzval = _nzval(A)
-    n = _m(A)
-    T = eltype(invdiag)
-    bound = one(T)
-    @inbounds for i in 1:n
-        row_sum = zero(T)
-        dinv = abs(invdiag[i])
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            row_sum += abs(nzval[p]) * dinv
-        end
-        bound = max(bound, row_sum)
-    end
-    return bound
-end
-
+# max row sum of |D⁻¹A| bounds ρ(D⁻¹A) for any matrix; a power estimate could only raise it past ρ
 function _estimate_lambda_max(A, invdiag)
+    rowptr = _rowptr(A)
+    nzval = _nzval(A)
+    n = _m(A)
     T = eltype(invdiag)
-    v = Vector{T}(undef, _m(A))
-    w = Vector{T}(undef, _m(A))
-    return _estimate_lambda_max!(v, w, A, invdiag)
+    k = n < _MIN_THREADED_WORK ? 1 : Threads.nthreads()
+    partial = fill(one(T), k)
+    function row_bound(rows, c)
+        bound = one(T)
+        @inbounds for i in rows
+            row_sum = zero(T)
+            dinv = abs(invdiag[i])
+            for p in rowptr[i]:(rowptr[i + 1] - 1)
+                row_sum += abs(nzval[p]) * dinv
+            end
+            bound = max(bound, row_sum)
+        end
+        partial[c] = bound
+    end
+    k == 1 ? row_bound(1:n, 1) : _each_chunk_task(c -> row_bound(_chunk(n, k, c), c), k)
+    return maximum(partial)
 end
 
 function _empty_transfer_matrix(T, ::Type{TI}=Int) where {TI}
@@ -305,7 +266,7 @@ end
 
 function _refresh_level!(level::AMGLevel, solver::AMG)
     _diag_inverse!(level.diagonal, level.inv_diagonal, level.A, level.diagonal_index)
-    level.lambda_max = _estimate_lambda_max!(level.rhs, level.tmp, level.A, level.inv_diagonal)
+    level.lambda_max = _estimate_lambda_max(level.A, level.inv_diagonal)
     return level
 end
 

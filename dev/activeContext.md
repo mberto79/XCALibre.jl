@@ -3,7 +3,7 @@ LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, de
 updated: 2026-09-24T14:00:00+01:00
 STATE: PLANNING
 STEP: P1-M34-S1 `:static` fallback inside threaded regions + AutoTune empty range (not started)
-HEAD: 9e972f10
+HEAD: ed68bd4b
 BRANCH: HM/distributed-draft
 GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m29_4 4` vs `dev/telemetry/m28_baseline/` with `dev/scripts/cmpres.jl` (1t/MPI bitwise vs baseline; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
 resume: read `dev/plans/p1-m34-robustness.md` S1, write the nested/concurrent and empty-range repros into `test/unit_test_xvector.jl` first (they must fail), then change `_foreach_chunk`/`_reduce_chunks` in `src/Multithread/xvector.jl` and `_setup` in `src/Multithread/Multithread.jl`

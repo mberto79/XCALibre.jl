@@ -1,9 +1,0 @@
-VERSION head
-PROBE dev=cuda pc=jacobi reuse=nothing nranks=1 ncells=499503 t3=1.017 t30=3.085 per_iter=0.0766 mhz=3800.0 p=0.00012409749477950834
-VERSION before
-PROBE dev=cuda pc=jacobi reuse=nothing nranks=1 ncells=499503 t3=1.088 t30=3.075 per_iter=0.0736 mhz=3900.0 p=0.00012409749477950558
-VERSION head
-PROBE dev=cuda pc=jacobi reuse=nothing nranks=1 ncells=499503 t3=1.021 t30=3.045 per_iter=0.0749 mhz=4031.6 p=0.00012409749477951
-VERSION before
-PROBE dev=cuda pc=jacobi reuse=nothing nranks=1 ncells=499503 t3=1.026 t30=3.122 per_iter=0.0776 mhz=3900.0 p=0.00012409749477951037
-ALL_DONE

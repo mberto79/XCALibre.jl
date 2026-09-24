@@ -243,7 +243,7 @@ end
 
 ## COURANT NUMBER
 
-# global_max seam (S5): serial = identity, Distribute = MPI.Allreduce(max). _base_mesh unwraps
+# global_max seam: serial = identity, Distribute = MPI.Allreduce(max). _base_mesh unwraps
 # a DistributedMesh so the Mesh2/Mesh3 courant kernel still dispatches on the concrete geometry.
 global_max(v, mesh) = v
 _base_mesh(mesh) = mesh

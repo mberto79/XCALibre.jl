@@ -2,19 +2,14 @@ export Partition, ProcessorPatch, DistributedMesh
 export AbstractDistributedSolver
 export bind_device!
 
-# implemented by solver backends (PETSc/HYPRE extensions) from Phase 3
+# implemented by solver backends (PETSc/HYPRE extensions)
 abstract type AbstractDistributedSolver end
 
-"""
-    Partition
-
-Cell ownership metadata for one rank: owned cells occupy local ids `1:n_owned`, ghost
-cells `n_owned+1:n_owned+n_ghost`. `local_to_global` maps local ids to the
-block-contiguous global numbering where this rank owns rows `row_start:row_end`.
-"""
 # global ids outgrow Int32 before any per-rank count does, so they never follow the mesh index type
 const GlobalInt = Int64
 
+# cell ownership for one rank: owned local ids 1:n_owned, then ghosts; local_to_global maps to
+# the block-contiguous global numbering where this rank owns rows row_start:row_end
 struct Partition{VI<:AbstractVector{<:Integer}, VG<:AbstractVector{GlobalInt}}
     rank::Int                 # MPI rank (0-based)
     nranks::Int
@@ -26,13 +21,8 @@ struct Partition{VI<:AbstractVector{<:Integer}, VG<:AbstractVector{GlobalInt}}
     row_end::Int
 end
 
-"""
-    ProcessorPatch
-
-Communication schedule with one neighbour rank. `send_cells` (owned, here) and
-`recv_ghosts` (ghosts owned by the neighbour) are both sorted by original global cell id,
-so the two sides align index-for-index without negotiation.
-"""
+# schedule with one neighbour; send_cells and recv_ghosts are both sorted by original global id,
+# so the two sides align index-for-index without negotiation
 struct ProcessorPatch{VI<:AbstractVector{<:Integer}}
     neighbour::Int            # neighbour MPI rank (0-based)
     faces::VI                 # local processor-face ids shared with neighbour
@@ -40,13 +30,6 @@ struct ProcessorPatch{VI<:AbstractVector{<:Integer}}
     recv_ghosts::VI           # ghost local cell ids to fill on receipt
 end
 
-"""
-    DistributedMesh <: AbstractMesh
-
-Wraps a rank-local mesh (owned + one ghost layer) with partition and communication
-metadata. All non-metadata properties forward to the wrapped mesh, so fields, `Physics`
-and kernels treat it as a normal mesh.
-"""
 # width-keyed halo-exchange cache; lazily filled on first sync! (per rank/backend). Mutable +
 # built locally so it survives MPI.send of a DistributedMesh (requests/comm are rank-local) and
 # composes with adapt(backend, dm) — the device copy starts empty and rebuilds on device.
@@ -57,6 +40,13 @@ mutable struct HaloCache
 end
 HaloCache() = HaloCache(nothing, nothing, nothing)
 
+"""
+    DistributedMesh <: AbstractMesh
+
+Wraps a rank-local mesh (owned + one ghost layer) with partition and communication
+metadata. All non-metadata properties forward to the wrapped mesh, so fields, `Physics`
+and kernels treat it as a normal mesh.
+"""
 struct DistributedMesh{M<:AbstractMesh,P<:Partition,PP<:ProcessorPatch,VG<:AbstractVector{GlobalInt}} <: AbstractMesh
     mesh::M                   # local Mesh3/Mesh2
     partition::P
@@ -78,7 +68,7 @@ Base.getproperty(dm::DistributedMesh, s::Symbol) =
 Base.propertynames(dm::DistributedMesh) =
     (_DM_FIELDS..., propertynames(getfield(dm, :mesh))...)
 
-# NEW SECTION: GPU adaptation (Phase 6)
+# NEW SECTION: GPU adaptation
 
 Adapt.@adapt_structure Partition
 Adapt.@adapt_structure ProcessorPatch

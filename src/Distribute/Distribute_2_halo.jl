@@ -1,13 +1,7 @@
 export HaloExchange, halo_exchange!
 
-"""
-    HaloExchange
-
-Reusable halo communication schedule built from `DistributedMesh.procs`. Holds one
-send/recv buffer pair per neighbour (width 1 for scalars, 3 for vectors, 4 for a scalar and a
-vector together) plus persistent MPI requests bound to those buffers, so repeat exchanges only
-start and wait.
-"""
+# halo schedule with one buffer pair per neighbour (width 1 scalar, 3 vector, 4 both) and
+# persistent MPI requests bound to them, so repeat exchanges only start and wait
 struct HaloExchange{TF,VI,VB}
     comm::MPI.Comm
     neighbours::Vector{Int}
@@ -142,13 +136,7 @@ _tag(width::Integer) = 10width
 _mpi_send_buf(H, k) = H.cuda_aware ? H.send_bufs[k] : H.host_send[k]
 _mpi_recv_buf(H, k) = H.cuda_aware ? H.recv_bufs[k] : H.host_recv[k]
 
-"""
-    halo_exchange!(phi, H::HaloExchange, backend, workgroup)
-
-Fill ghost entries of `phi` (scalar or vector field) with the owning neighbours' values.
-Receives started first, pack, sync, sends started, wait, unpack; buffers and persistent
-requests are reused.
-"""
+# fills ghosts of phi with the owners' values; receives are started before packing
 function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
     HALO_COUNT[] += 1
     MPI.Startall(H.recv_reqs)
@@ -172,12 +160,7 @@ function halo_exchange!(phi, H::HaloExchange, backend, workgroup)
     phi
 end
 
-"""
-    halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
-
-Reverse scatter (transpose of `halo_exchange!`): ghost cotangents are sent owner-ward and
-accumulated into the owned cells they copy from; ghost entries are zeroed. Used by AD (Phase 7).
-"""
+# transpose of halo_exchange!: ghost cotangents accumulate into their owners, ghosts are zeroed
 function halo_exchange_adjoint!(phi, H::HaloExchange, backend, workgroup)
     # message direction reverses, so buffer roles swap (recv_bufs sized for ghosts); the persistent
     # requests are bound to the forward direction, so this path takes its own

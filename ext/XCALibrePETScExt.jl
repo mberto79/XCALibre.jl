@@ -41,7 +41,7 @@ _pc_freeze(p::Union{BoomerAMG,GAMG}) = p.freeze
 # NEW SECTION: signal dispositions
 
 # PETSc's CUDA device init resets eleven signals to SIG_DFL, so Julia's safepoint faults would kill
-# the process silently; the dispositions in force before are put back (D85)
+# the process silently; the dispositions in force before are put back
 const _JULIA_SIGNALS = Cint.((1, 3, 4, 5, 7, 8, 11, 13, 15, 23, 31)) # HUP QUIT ILL TRAP BUS FPE SEGV PIPE TERM URG SYS
 const _SIGACTION_BYTES = 152
 
@@ -106,7 +106,7 @@ end
 
 # hypre's memory-location query reports device memory on every build (a CPU-only hypre maps device
 # memory to the host), so the execution policy (HYPRE_EXEC_DEVICE = 1) is the real answer. Querying
-# an uninitialised hypre creates its handle and breaks the later BoomerAMG creation (D83).
+# an uninitialised hypre creates its handle and breaks the later BoomerAMG creation.
 function _hypre_on_device(petsclib)
     lib = Base.Libc.Libdl.dlopen(petsclib.petsc_library)
     sym(s) = Base.Libc.Libdl.dlsym(lib, s; throw_error=false)
@@ -182,7 +182,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     petsclib = _petsclib(TF, nnz_global)
     device_solve = !(_nzval(A) isa Array)
     # the same string configures PETSc's start-up and the Krylov solve; entries PETSc does not
-    # recognise at one stage are consumed at the other. Start-up options apply on the FIRST call
+    # recognise at one stage are consumed at the other. Start-up options apply on the first call
     # only, since PETSc is initialised once per process.
     PETSc.initialize(petsclib; options=String.(split(petsc_options)))
     PI = petsclib.PetscInt

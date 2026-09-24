@@ -1,4 +1,4 @@
-# Phase 6/7 GPU gate (local-only, not CI): cavity psimple! on CUDABackend vs serial CPU,
+# GPU gate (local-only, not CI): cavity psimple! on CUDABackend vs serial CPU,
 # ranks sharing local GPUs via bind_device!. With a CUDA PETSc (system build) the solve
 # runs natively (mpiaijcusparse); without it, run! must hard-error (no host fallback).
 using XCALibre, PETSc, MPI, Test, CUDA

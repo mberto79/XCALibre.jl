@@ -1,6 +1,6 @@
 # Distributed (MPI) version of 2D_cylinder_U.jl; needs XCALibre, PETSc and MPI (PETSc_jll/MPI.jl binaries suffice).
 # Install the launcher once: julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
-# Run: mpiexecjl -n 4 julia --project=<env> examples/2D_cylinder_U_mpi.jl
+# Run: mpiexecjl -n 4 julia --project=<env> examples/2D_cylinder_U_mpi.jl; writes nothing (write_interval=-1)
 using XCALibre, PETSc, MPI
 
 # every rank makes this identical call: rank 0 reads and partitions, the others receive

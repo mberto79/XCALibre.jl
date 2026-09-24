@@ -1,4 +1,4 @@
-# Phase 8E gate: distributed KOmega (RANS) vs serial simple!, per rank under mpiexec.
+# Gate: distributed KOmega (RANS) vs serial simple!, per rank under mpiexec.
 # Mirrors test_psimple.jl — the point is that the turbulence transported-scalar eqns route
 # through wrap_eqn/sync so a non-Laminar model runs distributed and matches serial per cell.
 using XCALibre, PETSc, MPI, Test

@@ -1,4 +1,4 @@
-# Phase 4 distributed Laplace gate; run per rank under mpiexec (see runtests_mpi.jl)
+# Distributed Laplace gate; run per rank under mpiexec (see runtests_mpi.jl)
 using XCALibre, PETSc, MPI, Test
 
 MPI.Init()

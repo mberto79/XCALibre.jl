@@ -20,7 +20,7 @@ KernelAbstractions.get_backend(::XVector) = CPU()
     (c - 1)*d + min(c - 1, r) + 1 : c*d + min(c, r)
 end
 
-# below this many elements touched, one fork/join (5-10 µs) costs more than the loop saves (D197)
+# below this many elements touched, one fork/join (5-10 µs) costs more than the loop saves
 const _MIN_THREADED_WORK = 1 << 16
 
 # :static pins chunk c to thread c for cache reuse only; Base refuses it nested or concurrent

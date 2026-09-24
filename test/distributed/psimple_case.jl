@@ -1,4 +1,4 @@
-# shared incompressible cases for Phase 5 gates (BFS + lid-driven cavity, 2D laminar).
+# shared incompressible cases for the gates (BFS + lid-driven cavity, 2D laminar).
 # Fixed iteration budget (convergence=1e-15 unreachable) + tight inner tolerances make the
 # outer trajectory solver-agnostic (Krylov vs PETSc KSP), so fields compare at 1e-6.
 

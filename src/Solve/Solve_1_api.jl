@@ -496,7 +496,7 @@ end
 # halo-exchange seam: DistributedMesh method lives in Distribute; serial is a free no-op
 @inline sync!(x, mesh::Union{Mesh2,Mesh3}, config) = nothing
 
-# linear-solve seam (S2): setup wraps each eqn so the body calls generic solve_equation!/
+# linear-solve seam: setup wraps each eqn so the body calls generic solve_equation!/
 # solve_system!. Serial = identity; Distribute overrides for DistributedMesh (DistributedEqn +
 # PETScSolver). Extra kwargs (petsc_options) are ignored serially.
 wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn

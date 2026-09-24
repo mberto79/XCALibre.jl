@@ -1,14 +1,7 @@
 export DistributedEqn
 
-"""
-    DistributedEqn(eqn, solver, partition)
-
-Wraps a serial `ModelEquation` on the rank-local mesh with a distributed solver
-(`PETScSolver`) and the rank `Partition`; ghost exchanges use the mesh's shared halo schedule.
-Existing generics (`solve_equation!`, `solve_system!`, `residual`, `setReference!`) dispatch on
-it. The local id of the reference cell (original global cell 1) is cached at construction, 0
-when another rank owns it.
-"""
+# serial ModelEquation on the rank-local mesh plus its distributed solver and Partition; the
+# reference cell's local id is cached at construction, 0 when another rank owns it
 struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,V<:AbstractVector,T}
     eqn::E
     solver::S
@@ -29,7 +22,7 @@ end
 _n_saved(::ModelEquation{<:VectorModel}) = 2
 _n_saved(_) = 0
 
-# local id of an ORIGINAL global cell id on this rank's owned block, 0 when not owned
+# local id of an original global cell id on this rank's owned block, 0 when not owned
 function _ref_local(dm::DistributedMesh, cellID)
     n = getfield(dm, :partition).n_owned
     lid = findfirst(==(cellID), view(getfield(dm, :orig_cells), 1:n))
@@ -191,7 +184,7 @@ _allreduce!(deqn) = (ALLREDUCE_COUNT[] += 1; MPI.Allreduce!(deqn.red, +, _comm(d
 
 _scaled(num, den) = num / ifelse(den > eps(den), den, one(den))
 
-# `cellID` is an ORIGINAL global cell id; only the owning rank edits its row
+# `cellID` is an original global cell id; only the owning rank edits its row
 function Solve.setReference!(deqn::DistributedEqn, pRef, cellID, config)
     pRef === nothing && return nothing
     lid = cellID == deqn.ref_cell ? deqn.ref_lid : _ref_local(get_phi(deqn.eqn).mesh, cellID)

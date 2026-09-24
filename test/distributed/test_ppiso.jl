@@ -1,4 +1,4 @@
-# Phase 5 ppiso! gate: transient cavity spin-up vs serial piso!, per rank under mpiexec.
+# ppiso! gate: transient cavity spin-up vs serial piso!, per rank under mpiexec.
 using XCALibre, PETSc, MPI, Test
 
 MPI.Init()

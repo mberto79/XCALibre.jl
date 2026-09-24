@@ -1,4 +1,4 @@
-# Phase 2 halo tests; run per rank under mpiexec (see runtests_mpi.jl)
+# Halo tests; run per rank under mpiexec (see runtests_mpi.jl)
 using XCALibre, MPI, Test
 using LinearAlgebra, Random, StaticArrays
 

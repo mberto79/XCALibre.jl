@@ -3,7 +3,7 @@ export mesh_info
 # NEW SECTION: binary mesh format (.xdm)
 
 # layout: magic, header (Int64 per key), mesh block (raw isbits arrays), partition block (empty
-# when serial); one code path for both kinds, only the format number is checked for layout (D122)
+# when serial); one code path for both kinds, only the format number is checked for layout
 const _XDM_MAGIC = b"XCALMESH"
 const _XDM_FORMAT = 6
 const _XDM_BOM = 0x0102030405060708
@@ -183,7 +183,7 @@ end
 
 _read_part_file(path, nranks) = _read_xdm(path, _check_part(path, nranks))
 
-# serial kind: built here for the shared layout, published with the serial mesh format off main (D120)
+# serial kind: built here for the shared layout, published with the serial mesh format off main
 _write_mesh_file(path, mesh) = _write_xdm(path, mesh)
 _read_mesh_file(path) = _read_xdm(path, h -> h.kind == 0 || error("$path is part $(h.rank) of a " *
     "$(h.nranks)-rank decomposition; load it with distribute(dir) under mpiexec -n $(h.nranks)"))

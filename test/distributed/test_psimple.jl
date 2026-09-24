@@ -1,4 +1,4 @@
-# Phase 5 psimple! gate: BFS + cavity vs serial, per rank under mpiexec (see runtests_mpi.jl).
+# psimple! gate: BFS + cavity vs serial, per rank under mpiexec (see runtests_mpi.jl).
 # Residual histories are sub-tolerance noise under tight inner solves (phase-4 gotcha), so
 # only converged fields and ghost consistency are compared.
 using XCALibre, PETSc, MPI, Test

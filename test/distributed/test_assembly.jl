@@ -1,4 +1,4 @@
-# Phase 3 PETSc assembly/SpMV/KSP tests; run per rank under mpiexec (see runtests_mpi.jl)
+# PETSc assembly/SpMV/KSP tests; run per rank under mpiexec (see runtests_mpi.jl)
 using XCALibre, PETSc, MPI, Test
 using LinearAlgebra, SparseArrays
 using PETSc: LibPETSc

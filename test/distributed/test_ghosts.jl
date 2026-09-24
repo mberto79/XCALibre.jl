@@ -1,4 +1,4 @@
-# Ghost-consistency gate (P1-M19-S2): after every self-syncing primitive of one SIMPLE iteration
+# Ghost-consistency gate: after every self-syncing primitive of one SIMPLE iteration
 # the ghost entries must equal their owners' values exactly; a nonzero names the primitive that
 # lost its sync. Laminar BFS step by step, then two SST iterations through run!.
 using XCALibre, PETSc, MPI, Test

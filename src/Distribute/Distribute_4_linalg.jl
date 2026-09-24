@@ -1,31 +1,14 @@
 export PETScSolver
 
-"""
-    PETScSolver(eqn, dmesh::DistributedMesh, setup; comm=dmesh.comm, petsc_options="", label="")
-
-Create a distributed PETSc solver (matrix, vectors and KSP) for `eqn` on `dmesh`. `petsc_options`
-is a PETSc options string for every solve, or a named tuple of strings keyed by `all` and the
-equation labels (`U`, `p`, `k`, `omega`, `T`, `y`); the entry for `label` follows `all`.
-Implemented in the `XCALibrePETScExt` extension — requires `using PETSc`.
-"""
+# implemented in XCALibrePETScExt; petsc_options is a string or a named tuple keyed by label
 PETScSolver(args...; kwargs...) =
     error("PETScSolver requires the PETSc extension: add PETSc to your environment and `using PETSc`")
 
-"""
-    passemble!(s, eqn, partition; component=nothing)
-
-Copy the owned rows of the local CSR matrix and RHS of `eqn` into the global
-distributed system held by solver `s` (values-only update; sparsity is static).
-"""
+# copies owned rows of the local CSR and RHS into the solver's global system (values only)
 function passemble! end
 
-"""
-    psolve!(s, x)
-
-Solve the assembled distributed system with initial guess `x[1:n_owned]`, writing the
-solution back into the owned entries of `x`.
-"""
+# solves with guess x[1:n_owned] and writes the solution back into the owned entries
 function psolve! end
 
-# adjoint solve (Phase 7)
+# adjoint solve
 function psolve_transpose! end

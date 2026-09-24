@@ -1,6 +1,6 @@
 # Distributed (MPI) backward-facing step; needs XCALibre, PETSc and MPI (PETSc_jll/MPI.jl binaries suffice).
 # Install the launcher once: julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
-# Run: mpiexecjl -n 4 julia --project=<env> examples/3D_BFS_mpi.jl [mesh.unv]
+# Run: mpiexecjl -n 4 julia --project=<env> examples/3D_BFS_mpi.jl [mesh.unv]; writes parts/, processor<rank>/ and XCALibre.foam
 using XCALibre, PETSc, MPI
 
 mesh_file = isempty(ARGS) ?

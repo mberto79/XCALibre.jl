@@ -33,10 +33,6 @@ AGENTS.md
 .claude
 .vscode
 
-# dev/ is the tracked development record; machine-specific state inside it is not
-dev/petscenv*/
-dev/local_stack.sh
-dev/setup_petscenv_system.jl
-dev/verify_stack.jl
-dev/telemetry/logs/
-!dev/telemetry/*.csv
+# local development record
+dev/
+archive/

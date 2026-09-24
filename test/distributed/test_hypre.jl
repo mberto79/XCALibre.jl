@@ -1,4 +1,4 @@
-# Phase 8 §3 gate: BoomerAMG (PETSc PCHYPRE) pressure preconditioner vs serial reference.
+# Gate: BoomerAMG (PETSc PCHYPRE) pressure preconditioner vs serial reference.
 # Skips the solve comparison if the PETSc build lacks hypre; capability-error path always tested.
 using XCALibre, PETSc, MPI, Test
 

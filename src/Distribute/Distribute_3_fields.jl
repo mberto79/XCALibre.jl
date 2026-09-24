@@ -3,11 +3,7 @@ export sync!, pnorm, pdot, pmean
 
 import XCALibre.Solve: sync!
 
-"""
-    DistributedScalarField(dmesh, backend; comm=dmesh.comm)
-
-A `ScalarField` on a `DistributedMesh` paired with its `HaloExchange`; `sync!` fills ghosts.
-"""
+# ScalarField on a DistributedMesh paired with its HaloExchange
 struct DistributedScalarField{F<:ScalarField,H<:HaloExchange}
     field::F
     halo::H
@@ -15,11 +11,7 @@ end
 DistributedScalarField(dmesh::DistributedMesh, backend; comm=getfield(dmesh, :comm)) =
     DistributedScalarField(ScalarField(dmesh), HaloExchange(dmesh, 1, backend; comm))
 
-"""
-    DistributedVectorField(dmesh, backend; comm=dmesh.comm)
-
-A `VectorField` on a `DistributedMesh` paired with a 3-wide `HaloExchange`.
-"""
+# VectorField on a DistributedMesh paired with a 3-wide HaloExchange
 struct DistributedVectorField{F<:VectorField,H<:HaloExchange}
     field::F
     halo::H
@@ -29,11 +21,6 @@ DistributedVectorField(dmesh::DistributedMesh, backend; comm=getfield(dmesh, :co
 
 const DistributedField = Union{DistributedScalarField,DistributedVectorField}
 
-"""
-    sync!(df, config)
-
-Halo-exchange the wrapped field's ghost entries.
-"""
 sync!(df::DistributedField, config) = begin
     (; backend, workgroup) = config.hardware
     halo_exchange!(df.field, df.halo, backend, workgroup)
@@ -73,13 +60,7 @@ initialise!(df::DistributedField, value) = initialise!(df.field, value)
 
 export check_ghosts
 
-"""
-    check_ghosts(x, dm::DistributedMesh, config)
-
-Largest absolute difference, over every rank, between the ghost entries of the scalar or vector
-field `x` and the values their owning ranks hold. Zero means every ghost is in sync; anything else
-names a primitive that changed a field without `sync!`. One exchange into a scratch copy per call.
-"""
+# largest ghost-vs-owner difference over all ranks; nonzero names a primitive that skipped sync!
 function check_ghosts(x::AbstractScalarField, dm::DistributedMesh, config)
     y = ScalarField(dm)
     copyto!(y.values, x.values)
@@ -104,33 +85,19 @@ _partition(df::DistributedField) = df.field.mesh.partition
 
 # NEW SECTION: global reductions (owned entries only; ghosts never enter reductions)
 
-"""
-    pnorm(df::DistributedScalarField)
-
-Global 2-norm over owned entries (`MPI.Allreduce`).
-"""
+# reductions below cover owned entries only
 pnorm(df::DistributedScalarField) = begin
     n = _partition(df).n_owned
     s = sum(abs2, view(df.field.values, 1:n); init=zero(eltype(df.field)))
     sqrt(MPI.Allreduce(s, +, df.halo.comm))
 end
 
-"""
-    pdot(a::DistributedScalarField, b::DistributedScalarField)
-
-Global dot product over owned entries (`MPI.Allreduce`).
-"""
 pdot(a::DistributedScalarField, b::DistributedScalarField) = begin
     n = _partition(a).n_owned
     s = dot(view(a.field.values, 1:n), view(b.field.values, 1:n))
     MPI.Allreduce(s, +, a.halo.comm)
 end
 
-"""
-    pmean(df::DistributedScalarField)
-
-Global mean over owned entries (`MPI.Allreduce`).
-"""
 pmean(df::DistributedScalarField) = begin
     p = _partition(df)
     s = sum(view(df.field.values, 1:p.n_owned); init=zero(eltype(df.field)))

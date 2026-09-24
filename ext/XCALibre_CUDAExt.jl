@@ -19,7 +19,7 @@ function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
-# NEW SECTION: distributed meshes (Phase 6)
+# NEW SECTION: distributed meshes
 
 import XCALibre.Distribute
 import XCALibre.Distribute: DistributedMesh

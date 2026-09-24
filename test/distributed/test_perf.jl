@@ -1,5 +1,5 @@
-# Phase 4 perf gate: hot-path allocation budgets + type stability; run per rank under mpiexec.
-# Budgets are ~2x the values measured at introduction (recorded in dev/STATE.md); a blown
+# Perf gate: hot-path allocation budgets + type stability; run per rank under mpiexec.
+# Budgets are ~2x the values measured at introduction; a blown
 # budget = an allocation regression on the per-iteration path — fix it, don't raise the budget.
 using XCALibre, PETSc, MPI, Test, KernelAbstractions
 import XCALibre.Solve: residual, solve_equation!, solve_system!, sync!
@@ -51,7 +51,7 @@ println("PERF rank=$rank halo=$a_halo passemble=$a_asm psolve=$a_slv residual=$a
     @test (@inferred residual(deqn, nothing, config)) isa Float64
     @test (@inferred solve_system!(deqn, config.solvers, T, nothing, config)) isa Float64
 
-    # Phase 2 reductions stay inferred
+    # reductions stay inferred
     dphi = DistributedScalarField(dm, backend; comm=comm)
     dphi.field.values .= T.values
     @test (@inferred pnorm(dphi)) isa Float64
@@ -59,7 +59,7 @@ println("PERF rank=$rank halo=$a_halo passemble=$a_asm psolve=$a_slv residual=$a
     @test (@inferred pmean(dphi)) isa Float64
 end
 
-# NEW SECTION: Phase 5 incompressible hot paths (BFS; capture deqns via the unified setup hook)
+# NEW SECTION: incompressible hot paths (BFS; capture deqns via the unified setup hook)
 
 include(joinpath(@__DIR__, "psimple_case.jl"))
 import XCALibre.Solvers: setup_incompressible_solvers, correct_mass_flux!, max_courant_number!
@@ -107,7 +107,7 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
     "halo3=$a_halo3 courant=$a_cour")
 
 @testset "Phase 5 perf (rank $rank)" begin
-    # ~2x measured at introduction (see dev/STATE.md); halo/solve terms scale per neighbour
+    # ~2x measured at introduction; halo/solve terms scale per neighbour
     @test a_sym <= 2_048
     @test a_cmf <= 12_288
     @test a_halo3 <= 1_024 + 5_120 * max(1, length(dm2.procs))
@@ -123,7 +123,7 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
     @test (@inferred max_courant_number!(cCo, model2, config2)) isa Float64
 end
 
-# NEW SECTION: communication budget per SIMPLE iteration (P1-M19-S4)
+# NEW SECTION: communication budget per SIMPLE iteration
 
 import XCALibre.Distribute: HALO_COUNT, ALLREDUCE_COUNT
 

@@ -1,6 +1,6 @@
-# Rank-invariance gate (P1-M19-S3): BFS psimple! with Jacobi, 50 iterations. Jacobi is
+# Rank-invariance gate: BFS psimple! with Jacobi, 50 iterations. Jacobi is
 # partition-invariant, so residual histories agree across rank counts to Q1's four significant
-# figures (observed 3e-6, D89). The n=1 run writes the reference; other rank counts compare.
+# figures (observed 3e-6). The n=1 run writes the reference; other rank counts compare.
 using XCALibre, PETSc, MPI, Test
 
 MPI.Init()

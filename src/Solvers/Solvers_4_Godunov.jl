@@ -2,7 +2,7 @@ export godunov!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
 
 # BC dispatch keys on bc_U: inviscid Wall/Slip/Symmetry use the exact Euler wall flux F=(0, p·n·A, 0), Dirichlet ghost UR=2*U_bc-UL,
 # Outlet backflow a stagnant ghost; viscous Wall heat flux is selected by bc_T (Dirichlet isothermal, Neumann/physical adiabatic).
-# ==== Flux scheme selector types ====
+# NEW SECTION: Flux scheme selector types
 
 """Rusanov (Local Lax-Friedrichs) flux scheme."""
 struct Rusanov end
@@ -56,7 +56,7 @@ struct RK2 end
 @inline limiter_value(::MinMod,   r::T) where T = max(zero(T), min(one(T), r))
 @inline limiter_value(::Superbee, r::T) where T = max(zero(T), min(2*r, one(T)), min(r, 2*one(T)))
 
-# ==== MUSCL reconstruction: scalar and vector helpers ====
+# NEW SECTION: MUSCL reconstruction, scalar and vector helpers
 
 # Scalar MUSCL reconstruction using pre-computed gradient projections onto dLR = delta*e.
 # Returns reconstructed face values (left, right) with TVD slope limiter.
@@ -140,7 +140,7 @@ struct GodunovWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector}
     rhoE_0::V       # ρE  at start of time step
 end
 
-# ==== Ghost state functions for boundary flux computation ====
+# NEW SECTION: Ghost state functions for boundary flux computation
 
 # --- Velocity ghost state ---
 
@@ -823,7 +823,7 @@ end
     end
 end
 
-# ==== Viscous flux kernels ====
+# NEW SECTION: Viscous flux kernels
 
 # Viscous flux — internal faces, cell-based loop (no atomics)
 @kernel function _viscous_flux_internal!(

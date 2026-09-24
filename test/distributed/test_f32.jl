@@ -1,4 +1,4 @@
-# Phase 7 F32 gate (local-only): cavity psimple! with Float32 mesh/fields vs serial F64
+# F32 gate (local-only): cavity psimple! with Float32 mesh/fields vs serial F64
 # reference, loose tol. PETSc wrappers are precompile-time per-preference, so this needs
 # --project=dev/petscenv_f32 (single-precision build: see build_cuda_ucx_openmpi_petsc.sh).
 using XCALibre, PETSc, MPI, Test

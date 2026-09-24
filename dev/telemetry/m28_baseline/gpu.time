@@ -1,1 +1,0 @@
-mode=gpu threads=1 iterations=20 mesh_s=2.983541852 first_run_s=21.953673593 run_s=4.307795536

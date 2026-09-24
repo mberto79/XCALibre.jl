@@ -356,6 +356,8 @@ ranks than GPUs they share one and a warning says so.
 Output on a distributed mesh is written with `output=OpenFOAM()` in the decomposed layout; VTK has
 no decomposed writer, so a run that asks for VTK output with a positive `write_interval` stops with
 an error at its first write. Leave `write_interval=-1` when no output is needed.
+Runtime post-processing (`postprocess` in the `Configuration`, such as field averages) is not
+distributed yet: it is skipped on a distributed mesh, with a warning from rank 0.
 
 ## Output, checkpoints and restart
 

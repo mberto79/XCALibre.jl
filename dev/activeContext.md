@@ -1,12 +1,12 @@
 # Active context - P1-M34..M36 pre-merge fixes
-LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m34-robustness.md, dev/plans/p1-m35-behaviour-docs.md, dev/plans/p1-m36-cheap-perf.md
+LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m35-behaviour-docs.md, dev/plans/p1-m36-cheap-perf.md
 updated: 2026-09-24T16:00:00+01:00
 STATE: BUILDING
-STEP: P1-M34-S5 close: serial suite by file, gate, docs, CHANGELOG
-HEAD: 09af7ee3
+STEP: P1-M35-S1 code fixes B2, B3, B5, B6, B7 (diff staged in worktree ~/Julia/xcal_m35)
+HEAD: a0ca8b9e
 BRANCH: HM/distributed-draft
 GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m34_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
-resume: S2 diff in tree (`_on_all_ranks`, `test_failure.jl`, driver timeout): if uncommitted, rerun `test_failure.jl` and `test_restart.jl` (petscenv_stock) and land; then S3 per plan (fingerprint at write + `key=` on `distribute(reader; dir)`, advisor 2026-09-24)
+resume: apply `git -C ~/Julia/xcal_m35 diff HEAD` to this checkout (then remove the worktree), run `test_mesh_conversion.jl`, `test_AMG.jl`, a get_backend/propertynames check and distributed `test_io.jl`, `test_offline.jl`, `test_halo.jl`, `test_assembly.jl`, `test_perf.jl`; land M35-S1
 
 ## binding
 - User rulings: stock Int64 PETSc stays (D205); diagonal-only PETSc writes refused (D207); flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

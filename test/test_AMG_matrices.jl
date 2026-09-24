@@ -292,3 +292,15 @@ end
         @test all(isapprox.(coarse(ws), coarse(fresh); rtol=1e-12))
     end
 end
+
+@testset "finest level follows the system matrix without writing it" begin
+    A, b = poisson2d(64)
+    A2 = SparseXCSR(SparseMatrixCSR{1}(parent(A).m, parent(A).n, copy(parent(A).rowptr), copy(parent(A).colval), 2 .* parent(A).nzval))
+    nz_before = copy(parent(A).nzval)
+    s = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
+    ws = XCALibre.Solve.update!(_workspace(s, b), A, s, _config)
+    ws = XCALibre.Solve.update!(ws, A, s, _config)
+    ws = XCALibre.Solve.update!(ws, A2, s, _config)
+    @test XCALibre.Solve._nzval(ws.hierarchy.levels[1].A) == parent(A2).nzval
+    @test parent(A).nzval == nz_before
+end

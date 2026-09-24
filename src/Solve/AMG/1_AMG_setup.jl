@@ -173,11 +173,13 @@ function _diag_inverse!(diag, invdiag, A, diag_index)
     nzval = _nzval(A)
     n = _m(A)
     T = eltype(nzval)
-    @inbounds for i in 1:n
-        idx = diag_index[i]
-        aii = idx == 0 ? one(T) : nzval[idx]
-        diag[i] = aii
-        invdiag[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
+    _foreach_chunk(n) do rows
+        @inbounds for i in rows
+            idx = diag_index[i]
+            aii = idx == 0 ? one(T) : nzval[idx]
+            diag[i] = aii
+            invdiag[i] = abs(aii) > eps(T) ? inv(aii) : one(T)
+        end
     end
     return diag, invdiag
 end

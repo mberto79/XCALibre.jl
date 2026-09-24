@@ -26,9 +26,16 @@ function _pattern_matches(hierarchy::AMGHierarchy, A)
     return true
 end
 
+# the finest level reads the system's own values; a foreign array is shared, never written
 function _sync_finest_matrix!(hierarchy::AMGHierarchy, A)
     level = hierarchy.host_levels[1]
-    _cpu_copyto!(_nzval(level.A), _nzval(A))
+    nz, own = _nzval(A), level.A
+    own.nzval === nz && return hierarchy
+    if typeof(own.nzval) === typeof(nz)
+        level.A = AMGMatrixCSR(own.rowptr, own.colval, nz, own.m, own.n)
+    else
+        _cpu_copyto!(own.nzval, nz)
+    end
     return hierarchy
 end
 

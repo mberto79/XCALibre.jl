@@ -329,3 +329,20 @@ end
     )
     @test_throws ArgumentError XCALibre.Mesh.validate_single_precision_mesh(mesh; source="test")
 end
+
+@testset "mesh element views" begin
+    mesh = UNV2D_mesh(joinpath(test_grids_dir, "quad40.unv"), scale=0.001)
+    @test XCALibre.KernelAbstractions.get_backend(mesh.cells) isa XCALibre.CPU
+    @test XCALibre.KernelAbstractions.get_backend(mesh.faces) isa XCALibre.CPU
+    @test all(s -> s ∈ propertynames(mesh), (:cells, :faces, :nodes, :cell_volume, :face_area))
+end
+
+@testset "OpenFOAM field dimensions" begin
+    dims(label, labels=()) = XCALibre.IOFormats._foam_dimensions(label, labels)
+    @test dims("U") == "dimensions      [0 1 -1 0 0 0 0];\n"
+    @test dims("p") == "dimensions      [0 2 -2 0 0 0 0];\n"
+    @test dims("p", ("U", "p", "rho", "T")) == "dimensions      [1 -1 -2 0 0 0 0];\n"
+    @test dims("T") == "dimensions      [0 0 0 1 0 0 0];\n"
+    @test dims("omega") == "dimensions      [0 0 -1 0 0 0 0];\n"
+    @test dims("alpha") == "dimensions      [0 0 0 0 0 0 0];\n"
+end

@@ -231,7 +231,7 @@ function FilmModel(
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
     rx = ry = rz = zero(TF)
-    @time for iteration ∈ 1:iterations
+    for iteration ∈ 1:iterations
         min_capillary_dt = update_capillary_dt!(
             config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
         )

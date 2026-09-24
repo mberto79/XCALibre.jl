@@ -229,7 +229,7 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
         """)
         open(joinpath(timedirpath, label), "w") do io
             write(io, _foam_header(isscalar ? "volScalarField" : "volVectorField", "$timedir", label))
-            write(io, IOFormats._FOAM_DIMENSIONS)
+            write(io, IOFormats._foam_dimensions(label, first.(args)))
             write(io, "internalField   nonuniform List<$(isscalar ? "scalar" : "vector")>")
             _bin_list(io, _host_values(field, backend)[1:n_owned])
             println(io, ";")
@@ -277,7 +277,7 @@ function _write_phi(path, timedir, dmesh, w, backend)
     rank = dmesh.partition.rank
     open(path, "w") do io
         write(io, _foam_header("surfaceScalarField", timedir, "phi"))
-        write(io, IOFormats._FOAM_DIMENSIONS)
+        write(io, IOFormats._foam_dimensions("phi", ()))
         write(io, "internalField   nonuniform List<scalar>")
         _bin_list(io, vals[1:w.n_internal])
         println(io, ";")

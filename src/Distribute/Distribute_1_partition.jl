@@ -1,4 +1,4 @@
-export build_dual_graph, partition_cells, extract_subdomain, decompose, distribute
+export build_dual_graph, partition_cells, extract_subdomain, distribute
 export partition_mesh, is_root
 
 # NEW SECTION: partitioning

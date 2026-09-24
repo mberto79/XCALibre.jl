@@ -75,7 +75,7 @@ ref_norm, ref_dot, ref_mean = MPI.bcast(ref, comm; root=0)
     lhs = MPI.Allreduce(dot(v.values, hx.values), +, comm)
     w = ScalarField(dm)
     w.values .= v.values
-    halo_exchange_adjoint!(w, H1, backend, workgroup)
+    XCALibre.Distribute.halo_exchange_adjoint!(w, H1, backend, workgroup)
     @test all(w.values[ghosts] .== 0)
     rhs = MPI.Allreduce(dot(w.values, x.values), +, comm)
     @test lhs ≈ rhs rtol = 1e-12

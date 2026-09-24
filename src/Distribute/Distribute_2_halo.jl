@@ -1,4 +1,4 @@
-export HaloExchange, halo_exchange!, halo_exchange_adjoint!
+export HaloExchange, halo_exchange!
 
 """
     HaloExchange

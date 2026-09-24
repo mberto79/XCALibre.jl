@@ -12,6 +12,7 @@ import XCALibre.FoamMesh: read_neighbour
 import XCALibre.Mesh: weight_delta_e
 using XCALibre.Fields
 using XCALibre.Multithread
+using XCALibre.Multithread: _sized
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve

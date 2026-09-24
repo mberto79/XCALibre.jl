@@ -1,4 +1,4 @@
-export _workspace, _index_type
+export _workspace
 export Cg, Cgs, Bicgstab, Gmres
 
 abstract type AbstractLinearSolver end

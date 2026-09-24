@@ -1,4 +1,4 @@
-export PETScSolver, passemble!, psolve!, psolve_transpose!
+export PETScSolver
 
 """
     PETScSolver(eqn, dmesh::DistributedMesh, setup; comm=dmesh.comm, petsc_options="", label="")

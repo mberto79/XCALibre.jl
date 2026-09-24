@@ -127,14 +127,14 @@ if rank == 0
         err = try (D._read_mesh_file(part0); nothing) catch e e end
         @test err isa ErrorException && occursin("distribute(dir) under mpiexec -n $nranks", err.msg)
         # a 3D part round trips exactly through the file
-        for dm ∈ decompose(box, 3)
+        for dm ∈ XCALibre.Distribute.decompose(box, 3)
             path = D._write_xdm(joinpath(bad, "box_part.xdm"), getfield(dm, :mesh), dm)
             @test same_part(D._read_part_file(path, 3), dm)
         end
         # global ids past typemax(Int32) on an Int32-indexed part survive the file unchanged
         box32 = UNV3D_mesh(joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), "3d_box_1000x1000x1000mm_10.unv"),
             scale=0.001, integer_type=Int32)
-        dm = first(decompose(box32, 3))
+        dm = first(XCALibre.Distribute.decompose(box32, 3))
         off = D.GlobalInt(typemax(Int32)) + 1
         p = getfield(dm, :partition)
         pbig = Partition(p.rank, p.nranks, p.n_owned, p.n_ghost, p.local_to_global .+ off, p.owner,

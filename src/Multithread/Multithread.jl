@@ -1,7 +1,7 @@
 module Multithread
 
 export AutoTune
-export _setup, _dynamic_setup, _sized, xcal_foreach
+export _setup, _dynamic_setup, xcal_foreach
 
 using KernelAbstractions
 import AcceleratedKernels as AK

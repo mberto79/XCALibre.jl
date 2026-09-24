@@ -373,6 +373,10 @@ distributed_ready(::KOmegaSST) = true
 
 const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow)
 
+# runtime post-processing has no distributed implementation; Distribute warns once from rank 0
+_warn_skipped_postprocess(mesh, postprocess) = nothing
+_has_postprocess(p) = !(p === nothing || (p isa Union{Tuple,AbstractVector} && isempty(p)))
+
 # called by every solver entry point, named for itself; a no-op on a serial mesh
 function check_distributed_support(solver::Symbol, model)
     is_distributed_mesh(model.domain) || return nothing

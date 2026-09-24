@@ -24,7 +24,7 @@ Not a numerical change except B5 (writer output) and B7 reader: verify on the te
 
 Expected 3 steps.
 
-- [ ] **P1-M35-S1** code: B2 (`KernelAbstractions.get_backend(x::ElementArrays) = get_backend(getfield(x, 1))`, `Base.propertynames` for Mesh2/Mesh3 including the views), B3 (`@warn` once when `postprocess` is non-empty on a distributed mesh, from rank 0), B5 (dimensions per field: U `[0 1 -1 0 0 0 0]`, kinematic p `[0 2 -2 0 0 0 0]`, k `[0 2 -2 ...]`, omega `[0 0 -1 ...]`, nut `[0 2 -1 ...]`, T `[0 0 0 1 0 0 0]`, unknown fields dimensionless), B6 (drop underscore exports; qualify internal uses), B7 (`_foam_binary` reads only the header bytes; delete `src/precompile.jl` if nothing includes it) - mechanism: restore main's behaviour where nothing required the change - cost: none per iteration - verdict: `test_mesh_conversion.jl`, `test_io.jl` (n=2), a new unit check for `get_backend(mesh.cells)`/`propertynames`, OpenFOAM writer round trip; full serial suite at close.
+- [x] **P1-M35-S1** LANDED (D215, D216). code: B2 (`KernelAbstractions.get_backend(x::ElementArrays) = get_backend(getfield(x, 1))`, `Base.propertynames` for Mesh2/Mesh3 including the views), B3 (`@warn` once when `postprocess` is non-empty on a distributed mesh, from rank 0), B5 (dimensions per field: U `[0 1 -1 0 0 0 0]`, kinematic p `[0 2 -2 0 0 0 0]`, k `[0 2 -2 ...]`, omega `[0 0 -1 ...]`, nut `[0 2 -1 ...]`, T `[0 0 0 1 0 0 0]`, unknown fields dimensionless), B6 (drop underscore exports; qualify internal uses), B7 (`_foam_binary` reads only the header bytes; delete `src/precompile.jl` if nothing includes it) - mechanism: restore main's behaviour where nothing required the change - cost: none per iteration - verdict: `test_mesh_conversion.jl`, `test_io.jl` (n=2), a new unit check for `get_backend(mesh.cells)`/`propertynames`, OpenFOAM writer round trip; full serial suite at close.
 - [ ] **P1-M35-S2** docs: CHANGELOG Breaking gains B1 (custom BC/scheme signature, with a before/after snippet) and B2's Int8/type-parameter notes; Changed gains B4 (BLAS default back to 1, why: Julia-thread Krylov) and MPI/Metis hard deps; distributed guide notes B3; `contributor_guide.md` mesh text rewritten; `release_notes.md` synced to CHANGELOG; PISO `@time` either restored or the removal noted - verdict: docs build green, `grep` finds no `Mesh3.Faces`/`nsign` stale text.
 - [ ] **P1-M35-S3** CI: add a Julia 1.10 job to the test matrix (`.github/workflows`), docs env without PETSc if no page executes PETSc code - verdict: workflow file parses (`act`-free check: YAML lint), job list shows 1.10.
 
@@ -34,5 +34,5 @@ B1-B7 each fixed or documented; docs build green; serial suite green.
 
 ## Open questions
 
-- B7 PISO `@time`: restore for parity or remove from FilmModel/Multiphase too? User preference; default: remove everywhere (progress bar already reports time).
-- B6: are `decompose`/`gather`/`passemble!` used by users of the distributed docs? Check `docs/src/user_guide/6_distributed_mpi.md` before un-exporting.
+- SETTLED (D215): `@time` removed from FilmModel/Multiphase too.
+- SETTLED (D215): `gather` is documented and stays exported; the rest are internal.

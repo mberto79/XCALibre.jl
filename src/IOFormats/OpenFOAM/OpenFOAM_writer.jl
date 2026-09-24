@@ -243,6 +243,7 @@ function write_results(
 
     backend = _get_backend(mesh)
     boundaries_cpu = get_data(mesh.boundaries, backend) # get cpu copy
+    labels = first.(args)
 
     for arg ∈ args
         label = arg[1]
@@ -262,7 +263,7 @@ function write_results(
                 }
                 
                 """)
-                write(io, _FOAM_DIMENSIONS)
+                write(io, _foam_dimensions(label, labels))
                 write(io, "internalField   nonuniform List<scalar>\n")
                 println(io, length(mesh.cells))
                 println(io, "(")
@@ -298,7 +299,7 @@ function write_results(
                 }
                 
                 """)
-                write(io, _FOAM_DIMENSIONS)
+                write(io, _foam_dimensions(label, labels))
                 write(io, "internalField   nonuniform List<vector>\n")
                 println(io, length(mesh.cells))
                 println(io, "(")                
@@ -329,8 +330,15 @@ function write_results(
     end
 end
 
-# fields carry no units; OpenFOAM utilities (reconstructPar, foamToVTK) refuse a field without the entry
-const _FOAM_DIMENSIONS = "dimensions      [0 0 0 0 0 0 0];\n"
+# OpenFOAM utilities refuse a field without the entry; pressure is kinematic unless density is written
+# alongside it, which every compressible and multiphase output does; unknown names are dimensionless
+function _foam_dimensions(label, labels)
+    pa = "rho" ∈ labels
+    d = label == "U" ? "0 1 -1" : label ∈ ("p", "p_rgh") ? (pa ? "1 -1 -2" : "0 2 -2") :
+        label == "k" ? "0 2 -2" : label == "omega" ? "0 0 -1" : label ∈ ("nut", "nu") ? "0 2 -1" :
+        label == "rho" ? "1 -3 0" : label == "phi" ? (pa ? "1 0 -1" : "0 3 -1") : label == "y" ? "0 1 0" : "0 0 0"
+    "dimensions      [$d $(label == "T" ? "1" : "0") 0 0 0];\n"
+end
 
 _foam_boundary_entry(BC) = begin # catch all method
     """

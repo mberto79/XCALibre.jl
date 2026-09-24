@@ -70,7 +70,7 @@ orig = dm.orig_cells
 
 T_eqn, model, config = assemble_T(dm)
 s = PETScSolver(T_eqn, dm, config.solvers)
-passemble!(s, T_eqn, part)
+XCALibre.Distribute.passemble!(s, T_eqn, part)
 
 xv, y = LibPETSc.MatCreateVecs(s.petsclib, s.A) # the solver's x owns no storage outside a solve
 owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
@@ -99,17 +99,17 @@ owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
 
     # KSP CG solve matches serial direct solution
     Tvals = model.energy.T.values
-    psolve!(s, Tvals)
+    XCALibre.Distribute.psolve!(s, Tvals)
     @test maximum(abs.(Tvals[1:n_owned] .- xsol[orig[1:n_owned]]); init=0.0) <= 1e-8
 
     # adjoint solve (symmetric system => same solution)
     Tt = fill(15.0, length(Tvals))
-    psolve_transpose!(s, Tt)
+    XCALibre.Distribute.psolve_transpose!(s, Tt)
     @test maximum(abs.(Tt[1:n_owned] .- xsol[orig[1:n_owned]]); init=0.0) <= 1e-8
 
     # values-only re-assembly: scaled coefficients give scaled MatMult
     _nzval(_A(T_eqn)) .*= 2
-    passemble!(s, T_eqn, part)
+    XCALibre.Distribute.passemble!(s, T_eqn, part)
     PETSc.withlocalarray!(xv; read=false, write=true) do arr
         for i ∈ 1:n_owned
             arr[i] = xg[orig[i]]

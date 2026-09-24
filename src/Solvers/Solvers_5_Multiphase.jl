@@ -291,7 +291,7 @@ function MULTIPHASE(
 
     bar = _progress_bar(iterations, progress)
 
-    @time for iteration ∈ 1:iterations
+    for iteration ∈ 1:iterations
 
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]

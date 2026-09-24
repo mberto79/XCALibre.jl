@@ -202,6 +202,9 @@ end
 # NEW SECTION: reduction + mesh seams (extend the serial identities from Solvers)
 
 Solve.is_distributed_mesh(::DistributedMesh) = true
+Solvers._warn_skipped_postprocess(dm::DistributedMesh, postprocess) =
+    Solvers._has_postprocess(postprocess) && dm.partition.rank == 0 &&
+        @warn "runtime post-processing (config.postprocess) is not distributed yet and is skipped" maxlog=1
 Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) == 0
 
 # global_max seam: Courant dt must be identical on every rank

@@ -197,11 +197,10 @@ end
 
 # binary files (`format binary`): after the header, `N (raw bytes)` lists; widths from `arch`, nothing if ascii
 function _foam_binary(file_path, kind)
+    hdr = open(io -> readuntil(io, '}'; keep=true), file_path) # an ascii file is never read whole here
+    endswith(hdr, '}') && occursin(r"format\s+binary", hdr) || return nothing
     b = read(file_path)
-    hend = findfirst(==(UInt8('}')), b)
-    hend === nothing && return nothing
-    hdr = String(b[1:hend])
-    occursin(r"format\s+binary", hdr) || return nothing
+    hend = ncodeunits(hdr)
     lb = (m = match(r"label=(\d+)", hdr)) === nothing ? 32 : parse(Int, m[1])
     sb = (m = match(r"scalar=(\d+)", hdr)) === nothing ? 64 : parse(Int, m[1])
     T = kind == :label ? (lb == 64 ? Int64 : Int32) : SVector{3,sb == 32 ? Float32 : Float64}

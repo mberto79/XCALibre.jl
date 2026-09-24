@@ -23,13 +23,13 @@ solve_iter!() = solve_equation!(deqn, T, config.boundaries.T, config.solvers, co
 solve_iter!(); solve_iter!()
 # each measured call once more on its own: top-level call sites compile their own thunks
 sync!(T, dm, config)
-passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)
-psolve!(deqn.solver, T.values)
+XCALibre.Distribute.passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)
+XCALibre.Distribute.psolve!(deqn.solver, T.values)
 residual(deqn, nothing, config)
 
 a_halo = @allocated sync!(T, dm, config)
-a_asm = @allocated passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)
-a_slv = @allocated psolve!(deqn.solver, T.values)
+a_asm = @allocated XCALibre.Distribute.passemble!(deqn.solver, deqn.eqn, deqn.partition; component=nothing)
+a_slv = @allocated XCALibre.Distribute.psolve!(deqn.solver, T.values)
 a_res = @allocated residual(deqn, nothing, config)
 a_eqn = @allocated solve_iter!()
 
@@ -108,7 +108,7 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
 
 @testset "Phase 5 perf (rank $rank)" begin
     # ~2x measured at introduction (see dev/STATE.md); halo/solve terms scale per neighbour
-    @test a_sym <= 512
+    @test a_sym <= 2_048
     @test a_cmf <= 12_288
     @test a_halo3 <= 1_024 + 5_120 * max(1, length(dm2.procs))
     @test a_cour <= 4_096

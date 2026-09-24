@@ -168,9 +168,9 @@ hierarchy_build = ws.hierarchy  # captured to verify later refreshes reuse (not 
 
 # an Int32 equation matrix keeps every stored hierarchy index at Int32
 A32, _ = amg_test_matrix(Float64, Int32)
-ws32 = XCALibre.Solve.update!(_workspace(setup.solver, b, _index_type(A32)), A32, setup.solver, config)
+ws32 = XCALibre.Solve.update!(_workspace(setup.solver, b, XCALibre.Solve._index_type(A32)), A32, setup.solver, config)
 lv32 = ws32.hierarchy.host_levels[1]
-@test _index_type(A32) == Int32
+@test XCALibre.Solve._index_type(A32) == Int32
 @test eltype(lv32.A.colval) == eltype(lv32.P.rowptr) == eltype(lv32.diagonal_index) == eltype(lv32.aggregate_ids) == Int32
 @test eltype(ws32.hierarchy.rowptr_pattern) == Int32
 @test length(ws.hierarchy.levels) >= 1

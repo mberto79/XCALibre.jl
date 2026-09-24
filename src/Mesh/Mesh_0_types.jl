@@ -222,6 +222,7 @@ end
 Base.similar(x::ElementArrays, ::Type{T}, dims::Tuple{Int}) where T = T === eltype(x) ?
     _rewrap(x, map(c -> similar(c, dims), _columns(x))) : similar(getfield(x, 1), T, dims)
 Base.copy(x::ElementArrays) = _rewrap(x, map(copy, _columns(x)))
+KernelAbstractions.get_backend(x::ElementArrays) = get_backend(getfield(x, 1))
 
 # no closure over `to`: a captured type is stored as its kind and adapt stops inferring
 Adapt.adapt_structure(to, x::FaceArrays) = _rewrap(x, (adapt(to, x.nodes_range), adapt(to, x.ownerCells),
@@ -377,6 +378,8 @@ end
         getfield(m, :cell_nodes_range), getfield(m, :cell_faces_range)) :
     s === :nodes ? NodeArrays(getfield(m, :node_coords), getfield(m, :node_cells_range)) :
     getfield(m, s)
+
+Base.propertynames(m::Union{Mesh2,Mesh3}, private::Bool=false) = (:cells, :faces, :nodes, fieldnames(typeof(m))...)
 
 Adapt.adapt_structure(to, m::Mesh3) = Mesh3(adapt(to, m.cells), adapt(to, m.cell_nodes),
     adapt(to, m.cell_faces), adapt(to, m.cell_neighbours), adapt(to, m.cell_nsign), adapt(to, m.faces),

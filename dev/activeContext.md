@@ -2,11 +2,11 @@
 LOAD: dev/activeContext.md, dev/spec.md, dev/gotchas.md, dev/architecture.md, dev/roadmap.md, dev/phaseRoadmap.md, dev/plans/p1-m35-behaviour-docs.md, dev/plans/p1-m36-cheap-perf.md
 updated: 2026-09-24T16:00:00+01:00
 STATE: BUILDING
-STEP: P1-M35-S1 code fixes B2, B3, B5, B6, B7 (diff staged in worktree ~/Julia/xcal_m35)
-HEAD: a0ca8b9e
+STEP: P1-M35-S2 docs (CHANGELOG Breaking/B4/deps done, guide B3 done, contributor guide done); S3 CI
+HEAD: 7112c9fa
 BRANCH: HM/distributed-draft
 GATE: per plan row; smokes `~/.cache/xcal_m28/chain.sh <dir> cpu1 cpu8 2d gpu` and `~/.cache/xcal_m28/mpi.sh <dir>/mpi4 ~/.cache/xcal_m28/parts_m34_4 4` with `dev/scripts/cmpres.jl` (1t bitwise vs `~/.cache/xcal_m28/m30s4/cpu1.res`, not `m28_baseline` which is 13 figures off since M30; MPI vs `m33/`; 2d 7.6 figures is its R13 band, D197); suite files via `dev/scripts/suite_file.jl` in `~/.cache/xcal_m28/env_test`; distributed via `test/distributed/runtests_mpi.jl` under `dev/scripts/memguard.sh`
-resume: apply `git -C ~/Julia/xcal_m35 diff HEAD` to this checkout (then remove the worktree), run `test_mesh_conversion.jl`, `test_AMG.jl`, a get_backend/propertynames check and distributed `test_io.jl`, `test_offline.jl`, `test_halo.jl`, `test_assembly.jl`, `test_perf.jl`; land M35-S1
+resume: M35-S3: CI already has a Julia 1.10 job and docs doctests execute PETSc code, so S3 closes with no change; then M35 close = full serial suite (`suite.sh` in scratch, recreate from D214 groups) + docs build (regenerates release_notes.md; commit it) + grep for stale mesh text
 
 ## binding
 - User rulings: stock Int64 PETSc stays (D205); diagonal-only PETSc writes refused (D207); flat layout adopted, discretisation kernels to read arrays directly as follow-up (D179); compile bar +10% of same-session AoS base (D168); scheme/BC signature change accepted (D175).

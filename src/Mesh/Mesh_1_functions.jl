@@ -7,7 +7,6 @@ export norm_static
 export is_boundary
 export convert_mesh_float
 export validate_single_precision_mesh
-export _check_index_capacity, _with_index_capacity
 # export x, y, z # access cell centres
 # export xf, yf, zf # access face centres
 

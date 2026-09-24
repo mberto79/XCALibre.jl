@@ -30,8 +30,15 @@ end
     @inbounds x[i] += y[i]
 end
 
-_launch_amg_kernel!(hierarchy::AbstractAMGHierarchy, kernel, ndrange, args...) =
-    _launch_amg_kernel!(hierarchy.backend, hierarchy.workgroup, kernel, ndrange, args...)
+# CPU workgroup is capped at each launch's per-thread share; a finest-level size runs coarse levels on one thread
+function _launch_amg_kernel!(hierarchy::AbstractAMGHierarchy, kernel, ndrange, args...)
+    backend = hierarchy.backend
+    backend isa CPU || return _launch_amg_kernel!(backend, hierarchy.workgroup, kernel, ndrange, args...)
+    ndrange <= 0 && return nothing
+    wg = min(hierarchy.workgroup, cld(ndrange, Threads.nthreads()))
+    AutoSizedLaunch(kernel(backend), wg, ndrange)(args...)
+    return nothing
+end
 
 function _launch_amg_kernel!(backend, workgroup::Integer, kernel, ndrange, args...)
     ndrange <= 0 && return nothing

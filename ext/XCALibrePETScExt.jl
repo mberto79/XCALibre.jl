@@ -74,6 +74,8 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     bptr::Base.RefValue{Ptr{Cvoid}} # b's array, set by passemble! and placed by the next solve
     setup_every::Int   # rebuild the PC every N solves (1 = every solve, PETSc default)
     nsolve::Base.RefValue{Int}
+    label::String
+    root::Bool         # rank 0 reports: the converged reason is the same on every rank
 end
 
 _petsc_has_pkg(petsclib, pkg) =
@@ -250,7 +252,8 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
     setup_every = _pc_freeze(setup.preconditioner)
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
-        _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0))
+        _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0), String(label),
+        MPI.Comm_rank(comm) == 0)
 end
 
 # NEW SECTION: assembly and solve
@@ -380,6 +383,7 @@ function _with_placed(f, s::XPETScSolver, x)
             _sync(s.sync)
             f(s)
             _sync(s.sync)
+            _report_reason(s)
         finally
             _vec_call(s.reset, s.x)
             _vec_call(s.reset, s.b)
@@ -403,6 +407,14 @@ function psolve!(s::XPETScSolver, x::AbstractVector)
 end
 
 psolve_transpose!(s::XPETScSolver, x::AbstractVector) = _with_placed(_ksp_solve_transpose, s, x)
+
+# a negative reason (itmax reached included) means the solve stopped short of rtol/atol
+function _report_reason(s::XPETScSolver)
+    s.root || return
+    r = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
+    Integer(r) < 0 && @warn "PETSc solve [$(s.label)]: $r after " *
+        "$(LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp)) iterations" maxlog=1 _id=(:ksp, s.label)
+end
 
 _ksp_solve(s) = PETSc.solve!(s.x, s.ksp, s.b)
 _ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)

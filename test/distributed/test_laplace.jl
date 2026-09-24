@@ -49,3 +49,13 @@ kconv = findfirst(<=(conv), Rserial)
     @test residuals.T[kconv] <= conv
     @test all(isapprox.(residuals.T[1:kconv-1], Rserial[1:kconv-1]; rtol=1e-2))
 end
+
+# a solve stopped at itmax reports it once, from rank 0 only
+model1, config1 = laplace_case(dm, box_bcs; iterations=2, itmax=1)
+@testset "PETSc reports an unconverged solve (rank $rank)" begin
+    if rank == 0
+        @test_logs (:warn, r"KSP_DIVERGED_ITS after 1 iterations") match_mode=:any run!(model1, config1)
+    else
+        @test_logs min_level=Base.CoreLogging.Warn run!(model1, config1)
+    end
+end

@@ -1,6 +1,6 @@
 name = "XCALibre"
 uuid = "cf91e36b-bd94-493a-8848-32508a10963c"
-version = "0.6.1-DEV"
+version = "0.6.1"
 authors = ["Humberto <h.medina@aerofluids.org>"]
 
 [deps]

@@ -140,24 +140,6 @@ function generate_faces(bfaces, first_element, elements::Vector{Element{TI}},
         end
     end
 
-    # # Start with boundary faces (stored in "elements")
-    # for i ∈ 1:bfaces # loop over elements stored before the first element
-    #     face = Face2D(TI,TF)
-    #     vertex1 = elements[i].vertices[1]
-    #     vertex2 = elements[i].vertices[2]
-    #     if vertex1 < vertex2
-    #         face = @set face.nodesID = SVector{2,TI}(vertex1, vertex2)
-    #         push!(faces, face)
-    #         continue
-    #     elseif vertex1 > vertex2 
-    #         face = @set face.nodesID = SVector{2,TI}(vertex2, vertex1)
-    #         push!(faces, face)
-    #         continue
-    #     else
-    #         throw("Boundary elements are inconsistent: possible mesh corruption")
-    #     end
-    # end
-
     # Now build faces for cell-elements (will generate some duplicate faces)
     @inbounds for i ∈ first_element:length(elements)
         face = Face2D(TI,TF)
@@ -273,13 +255,6 @@ function boundary_connectivity!(
             id1 = faceNodesID[1]
             id2 = faceNodesID[2]
             facedef = SVector{2,TI}(id1,id2)
-            # id1 = nodesID[i]
-            # id2 = nodesID[i+1]
-            # if id1 < id2 
-            #     facedef = SVector{2,TI}(id1,id2)
-            # else
-            #     facedef = SVector{2,TI}(id2,id1)
-            # end
             @inbounds for fID ∈ 1:bfaces 
                 face = faces[fID]
                 if facedef == face.nodesID

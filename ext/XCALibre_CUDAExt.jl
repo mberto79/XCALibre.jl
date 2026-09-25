@@ -197,7 +197,7 @@ function _amg_finalize_device_levels(::BACKEND, levels)
         R = lvl.has_transfer ? _amg_csr_to_cusparse(lvl.R) : lvl.R
         new_levels[k] = AMGLevel(
             A, P, R, lvl.diagonal, lvl.inv_diagonal, lvl.diagonal_index,
-            lvl.rhs, lvl.x, lvl.tmp, lvl.direction, lvl.coarse_tmp, lvl.aggregate_ids,
+            lvl.rhs, lvl.x, lvl.tmp, lvl.direction, lvl.aggregate_ids,
             lvl.lambda_max, lvl.level_id, lvl.has_transfer
         )
     end

@@ -10,11 +10,29 @@ function assign(args; region)
         push!(BCs, updatedBCs)
     end
     assignedBCs = NamedTuple{names}(Tuple.(BCs))
-    nboundaries = length(region.boundaries)
+    boundaries = get_boundaries(region.boundaries)
     for (name, assignedBC) ∈ zip(names, assignedBCs)
-        @assert length(assignedBC) == nboundaries "Inconsistent number of boundaries assigned to field $name"
+        validate_boundary_coverage(name, assignedBC, boundaries)
     end
     return assignedBCs
+end
+
+function validate_boundary_coverage(field_name, assigned_bcs, boundaries)
+    counts = zeros(Int, length(boundaries))
+    for bc in assigned_bcs
+        counts[Int(bc.ID)] += 1
+    end
+
+    unassigned = [boundaries[id].name for id in eachindex(boundaries) if counts[id] == 0]
+    repeated = [boundaries[id].name for id in eachindex(boundaries) if counts[id] > 1]
+    isempty(unassigned) && isempty(repeated) && return nothing
+
+    details = String[]
+    isempty(unassigned) || push!(details, "missing $(join(unassigned, ", "))")
+    isempty(repeated) || push!(details, "assigned more than once $(join(repeated, ", "))")
+    throw(ArgumentError(
+        "incomplete boundary assignment for field '$field_name': $(join(details, "; "))",
+    ))
 end
 
 function assign_patches(BCs, region)

@@ -1,12 +1,8 @@
 using XCALibre
-# using CUDA # Run this if using NVIDIA GPU
-# using AMDGPU # Run this if using AMD GPU
+# For GPU: using CUDA (NVIDIA) or using AMDGPU (AMD)
 
-# Transient compressible CPISO solver on a cylinder at M=0.5. Runs the sensible-enthalpy
-# and internal-energy formulations and checks both are physical and agree in the mean
-# (they solve the same physics with a different energy variable). Also runs a
-# Crank-Nicolson time-scheme case: the pressure-correction mass flux relies on the Time
-# term being diagonal-only, which holds for CrankNicolson as well as Euler.
+# CPISO cylinder at M=0.5: sensible-enthalpy and internal-energy runs must be physical and agree in the mean.
+# The Crank-Nicolson case relies on the Time term being diagonal-only in the pressure-correction mass flux.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_25mm.unv"

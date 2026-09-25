@@ -111,3 +111,49 @@ apply_boundary_conditions!(eqn_m, cfg_m.boundaries.T, nothing, 0.0, cfg_m)
     expected_A11 = 1.0 + 1.0 + ap_robin   # right + top + Robin(left); bottom is ZG → 0
     @test eqn_m.equation.A.parent[1, 1] ≈ expected_A11
 end
+
+# ── Case 3: convection-diffusion — Robin limits match Dirichlet/Neumann/Zerogradient ──
+mdotf = FaceScalarField(mesh_dev)
+mdotf.values .= [(-1)^i*0.1*i for i ∈ eachindex(mdotf.values)]
+BCs_robin_div = assign(
+    region = mesh_dev,
+    (
+        T = [
+            Robin(:left_wall,   a=1.0, b=0.0, value=50.0),
+            Robin(:right_wall,  a=0.0, b=1.0, value=2.0),
+            Robin(:bottom_wall, a=1.0, b=0.0, value=10.0),
+            Robin(:upper_wall,  a=0.0, b=1.0, value=0.0),
+        ],
+    )
+)
+BCs_ref_div = assign(
+    region = mesh_dev,
+    (
+        T = [
+            Dirichlet(:left_wall,   50.0),
+            Neumann(:right_wall,    2.0),
+            Dirichlet(:bottom_wall, 10.0),
+            Zerogradient(:upper_wall),
+        ],
+    )
+)
+
+@testset "Robin limits with Divergence{$scheme}" for scheme ∈ (Linear, Upwind, LUST, BoundedUpwind)
+    sch = (T = Schemes(laplacian=Linear, divergence=scheme),)
+    eqns = map((BCs_robin_div, BCs_ref_div)) do BCs
+        cfg = Configuration(solvers=solvers, schemes=sch,
+            runtime=Runtime(iterations=1, write_interval=1, time_step=1),
+            hardware=hardware, boundaries=BCs)
+        T = ScalarField(mesh_dev)
+        eqn = (
+            Divergence{scheme}(mdotf, T) - Laplacian{Linear}(gamma, T) == Source(ConstantScalar(0.0))
+        ) → ScalarEquation(T, cfg.boundaries.T)
+        discretise!(eqn, T, cfg)
+        apply_boundary_conditions!(eqn, cfg.boundaries.T, nothing, 0.0, cfg)
+        eqn
+    end
+    @test eqns[1].equation.A.parent ≈ eqns[2].equation.A.parent
+    @test eqns[1].equation.b ≈ eqns[2].equation.b
+end
+
+@test_throws ArgumentError Robin(:left_wall, a=0.0, b=0.0, value=1.0)

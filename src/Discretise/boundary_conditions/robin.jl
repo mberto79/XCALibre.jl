@@ -7,6 +7,20 @@ export Robin
 end
 Adapt.@adapt_structure RobinValue
 
+"""
+    Robin <: AbstractBoundary
+
+Robin (mixed) boundary condition `a·φ + b·∇φ·n = value` for scalar fields. `a=1, b=0` recovers `Dirichlet` and `a=0, b=1` recovers `Neumann`. Not supported by the density-based (Godunov) solvers.
+
+# Inputs
+- `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
+- `a` coefficient of the boundary value (default 1)
+- `b` coefficient of the face normal gradient (default 0)
+- `value` right-hand side of the constraint (default 0)
+
+# Example
+    Robin(:wall, a=1.0, b=0.5, value=10.0)
+"""
 struct Robin{I,V,R<:UnitRange} <: AbstractBoundary
     ID::I
     value::V
@@ -15,7 +29,8 @@ end
 Adapt.@adapt_structure Robin
 
 Robin(name::Symbol; a=1.0, b=0.0, value=0.0) = begin
-    Robin(name, RobinValue(a=a, b=b, value=value), 0:0)
+    iszero(a) && iszero(b) && throw(ArgumentError("Robin(:$name): `a` and `b` cannot both be zero"))
+    Robin(name, RobinValue(promote(a, b, value)...), 0:0)
 end
 
 adapt_value(value::RobinValue, mesh) = begin
@@ -23,67 +38,47 @@ adapt_value(value::RobinValue, mesh) = begin
     RobinValue(F(value.a), F(value.b), F(value.value))
 end
 
-@define_boundary Robin Laplacian{Linear} begin
+# φf = (value·δ + b·φP)/(a·δ + b), so ∇φ·n = (value - a·φP)/(a·δ + b)
+@define_boundary Robin Laplacian{Linear} ScalarField begin
     J = term.flux[fID]
     (; area, delta) = face
     (; a, b, value) = bc.value
-    denom = a*delta + b
-    coeff = J*area/denom
+    coeff = J*area/(a*delta + b)
     ap = term.sign*(-coeff*a)
     bp = term.sign*(-coeff*value)
     ap, bp
 end
 
-@define_boundary Robin Divergence{Linear} begin
-    flux = -term.flux[fID]
+@define_boundary Robin Divergence{Linear} ScalarField begin
     (; delta) = face
     (; a, b, value) = bc.value
-    denom = a*delta + b
-    ap = term.sign*(flux)
-    ap*b/denom, ap*value*delta/denom
+    ap = term.sign*(term.flux[fID])/(a*delta + b)
+    ap*b, -ap*value*delta
 end
 
-@define_boundary Robin Divergence{Upwind} begin
-    flux = -term.flux[fID]
+@define_boundary Robin Divergence{Upwind} ScalarField begin
     (; delta) = face
     (; a, b, value) = bc.value
-    denom = a*delta + b
-    ap = term.sign*(flux)
-    ap*b/denom, ap*value*delta/denom
+    ap = term.sign*(term.flux[fID])/(a*delta + b)
+    ap*b, -ap*value*delta
 end
 
-@define_boundary Robin Divergence{LUST} begin
-    flux = -term.flux[fID]
+@define_boundary Robin Divergence{LUST} ScalarField begin
     (; delta) = face
     (; a, b, value) = bc.value
-    denom = a*delta + b
-    ap = term.sign*(flux)
-    ap*b/denom, ap*value*delta/denom
+    ap = term.sign*(term.flux[fID])/(a*delta + b)
+    ap*b, -ap*value*delta
 end
 
-@define_boundary Robin Si begin
+# Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
+@define_boundary Robin Divergence{BoundedUpwind} ScalarField begin
+    (; delta) = face
+    (; a, b, value) = bc.value
+    ap = term.sign*(term.flux[fID])
+    apf = ap/(a*delta + b)
+    apf*b - ap, -apf*value*delta
+end
+
+@define_boundary Robin Si ScalarField begin
     0.0, 0.0
-end
-
-@define_boundary Robin Time{SteadyState} begin
-    0.0, 0.0
-end
-
-@define_boundary Robin Time{Euler} begin
-    0.0, 0.0
-end
-
-@define_boundary Robin Divergence{BoundedUpwind} begin
-    flux = -term.flux[fID]
-    (; delta) = face
-    (; a, b, value) = bc.value
-    denom = a*delta + b
-    ap = term.sign*(flux)
-    ac = max(ap, 0.0)
-    an = -max(-ap, 0.0)
-    # phi_f = (value*delta + b*phi_P) / denom
-    # Term is ac*phi_P + an*phi_f
-    # = ac*phi_P + an*(value*delta + b*phi_P)/denom
-    # = (ac + an*b/denom)*phi_P + an*value*delta/denom
-    ac + an*b/denom, an*value*delta/denom
 end

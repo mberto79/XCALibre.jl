@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Added
+* Added `volume_integral`, `weighted_volume_integral`, `volume_average`, and `total_volume` functions to the `Calculate` module for backend-agnostic volume integration over scalar and vector fields [#137](@ref)
 * Added `Robin` boundary condition for scalar fields supporting mixed (`a·φ + b·∇φ·n = value`) constraints, with implementations for `Laplacian{Linear}`, all `Divergence` schemes and `Si` terms [#138](@ref)
 
 ### Fixed
@@ -14,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Breaking
+* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). Each function now also takes a required `config` keyword argument (the simulation `Configuration`), whose `hardware` sets the backend and kernel workgroup [#137](@ref)
 
 ### Deprecated
 * No functions deprecated

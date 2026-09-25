@@ -10,7 +10,7 @@ Adapt.@adapt_structure RobinValue
 """
     Robin <: AbstractBoundary
 
-Robin (mixed) boundary condition `a·φ + b·∇φ·n = value` for scalar fields. `a=1, b=0` recovers `Dirichlet` and `a=0, b=1` recovers `Neumann`. Not supported by the density-based (Godunov) solvers.
+Robin (mixed) boundary condition `a·φ + b·∇φ·n = value` for scalar fields. `a=1, b=0` recovers `Dirichlet` and `a=0, b=1` recovers `Neumann`. Not supported by the density-based (Godunov) solver (`run!` throws an `ArgumentError`).
 
 # Inputs
 - `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID

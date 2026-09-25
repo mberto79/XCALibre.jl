@@ -91,8 +91,9 @@ function cell_surface_area(field, fieldBCs, config)
         kernel_range = length(facesID_range)
 
         ndrange=kernel_range
-        kernel! = _add_boundary_area!(_setup(backend, workgroup, ndrange)...)
-        kernel!(areaSum, start_ID, faces)
+        kernel! = _add_boundary_area!(backend)
+        kernel!(areaSum, start_ID, faces;
+            _dynamic_setup(backend, workgroup, ndrange)...)
     end
     return areaSum
 end

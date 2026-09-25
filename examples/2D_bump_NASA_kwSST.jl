@@ -118,39 +118,39 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.6,
-        rtol = 1e-3
+        relax       = 0.7,
+        rtol = 1e-2
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         # preconditioner = DILU(), # CPU Only
-        convergence = 1e-11,
-        relax       = 0.1,
+        convergence = 1e-8,
+        relax       = 0.3,
         rtol = 1e-3,
         itmax = 4000
     ),
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-10,
-        rtol = 1e-5,
+        convergence = 1e-8,
+        rtol = 1e-2,
         relax       = 0.7,
         itmax = 5000
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # DILU Jacobi
-        convergence = 1e-10,
+        convergence = 1e-8,
         relax       = 0.6,
-        rtol = 1e-3
+        rtol = 1e-2
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-10,
+        convergence = 1e-8,
         relax       = 0.6,
-        rtol = 1e-3
+        rtol = 1e-2
     )
 )
 

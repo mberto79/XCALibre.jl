@@ -24,30 +24,14 @@ Adapt.@adapt_structure Wall
 Wall(name::Symbol) = Wall(name, 0)
 
 @define_boundary Wall Laplacian{Linear} VectorField begin
-    (; area, delta, normal) = face 
-    phi = term.phi 
+    (; area, delta) = face
     J = term.flux[fID]
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
-    
-    # vb = SVector{3}(0.0,0.0,0.0) # do not hard-code in next version
-    vb = bc.value # boundary value
-    vc = phi[cellID]
-    vc_n = (vc⋅normal)*normal
-    vb_n = (vb⋅normal)*normal
-    vb_p = (vb - vb_n) # parallel component of given boundary vector
-   
-    ap, ap*(vb_p[component.value] + vc_n[component.value])
+    ap, ap*bc.value[component.value]
 end
 
 @define_boundary Wall Laplacian{Linear} ScalarField begin
-    # phi = term.phi 
-    # values = get_values(phi, component)
-    # J = term.flux[fID]
-    # (; area, delta) = face 
-    # flux = -J*area/delta
-    # ap = term.sign*(flux)
-    # ap, ap*values[cellID] # original
     0.0, 0.0 # try this
     # 0.0, -flux*delta*bc.value # draft implementation to test!
 end
@@ -69,7 +53,7 @@ end
 # Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary Wall Divergence{BoundedUpwind} VectorField begin
     ap = term.sign*(term.flux[fID])
-    -ap, 0.0
+    -ap, -ap*bc.value[component.value]
 end
 
 @define_boundary Wall Divergence{BoundedUpwind} ScalarField begin

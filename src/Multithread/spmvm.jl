@@ -14,9 +14,6 @@ KernelAbstractions.get_backend(A::SparseXCSR) = get_backend(A.parent.nzval)
 Base.show(io::IO, A::SparseXCSR) = begin
     print(io, "CSR Matrix with $(length(A.parent.nzval)) entries")
 end
-# Base.show(io::IO, ::MIME"text/plain", ::SparseXCSR) =
-#     print(io, "Array of CSR matrices")
-
 # NOTE: The code below has been taken from https://github.com/BacAmorim/ThreadedSparseCSR.jl
 # ThreadedSparseCSR has not been updated in a while and precompilation fails on Julia 1.11.1
 
@@ -68,16 +65,22 @@ function xmul(y::AbstractVector, A::SparseXCSR, x::AbstractVector)
 end
 
 """
-    activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
+    activate_multithread(backend::CPU; nthreads=Threads.nthreads())
 
 Convenience function to set number of BLAS threads. 
     
 # Input arguments
 
 - `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`
-- `nthreads` can be used to set the number of BLAS cores (default `nthreads=1`)
+- `nthreads` can be used to set the number of BLAS cores (default: the Julia thread count)
+
+!!! note
+    Krylov.jl sends every dot and axpy on a `Vector{Float64}` to BLAS, so this also decides
+    whether the vector half of each linear solve is threaded. Julia picks its own OpenBLAS
+    thread count from the machine rather than from `-t`, so a run that never calls this is
+    neither serial nor matched to its thread budget.
 """
-activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
+activate_multithread(backend::CPU; nthreads=Threads.nthreads()) = BLAS.set_num_threads(nthreads)
 
 
 # Extend multiplications methods in LinearAlgebra and Base

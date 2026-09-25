@@ -236,10 +236,8 @@ end
 end
 
 @testset "T1 F32 512^2 regression (P13 residual-form lock)" begin
-    # All-F32 CPU Poisson, Cg + Geometric + coarse_storage=F32. The residual-form Jacobi kernel (P13)
-    # is what keeps the F32 cycle stable; a non-residual form blows up / stalls. Anchor: 17 it, rel 3.7e-6
-    # (the solver's recurrence residual). The TRUE residual floors at ~4e-3 = eps_f32 * cond(512^2 Poisson),
-    # so we assert on the reported convergence, not a recomputed true residual.
+    # All-F32 Cg + Geometric + coarse_storage=F32: the residual-form Jacobi kernel keeps the F32 cycle stable.
+    # True residual floors at eps_f32*cond(512^2 Poisson), so assert on the reported convergence, not a recomputed one.
     Ad, _ = poisson2d(512)
     i, j, v = findnz(parent(Ad)); n = size(Ad, 1)
     Af = SparseXCSR(sparsecsr(i, j, Float32.(v), n, n))

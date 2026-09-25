@@ -43,6 +43,7 @@ outputTest = String(take!(msg))
 # 3D UNV cavity mesh
 meshFile = joinpath(test_grids_dir, "OF_cavity_hex", "cavity_hex.unv")
 mesh = UNV3D_mesh(meshFile, scale=0.001)
+unv3_mesh = mesh
 msg = IOBuffer(); println(msg, mesh)
 outputTest_UNV3D = String(take!(msg))
 
@@ -50,14 +51,221 @@ outputTest_UNV3D = String(take!(msg))
 
 # 3D FOAM cavity mesh
 meshFile = joinpath(test_grids_dir, "OF_cavity_hex", "polyMesh")
-mesh = FOAM3D_mesh(meshFile, scale=0.001)
+mesh = FOAM3D_mesh(meshFile, scale=1.0)
+foam3_mesh = mesh
 msg = IOBuffer(); println(msg, mesh)
 outputTest_FOAM3D = String(take!(msg))
 
 @test outputTest_FOAM3D == "3D Mesh with:\n-> 125 cells\n-> 450 faces\n-> 216 nodes\n"
 
+@testset "boundary assignment requires each patch exactly once" begin
+    valid = assign(
+        region=mesh,
+        (T=[Dirichlet(:walls, 0.0), Dirichlet(:top, 1.0)],),
+    )
+    @test getproperty.(valid.T, :ID) == (1, 2)
+
+    duplicate_error = try
+        assign(
+            region=mesh,
+            (T=[Dirichlet(:walls, 0.0), Dirichlet(:walls, 1.0)],),
+        )
+        nothing
+    catch error
+        error
+    end
+    @test duplicate_error isa ArgumentError
+    @test contains(sprint(showerror, duplicate_error), "missing top")
+    @test contains(sprint(showerror, duplicate_error), "assigned more than once walls")
+end
+
+@testset "OpenFOAM boundary groups are ignored" begin
+    boundaries = XCALibre.FoamMesh.read_boundary(
+        joinpath(test_grids_dir, "OF_cavity_hex", "polyMesh", "boundary"),
+        Int32,
+        Float64,
+    )
+    @test getproperty.(boundaries, :name) == [:walls, :top]
+    @test getproperty.(boundaries, :nFaces) == Int32[125, 25]
+    @test getproperty.(boundaries, :startFace) == Int32[301, 426]
+
+    mktempdir() do directory
+        malformed = joinpath(directory, "boundary")
+        write(malformed, """
+        FoamFile { version 2.0; class polyBoundaryMesh; object boundary; }
+        2
+        (
+            onlyPatch
+            {
+                type patch;
+                nFaces 1;
+                startFace 0;
+            }
+        )
+        """)
+        @test_throws ArgumentError XCALibre.FoamMesh.read_boundary(
+            malformed,
+            Int32,
+            Float64,
+        )
+    end
+end
+
+@testset "OpenFOAM polyhedral geometry" begin
+    warped_nodes = [
+        XCALibre.Mesh.Node(SVector(0.0, 0.0, 0.0), 0:0),
+        XCALibre.Mesh.Node(SVector(2.0, 0.0, 0.2), 0:0),
+        XCALibre.Mesh.Node(SVector(2.0, 1.0, 0.0), 0:0),
+        XCALibre.Mesh.Node(SVector(0.0, 1.0, -0.1), 0:0),
+    ]
+    geometry1 = XCALibre.Mesh.face_geometry(
+        warped_nodes,
+        1:4,
+        SVector(1.0, 0.5, 0.025),
+    )
+    @test geometry1[1] ≈ SVector(
+        -0.07396705090823069,
+        0.14793410181646136,
+        0.9862273454430758,
+    )
+    @test geometry1[2] ≈ 2.027929979067325
+    @test geometry1[3] ≈ SVector(
+        1.0024316109422493,
+        0.49969604863221884,
+        0.025227963525835864,
+    )
+
+    mktempdir() do directory
+        write(joinpath(directory, "points"), """
+        12
+        (
+        (-1 -1 0)
+        (1 -1 0)
+        (1 1 0)
+        (-1 1 0)
+        (-0.5 -0.5 1)
+        (0.5 -0.5 1)
+        (0.5 0.5 1)
+        (-0.5 0.5 1)
+        (-0.5 -0.5 2)
+        (0.5 -0.5 2)
+        (0.5 0.5 2)
+        (-0.5 0.5 2)
+        )
+        """)
+        write(joinpath(directory, "faces"), """
+        11
+        (
+        4(4 5 6 7)
+        4(0 3 2 1)
+        4(0 1 5 4)
+        4(1 2 6 5)
+        4(2 3 7 6)
+        4(3 0 4 7)
+        4(8 9 10 11)
+        4(4 5 9 8)
+        4(5 6 10 9)
+        4(6 7 11 10)
+        4(7 4 8 11)
+        )
+        """)
+        write(joinpath(directory, "owner"), """
+        11
+        (
+        0 0 0 0 0 0 1 1 1 1 1
+        )
+        """)
+        write(joinpath(directory, "neighbour"), """
+        1
+        (
+        1
+        )
+        """)
+        write(joinpath(directory, "boundary"), """
+        1
+        (
+            walls
+            {
+                type wall;
+                nFaces 10;
+                startFace 1;
+            }
+        )
+        """)
+
+        skew_mesh = FOAM3D_mesh(directory)
+        @test skew_mesh.cells[1].centre ≈ SVector(0.0, 0.0, 11/28)
+        @test skew_mesh.cells[1].volume ≈ 7/3
+        @test skew_mesh.cells[2].centre ≈ SVector(0.0, 0.0, 1.5)
+        @test skew_mesh.cells[2].volume ≈ 1.0
+    end
+end
+
 # Test 3D UNV and FOAM meshes are equal
 @test outputTest_UNV3D == outputTest_FOAM3D
+@test getproperty.(unv3_mesh.cells, :centre) ≈ getproperty.(foam3_mesh.cells, :centre)
+@test getproperty.(unv3_mesh.cells, :volume) ≈ getproperty.(foam3_mesh.cells, :volume)
+
+@testset "OpenFOAM writer preserves input mesh and coordinate precision" begin
+    mktempdir() do directory
+        cd(directory) do
+            mesh_directory = joinpath("constant", "polyMesh")
+            mkpath(mesh_directory)
+            mesh_files = ("points", "faces", "owner", "neighbour", "boundary")
+            for name in mesh_files
+                write(joinpath(mesh_directory, name), "sentinel-$name")
+            end
+
+            XCALibre.initialise_writer(OpenFOAM(), foam3_mesh)
+            @test all(
+                read(joinpath(mesh_directory, name), String) == "sentinel-$name"
+                for name in mesh_files
+            )
+        end
+
+        generated_directory = joinpath(directory, "generated")
+        mkpath(generated_directory)
+        cd(generated_directory) do
+            XCALibre.initialise_writer(OpenFOAM(), foam3_mesh)
+            written_mesh = FOAM3D_mesh(joinpath("constant", "polyMesh"))
+            @test getproperty.(written_mesh.nodes, :coords) ==
+                getproperty.(foam3_mesh.nodes, :coords)
+        end
+    end
+end
+
+@testset "OpenFOAM writer rewrites a mismatched mesh" begin
+    mktempdir() do directory
+        cd(directory) do
+            mesh_directory = joinpath("constant", "polyMesh")
+            mkpath(mesh_directory)
+            # the note holds the matching count, so a naive first-integer parser would pass
+            write(joinpath(mesh_directory, "points"), """
+            FoamFile
+            {
+                version     2.0;
+                format      ascii;
+                class       vectorField;
+                note        "nPoints: 216 nCells: 125";
+                object      points;
+            }
+
+            8
+            (
+            (0 0 0)
+            )
+            """)
+            for name in ("faces", "owner", "neighbour", "boundary")
+                write(joinpath(mesh_directory, name), "sentinel-$name")
+            end
+
+            @test_logs (:warn, r"does not match") (:info, r"Writing mesh") match_mode=:any XCALibre.initialise_writer(OpenFOAM(), foam3_mesh)
+            written_mesh = FOAM3D_mesh(mesh_directory)
+            @test length(written_mesh.nodes) == length(foam3_mesh.nodes)
+            @test length(written_mesh.faces) == length(foam3_mesh.faces)
+        end
+    end
+end
 
 precision_cases = (
     (Int32, Float32),

@@ -11,7 +11,7 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 # SteadyState
 @inline function scheme!(
     term::Operator{F,P,I,Time{SteadyState}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     # nothing
     z = zero(eltype(nzval_array))
     z, z
@@ -25,7 +25,7 @@ end
 ## Euler
 @inline function scheme!(
     term::Operator{F,P,I,Time{Euler}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     0.0, 0.0 # add types if this approach works
 end
 
@@ -54,7 +54,7 @@ end
 ## Crank-Nicholson
 @inline function scheme!(
     term::Operator{F,P,I,Time{CrankNicolson}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
 
     0.0, 0.0 # add types if this approach works
 end
@@ -83,36 +83,12 @@ end
 
 @inline function scheme!(
     term::Operator{F,P,I,Laplacian{Linear}}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
-    
-    (; area, normal, delta, e) = face
-    Sf = ns*area*normal
-    Af = norm(Sf)
+    (; face_gDiff) = term.phi.mesh
+    ap = term.sign*term.flux[fID]*face_gDiff[fID]
 
-    ## Potential simplified form for performance, needs checking before use in release
-    # dPN = cellN.centre - cell.centre
-    # n = ns*normal
-    # Ef = dPN*(norm(n)^2/(dPN⋅n))*area # this works 
-    # Ef = dPN*(one(typeof(ns))/(dPN⋅n))*area # a little faster but a few more iter
-
-    # Use form below to ensure correctness, could be simplified for performance
-    e = ns*e # original
-    Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
-    Ef_mag = norm(Ef)
-    ap = term.sign*(term.flux[fID]*Ef_mag)/delta
-
-
-    # ap = term.sign*(term.flux[fID]*area)/delta # Initial form used
-
-    # ap = term.sign*(term.flux[fID]*Af)/Δ # minimum correction formulation
-
-    # Test formulation using vector d instead of e to explore any stability benefits
-    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
-    # Ef_mag = norm(Ef)
-    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
-    
     # Increment sparse array
     ac = -ap
     an = ap
@@ -128,7 +104,7 @@ end
 # Linear
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Linear}}, 
-    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
 
     w = face.weight
@@ -150,7 +126,7 @@ end
 # Upwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{Upwind}}, 
-    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # Calculate link coefficients
     ap = term.sign*(term.flux[fID]*ns)
@@ -167,7 +143,7 @@ end
 # LUST
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{LUST}}, 
-    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     
     w = face.weight
@@ -194,7 +170,7 @@ end
 # BoundedUpwind
 @inline function scheme!(
     term::Operator{F,P,I,Divergence{BoundedUpwind}}, 
-    nzval_array, cell, face, cellN, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     # $$\mathcal{D}_{bounded} = \sum_f \phi_f \psi_f - \psi_P \sum_f \phi_f$$
     # phif =  max(phif, 0) - max(-phi_f, 0)$
@@ -214,7 +190,7 @@ end
 # IMPLICIT SOURCE
 @inline function scheme!(
     term::Operator{F,P,I,Si}, 
-    nzval_array, cell, face,  cellN, ns, cIndex, nIndex, fID, prev, runtime
+    nzval_array, cell, face, nID, ns, cIndex, nIndex, fID, prev, runtime
     )  where {F,P,I}
     z = zero(eltype(nzval_array))
     z, z

@@ -1,12 +1,5 @@
-# The idea is to run four cases: without adaptive time-stepping, and with it when maxCo=0.25,0.5,0.75
-# The number of iterations for each individual case was selected so that the final simulation time is approximately the same (10 seconds):
-
-    # 2000 iterations: non-adaptive
-    # 2867 iterations: maxCo=0.25
-    # 1434 iterations: maxCo=0.5
-    # 957 iterations: maxCo=0.75
-
-# Then we compare if the average velocity magnitude at the outlet is identical across all these cases despite different dt
+# Four cases (fixed dt; adaptive maxCo=0.25,0.5,0.75), iteration counts chosen so each ends near t=10 s.
+# Checks the mean outlet velocity magnitude is the same across cases despite different dt.
 
 
 using XCALibre

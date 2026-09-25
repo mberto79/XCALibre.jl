@@ -28,15 +28,36 @@ The last (optional) step before running the simulation is to provide an initial 
 initialise!
 ```
 
+A uniform initial guess leaves a velocity field that does not satisfy continuity, which the first few solver iterations must work off before making physical progress. For external and internal flows around bodies, a potential-flow field is a much better starting point: it already satisfies continuity and carries the shape of the geometry.
+
+`potential_flow!` solves a velocity-potential equation on the current mesh and projects the velocity field onto the resulting divergence-free field. Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
+
+```@docs; canonical=false
+potential_flow!
+```
+
+Call it after `initialise!` and before `run!`:
+
+```julia
+initialise!(model.momentum.U, velocity)
+initialise!(model.momentum.p, 0.0)
+
+potential_flow!(model, config; ncorrectors=5)
+
+residuals = run!(model, config)
+```
+
+On meshes with appreciable non-orthogonality, pass `ncorrectors` to run non-orthogonal correctors on the potential equation. Set it to zero for orthogonal meshes.
+
 ## AMG solver
 ---
 
-The `AMG` linear solver can be selected directly in `SolverSetup`. It supports `mode=:solver` for a standalone multigrid solve and `mode=:cg` for AMG-preconditioned conjugate gradient on symmetric systems such as pressure equations.
+The `AMG` linear solver can be selected directly in `SolverSetup`. It supports `mode=AMGSolver()` for a standalone multigrid solve and `mode=Cg()` for AMG-preconditioned conjugate gradient on symmetric systems such as pressure equations. `mode` takes an instance, not a symbol: `mode=:cg` throws an `ArgumentError`.
 
 ```julia
 SolverSetup(
     solver = AMG(
-        mode = :cg,
+        mode = Cg(),
         coarsening = SmoothAggregation(),
         smoother = AMGJacobi()
     ),
@@ -47,6 +68,53 @@ SolverSetup(
     atol = 1e-5
 )
 ```
+
+For non-symmetric systems use `mode=Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix. `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` uses it for the pressure equation of a transonic RANS case.
+
+Choice of coarsening for non-symmetric operators: `Bicgstab()` has been tested with the default `SmoothAggregation()`. `RugeStuben()` and `Geometric()` are accepted but have not been validated on non-symmetric operators - `RugeStuben()` builds its strength of connection from each row's entries only, not from the transpose - so prefer the default unless you have checked the alternative on your case.
+
+If `Bicgstab()` breaks down - the shadow residual going orthogonal, or the stabilising step collapsing - the half-step iterate is kept and the solve restarts with a fresh shadow residual, at most twice.
+
+`scale_correction` (on by default) is supported. It makes the V-cycle preconditioner depend on its input, but the solver is right-preconditioned, so the solution and residual it carries stay consistent, and convergence is confirmed against the true residual `b - A*x`.
+
+```julia
+SolverSetup(
+    solver = AMG(
+        mode = Bicgstab(),
+        smoother = AMGGaussSeidel(sweep = AMGForwardSweep())
+        ),
+    preconditioner=DILU(),
+    convergence = 1e-7,
+    relax = 1.0,
+    rtol = 0.0,
+    atol = 1e-5     
+)
+```
+
+### Solving the coarsest level
+
+The coarsest level of the hierarchy is small but is visited on every V-cycle, so on a GPU the
+default host round trip can dominate. `coarse_solve` selects how it is solved:
+
+- `OnDevice(; max_rows = 512)` (default) — device-resident factorisation, no host round trip.
+  A coarsest level with more rows than `max_rows` falls back to the host, since the factor is
+  rebuilt on every coarse refresh.
+- `OnHost()` — always copy the coarsest right-hand side to the host and solve there. Also
+  written `coarse_solve = CPU()`.
+- `OnDeviceJacobi(; omega, iterations)` and `OnDeviceChebyshev(; degree, eig_ratio, lambda_scale)` — apply a
+  fixed number of smoother sweeps on the device instead of solving. Both are constant linear
+  operators, so they are valid with `mode = Cg()` as well as `mode = AMGSolver()`.
+- `OnDeviceKrylov(; solver, rtol, atol, itmax)` — run an inner Krylov solve on the device. An
+  inner Krylov solve is nonlinear in its right-hand side, which breaks the fixed-operator
+  assumption of preconditioned CG, so this one requires `mode = AMGSolver()` and is rejected with
+  `mode = Cg()`. Passing a GPU backend, as in `coarse_solve = CUDABackend()`, selects it.
+
+```julia
+AMG(mode = AMGSolver(), coarsening = SmoothAggregation(), smoother = AMGJacobi(),
+    coarse_solve = OnDeviceChebyshev(degree = 8))
+```
+
+On a CPU backend every `OnDevice*` option behaves as `OnHost()`.
 
 ## Launching flow solvers
 ---

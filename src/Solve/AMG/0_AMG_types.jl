@@ -289,10 +289,12 @@ _coarse_direct_eltype(::Type{T}) where {T} = T
 
 _amg_mode(mode::AMGSolver) = mode
 _amg_mode(mode::Cg) = mode
-_amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver() or Cg()"))
+_amg_mode(mode::Bicgstab) = mode
+_amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver(), Cg() or Bicgstab()"))
 
 _amg_mode_name(::AMGSolver) = "solve"
 _amg_mode_name(::Cg) = "cg"
+_amg_mode_name(::Bicgstab) = "bicgstab"
 _amg_mode_name(mode) = string(nameof(typeof(mode)))
 
 _amg_cycle(cycle::VCycle) = cycle
@@ -430,7 +432,6 @@ mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}
     x::VX
     tmp::VX
     direction::VX
-    coarse_tmp::VX
     aggregate_ids::VI
     lambda_max::T
     level_id::Int
@@ -482,6 +483,12 @@ mutable struct AMGWorkspace{H,V,T,RH} <: AbstractAMGWorkspace
     search::V
     preconditioned::V
     q::V
+    # BiCGStab only, zero-length in other modes (see `_workspace`). None may alias:
+    # `shadow` is held fixed for the whole solve, `t = A*M^-1*s` is a second matvec
+    # target, and `svec` must not be `solution`, which `solve_system!` solves in place.
+    shadow::V
+    t::V
+    svec::V
     iterations::Int
     converged::Bool
     last_relative_residual::T
@@ -510,9 +517,8 @@ function _empty_amg_level(backend, ::Type{T}) where {T}
     x = KernelAbstractions.zeros(backend, T, 0)
     tmp = KernelAbstractions.zeros(backend, T, 0)
     direction = KernelAbstractions.zeros(backend, T, 0)
-    coarse_tmp = KernelAbstractions.zeros(backend, T, 0)
     aggregate_ids = KernelAbstractions.zeros(backend, Int, 0)
-    return AMGLevel(A, P, R, diag, invdiag, diag_index, rhs, x, tmp, direction, coarse_tmp, aggregate_ids, zero(T), 0, false)
+    return AMGLevel(A, P, R, diag, invdiag, diag_index, rhs, x, tmp, direction, aggregate_ids, zero(T), 0, false)
 end
 
 function _placeholder_lu_qr(::Type{T}) where {T}
@@ -577,6 +583,9 @@ function _workspace(solver::AMG, b)
     TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     backend = KernelAbstractions.get_backend(b)
     x = similar(b)
+    # Only `amg_bicgstab_solve!` reads these three; allocating them in every mode adds
+    # 50% to the workspace. `similar(x, 0)` keeps the field type concrete.
+    bicg_vec() = solver.mode isa Bicgstab ? similar(x) : similar(x, 0)
     return AMGWorkspace(
         _amg_empty_hierarchy(amg_hierarchy_kind(solver, backend), backend, T, TS),
         0,
@@ -586,6 +595,9 @@ function _workspace(solver::AMG, b)
         similar(x),
         similar(x),
         similar(x),
+        bicg_vec(),   # shadow (BiCGStab)
+        bicg_vec(),   # t      (BiCGStab)
+        bicg_vec(),   # svec   (BiCGStab)
         0,
         false,
         zero(T),

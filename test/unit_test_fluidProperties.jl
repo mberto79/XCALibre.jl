@@ -15,15 +15,8 @@ H2_normal_T_crit = 33.145
 N2_T_crit = 126.192
 
 
-## Temperature ranges:
-
-# H2: [14 to 40 K with 0.25 K step]
-# H2: [40 to 100 K with 1 K step]
-# H2: [100 to 500 K with 10 K step]
-
-# N2: [64 to 90 K with 0.25 K step]
-# N2: [90 to 150 K with 1 K step]
-# N2: [150 to 500 K with 10 K step]
+# Temperature ranges: H2 14-40 K (0.25 K step), 40-100 K (1 K), 100-500 K (10 K)
+# N2 64-90 K (0.25 K step), 90-150 K (1 K), 150-500 K (10 K)
 
 H2_para_instance = HelmholtzEnergy(name=H2_para())
 H2_instance = HelmholtzEnergy(name=H2())
@@ -35,13 +28,7 @@ them_cond_max_error = 0.15 # typically within 1-15% deviation, but at p_crit bec
 them_cond_max_crit_error = 0.4 # typically within 1-10% deviation, but at p_crit becomes highly inaccurate!
 
 
-### APPROACH
-
-# Compare data for 4 pressure test points for each fluid
-# For each property (density, viscosity, conductivity), store highest deviation
-# Select highest deviating test point
-# Make sure deviation is less than max allowed for each of the three properties - then the test is passed
-
+# Per fluid, compare 4 pressure test points; the worst deviation of each property (density, viscosity, conductivity) must be below its limit
 
 # Choose which branch of the EOS to use (liquid/vapor/supercritical)
 function branch_index(T::F, Tcrit::F, Tsat::F) where {F<:AbstractFloat}

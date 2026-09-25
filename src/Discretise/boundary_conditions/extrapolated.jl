@@ -19,16 +19,14 @@ Adapt.@adapt_structure Extrapolated
 Extrapolated(name::Symbol) = Extrapolated(name , 0)
 
 @define_boundary Extrapolated Laplacian{Linear} begin
-    # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
-    phi = term.phi 
+    # Flux reconstruction must reuse this assembly-time owner value.
+    phi = term.phi
     values = get_values(phi, component)
     J = term.flux[fID]
-    (; area, delta) = face 
+    (; area, delta) = face
     flux = -J*area/delta
-    ap = term.sign*(flux)
-    ap, ap*values[cellID] # original
-    # 0.0, 0.0 # try this
-    # 0.0, -flux*bc.value # draft implementation to test!
+    ap = term.sign*flux
+    ap, ap*values[cellID]
 end
 
 @define_boundary Extrapolated Divergence{Linear} begin

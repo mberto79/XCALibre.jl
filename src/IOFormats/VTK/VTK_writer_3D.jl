@@ -10,9 +10,6 @@ get_data(arr, backend::KernelAbstractions.CPU) = begin
     arr
 end
 
-segment(p1, p2) = p2 - p1
-unit_vector(vec) = vec/norm(vec)
-
 function initialise_writer(format::VTK, mesh::Mesh3)
     @info "Initialise writer (Store mesh in host memory)"
     # Extract mesh information (copy to CPU if mesh in GPU format)
@@ -86,27 +83,10 @@ function initialise_writer(format::VTK, mesh::Mesh3)
     for (cID, fIDs) ∈ enumerate(all_cell_faces)
         write(header,"\t$(length(all_cell_faces[cID]))\n") # No. of Faces for each cell
         for fID ∈ fIDs
-            #Ordering of face nodes so that they are ordered anti-clockwise when looking at the cell from the outside
+            # VTK wants face nodes anticlockwise seen from outside the cell. Stored face nodes
+            # point out of the owner cell, so the neighbour takes them in reverse
             nIDs=face_nodes_cpu[faces_cpu[fID].nodes_range] # Get ids of nodes of face
-
-            n1=nodes_cpu[nIDs[1]].coords # Coordinates of 3 nodes only.
-            n2=nodes_cpu[nIDs[2]].coords
-            n3=nodes_cpu[nIDs[3]].coords
-
-            points = [n1, n2, n3]
-
-            _x(n) = n[1]
-            _y(n) = n[2]
-            _z(n) = n[3]
-
-            # surface vectors (segments connecting nodes to reference node)
-            l = segment.(Ref(points[1]), points) 
-            fn = unit_vector(l[2] × l[3]) # Calculating face normal 
-            cc=cells_cpu[cID].centre
-            fc=faces_cpu[fID].centre
-            d_fc=fc-cc
-
-            if dot(d_fc,fn)<0.0
+            if faces_cpu[fID].ownerCells[1] != cID
                 nIDs=reverse(nIDs)
             end
             write(

@@ -7,10 +7,6 @@ using Statistics
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "trig.unv"
 grid = "trig40.unv"
-# grid = "trig100.unv"
-# grid = "quad.unv"
-# grid = "quad40.unv"
-# grid = "quad100.unv"
 
 mesh_file = joinpath(grids_dir, grid)
 mesh = UNV2D_mesh(mesh_file, scale=0.001)

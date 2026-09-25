@@ -107,12 +107,14 @@ _build_A(backend::CPU, i, j, v, n) = SparseXCSR(sparsecsr(i, j, v, n, n))
 _build_opA(A::SparseXCSR) = A
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
-struct ScalarEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
+struct ScalarEquation{VTf<:AbstractVector, VTi<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
     A::ASA
     opA::OP
     b::VTf
     R::VTf
     Fx::VTf
+    diag_nz::VTi  # nzval index of A[i,i]
+    face_nz::VTi  # nzval index of A[owner, neighbour], indexed like mesh.cell_neighbours
 end
 Adapt.@adapt_structure ScalarEquation
 
@@ -145,24 +147,21 @@ ScalarEquation(phi::ScalarField, BCs) = begin
     backend = _get_backend(mesh)
     # A = _convert_array!(sparse(i, j, v), backend)
     A = _build_A(backend, i, j, v, nCells)
+    diag_nz, face_nz = nz_index_maps(mesh_temp, A, backend)
     ScalarEquation(
         A,
 
        _build_opA(A),
-        # KP.KrylovOperator(A), # small gain in performance
-        # A,
-
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend)
 
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),
-        KernelAbstractions.zeros(backend, Tf, nCells)
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        diag_nz,
+        face_nz
         )
 end
 
-struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
+struct VectorEquation{VTf<:AbstractVector, VTi<:AbstractVector, ASA<:AbstractSparseArray, OP} <: AbstractEquation
     A0::ASA
     A::ASA
     opA::OP
@@ -171,6 +170,8 @@ struct VectorEquation{VTf<:AbstractVector, ASA<:AbstractSparseArray, OP} <: Abst
     bz::VTf
     R::VTf
     Fx::VTf
+    diag_nz::VTi
+    face_nz::VTi
 end
 Adapt.@adapt_structure VectorEquation
 
@@ -185,32 +186,23 @@ VectorEquation(psi::VectorField, BCs) = begin
     # j = [j; periodicConnectivity.j]
     v = zeros(Tf, length(j))
     backend = _get_backend(mesh)
-    # A = _convert_array!(sparse(i, j, v), backend) 
-    # A0 = _convert_array!(sparse(i, j, v), backend)
-    # A = _convert_array!(sparsecsr(i, j, v), backend) 
-    # A0 = _convert_array!(sparsecsr(i, j, v), backend)
 
     A = _build_A(backend, i, j, v, nCells)
     A0 = _build_A(backend, i, j, v, nCells)
+    diag_nz, face_nz = nz_index_maps(mesh_temp, A, backend)
     VectorEquation(
         A0,
         A,
 
         _build_opA(A),
-        # KP.KrylovOperator(A),
-        # A,
-
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend),
-        # _convert_array!(zeros(Tf, nCells), backend)
 
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),
         KernelAbstractions.zeros(backend, Tf, nCells),
-        KernelAbstractions.zeros(backend, Tf, nCells)
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        diag_nz,
+        face_nz
         )
 end
 
@@ -241,6 +233,25 @@ function sparse_matrix_connectivity(mesh::AbstractMesh)
     return i, j, v
 end
 
+
+# The CSR sparsity pattern is fixed for the life of an equation, so the nzval index of every
+# coefficient the assembly writes can be resolved once instead of searched for on every call.
+# Built on the host from a host mesh, then moved to the backend with the rest of the equation.
+function nz_index_maps(mesh, A, backend)
+    TI = _get_int(mesh)
+    rowptr = _rowptr(A) |> Array
+    colval = _colval(A) |> Array
+    (; cells, cell_neighbours) = mesh
+    diag_nz = zeros(TI, length(cells))
+    face_nz = zeros(TI, length(cell_neighbours))
+    for cID ∈ eachindex(cells)
+        diag_nz[cID] = spindex(rowptr, colval, cID, cID)
+        for fi ∈ cells[cID].faces_range
+            face_nz[fi] = spindex(rowptr, colval, cID, cell_neighbours[fi])
+        end
+    end
+    (adapt(backend, diag_nz), adapt(backend, face_nz))
+end
 
 # Sparse CSR format
 function spindex(rowptr::AbstractArray{T}, colval, i, j) where T

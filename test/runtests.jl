@@ -16,6 +16,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_mesh_conversion.jl")
     end
 
+    @testset "Face orientation" begin
+        include("unit_test_face_orientation.jl")
+    end
+
     @testset "Face-flux reconstruction" begin
         include("test_reconstruct.jl")
     end

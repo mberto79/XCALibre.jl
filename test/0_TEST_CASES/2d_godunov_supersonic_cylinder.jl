@@ -161,3 +161,22 @@ end
         end
     end
 end
+
+# ── Robin BCs are rejected ──────────────────────────────────────────────────
+@testset "Robin BC unsupported" begin
+    BCs = assign(
+        region=mesh_dev,
+        (
+            U = [Dirichlet(:inlet, velocity), Zerogradient(:outlet), Dirichlet(:cylinder, noflow), Slip(:top), Slip(:bottom)],
+            p = [Dirichlet(:inlet, p_inf), Robin(:outlet, a=0.0, b=1.0), Zerogradient(:cylinder), Zerogradient(:top), Zerogradient(:bottom)],
+            T = [Dirichlet(:inlet, T_inf), Zerogradient(:outlet), Zerogradient(:cylinder), Zerogradient(:top), Zerogradient(:bottom)],
+            nut = [Extrapolated(:inlet), Extrapolated(:outlet), Zerogradient(:cylinder), Symmetry(:top), Symmetry(:bottom)]
+        )
+    )
+    config = Configuration(
+        solvers=solvers, schemes=(U=Schemes(), p=Schemes(), T=Schemes()),
+        runtime=Runtime(iterations=1, write_interval=-1, time_step=1e-7),
+        hardware=hardware, boundaries=BCs
+    )
+    @test_throws "Robin boundary conditions on `p`" run!(make_model(mesh_dev), config)
+end

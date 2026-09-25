@@ -2,7 +2,7 @@ export cpiso!
 
 """
     cpiso!(model, config;
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
 
 Compressible and transient variant of the PISO algorithm with a sensible enthalpy transport equation for the energy.
 
@@ -24,14 +24,15 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 """
 function cpiso!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true)
+    check_distributed_support(:CPISO, model)
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config;
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
 
     return residuals
@@ -40,7 +41,7 @@ end
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true
     )
 
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
@@ -103,8 +104,8 @@ function setup_unsteady_compressible_solvers(
 
     @info "Pre-allocating solvers..."
 
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
+    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
 
     @info "Initialising energy model..."
     energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
@@ -117,14 +118,14 @@ function setup_unsteady_compressible_solvers(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops)
+        inner_loops=inner_loops, progress=progress)
 
     return residuals
 end # end function
 
 function CPISO(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2)
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true)
 
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
@@ -217,7 +218,7 @@ function CPISO(
 
     @info "Starting CPISO loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
@@ -349,8 +350,8 @@ function CPISO(
         R_uz[iteration] = rz
         R_p[iteration] = rp
 
-    ProgressMeter.next!(
-        progress, showvalues = [
+    isnothing(bar) || ProgressMeter.next!(
+        bar, showvalues = [
             (:time, iteration*dt_cpu[1]),
             (:Courant, courant),
             (:Ux, R_ux[iteration]),

@@ -1,7 +1,7 @@
 export UNV2D_mesh
 
 """
-    UNV2D_mesh(meshFile; scale=1, integer_type=Int64, float_type=Float64)
+    UNV2D_mesh(meshFile; scale=1, integer_type=Int32, float_type=Float64)
 
 Read and convert 2D UNV mesh file into XCALibre.jl
 
@@ -13,13 +13,13 @@ Read and convert 2D UNV mesh file into XCALibre.jl
 
 - `scale` -- used to scale mesh file e.g. scale=0.001 will convert mesh from mm to metres defaults to 1 i.e. no scaling
 
-- `integer_type` - select interger type to use in the mesh (Int32 may be useful on GPU runs) 
+- `integer_type` - integer type of the mesh indices; `Int64` is needed only when a mesh has more than 2^31 faces, face-node entries or matrix entries, and reading such a mesh as `Int32` stops with an error saying so
 
 - `float_type` - select interger type to use in the mesh (Float32 may be useful on GPU runs) 
 
 """
-function UNV2D_mesh(meshFile; scale=1, integer_type=Int64, float_type=Float64)
-    return _UNV2D_mesh(meshFile, scale, integer_type, float_type)
+function UNV2D_mesh(meshFile; scale=1, integer_type=Int32, float_type=Float64)
+    return _with_index_capacity(() -> _UNV2D_mesh(meshFile, scale, integer_type, float_type), integer_type)
 end
 
 # Type-parameter barrier keeps the build type-stable for non-default integer/float types.

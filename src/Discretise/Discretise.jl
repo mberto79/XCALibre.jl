@@ -14,6 +14,7 @@ using SparseMatricesCSR
 using Statistics
 
 using XCALibre.Multithread
+using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework

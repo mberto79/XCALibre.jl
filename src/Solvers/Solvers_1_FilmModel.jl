@@ -3,19 +3,20 @@ export filmModel!
 function filmModel!(
     model, config;
     output=VTK(),#, pref=nothing, ncorrectors=
-    inner_loops=2
+    inner_loops=2, progress=true
 )
+    check_distributed_support(:FilmModel, model)
     residuals = setup_FilmModel_Solver(
         FilmModel, model, config,
         output=output,
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
     )
     
     return residuals
 end
 
 function setup_FilmModel_Solver(solver_variant, model, config;
-    output=VTK(), inner_loops=2)
+    output=VTK(), inner_loops=2, progress=true)
 
     (; solvers, schemes, boundaries) = config
 
@@ -76,8 +77,8 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     @info "Pre-allocating solvers"
 
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset h_eqn.solver = _workspace(solvers.h.solver, _b(h_eqn))
+    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
+    @reset h_eqn.solver = _workspace(solvers.h.solver, _b(h_eqn), _index_type(_A(h_eqn)))
 
     @info "Initialising turbulence model"
     #p_eqn = (Time{schemes.h.time}(rho_l,h)==Source(Sm)) → ScalarEquation(h, boundaries.h)
@@ -85,14 +86,14 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     residuals = solver_variant(
         model, #turbulenceModel,
-         U_eqn, h_eqn, config; output=output, inner_loops=inner_loops
+         U_eqn, h_eqn, config; output=output, inner_loops=inner_loops, progress=progress
     )
 end
 
 function FilmModel(
     model, #turbulenceModel,
      U_eqn, h_eqn, config;
-    output=VTK(), ncorrectors=0, inner_loops=2
+    output=VTK(), ncorrectors=0, inner_loops=2, progress=true
 )
     (; U, h, Uf, hf, coeffs) = model.momentum
     (; rho, nu) = model.fluid
@@ -225,12 +226,12 @@ function FilmModel(
 
     @info "Starting EFM loops"
     
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
             
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     #rh = 0
     rx = ry = rz = zero(TF)
-    @time for iteration ∈ 1:iterations
+    for iteration ∈ 1:iterations
         min_capillary_dt = update_capillary_dt!(
             config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
         )
@@ -350,8 +351,8 @@ function FilmModel(
             config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
         )
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:time, time),
                 (:dt, step_dt),
                 (:Co, limitingCourant),
@@ -379,10 +380,10 @@ function initialise_film_geometry!(surfaceNormal, gravityTangent, gNormalf, G, c
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    cell_kernel! = _initialise_film_cell_geometry!(_setup(backend, workgroup, length(mesh.cells))...)
+    cell_kernel! = _sized(_initialise_film_cell_geometry!, backend, workgroup, length(mesh.cells))
     cell_kernel!(surfaceNormal, gravityTangent, mesh, G)
 
-    face_kernel! = _initialise_film_face_geometry!(_setup(backend, workgroup, length(mesh.faces))...)
+    face_kernel! = _sized(_initialise_film_face_geometry!, backend, workgroup, length(mesh.faces))
     face_kernel!(gNormalf, surfaceNormal, mesh, G, length(mesh.boundary_cellsID))
 end
 
@@ -475,10 +476,10 @@ function update_film_pressure_fields!(
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    cell_kernel! = _update_film_pressure_cells!(_setup(backend, workgroup, length(h))...)
+    cell_kernel! = _sized(_update_film_pressure_cells!, backend, workgroup, length(h))
     cell_kernel!(P_surf, Δh, σ)
 
-    face_kernel! = _update_film_pressure_faces!(_setup(backend, workgroup, length(hf))...)
+    face_kernel! = _sized(_update_film_pressure_faces!, backend, workgroup, length(hf))
     face_kernel!(P_hydrf, P_surff, hf, Δhf, rho, σ, gNormalf)
 end
 
@@ -504,7 +505,7 @@ function update_liquid_pressure!(PLf, P_hydrf, P_surff, Pg, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(PLf)
-    kernel! = _update_liquid_pressure!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_update_liquid_pressure!, backend, workgroup, ndrange)
     kernel!(PLf, P_hydrf, P_surff, Pg)
 end
 
@@ -544,7 +545,7 @@ function scale_face_flux!(scaledFlux, flux, scale, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(scaledFlux)
-    kernel! = _scale_face_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_scale_face_flux!, backend, workgroup, ndrange)
     kernel!(scaledFlux, flux, scale)
 end
 
@@ -561,7 +562,7 @@ function update_film_viscous_source!(nu_h, nu, h, h_floor, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(nu_h)
-    kernel! = _update_film_viscous_source!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_update_film_viscous_source!, backend, workgroup, ndrange)
     kernel!(nu_h, nu, h, h_floor)
 end
 
@@ -578,7 +579,7 @@ function apply_wetting_to_velocity!(U, w, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(U)
-    kernel! = _apply_wetting_to_velocity!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_apply_wetting_to_velocity!, backend, workgroup, ndrange)
     kernel!(U, w)
 end
 
@@ -597,7 +598,7 @@ function update_film_force_sources!(
     (; backend, workgroup) = hardware
 
     ndrange = length(h)
-    kernel! = _update_film_force_sources!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_update_film_force_sources!, backend, workgroup, ndrange)
     contact_line_scale = coeffs.β * coeffs.σ / rho * (1 - cosd(coeffs.θm))
     kernel!(
         Ph, h∇PL, τθw, h, ∇PL, ∇w, gravityTangent,
@@ -632,13 +633,13 @@ function update_wetting_fields!(w, wf, h, wBCs, h_crit, wetting_mode, time, conf
     wetting_mode = efm_wetting_mode(wetting_mode)
     ndrange = length(w)
     if wetting_mode === Val(:allwet)
-        kernel! = _set_wetting_field!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_set_wetting_field!, backend, workgroup, ndrange)
         kernel!(w, one(h_crit))
     elseif wetting_mode === Val(:smooth)
-        kernel! = _update_smooth_wetting_field!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_update_smooth_wetting_field!, backend, workgroup, ndrange)
         kernel!(w, h, h_crit)
     else
-        kernel! = _update_wetting_field!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_update_wetting_field!, backend, workgroup, ndrange)
         kernel!(w, h, h_crit)
     end
 
@@ -704,7 +705,7 @@ function clamp_face_wetting!(wf, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(wf)
-    kernel! = _clamp_face_wetting!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_clamp_face_wetting!, backend, workgroup, ndrange)
     kernel!(wf)
 end
 
@@ -721,7 +722,7 @@ function update_capillary_face_wetting!(wcf, w, wf, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(wcf)
-    kernel! = _update_capillary_face_wetting!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_update_capillary_face_wetting!, backend, workgroup, ndrange)
     kernel!(wcf, w, wf, length(w.mesh.boundary_cellsID))
 end
 
@@ -796,7 +797,7 @@ function apply_wetted_velocity_flux!(filmVelocityFlux, mdotf, w, wf, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(filmVelocityFlux)
-    kernel! = _apply_wetted_velocity_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_apply_wetted_velocity_flux!, backend, workgroup, ndrange)
     kernel!(filmVelocityFlux, mdotf, w, wf, length(w.mesh.boundary_cellsID))
 end
 
@@ -825,7 +826,7 @@ function apply_film_flux!(phif, filmVelocityFlux, hf, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(phif)
-    kernel! = _apply_film_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_apply_film_flux!, backend, workgroup, ndrange)
     kernel!(phif, filmVelocityFlux, hf)
 end
 
@@ -834,7 +835,7 @@ function apply_film_flux!(phif, scaledFlux, filmVelocityFlux, hf, scale, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(phif)
-    kernel! = _apply_film_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_apply_film_flux!, backend, workgroup, ndrange)
     kernel!(phif, scaledFlux, filmVelocityFlux, hf, scale)
 end
 
@@ -884,7 +885,7 @@ function getDf!(Df, rDf, hf, wf, gNormalf, config)
     (; backend, workgroup) = hardware
     
     ndrange = length(hf)
-    kernel! = _getDf!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_getDf!, backend, workgroup, ndrange)
     kernel!(Df, rDf, hf, wf, gNormalf)
 end
 
@@ -906,12 +907,12 @@ function correct_film_surface_flux!(phif, rDf, hf, wf, P_surf, P_surff, rho, con
     n_ifaces = length(faces) - n_bfaces
 
     if n_ifaces > 0
-        kernel! = _correct_film_surface_flux!(_setup(backend, workgroup, n_ifaces)...)
+        kernel! = _sized(_correct_film_surface_flux!, backend, workgroup, n_ifaces)
         kernel!(phif, rDf, hf, wf, P_surf, faces, rho, n_bfaces)
     end
 
     if n_bfaces > 0
-        kernel! = _correct_film_surface_flux_boundary!(_setup(backend, workgroup, n_bfaces)...)
+        kernel! = _sized(_correct_film_surface_flux_boundary!, backend, workgroup, n_bfaces)
         kernel!(phif, rDf, hf, wf, P_surf, P_surff, faces, boundary_cellsID, rho)
     end
 end
@@ -930,7 +931,7 @@ function zero_face_flux!(faceFlux, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(faceFlux)
-    kernel! = _zero_face_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_zero_face_flux!, backend, workgroup, ndrange)
     kernel!(faceFlux)
 end
 
@@ -1013,7 +1014,7 @@ function apply_donor_wetting_to_flux!(faceFlux, w, wf, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(faceFlux)
-    kernel! = _apply_donor_wetting_to_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_apply_donor_wetting_to_flux!, backend, workgroup, ndrange)
     kernel!(faceFlux, w, wf, length(w.mesh.boundary_cellsID))
 end
 
@@ -1083,7 +1084,7 @@ function remove_film_pressure_source!(U_eqn, ∇P_hydr, ∇P_surf, P_hydrf, P_su
     grad!(∇P_surf, P_surff, config)
 
     ndrange = length(h)
-    kernel! = _remove_film_pressure_source!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_remove_film_pressure_source!, backend, workgroup, ndrange)
     kernel!(cells, ∇P_hydr, ∇P_surf, rho, h, surfaceNormal, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -1110,7 +1111,7 @@ function bound_h_nonnegative!(h, config)
     (; cells) = h.mesh
     ndrange = length(cells)
 
-    kernel! = _bound_h_nonnegative!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_bound_h_nonnegative!, backend, workgroup, ndrange)
     kernel!(h)
 end
 
@@ -1141,7 +1142,7 @@ function capillary_time_step!(capillaryDtFaces, mesh, hf, wf, rho, σ, h_crit, c
     (; backend, workgroup) = hardware
 
     ndrange = length(capillaryDtFaces)
-    kernel! = _capillary_time_step!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_capillary_time_step!, backend, workgroup, ndrange)
     kernel!(capillaryDtFaces, mesh, hf, wf, rho, σ, h_crit, length(mesh.boundary_cellsID))
 
     return minimum(capillaryDtFaces)
@@ -1164,7 +1165,7 @@ end
 function limit_capillary_dt!(runtime::Runtime, min_capillary_dt, coeffs)
     if coeffs.σ > 0
         backend = KernelAbstractions.get_backend(runtime.dt)
-        kernel! = _limit_capillary_dt!(_setup(backend, 1, 1)...)
+        kernel! = _sized(_limit_capillary_dt!, backend, 1, 1)
         kernel!(runtime.dt, min_capillary_dt, coeffs.capillary_dt)
     end
 end
@@ -1221,7 +1222,7 @@ function correct_film_velocity!(
     end
 
     ndrange = length(U)
-    kernel! = _correct_film_velocity!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_film_velocity!, backend, workgroup, ndrange)
     hydrostatic_scale = include_hydrostatic ? one(rho) : zero(rho)
     surface_scale = include_surface ? one(rho) : zero(rho)
     kernel!(U, Hv, h, rD, ∇P_hydr, ∇P_surf, surfaceNormal, rho, hydrostatic_scale, surface_scale)
@@ -1232,7 +1233,7 @@ function copy_projected_vector_field!(dest, src, surfaceNormal, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(dest)
-    kernel! = _copy_projected_vector_field!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_copy_projected_vector_field!, backend, workgroup, ndrange)
     kernel!(dest, src, surfaceNormal)
 end
 
@@ -1241,7 +1242,7 @@ function project_vector_field_to_surface!(field, surfaceNormal, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(field)
-    kernel! = _project_vector_field_to_surface!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_project_vector_field_to_surface!, backend, workgroup, ndrange)
     kernel!(field, surfaceNormal)
 end
 
@@ -1294,12 +1295,12 @@ function correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, hf, w, wf, hBCs, 
     apply_film_convection_flux!(phif, convection_term, h, config)
 
     if n_bfaces > 0
-        kernel! = _add_face_flux!(_setup(backend, workgroup, n_bfaces)...)
+        kernel! = _sized(_add_face_flux!, backend, workgroup, n_bfaces)
         kernel!(phif, filmSurfaceFlux)
     end
 
     if n_ifaces > 0
-        kernel! = _correct_film_flux2!(_setup(backend, workgroup, n_ifaces)...)
+        kernel! = _sized(_correct_film_flux2!, backend, workgroup, n_ifaces)
         kernel!(phif, filmSurfaceFlux, h, Df, faces, n_bfaces)
     end
 
@@ -1327,7 +1328,7 @@ function apply_film_convection_flux!(phif, convection_term, h, config)
 
     n_ifaces == 0 && return nothing
 
-    kernel! = _apply_film_convection_flux!(_setup(backend, workgroup, n_ifaces)...)
+    kernel! = _sized(_apply_film_convection_flux!, backend, workgroup, n_ifaces)
     kernel!(phif, convection_term.flux, h, faces, n_bfaces, film_convection_mode(convection_term))
 end
 
@@ -1411,7 +1412,7 @@ function max_film_courant_number!(cellsFilmCourant, phif, hf, h_crit, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(cellsFilmCourant)
-    kernel! = _max_film_courant_number!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_max_film_courant_number!, backend, workgroup, ndrange)
     kernel!(cellsFilmCourant, phif, hf, h_crit, runtime, mesh)
     return maximum(cellsFilmCourant)
 end

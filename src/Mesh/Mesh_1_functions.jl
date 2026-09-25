@@ -12,7 +12,22 @@ export validate_single_precision_mesh
 
 _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
-_get_backend(mesh) = get_backend(mesh.cells)
+_get_backend(mesh) = get_backend(mesh.cell_faces)
+
+_index_capacity_error(::Type{TI}, what) where TI = ArgumentError(
+    "$what does not fit the mesh integer type $TI; read the mesh with integer_type=Int64")
+_check_index_capacity(::Type{TI}, n, what) where TI =
+    n <= typemax(TI) || throw(_index_capacity_error(TI, "$what ($n)"))
+
+# a checked integer conversion failing while a narrow-index mesh is built means the index type is too narrow
+function _with_index_capacity(f, ::Type{TI}) where TI
+    try
+        f()
+    catch e
+        TI === Int64 || !(e isa InexactError || e isa OverflowError) ? rethrow() :
+            throw(_index_capacity_error(TI, "a mesh index or count ($(sprint(showerror, e)))"))
+    end
+end
 
 # Boundary faces store their owner cell twice: every mesh reader sets ownerCells this way
 # (UNV2, UNV3, FoamMesh), and the MPI path must do the same for processor faces.
@@ -389,7 +404,7 @@ function bounding_box(mesh::AbstractMesh)
     (; faces, face_nodes, nodes) = mesh
     nbfaces = total_boundary_faces(mesh)
 
-    backend = get_backend(faces)
+    backend = get_backend(face_nodes)
     F = _get_float(mesh)
 
     pmin = KernelAbstractions.zeros(backend, F, 3)
@@ -488,7 +503,7 @@ function _rebuild_mesh_float(mesh::Mesh3, ::Type{TF}) where {TF<:AbstractFloat}
                     SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
     Mesh3(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
           faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
-          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+          zero(TF), mesh.get_int, mesh.boundary_cellsID)
 end
 
 function _rebuild_mesh_float(mesh::Mesh2, ::Type{TF}) where {TF<:AbstractFloat}
@@ -498,7 +513,7 @@ function _rebuild_mesh_float(mesh::Mesh2, ::Type{TF}) where {TF<:AbstractFloat}
                     SVector{3,TF}(f.e), TF(f.area), TF(f.delta), TF(f.weight)) for f in mesh.faces]
     Mesh2(cells, mesh.cell_nodes, mesh.cell_faces, mesh.cell_neighbours, mesh.cell_nsign,
           faces, mesh.face_nodes, mesh.boundaries, nodes, mesh.node_cells,
-          SVector{3,TF}(mesh.get_float), mesh.get_int, mesh.boundary_cellsID)
+          zero(TF), mesh.get_int, mesh.boundary_cellsID)
 end
 
 # Cheap check: volumes/areas/deltas/weights finite & positive and length scales above Float32 spacing.

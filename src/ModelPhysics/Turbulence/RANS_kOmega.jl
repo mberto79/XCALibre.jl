@@ -119,16 +119,18 @@ function initialise(
             Source(Pω)
     ) → eqn
 
-    # Set up preconditioners
-    # @reset k_eqn.preconditioner = set_preconditioner(
-    #             solvers.k.preconditioner, k_eqn, boundaries.k, config)
+    # Krylov preconditioner/workspace are serial-only (distributed solves through PETSc PCs)
+    if !is_distributed_mesh(mesh)
+        @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
+        @reset ω_eqn.preconditioner = k_eqn.preconditioner
+        @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
+        @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn), _index_type(_A(ω_eqn)))
+    end
 
-    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-    @reset ω_eqn.preconditioner = k_eqn.preconditioner
-    
-    # preallocating solvers
-    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn))
-    @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn))
+    # wrap transported-scalar eqns for the distributed solve seam (identity serial). This is
+    # the single hook that makes any turbulence model distributed-capable.
+    k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config; label="k")
+    ω_eqn = wrap_eqn(ω_eqn, mesh, solvers.omega, config; label="omega")
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaModel(
@@ -159,12 +161,17 @@ function turbulence!(
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
-    
+    distributed = is_distributed_mesh(mesh)
+
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, nutf, coeffs) = rans.turbulence
     (; U, Uf, gradU) = S
     (;k_eqn, ω_eqn, state, wall_scratch) = rans
     (; solvers, runtime, boundaries) = config
+
+    # wrapped eqns solve through the seam; raw eqns are assembled/discretised in place
+    k_deqn, ω_deqn = k_eqn, ω_eqn
+    k_eqn, ω_eqn = unwrap_eqn(k_eqn), unwrap_eqn(ω_eqn)
 
     mueffk = get_flux(k_eqn, 3)
     Dkf = get_flux(k_eqn, 4)
@@ -219,9 +226,9 @@ function turbulence!(
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, boundaries.omega, model, config, wall_scratch) # active with WFs only
-    update_preconditioner!(ω_eqn.preconditioner, mesh, config)
-    ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
-    
+    distributed || update_preconditioner!(ω_eqn.preconditioner, mesh, config)
+    ω_res = solve_system!(ω_deqn, solvers.omega, omega, nothing, config)
+
     # constrain_boundary!(omega, boundaries.omega, model, config) # active with WFs only
     bound!(omega, config)
     # explicit_relaxation!(omega, prev, solvers.omega.relax, config)
@@ -232,12 +239,15 @@ function turbulence!(
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
-    update_preconditioner!(k_eqn.preconditioner, mesh, config)
-    k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
+    distributed || update_preconditioner!(k_eqn.preconditioner, mesh, config)
+    k_res = solve_system!(k_deqn, solvers.k, k, nothing, config)
     bound!(k, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    @. nut.values = k.values/omega.values
+    kv = k.values # nutv and omegav are bound above; rebinding a captured name boxes it
+    xcal_foreach(nutv, config) do i
+        nutv[i] = kv[i]/omegav[i]
+    end
 
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)

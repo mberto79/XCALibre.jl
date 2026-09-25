@@ -83,7 +83,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 9.39k allocs
+residuals = run!(model, config; progress=false) # 9.39k allocs
 
 outlet_result_1 = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
@@ -106,7 +106,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 9.39k allocs
+residuals = run!(model, config; progress=false) # 9.39k allocs
 
 outlet_result_2 = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
@@ -129,7 +129,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 9.39k allocs
+residuals = run!(model, config; progress=false) # 9.39k allocs
 
 outlet_result_3 = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
@@ -152,7 +152,7 @@ GC.gc()
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-residuals = run!(model, config) # 9.39k allocs
+residuals = run!(model, config; progress=false) # 9.39k allocs
 
 outlet_result_4 = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 

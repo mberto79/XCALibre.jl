@@ -195,7 +195,47 @@ end
     return pos
 end
 
+# binary files (`format binary`): after the header, `N (raw bytes)` lists; widths from `arch`, nothing if ascii
+function _foam_binary(file_path, kind)
+    hdr = open(io -> readuntil(io, '}'; keep=true), file_path) # an ascii file is never read whole here
+    endswith(hdr, '}') && occursin(r"format\s+binary", hdr) || return nothing
+    b = read(file_path)
+    hend = ncodeunits(hdr)
+    lb = (m = match(r"label=(\d+)", hdr)) === nothing ? 32 : parse(Int, m[1])
+    sb = (m = match(r"scalar=(\d+)", hdr)) === nothing ? 64 : parse(Int, m[1])
+    T = kind == :label ? (lb == 64 ? Int64 : Int32) : SVector{3,sb == 32 ? Float32 : Float64}
+    out = Vector{T}[]
+    pos, len = hend + 1, length(b)
+    while true
+        while pos <= len
+            if b[pos] == UInt8('/') && pos < len && b[pos+1] == UInt8('/')
+                pos = something(findnext(==(UInt8('\n')), b, pos), len) + 1
+            elseif isspace(Char(b[pos]))
+                pos += 1
+            else
+                break
+            end
+        end
+        (pos > len || !isdigit(Char(b[pos]))) && break
+        q = pos
+        while isdigit(Char(b[q])); q += 1; end
+        n = parse(Int, String(b[pos:q-1]))
+        while b[q] != UInt8('('); q += 1; end
+        v = Vector{T}(undef, n)
+        copyto!(reinterpret(UInt8, v), 1, b, q + 1, n * sizeof(T))
+        push!(out, v)
+        pos = q + 2 + n * sizeof(T)
+    end
+    out
+end
+
 function read_faces(file_path, TI, TF)
+    lists = _foam_binary(file_path, :label)
+    if lists !== nothing
+        offsets, labels = lists
+        ranges = [UnitRange{TI}(offsets[i] + 1, offsets[i+1]) for i ∈ 1:length(offsets)-1]
+        return TI.(labels) .+ one(TI), ranges
+    end
     # find count line (skips FoamFile header safely)
     startLine = 0
     nfaces = 0
@@ -217,22 +257,24 @@ function read_faces(file_path, TI, TF)
     face_nodes = Vector{TI}(undef, 0)
     sizehint!(face_nodes, 4 * Int(nfaces))
     face_nodes_range = Vector{UnitRange{TI}}(undef, nfaces)
-    startIdx = one(TI)
+    startIdx = 1 # Int: the checked conversion to TI below is what catches overflow
     for facei ∈ 1:nfaces
         nnodes, pos = _next_uint(bytes, pos, len) # per-face node count
         for i ∈ 1:nnodes
             nid, pos = _next_uint(bytes, pos, len)
             push!(face_nodes, TI(nid) + one(TI)) # +1 shift
         end
-        endIdx = startIdx + TI(nnodes) - one(TI)
+        endIdx = startIdx + Int(nnodes) - 1
         face_nodes_range[facei] = UnitRange{TI}(startIdx, endIdx)
-        startIdx = endIdx + one(TI)
+        startIdx = endIdx + 1
     end
 
     return face_nodes, face_nodes_range
 end
 
 function read_neighbour(file_path, TI, TF)
+    lists = _foam_binary(file_path, :label)
+    lists === nothing || return TI.(lists[1]) .+ one(TI)
     nfaces = 0
     startLine = 0
     for (n, line) ∈ enumerate(eachline(file_path))
@@ -263,6 +305,8 @@ function read_owner(file_path, TI, TF)
 end
 
 function read_points(file_path, scale, TI, TF)
+    lists = _foam_binary(file_path, :vector)
+    lists === nothing || return [SVector{3,TF}(ntuple(i -> scale * TF(p[i]), 3)) for p ∈ lists[1]]
     npoints = 0
     startLine = 0
     for (n, line) ∈ enumerate(eachline(file_path))

@@ -2,7 +2,7 @@ export simple_MRF!
 
 """
     simple!(model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -27,15 +27,16 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple_MRF!(
     model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
+    check_distributed_support(:SIMPLE_MRF, model)
 
     residuals = setup_incompressible_solvers_MRF(
         SIMPLE_MRF, model, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
     )
 
     return residuals
@@ -43,7 +44,7 @@ end
 
 function setup_incompressible_solvers_MRF(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -85,8 +86,8 @@ function setup_incompressible_solvers_MRF(
 
     @info "Pre-allocating solvers..."
 
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
+    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
 
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
@@ -96,7 +97,7 @@ function setup_incompressible_solvers_MRF(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
+        inner_loops=inner_loops, progress=progress)
 
     return residuals
 end # end function
@@ -104,7 +105,7 @@ end # end function
 
 function SIMPLE_MRF(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
     
     # Extract model variables and configuration
@@ -162,7 +163,7 @@ function SIMPLE_MRF(
 
     @info "Starting SIMPLE_MRF loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -231,7 +232,7 @@ function SIMPLE_MRF(
         R_p[iteration] = rp
 
         Uz_convergence = true
-        if typeof(mesh) <: Mesh3
+        if _base_mesh(mesh) isa Mesh3
             Uz_convergence = rz <= solvers.U.convergence
         end
 
@@ -241,8 +242,7 @@ function SIMPLE_MRF(
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            progress.n = iteration
-            finish!(progress)
+            isnothing(bar) || (bar.n = iteration; finish!(bar))
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 if refFrames.polar == false
@@ -255,8 +255,8 @@ function SIMPLE_MRF(
             break
         end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
@@ -291,7 +291,7 @@ function update_mrf_sources!(omegaU, U, reference_frames, config)
     cells = mesh.cells 
 
     ndrange = length(cells)
-    kernel! = _update_mrf_sources!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_update_mrf_sources!, backend, workgroup, ndrange)
     kernel!(omegaU, U, reference_frames)
 end
 
@@ -313,7 +313,7 @@ function flux_mrf!(phif::FS, psif::FV, config, reference_frames) where {FS<:Face
     (; backend, workgroup) = hardware
 
     ndrange = length(phif)
-    kernel! = _flux_mrf!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_flux_mrf!, backend, workgroup, ndrange)
     kernel!(phif, psif, reference_frames)
     # # KernelAbstractions.synchronize(backend)
 end

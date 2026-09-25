@@ -10,7 +10,7 @@ function green_gauss!(grad::Grad{S,F,R,I,M}, phif, config) where {S,F,R<:VectorF
     
     # Launch result calculation kernel
     ndrange = length(x)
-    kernel! = _green_gauss!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_green_gauss!, backend, workgroup, ndrange)
     kernel!(x, y, z, phif)
     # # KernelAbstractions.synchronize(backend)
 
@@ -18,7 +18,7 @@ function green_gauss!(grad::Grad{S,F,R,I,M}, phif, config) where {S,F,R<:VectorF
     nbfaces = length(phif.mesh.boundary_cellsID)
     
     ndrange = nbfaces
-    kernel! = boundary_faces_contribution!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(boundary_faces_contribution!, backend, workgroup, ndrange)
     kernel!(x, y, z, phif)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -33,7 +33,7 @@ end
     end
      
     @inbounds begin
-        (; volume, faces_range) = cells[i]
+        volume, faces_range = cells.volume[i], cells.faces_range[i]
 
         z = zero(volume)
         res = SVector{3}(z,z,z)
@@ -41,7 +41,7 @@ end
         for fi ∈ faces_range
             fID = cell_faces[fi]
             nsign = cell_nsign[fi]
-            (; area, normal) = faces[fID]
+            area, normal = faces.area[fID], faces.normal[fID]
             
             res += values[fID]*(area*normal*nsign)
         end
@@ -64,9 +64,9 @@ end
     end
 
     @inbounds begin
-        (; ownerCells, area, normal) = faces[i]
+        ownerCells, area, normal = faces.ownerCells[i], faces.area[i], faces.normal[i]
         cID = ownerCells[1]
-        (; volume) = cells[cID]
+        volume = cells.volume[cID]
 
         res = values[i]*(area*normal)
         res /= volume 
@@ -89,7 +89,7 @@ function green_gauss!(
     
     # Launch result calculation kernel
     ndrange = length(xx)
-    kernel! = _green_gauss_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_green_gauss_vector!, backend, workgroup, ndrange)
     kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif)
     # # KernelAbstractions.synchronize(backend)
 
@@ -97,7 +97,7 @@ function green_gauss!(
     nbfaces = length(psif.mesh.boundary_cellsID)
     
     ndrange = nbfaces
-    kernel! = boundary_faces_contribution_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(boundary_faces_contribution_vector!, backend, workgroup, ndrange)
     kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -113,14 +113,14 @@ end
     end
      
     @inbounds begin
-        (; volume, faces_range) = cells[i]
+        volume, faces_range = cells.volume[i], cells.faces_range[i]
 
         res = SMatrix{3,3}(z,z,z,z,z,z,z,z,z)
 
         for fi ∈ faces_range
             fID = cell_faces[fi]
             nsign = cell_nsign[fi]
-            (; area, normal) = faces[fID]
+            area, normal = faces.area[fID], faces.normal[fID]
             Sf = area*normal*nsign
             res += psif[fID]*Sf'
         end
@@ -150,9 +150,9 @@ end
     end
 
     @inbounds begin
-        (; ownerCells, area, normal) = faces[i]
+        ownerCells, area, normal = faces.ownerCells[i], faces.area[i], faces.normal[i]
         cID = ownerCells[1]
-        (; volume) = cells[cID]
+        volume = cells.volume[cID]
 
         Sf = area*normal
         res = psif[i]*Sf'

@@ -9,7 +9,7 @@ function bound!(field, config)
 
     # set up and launch kernel
     ndrange = length(values)
-    kernel! = _bound!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_bound!, backend, workgroup, ndrange)
     kernel!(values, cells, cell_neighbours)
     # KernelAbstractions.synchronize(backend)
 end
@@ -74,6 +74,10 @@ wall_cell_accumulators(mesh, config) = begin
     KernelAbstractions.zeros(backend, TF, n), KernelAbstractions.zeros(backend, TF, n)
 end
 
+# Wall functions launch one kernel per patch, unlike the shared boundary kernel, so a rank
+# owning no face of a patch must skip the launch instead of indexing an empty range.
+no_wall_faces(BC) = isempty(BC.IDs_range)
+
 # Built once by every turbulence model's `initialise`, so the three wall function passes below
 # do not allocate and zero two cell-sized arrays on every outer iteration. `nothing` when no
 # patch uses a wall function, which is what those passes already compile to.
@@ -83,8 +87,12 @@ wall_scratch(mesh, boundaries, config) =
 
 reset_wall_scratch(mesh, config, ::Nothing) = wall_cell_accumulators(mesh, config)
 reset_wall_scratch(mesh, config, scratch) = begin
-    fill!(scratch[1], zero(eltype(scratch[1])))
-    fill!(scratch[2], zero(eltype(scratch[2])))
+    s1, s2 = scratch
+    z = zero(eltype(s1))
+    xcal_foreach(s1, config) do i
+        s1[i] = z
+        s2[i] = z
+    end
     scratch
 end
 
@@ -96,6 +104,7 @@ average_wall_cells!(values, BC, sums, counts, model, config) = nothing
 function average_wall_cells!(
     values, BC::Union{KWallFunction,OmegaWallFunction,NutMixingLengthWallFunction},
     sums, counts, model, config)
+    no_wall_faces(BC) && return nothing
     (; backend, workgroup) = config.hardware
     boundary_cellsID = model.domain.boundary_cellsID
     ndrange = length(BC.IDs_range)
@@ -131,6 +140,7 @@ end
 set_production!(sums, counts, BC, model, gradU, config) = nothing
 
 function set_production!(sums, counts, BC::KWallFunction, model, gradU, config)
+    no_wall_faces(BC) && return nothing
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -206,6 +216,7 @@ end
 correct_nut_wall!(nutf, BC, sums, counts, model, config) = nothing
 
 function correct_nut_wall!(νtf, BC::NutWallFunction, sums, counts, model, config)
+    no_wall_faces(BC) && return nothing
     # backend = _get_backend(mesh)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -255,6 +266,7 @@ end
 end
 
 function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, sums, counts, model, config)
+    no_wall_faces(BC) && return nothing
     (; hardware) = config
     (; backend, workgroup) = hardware
 
@@ -334,6 +346,7 @@ fix_wall_row!(eqn, BC, model, config) = nothing
 # Pins the cell to the wall value: every contributing face writes the same row, so the
 # repeated writes are harmless, and the source is then averaged over those faces.
 function fix_wall_row!(eqn, BC::OmegaWallFunction, model, config)
+    no_wall_faces(BC) && return nothing
     (; backend, workgroup) = config.hardware
     A = _A(eqn)
     b = _b(eqn, nothing)
@@ -361,6 +374,7 @@ end
 constrain!(sums, counts, BC, model, config) = nothing
 
 function constrain!(sums, counts, BC::OmegaWallFunction, model, config)
+    no_wall_faces(BC) && return nothing
 
     # backend = _get_backend(mesh)
     (; hardware) = config
@@ -418,75 +432,4 @@ end
     end
 end
 
-# @generated constrain_boundary!(field, fieldBCs, model, config) = begin
-#     BCs = fieldBCs.parameters
-#     func_calls = Expr[]
-#     for i ∈ eachindex(BCs)
-#         call = quote
-#             set_cell_value!(field, fieldBCs[$i], model, config)
-#         end
-#         push!(func_calls, call)
-#     end
-#     quote
-#     $(func_calls...)
-#     nothing
-#     end 
-# end
-
-# set_cell_value!(field, BC, model, config) = nothing
-
-# function set_cell_value!(field, BC::OmegaWallFunction, model, config)
-#     # backend = _get_backend(mesh)
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-    
-#     # Deconstruct mesh to required fields
-#     mesh = model.domain
-#     (; faces, boundaries, boundary_cellsID) = mesh
-#     (; fluid, turbulence) = model
-#     # turbFields = turbulence.fields
-
-#     # facesID_range = get_boundaries(BC, boundaries)
-#     boundaries_cpu = get_boundaries(boundaries)
-#     facesID_range = boundaries_cpu[BC.ID].IDs_range
-#     start_ID = facesID_range[1]
-
-#     # Execute apply boundary conditions kernel
-        # ndrange=length(facesID_range)
-#     kernel! = _set_cell_value!(_setup(backend, workgroup, ndrange)...)
-#     kernel!(
-#         field, turbulence, fluid, BC, faces, start_ID, boundary_cellsID
-#     )
-# end
-
-# @kernel function _set_cell_value!(field, turbulence, fluid, BC, faces, start_ID, boundary_cellsID)
-#     i = @index(Global)
-#     fID = i + start_ID - 1 # Redefine thread index to become face ID
-
-#     @uniform begin
-#         (; nu) = fluid
-#         (; k) = turbulence
-#         (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
-#         (; values) = field
-#         ωc = zero(eltype(values))
-#     end
-
-
-#     @inbounds begin
-#         cID = boundary_cellsID[fID]
-#         face = faces[fID]
-#         y = face.delta
-#         ωvis = ω_vis(nu[cID], y, beta1)
-#         ωlog = ω_log(k[cID], y, cmu, kappa)
-#         yplus = y_plus(k[cID], nu[cID], y, cmu) 
-
-#         if yplus > yPlusLam 
-#             ωc = ωlog
-#         else
-#             ωc = ωvis
-#         end
-
-#         values[cID] = ωc # needs to be atomic?
-#     end
-# end
 

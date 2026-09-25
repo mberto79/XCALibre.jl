@@ -1,3 +1,4 @@
+export restart_fields!, restart_flux!
 export flux!, update_nueff!, inverse_diagonal!, remove_pressure_source!, H!, correct_velocity!
 
 ## UPDATE EFFECTIVE VISCOSITY
@@ -8,11 +9,11 @@ function update_nueff!(nueff, nu, turb_model, config)
 
     ndrange = length(nueff)
     if typeof(turb_model) <: Laminar
-        kernel! = update_nueff_laminar!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(update_nueff_laminar!, backend, workgroup, ndrange)
         kernel!(nu, nueff)
     else
         (; nutf) = turb_model
-        kernel! = update_nueff_turbulent!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(update_nueff_turbulent!, backend, workgroup, ndrange)
         kernel!(nu, nutf, nueff)
     end
 
@@ -42,7 +43,7 @@ function flux!(phif::FS, psif::FV, config) where {FS<:FaceScalarField,FV<:FaceVe
     (; backend, workgroup) = hardware
 
     ndrange = length(phif)
-    kernel! = flux_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(flux_kernel!, backend, workgroup, ndrange)
     kernel!(phif, psif)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -67,7 +68,7 @@ function flux!(phif::FS, psif::FV, rhof::FS, config) where {FS<:FaceScalarField,
     (; backend, workgroup) = hardware
 
     ndrange = length(phif)
-    kernel! = _flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_flux!, backend, workgroup, ndrange)
     kernel!(phif, psif, rhof)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -92,16 +93,18 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
-function inverse_diagonal!(rD::S, eqn, config) where {S<:ScalarField}
+# halo=false leaves ghosts stale for a caller that exchanges rD together with Hv
+function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}
     (; hardware) = config
     (; backend, workgroup) = hardware
     A = eqn.equation.A # Or should I use A0
     nzval, colval, rowptr = get_sparse_fields(A)
 
     ndrange = length(rD)
-    kernel! = _inverse_diagonal!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_inverse_diagonal!, backend, workgroup, ndrange)
     kernel!(rD, nzval, colval, rowptr, eqn.equation.diag_nz)
     # # KernelAbstractions.synchronize(backend)
+    halo && sync!(rD, rD.mesh, config) # self-syncing seam (no-op serial)
 end
 
 @kernel function _inverse_diagonal!(rD, nzval, colval, rowptr, diag_nz)
@@ -127,9 +130,9 @@ function correct_velocity!(U, Hv, ∇p, rD, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(U)
-    kernel! = _correct_velocity!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_velocity!, backend, workgroup, ndrange)
     kernel!(U, Hv, ∇p, rD)
-    # # KernelAbstractions.synchronize(backend)
+    # no sync!: ghost U is already consistent (Hv/∇p/rD ghosts synced, kernel is pointwise)
 end
 
 @kernel function _correct_velocity!(U, Hv, ∇p, rD)
@@ -161,7 +164,7 @@ remove_pressure_source!(U_eqn::ME, ∇p, config) where {ME} = begin # Extend to 
     (; bx, by, bz) = U_eqn.equation
 
     ndrange = length(bx)
-    kernel! = _remove_pressure_source!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_remove_pressure_source!, backend, workgroup, ndrange)
     kernel!(cells, source_sign, ∇p, bx, by, bz)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -180,7 +183,7 @@ end
 end
 
 # Pressure correction
-function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
+function H!(Hv, U::VF, U_eqn, config; halo=true) where {VF<:VectorField} # Extend to 3D!
     (; cells, cell_neighbours) = Hv.mesh
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -190,10 +193,11 @@ function H!(Hv, U::VF, U_eqn, config) where {VF<:VectorField} # Extend to 3D!
     (; bx, by, bz) = U_eqn.equation
 
     ndrange = length(cells)
-    kernel! = _H!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_H!, backend, workgroup, ndrange)
     kernel!(cells, cell_neighbours,
         nzval, rowptr, colval, U_eqn.equation.diag_nz, bx, by, bz, U, Hv)
     # # KernelAbstractions.synchronize(backend)
+    halo && sync!(Hv, Hv.mesh, config) # self-syncing seam (no-op serial)
 end
 
 # Pressure correction kernel
@@ -211,16 +215,6 @@ end
     sumz = zero(TF)
 
     @inbounds begin
-        # (; faces_range) = cells[i]
-
-        # for ni ∈ faces_range
-        #     nID = cell_neighbours[ni]
-        #     zIndex = spindex(rowptr, colval, i, nID)
-        #     val = nzval[zIndex]
-        #     sumx += val * Ux[nID]
-        #     sumy += val * Uy[nID]
-        #     sumz += val * Uz[nID]
-        # end
 
         start_index = rowptr[i]
         end_index = rowptr[i+1] - 1
@@ -249,6 +243,11 @@ end
 
 ## COURANT NUMBER
 
+# global_max seam: serial = identity, Distribute = MPI.Allreduce(max). _base_mesh unwraps
+# a DistributedMesh so the Mesh2/Mesh3 courant kernel still dispatches on the concrete geometry.
+global_max(v, mesh) = v
+_base_mesh(mesh) = mesh
+
 max_courant_number!(cellsCourant, model, config) = begin
     (; U) = model.momentum
     (; mesh) = U
@@ -257,10 +256,10 @@ max_courant_number!(cellsCourant, model, config) = begin
     (; backend, workgroup) = hardware
 
     ndrange = length(cellsCourant)
-    kernel! = _max_courant_number!(_setup(backend, workgroup, ndrange)...)
-    kernel!(cellsCourant, U, runtime, mesh)
+    kernel! = _sized(_max_courant_number!, backend, workgroup, ndrange)
+    kernel!(cellsCourant, U, runtime, _base_mesh(mesh))
     # # KernelAbstractions.synchronize(backend)
-    return maximum(cellsCourant)
+    return global_max(maximum(cellsCourant), mesh)
 end
 
 @kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
@@ -292,7 +291,7 @@ max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt) = 
     (; backend, workgroup) = hardware
 
     ndrange = length(cellsAlphaCourant)
-    kernel! = _max_alpha_courant_number!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_max_alpha_courant_number!, backend, workgroup, ndrange)
     kernel!(cellsAlphaCourant, alpha, mdotf, runtime, dt, mesh)
     # # KernelAbstractions.synchronize(backend)
     return maximum(cellsAlphaCourant)
@@ -348,4 +347,54 @@ function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, 
     new_dt_factor = clamp(new_dt_factor, minShrink, maxGrow)
 
     runtime.dt .= runtime.dt .* new_dt_factor
+end
+
+# NEW SECTION: restart hooks
+
+# cell state and loop position before the initial calculations, face flux after them; the
+# distributed module implements both for results written with output=OpenFOAM()
+restart_fields!(mesh, model, ::Nothing, config) = (0, nothing)
+restart_fields!(mesh, model, restart, config) =
+    error("restart is supported on a distributed mesh whose results were written with output=OpenFOAM()")
+restart_flux!(mesh, mdotf, ::Nothing, config) = nothing
+restart_flux!(mesh, mdotf, restart, config) = restart_fields!(mesh, nothing, restart, config)
+
+# NEW SECTION: distributed support
+# Opt-in: a combination without a distributed solve seam would silently solve per-rank blocks.
+distributed_ready(::Any) = false
+distributed_ready(::Nothing) = true                 # a model the case does not define
+distributed_ready(::Incompressible) = true
+distributed_ready(::Uniform) = true
+distributed_ready(::Isothermal) = true
+distributed_ready(::Conduction) = true
+distributed_ready(::Laminar) = true
+distributed_ready(::KOmega) = true
+distributed_ready(::KOmegaSST) = true
+
+const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow)
+
+# runtime post-processing has no distributed implementation; Distribute warns once from rank 0
+_warn_skipped_postprocess(mesh, postprocess) = nothing
+_has_postprocess(p) = !(p === nothing || (p isa Union{Tuple,AbstractVector} && isempty(p)))
+
+# called by every solver entry point, named for itself; a no-op on a serial mesh
+function check_distributed_support(solver::Symbol, model)
+    is_distributed_mesh(model.domain) || return nothing
+    gaps = String[]
+    solver ∈ DISTRIBUTED_SOLVERS || push!(gaps, "the $(solver) solver")
+    for (kind, m) ∈ (("fluid", model.fluid), ("solid", model.solid),
+                     ("turbulence", model.turbulence), ("energy", model.energy))
+        distributed_ready(m) || push!(gaps, "the $(nameof(typeof(m))) $(kind) model")
+    end
+    isempty(gaps) && return nothing
+    error("""
+    Not supported on a distributed mesh: $(join(gaps, ", ")).
+
+    Distributed runs currently support the SIMPLE, PISO and Laplace solvers and `potential_flow!`,
+    with an Incompressible fluid or Uniform solid, Isothermal or Conduction energy, and Laminar,
+    KOmega or KOmegaSST turbulence. Everything else still needs its distributed linear-solve seam:
+    without one each rank solves its own block and the result is wrong without any error.
+
+    Run this case on a single process, or see the distributed section of the documentation.
+    """)
 end

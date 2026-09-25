@@ -1,34 +1,8 @@
 export godunov!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
 
-# ============================================================
-# Boundary condition dispatch overview
-# ============================================================
-#
-# Two independent BC dispatch chains, both keyed on bc_U:
-#
-# Inviscid (_apply_inviscid_bc!):
-#   Wall / Slip / Symmetry  → exact Euler wall flux: F=(0, p·n·A, 0)
-#   PeriodicParent/Periodic → Riemann solve with partner cell state
-#   Outlet                  → outflow: UR=UL (zero-gradient); backflow: UR=0 (stagnant ghost)
-#   AbstractDirichlet       → ghost UR=2*U_bc-UL; tangential prescription → wall flux
-#   fallback                → ghost, then impermeability check → wall flux or Riemann solve
-#
-# Viscous (_apply_viscous_bc!, bc_U then bc_T):
-#   Wall     → τ from two-point gradient (U_wall-U_cell)/δ⊗n; bc_T selects heat flux:
-#                FixedTemperature/Dirichlet → κ*(T_wall-T_cell)/δ  (isothermal)
-#                AbstractNeumann/AbstractPhysical → 0               (adiabatic)
-#                fallback → κ*(∇T·n)
-#   Slip/Symmetry           → nothing (zero shear, adiabatic)
-#   PeriodicParent/Periodic → two-sided face-averaged gradients
-#   fallback                → cell-centred gradient + bc_T heat flux
-#
-# bc_p: ghost pressure for Riemann paths only (irrelevant at Wall/Slip/Symmetry).
-# bc_T: ghost temperature for Riemann paths; heat-flux selector at Wall.
-# bc_nut: not used by flux chains; affects mueff via turbulence! → update_nueff!.
-#
-# ============================================================
-# Flux scheme selector types
-# ============================================================
+# BC dispatch keys on bc_U: inviscid Wall/Slip/Symmetry use the exact Euler wall flux F=(0, p·n·A, 0), Dirichlet ghost UR=2*U_bc-UL,
+# Outlet backflow a stagnant ghost; viscous Wall heat flux is selected by bc_T (Dirichlet isothermal, Neumann/physical adiabatic).
+# NEW SECTION: Flux scheme selector types
 
 """Rusanov (Local Lax-Friedrichs) flux scheme."""
 struct Rusanov end
@@ -82,9 +56,7 @@ struct RK2 end
 @inline limiter_value(::MinMod,   r::T) where T = max(zero(T), min(one(T), r))
 @inline limiter_value(::Superbee, r::T) where T = max(zero(T), min(2*r, one(T)), min(r, 2*one(T)))
 
-# ============================================================
-# MUSCL reconstruction — scalar and vector helpers
-# ============================================================
+# NEW SECTION: MUSCL reconstruction, scalar and vector helpers
 
 # Scalar MUSCL reconstruction using pre-computed gradient projections onto dLR = delta*e.
 # Returns reconstructed face values (left, right) with TVD slope limiter.
@@ -168,9 +140,7 @@ struct GodunovWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector}
     rhoE_0::V       # ρE  at start of time step
 end
 
-# ============================================================
-# Ghost state functions for boundary flux computation
-# ============================================================
+# NEW SECTION: Ghost state functions for boundary flux computation
 
 # --- Velocity ghost state ---
 
@@ -511,10 +481,9 @@ end
     end
 end
 
-# ── Impermeable wall BCs (Wall, Slip, Symmetry): exact Euler wall flux ──────────
-# U·n=0 → F_mass=0, F_momentum=p*n*A, F_energy=0.
-# Riemann solver with mirror ghost (U_R=-U_L) injects spurious tangential momentum
-# ∝ a*ρ*|U_tang|, causing velocity blow-up at supersonic walls.
+# ── Impermeable wall BCs (Wall, Slip, Symmetry): exact Euler wall flux, U·n=0 → F=(0, p*n*A, 0) ──
+# A Riemann solve with mirror ghost (U_R=-U_L) injects spurious tangential momentum ∝ a*ρ*|U_tang|,
+# causing velocity blow-up at supersonic walls.
 
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Union{Wall, Slip, Symmetry}, bc_p, bc_T,
@@ -545,10 +514,9 @@ end
     Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
 end
 
-# ── Outlet BC: zero-gradient outflow with reservoir-based backflow ───────────────
-# Outflow (un_L > 0): UR=UL → with Zerogradient bc_p/bc_T: L=R → zero dissipation → exact flux.
-# Backflow (un_L ≤ 0): UR=0 (stagnant ghost) at bc_p/bc_T thermodynamic state.
-# Stagnant ghost avoids wall-flux pressure lock-up (p*n*A feedback loop).
+# ── Outlet BC: outflow (un_L > 0) UR=UL, so with Zerogradient bc_p/bc_T L=R and the flux is exact ──
+# Backflow (un_L ≤ 0): stagnant ghost UR=0 at the bc_p/bc_T thermodynamic state,
+# which avoids the wall-flux pressure lock-up (p*n*A feedback loop).
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::Outlet, bc_p, bc_T,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
@@ -752,7 +720,7 @@ function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_c
     if typeof(turb_model) <: Laminar
         @. nu_eff = nu_mol
     else
-        kernel! = _compute_nu_eff_cell!(_setup(backend, workgroup, n_cells)...)
+        kernel! = _sized(_compute_nu_eff_cell!, backend, workgroup, n_cells)
         kernel!(nu_eff, nu_mol, turb_model.nut)
     end
 end
@@ -773,7 +741,7 @@ function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:Adap
     mesh = model.domain
     (; backend, workgroup) = config.hardware
     n_cells = length(mesh.cells)
-    kernel! = _compute_dt_cell!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_compute_dt_cell!, backend, workgroup, n_cells)
     kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp, nu_eff)
     dt = minimum(dt_cell)
     runtime.dt .= dt
@@ -855,9 +823,7 @@ end
     end
 end
 
-# ============================================================
-# Viscous flux kernels
-# ============================================================
+# NEW SECTION: Viscous flux kernels
 
 # Viscous flux — internal faces, cell-based loop (no atomics)
 @kernel function _viscous_flux_internal!(
@@ -1133,9 +1099,10 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 - `rho` Vector of density residuals for each time step.
 """
-function godunov!(model, config; output=VTK())
+function godunov!(model, config; output=VTK(), progress=true)
+    check_distributed_support(:Godunov, model)
     _check_godunov_bcs(config.boundaries)
-    residuals = _setup_godunov(model, config; output=output)
+    residuals = _setup_godunov(model, config; output=output, progress=progress)
     return residuals
 end
 
@@ -1159,7 +1126,7 @@ function _check_godunov_bcs(boundaries)
     end
 end
 
-function _setup_godunov(model, config; output=VTK())
+function _setup_godunov(model, config; output=VTK(), progress=true)
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu) = model.fluid
     mesh = model.domain
@@ -1218,13 +1185,13 @@ function _setup_godunov(model, config; output=VTK())
     @info "Initialising density from p and T..."
 
     ndrange = n_cells
-    kernel! = _init_rho!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_init_rho!, backend, workgroup, ndrange)
     kernel!(rho, p, T_field, model.fluid)
 
     residuals = GODUNOV(
         model, workspace, turbulenceModel,
         S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
-        config; output=output
+        config; output=output, progress=progress
     )
     return residuals
 end
@@ -1243,22 +1210,22 @@ function compute_residuals!(
     n_cells  = length(mesh.cells)
     n_bfaces = length(mesh.boundary_cellsID)
 
-    kernel! = _zero_residuals!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_zero_residuals!, backend, workgroup, n_cells)
     kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
 
-    kernel! = _inviscid_flux_internal!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_inviscid_flux_internal!, backend, workgroup, n_cells)
     kernel!(flux_scheme, recon_scheme, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, gradRho, gradU, gradP, mesh, model.fluid)
 
-    kernel! = _viscous_flux_internal!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_viscous_flux_internal!, backend, workgroup, n_cells)
     kernel!(res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, U, T, gradU, gradT, mueff, kappa_eff, mesh)
 
-    kernel! = _inviscid_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+    kernel! = _sized(_inviscid_bc_flux!, backend, workgroup, n_bfaces)
     kernel!(flux_scheme, boundaries.U, boundaries.p, boundaries.T,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, T, mesh, model.fluid, time)
 
-    kernel! = _viscous_bc_flux!(_setup(backend, workgroup, n_bfaces)...)
+    kernel! = _sized(_viscous_bc_flux!, backend, workgroup, n_bfaces)
     kernel!(boundaries.U, boundaries.T, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh)
 end
@@ -1272,7 +1239,7 @@ function recover_primitives!(workspace, model, config)
     (; backend, workgroup) = hardware
     n_cells = length(model.domain.cells)
 
-    kernel! = _cons_to_prim!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_cons_to_prim!, backend, workgroup, n_cells)
     kernel!(U, p, T, Mach, rho, rhoU, rhoE, model.domain.cells, model.fluid)
 end
 
@@ -1308,7 +1275,7 @@ function step!(
     mesh = model.domain
     n_cells = length(mesh.cells)
 
-    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_forward_euler!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 end
 
@@ -1334,10 +1301,10 @@ function step!(
     Pr_val = TF(model.fluid.Pr.values)
 
     # Stage 1: save W^n, Euler update using R(W^n)
-    kernel! = _save_conservative!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_save_conservative!, backend, workgroup, n_cells)
     kernel!(rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0, rho, rhoU, rhoE)
 
-    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_forward_euler!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 
     # Update primitives and face fields at W^(1) for stage-2 residual
@@ -1354,11 +1321,11 @@ function step!(
     compute_residuals!(workspace, flux_scheme, recon_scheme, boundaries, model,
                        gradU, gradRho, gradP, gradT, mueff, kappa_eff, Uf, mesh, time, config)
 
-    kernel! = _forward_euler!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_forward_euler!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 
     # Convex average: W^{n+1} = 0.5*(W^n + W^(2))
-    kernel! = _rk2_average!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_rk2_average!, backend, workgroup, n_cells)
     kernel!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0)
 end
 
@@ -1369,7 +1336,7 @@ end
 function GODUNOV(
     model, workspace, turbulenceModel,
     S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
-    config; output=VTK()
+    config; output=VTK(), progress=true
 )
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu, R) = model.fluid
@@ -1399,7 +1366,7 @@ function GODUNOV(
 
     @info "Initialising conservative variables from primitive fields..."
 
-    kernel! = _prim_to_cons!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_prim_to_cons!, backend, workgroup, n_cells)
     kernel!(rhoU, rhoE, rho, U, p, model.fluid)
 
     time = TF(0.0)
@@ -1425,7 +1392,7 @@ function GODUNOV(
 
     @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     for iteration ∈ 1:iterations
 
@@ -1466,7 +1433,7 @@ function GODUNOV(
         # 10. Cell-level ν_eff for next iteration's diffusive CFL
         update_nu_eff_cell!(workspace.nu_eff, nu_mol, model.turbulence, backend, workgroup, n_cells)
 
-        ProgressMeter.next!(progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(bar, showvalues = [
             (:time, time), (:iter, iteration), (:dt, dt), (:continuity_error, rho_res),
             turbulenceModel.state.residuals...
         ])

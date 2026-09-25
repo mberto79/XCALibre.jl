@@ -36,3 +36,6 @@ Abstract LES model type for constructing LES models.
 struct LES{T,ARG} <:AbstractModelContainer 
     args::ARG
 end
+
+# face fields a restart rebuilds from restored cell fields, as the model's last iteration left them
+restart_turbulence!(turbulence, model, config, time) = nothing

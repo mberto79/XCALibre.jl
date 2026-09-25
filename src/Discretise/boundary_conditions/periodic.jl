@@ -108,6 +108,18 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol; tol=1
     length(global_ids2) == nfaces || error(
         "Periodic mismatch: Patch $patch1 has $(length(global_ids1)) faces, but $patch2 has $(length(global_ids2))")
 
+    # empty patch pair (distributed rank owning no periodic faces) → no-op BCs
+    if nfaces == 0
+        F = _get_float(mesh)
+        transform = LinearTransform(SVector{3,F}(0, 0, 0))
+        values1 = PeriodicValue(
+            patchID=idx2, transform=transform, face_map=_get_int(mesh)[], isparent=true)
+        values2 = PeriodicValue(
+            patchID=idx1, transform=transform, face_map=_get_int(mesh)[], isparent=false)
+        return (adapt(backend, PeriodicParent(patch1, values1)),
+                adapt(backend, Periodic(patch2, values2)))
+    end
+
     # Extract Centers
     centers1 = [faces[id].centre for id in global_ids1]
     centers2 = [faces[id].centre for id in global_ids2]
@@ -138,8 +150,8 @@ function construct_periodic(mesh, backend, patch1::Symbol, patch2::Symbol; tol=1
     targets_sorted = targets[p1_idx]
     sources_sorted = centers2[p2_idx]
 
-    faceAddress1 = zeros(Int64, nfaces)
-    faceAddress2 = zeros(Int64, nfaces)
+    faceAddress1 = zeros(_get_int(mesh), nfaces)
+    faceAddress2 = zeros(_get_int(mesh), nfaces)
     
     # Sliding Window Search
     search_start = 1
@@ -231,8 +243,8 @@ function periodic_matrix_connectivity(BC::PeriodicParent, mesh)
     BC1 = boundaries_cpu[BC.ID].IDs_range
 
     fmap1 = BC_cpu.value.face_map
-    i = zeros(Int, 2*length(fmap1))
-    j = zeros(Int, 2*length(fmap1))
+    i = zeros(_get_int(mesh), 2*length(fmap1))
+    j = zeros(_get_int(mesh), 2*length(fmap1))
 
     nindex = 0
     for (fID1, fID2) ∈ zip(BC1, fmap1)
@@ -266,13 +278,13 @@ end
     values = get_values(phi, component)
     (; transform) = bc.value
     
-    (; area, normal, e) = face
+    area, normal, e = faces.area[fID], faces.normal[fID], faces.e[fID]
 
     # determine id of periodic cell and interpolate face value
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    C1 = cell.centre
+    C1 = cells.centre[cellID]
     C2 = cells[pcellID].centre - transform.distance
 
     # for improved accuracy this needs to include the discretisation used for noncorrection
@@ -288,16 +300,6 @@ end
     Ef_mag = norm(Ef)
     gamma = -term.sign*(term.flux[fID]*Ef_mag)/Δ
 
-    # ap = term.sign*(term.flux[fID]*Af)/Δ
-
-    # Test formulation using vector d instead of e to explore any stability benefits
-    # Ef = ((Sf⋅Sf)/(Sf⋅d))*d
-    # Ef_mag = norm(Ef)
-    # ap = term.sign*(term.flux[fID]*Ef_mag)/Δ
-    
-    # Increment sparse array
-    # ac = -ap
-    # an = ap
 
     NN = spindex(rowptr, colval, pcellID, pcellID)
     Atomix.@atomic nzval[NN] += gamma
@@ -326,17 +328,17 @@ end
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    C1 = cell.centre
+    C1 = cells.centre[cellID]
     C2 = cells[pcellID].centre - transform.distance
-    Cf = face.centre
-    n = face.normal
+    Cf = faces.centre[fID]
+    n = faces.normal[fID]
 
     Pf = Cf - C1
     PN = C2 - C1 
 
     wn = (Pf⋅n)/(PN⋅n)
     w = one(wn) - wn
-    # w = pface.delta/(face.delta + pface.delta)
+    # w = pface.delta/(faces.delta[fID] + pface.delta)
     # wn = one(w) - w
 
     # Calculate link coefficients
@@ -406,10 +408,10 @@ end
     pfID = bc.value.face_map[i] # id of periodic face 
     pface = faces[pfID]
     pcellID = pface.ownerCells[1]
-    C1 = cell.centre
+    C1 = cells.centre[cellID]
     C2 = cells[pcellID].centre - transform.distance
-    Cf = face.centre
-    n = face.normal
+    Cf = faces.centre[fID]
+    n = faces.normal[fID]
 
     Pf = Cf - C1
     PN = C2 - C1 

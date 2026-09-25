@@ -16,26 +16,22 @@ function limit_gradient!(method::MFaceBased, ∇F, F, config)
     internal_faces = length(faces) - nbfaces
 
     ndrange = internal_faces
-    kernel! = _limit_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
     kernel!(method, ∇F, F, cells, faces, nbfaces)
-    # KernelAbstractions.synchronize(backend)
-
+    sync!(∇F.result, F.mesh, config) # ghost updates depend on faces absent locally
 end
 
 @kernel function _limit_gradient!(method::MFaceBased, ∇F, F, cells, faces, nbfaces)
     i = @index(Global)
     fID = i + nbfaces
 
-    face = faces[fID]
-    ownerCells = face.ownerCells
+    ownerCells = faces.ownerCells[fID]
     owner1 = ownerCells[1]
     owner2 = ownerCells[2]
-    cell1 = cells[owner1]
-    cell2 = cells[owner2]
 
-    cf = face.centre 
-    c1 = cell1.centre
-    c2 = cell2.centre
+    cf = faces.centre[fID]
+    c1 = cells.centre[owner1]
+    c2 = cells.centre[owner2]
     d1 = (cf - c1)
     d2 = (cf - c2)
 
@@ -47,11 +43,6 @@ end
 
     minF = min(F1, F2)
     maxF = max(F1, F2)
-    # deltaF = (maxF - minF)
-    # minF -= deltaF
-    # maxF += deltaF
-    # F1_ext = d1⋅grad1
-    # F2_ext = d2⋅grad2
     F1_ext = d1
     F2_ext = d2
 

@@ -32,12 +32,21 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_potential_flow.jl")
     end
 
+    @testset "Wall functions on an empty patch" begin
+        include("unit_test_wall_function_empty_patch.jl")
+    end
+
     @testset "Smoothers" begin
         include("test_smoothers.jl")
     end
 
     @testset "DILU" begin
         include("test_DILU.jl")
+    end
+
+    @testset "AMG preconditioner freeze" begin
+        @test BoomerAMG(freeze=7).freeze == 7 && GAMG(freeze=7).freeze == 7
+        @test BoomerAMG().freeze == 10 && GAMG().freeze == 25
     end
 
     @testset "Mixture Multiphase Unit Test" begin
@@ -47,6 +56,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     @testset "AMG" begin
         include("test_AMG.jl")
         include("test_AMG_matrices.jl")
+    end
+
+    @testset "XVector Unit Test" begin
+        include("unit_test_xvector.jl")
     end
 
     @testset "Laplace Unit Test" begin
@@ -170,6 +183,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Thin Film Solver" begin
         include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))
+    end
+
+    @testset "Distributed (MPI)" begin
+        include("distributed/gate.jl")
     end
 
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))

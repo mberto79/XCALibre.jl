@@ -10,6 +10,7 @@ using Adapt
 using KernelAbstractions
 import KernelAbstractions as KA
 using XCALibre.Multithread
+using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.Calculate

@@ -116,7 +116,7 @@ setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0,
 cell_volumes = [c.volume for c ∈ mesh.cells]
 initial_water_volume = sum(model.fluid.alpha.values .* cell_volumes)
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 
 # 1) Mass conservation: total water volume must be unchanged

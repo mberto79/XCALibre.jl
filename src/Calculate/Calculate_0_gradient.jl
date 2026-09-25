@@ -106,6 +106,7 @@ function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, BCs, time, config) where {F
     interpolate!(phif, phi, config)
     correct_boundaries!(phif, phi, BCs, time, config)
     green_gauss!(grad, phif, config)
+    sync!(grad.result, grad.result.mesh, config) # self-syncing seam (no-op serial)
 end
 
 # Tensor field function definition
@@ -129,7 +130,7 @@ function interpolate_midpoint!(phif::FaceScalarField, phi::ScalarField, config)
 
     # Launch interpolate midpoint kernel for scalar field
     ndrange = length(faces)
-    kernel! = interpolate_midpoint_scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(interpolate_midpoint_scalar!, backend, workgroup, ndrange)
     kernel!(faces, phif, phi)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -142,7 +143,7 @@ end
 
     @inbounds begin
         # Extract required fields from work item face and define ownerCell variables
-        (; ownerCells) = faces[i]
+        ownerCells = faces.ownerCells[i]
         c1 = ownerCells[1]
         c2 = ownerCells[2]
 
@@ -164,7 +165,7 @@ function interpolate_midpoint!(phif::FaceVectorField, phi::VectorField, config)
 
     # Launch interpolate midpoint kernel for scalar field
     ndrange = length(faces)
-    kernel! = interpolate_midpoint_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(interpolate_midpoint_vector!, backend, workgroup, ndrange)
     kernel!(faces, phif, phi)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -180,8 +181,7 @@ end
 
     @inbounds begin
         # Retrieve face, weight and ownerCells for loop iteration
-        face = faces[fID]
-        ownerCells = face.ownerCells
+        ownerCells = faces.ownerCells[fID]
         c1 = ownerCells[1]; c2 = ownerCells[2]
         
         # Set values to interpolate between
@@ -212,7 +212,7 @@ function correct_interpolation!(grad, phif, phi, config)
 
     # Launch correct interpolation kernel
     ndrange = length(faces) - nbfaces
-    kernel! = correct_interpolation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(correct_interpolation_kernel!, backend, workgroup, ndrange)
     kernel!(faces, cells, nbfaces, phi, weight, grad, phif)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -224,15 +224,15 @@ end
     i += nbfaces # Set i such that it does not index boundary faces
 
     # Retrieve fields from work item face
-    (; ownerCells, centre) = faces[i]
+    ownerCells, centre = faces.ownerCells[i], faces.centre[i]
     centre_face = centre
     owner1 = ownerCells[1]
     owner2 = ownerCells[2]
 
     # Retrieve centre from work item cells and redefine variable name 
-    (; centre) = cells[owner1]
+    centre = cells.centre[owner1]
     centre_cell1 = centre
-    (; centre) = cells[owner2]
+    centre = cells.centre[owner2]
     centre_cell2 = centre
 
     # Retrieve values between which to correct interpolation

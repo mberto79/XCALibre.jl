@@ -34,6 +34,7 @@ using Statistics
 
 using XCALibre.Mesh
 
+using XCALibre.Mesh: _check_index_capacity, _with_index_capacity
 include("UNV3_0_types.jl")
 include("UNV3_1_reader.jl")
 include("UNV3_2_builder.jl")

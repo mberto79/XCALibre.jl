@@ -1,6 +1,11 @@
 export SolverSetup, Runtime, Schemes
 export explicit_relaxation!, implicit_relaxation!, implicit_relaxation_diagdom!, setReference!
 export solve_system!
+export sync!
+export wrap_eqn
+export unwrap_eqn
+export is_distributed_mesh
+export is_report_rank
 export solve_equation!
 export AdaptiveTimeStepping
 
@@ -51,13 +56,13 @@ This function is used to provide solver settings that will be used internally in
 
 - `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
 - `preconditioner`: instance of preconditioner to be used e.g. Jacobi()
-- `convergence` sets the stopping criteria of this field
+- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`.
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
-- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`)
-- `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9)
-- `rtol`: set relative tolerance for the solver (defaults to 1e-1)
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`). Also applies to PETSc solves.
+- `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9). Also applies to PETSc solves.
+- `rtol`: set relative tolerance for the solver (defaults to 1e-1). Also applies to PETSc solves.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
 """
 SolverSetup(;
@@ -290,7 +295,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
     krylov_solve!(
-        solver, opA, b, values; 
+        solver, opA, _like_workspace(x, b), _like_workspace(x, values); 
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
         )
 
@@ -302,7 +307,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     end
 
     ndrange = length(values)
-    kernel! = _copy!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_copy!, backend, workgroup, ndrange)
     kernel!(values, x)
 
     iterations = Krylov.iteration_count(solver)
@@ -325,9 +330,10 @@ function explicit_relaxation!(phi, phi0, alpha, config)
     (; backend, workgroup) = hardware
 
     ndrange = length(phi)
-    kernel! = explicit_relaxation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(explicit_relaxation_kernel!, backend, workgroup, ndrange)
     kernel!(phi, phi0, alpha)
     # KernelAbstractions.synchronize(backend)
+    sync!(phi, phi.mesh, config) # self-syncing seam (no-op serial)
 end
 
 @kernel function explicit_relaxation_kernel!(phi, phi0, alpha)
@@ -355,7 +361,7 @@ function implicit_relaxation!(
     diag_nz = phiEqn.equation.diag_nz
 
     ndrange = length(b)
-    kernel! = implicit_relaxation_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(implicit_relaxation_kernel!, backend, workgroup, ndrange)
     kernel!(colval, rowptr, nzval, diag_nz, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
@@ -388,7 +394,7 @@ function implicit_relaxation_diagdom!(
     diag_nz = phiEqn.equation.diag_nz
 
     ndrange = length(b)
-    kernel! = _implicit_relaxation_diagdom!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_implicit_relaxation_diagdom!, backend, workgroup, ndrange)
     kernel!(colval, rowptr, nzval, diag_nz, b, field, alpha)
     # KernelAbstractions.synchronize(backend)
 end
@@ -430,7 +436,7 @@ function setReference!(pEqn::E, pRef, cellID, config) where E<:ModelEquation
         rowptr = _rowptr(A)
 
         ndrange = 1
-        kernel! = _setReference!(_setup(backend, workgroup, ndrange)...)
+        kernel! = _sized(_setReference!, backend, workgroup, ndrange)
         kernel!(nzval, colval, rowptr, b, pRef, cellID)
     end
 end
@@ -455,30 +461,14 @@ function residual(eqn, component, config)
     colval = _colval(A)
     nzval = _nzval(A)
     ndrange = length(values)
-    kernel! = _scaled_residual!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_scaled_residual!, backend, workgroup, ndrange)
     kernel!(R, Fx, rowptr, colval, nzval, values, b)
 
     denominator = sum(Fx)
     denominator = ifelse(denominator > eps(denominator), denominator, one(denominator))
     Residual = sum(R) / denominator
 
-    # # Openfoam's residual definition (not optimised)
-    # Fx .= A*values
-    # R .= mean(values)
-    # Fx_mean = A*R 
-    # T1 = mean(norm.(b .- Fx))
-    # T2 = mean(norm.(Fx .- Fx_mean))
-    # T3 = mean(norm.(b .- Fx_mean))
-    # Residual = T1/(T2 + T3)
-
-    # Previous definition
-    # Fx .= A * values
-    # xcal_foreach(R, config) do i
-    #         @inbounds R[i] = (b[i] - Fx[i])^2
-    # end
-    # normb = norm(b)
-    # denominator = ifelse(normb > eps(normb), normb, one(normb))
-    # Residual = sqrt(sum(R)) / denominator
+    # Alternative: OpenFOAM normalised residual T1/(T2 + T3) (not optimised)
     return Residual
 end
 
@@ -503,6 +493,26 @@ end
     end
 end
 
+# halo-exchange seam: DistributedMesh method lives in Distribute; serial is a free no-op
+@inline sync!(x, mesh::Union{Mesh2,Mesh3}, config) = nothing
+
+# linear-solve seam: setup wraps each eqn so the body calls generic solve_equation!/
+# solve_system!. Serial = identity; Distribute overrides for DistributedMesh (DistributedEqn +
+# PETScSolver). Extra kwargs (petsc_options) are ignored serially.
+wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
+
+# raw ModelEquation behind a (possibly wrapped) eqn: solver bodies assemble/discretise on the
+# raw eqn but solve through the wrapper. Serial identity; Distribute unwraps DistributedEqn.
+@inline unwrap_eqn(eqn) = eqn
+
+
+# mesh-kind predicate: Distribute overrides for DistributedMesh. mesh is concrete in bodies so
+# calls constant-fold — used to skip Krylov precond/workspace setup and rank-0-only reporting.
+@inline is_distributed_mesh(mesh) = false
+
+# true where solver progress/@info should print: always serial, only rank 0 when distributed
+@inline is_report_rank(mesh) = true
+
 function make_symmetric!(eqn, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -515,7 +525,7 @@ function make_symmetric!(eqn, config)
 
     nbfaces = mesh.boundary_cellsID |> length
     ndrange = length(faces) - nbfaces
-    kernel! = _make_symmetric!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_make_symmetric!, backend, workgroup, ndrange)
     kernel!(colval, rowptr, nzval, faces, nbfaces)
 end
 
@@ -524,9 +534,11 @@ end
     fID = i + nbfaces
 
     face = faces[fID]
-    (; ownerCells) = face 
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
+    (; ownerCells) = face
+    # canonical row = min owner: on partitioned meshes owner1 may be a ghost whose CSR
+    # row is garbage; coeff is symmetric so serial value is unchanged
+    cID1 = min(ownerCells[1], ownerCells[2])
+    cID2 = max(ownerCells[1], ownerCells[2])
 
     cIndex1 = spindex(rowptr, colval, cID1, cID2)
     cIndex2 = spindex(rowptr, colval, cID2, cID1)

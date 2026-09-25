@@ -106,7 +106,7 @@ function run_godunov_test(flux, reconstruction, time_stepping, adaptive)
     initialise!(model.momentum.p, p_inf)
     initialise!(model.energy.T,   T_inf)
 
-    residuals = run!(model, config)
+    residuals = run!(model, config; progress=false)
 
     # Basic sanity: residuals returned, all finite
     @test residuals isa NamedTuple

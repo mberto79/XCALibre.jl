@@ -1,18 +1,6 @@
-# Cell-based gradient limiter (Barth-Jespersen style)
-#
-# What: Prevents gradient extrapolation from producing face values outside the
-#        range of neighbouring cell values (overshoots/undershoots).
-# How:  Computes a single scalar limiter ∈ [0,1] per cell by comparing the gradient-
-#       extrapolated value at each face centre against the min/max of neighbour values.
-#       The minimum ratio across all faces becomes the cell's limiter, applied uniformly
-#       to the entire gradient vector.
-# Cell vs Face limiter:
-#   - CellBased: iterates over cells, uses strict neighbour bounds, one scalar limiter
-#     per cell. Equivalent to OpenFOAM's `cellLimitedGrad`.
-#   - FaceBased: iterates over internal faces, relaxes bounds by ±(max-min), accumulates
-#     limiter contributions from both sides of each face.
-#
-# The `level` parameter (0-1) controls limiting strength: 1 = full, 0 = none.
+# Cell-based gradient limiter (Barth-Jespersen, cf. OpenFOAM cellLimitedGrad): one scalar limiter in [0,1] per cell,
+# the minimum over its faces of the ratio keeping the extrapolated face value within neighbour min/max, applied to the whole gradient.
+# `level` (0-1) sets limiting strength: 1 = full, 0 = none.
 
 export limit_gradient!
 export CellBased
@@ -41,8 +29,9 @@ function limit_gradient!(method::CellBased, ∇F, F::ScalarField, config)
     (; x, y, z) = ∇F.result
 
     ndrange = length(cells)
-    kernel! = _limit_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
     kernel!(method, x, y, z, F, cells, cell_neighbours, cell_faces, faces)
+    sync!(∇F.result, mesh, config) # ghost limiter values are wrong (partial face lists)
 end
 
 function limit_gradient!(method::CellBased, ∇F, F::VectorField, config)
@@ -57,18 +46,18 @@ function limit_gradient!(method::CellBased, ∇F, F::VectorField, config)
     (; zx, zy, zz) = ∇F.result
 
     ndrange = length(cells)
-    kernel! = _limit_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
     kernel!(method, xx, xy, xz, F.x, cells, cell_neighbours, cell_faces, faces)
     kernel!(method, yx, yy, yz, F.y, cells, cell_neighbours, cell_faces, faces)
     kernel!(method, zx, zy, zz, F.z, cells, cell_neighbours, cell_faces, faces)
+    sync!(∇F.result, mesh, config) # ghost limiter values are wrong (partial face lists)
 end
 
 @kernel function _limit_gradient!(method::CellBased, x, y, z, F, cells, cell_neighbours, cell_faces, faces)
     cID = @index(Global)
 
     @inbounds begin
-        cell = cells[cID]
-        faces_range = cell.faces_range
+        faces_range = cells.faces_range[cID]
         phiP = F[cID]
         phiMax = phiP
         phiMin = phiP
@@ -82,15 +71,14 @@ end
 
         grad0 = SVector{3}(x[cID], y[cID], z[cID])
 
-        cc = cell.centre
+        cc = cells.centre[cID]
         limiter = one(phiP)
         ϵ = 10 * eps(phiP)
 
         for fi ∈ faces_range
             fID = cell_faces[fi]
-            face = faces[fID]
 
-            fc = face.centre
+            fc = faces.centre[fID]
             δϕ = (fc - cc)⋅grad0
 
             if δϕ > ϵ

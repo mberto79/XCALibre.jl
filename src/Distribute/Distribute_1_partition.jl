@@ -1,0 +1,522 @@
+export build_dual_graph, partition_cells, extract_subdomain, distribute
+export partition_mesh, is_root
+
+# NEW SECTION: partitioning
+
+# the mesh's own adjacency (faces_range rows, cell_neighbours columns) is the dual graph; rows are
+# sorted and deduplicated so Metis sees the same graph `sparse` built from triplets
+function _csr_graph(n, degree, fill!)
+    colptr = Vector{Int}(undef, n + 1)
+    colptr[1] = 1
+    for c ∈ 1:n
+        colptr[c+1] = colptr[c] + degree(c)
+    end
+    rowval = Vector{Int}(undef, colptr[end] - 1)
+    fill!(rowval, colptr)
+    for c ∈ 1:n
+        sort!(view(rowval, colptr[c]:colptr[c+1]-1))
+    end
+    _dedup_columns(n, colptr, rowval)
+end
+
+function _dedup_columns(n, colptr, rowval)
+    newptr = similar(colptr)
+    newptr[1] = 1
+    k = 0
+    for c ∈ 1:n
+        prev = 0
+        for j ∈ colptr[c]:colptr[c+1]-1
+            r = rowval[j]
+            r == prev && continue
+            rowval[k += 1] = r
+            prev = r
+        end
+        newptr[c+1] = k + 1
+    end
+    resize!(rowval, k)
+    SparseMatrixCSC(n, n, newptr, rowval, ones(Int, k))
+end
+
+function build_dual_graph(mesh)
+    (; cells, cell_neighbours) = mesh
+    _csr_graph(length(cells), c -> length(cells[c].faces_range), (rowval, colptr) -> begin
+        for c ∈ eachindex(cells)
+            k = colptr[c]
+            for j ∈ cells[c].faces_range
+                rowval[k] = Int(cell_neighbours[j])
+                k += 1
+            end
+        end
+    end)
+end
+
+function partition_cells(mesh, nparts::Integer; cell_pairs=Tuple{Int,Int}[])
+    n = length(mesh.cells)
+    nparts == 1 && return ones(Int, n)
+    parts = if isempty(cell_pairs)
+        Int.(Metis.partition(build_dual_graph(mesh), nparts; alg=:KWAY))
+    else
+        # contract periodic cell pairs so matched cells share a rank: periodic coupling
+        # stays rank-local and the serial periodic kernels run unchanged (no periodic halo)
+        root = collect(1:n)
+        function find(x)
+            while root[x] != x
+                root[x] = root[root[x]]
+                x = root[x]
+            end
+            x
+        end
+        for (a, b) ∈ cell_pairs
+            ra, rb = find(a), find(b)
+            ra == rb || (root[ra] = rb)
+        end
+        super = zeros(Int, n)
+        ns = 0
+        for c ∈ 1:n
+            r = find(c)
+            super[r] == 0 && (super[r] = (ns += 1))
+            super[c] = super[r]
+        end
+        (; cells, cell_neighbours) = mesh
+        degree = zeros(Int, ns)
+        for c ∈ 1:n, j ∈ cells[c].faces_range
+            super[cell_neighbours[j]] != super[c] && (degree[super[c]] += 1)
+        end
+        g = _csr_graph(ns, s -> degree[s], (rowval, colptr) -> begin
+            pos = copy(colptr)
+            for c ∈ 1:n, j ∈ cells[c].faces_range
+                s1, s2 = super[c], super[cell_neighbours[j]]
+                s1 == s2 && continue
+                rowval[pos[s1]] = s2
+                pos[s1] += 1
+            end
+        end)
+        # ponytail: unweighted super-vertices — merged-pair imbalance is O(surface/volume)
+        sparts = Int.(Metis.partition(g, nparts; alg=:KWAY))
+        sparts[super]
+    end
+    counts = zeros(Int, nparts)
+    for p ∈ parts
+        counts[p] += 1
+    end
+    cut = count(mesh.faces) do f
+        o1, o2 = f.ownerCells
+        o1 != o2 && parts[o1] != parts[o2]
+    end
+    @info "Metis partition: cells max/min = $(maximum(counts))/$(minimum(counts)), edge-cut = $cut"
+    parts
+end
+
+# NEW SECTION: subdomain extraction
+
+_mesh_like(::Mesh3, args...) = Mesh3(args...)
+_mesh_like(::Mesh2, args...) = Mesh2(args...)
+
+# CSR buckets of `items` by `key(item)` into 1:nparts, keeping ascending item order
+function _bucket(items, nparts, key)
+    ptr = zeros(Int, nparts + 1)
+    for it ∈ items
+        ptr[key(it)+1] += 1
+    end
+    ptr[1] = 1
+    cumsum!(ptr, ptr)
+    data = Vector{Int}(undef, ptr[end] - 1)
+    fill = copy(ptr)
+    for it ∈ items
+        k = key(it)
+        data[fill[k]] = it
+        fill[k] += 1
+    end
+    ptr, data
+end
+
+# every per-part structure is a bucket of one global pass; built once per decomposition and
+# shared by every extract_subdomain call so the whole decomposition costs O(N + F + P)
+struct _PartIndex{TI}
+    parts::Vector{Int}
+    nparts::Int
+    cell_ptr::Vector{Int}       # cells of part r: cell_list[cell_ptr[r]:cell_ptr[r+1]-1], original order
+    cell_list::Vector{Int}
+    face_ptr::Vector{Int}       # interior faces touching part r, ascending; a cut face lands in both parts
+    face_list::Vector{Int}
+    bface_ptr::Vector{Int}      # boundary faces whose cell part r owns, ascending (patch order)
+    bface_list::Vector{Int}
+    offs::Vector{Int}           # global block offset per part
+    pos::Vector{Int}            # position of each cell within its part
+    g2l::Vector{TI}             # reset-on-exit inverse maps, 0 = not local
+    f2l::Vector{TI}
+    n2l::Vector{TI}
+    mark::Vector{TI}
+end
+
+function _PartIndex(mesh, parts)
+    TI = _get_int(mesh)
+    (; faces, boundary_cellsID, nodes) = mesh
+    ncells = length(mesh.cells)
+    nparts = maximum(parts)
+    n_bfaces = length(boundary_cellsID)
+    cell_ptr, cell_list = _bucket(1:ncells, nparts, c -> parts[c])
+    part_counts = diff(cell_ptr)
+    offs = cumsum(vcat(0, part_counts))
+    pos = Vector{Int}(undef, ncells)
+    for r ∈ 1:nparts, (i, c) ∈ enumerate(view(cell_list, cell_ptr[r]:cell_ptr[r+1]-1))
+        pos[c] = i
+    end
+    ifaces = n_bfaces+1:length(faces)
+    p1(f) = parts[faces[f].ownerCells[1]]
+    p2(f) = parts[faces[f].ownerCells[2]]
+    cut = [f for f ∈ ifaces if p1(f) != p2(f)]
+    ptr_a, list_a = _bucket(ifaces, nparts, p1)
+    ptr_b, list_b = _bucket(cut, nparts, p2)
+    face_ptr = ptr_a .+ ptr_b .- 1
+    face_list = Vector{Int}(undef, face_ptr[end] - 1)
+    for r ∈ 1:nparts
+        a = view(list_a, ptr_a[r]:ptr_a[r+1]-1)
+        b = view(list_b, ptr_b[r]:ptr_b[r+1]-1)
+        face_list[face_ptr[r]:face_ptr[r+1]-1] = sort!(vcat(a, b))
+    end
+    bface_ptr, bface_list = _bucket(1:n_bfaces, nparts, f -> parts[boundary_cellsID[f]])
+    _PartIndex{TI}(parts, nparts, cell_ptr, cell_list, face_ptr, face_list, bface_ptr, bface_list,
+        offs, pos, zeros(TI, ncells), zeros(TI, length(faces)), zeros(TI, length(nodes)),
+        zeros(TI, max(ncells, length(faces), length(nodes))))
+end
+
+_range(ptr, r) = ptr[r]:ptr[r+1]-1
+
+function extract_subdomain(mesh, parts, part::Integer; comm=MPI.COMM_WORLD, index=_PartIndex(mesh, parts))
+    TI = _get_int(mesh)
+    (; cells, faces, boundaries, nodes, boundary_cellsID) = mesh
+    (; cell_nodes, cell_faces, cell_neighbours, cell_nsign, face_nodes) = mesh
+    (; nparts, g2l, f2l, n2l, mark, offs, pos) = index
+
+    # owned in original order; ghosts sorted by (owning part, original id) so each
+    # neighbour's ghosts form a contiguous ascending block (halo alignment invariant)
+    owned = index.cell_list[_range(index.cell_ptr, part)]
+    ghosts = Int[]
+    for c ∈ owned, j ∈ cells[c].faces_range
+        nb = cell_neighbours[j]
+        parts[nb] == part && continue
+        mark[nb] == 0 && (mark[nb] = 1; push!(ghosts, nb))
+    end
+    foreach(g -> mark[g] = 0, ghosts)
+    sort!(ghosts, by = g -> (parts[g], g))
+    local_cells = vcat(owned, ghosts)
+    n_owned, n_ghost = length(owned), length(ghosts)
+    for (i, c) ∈ enumerate(local_cells)
+        g2l[c] = i
+    end
+
+    # faces: physical boundary faces first (per patch, original order), then interior
+    bfaces = index.bface_list[_range(index.bface_ptr, part)]
+    new_boundaries = eltype(boundaries)[]
+    k = 1
+    for b ∈ boundaries
+        start = k
+        while k <= length(bfaces) && bfaces[k] in b.IDs_range
+            k += 1
+        end
+        push!(new_boundaries, Boundary(b.name, UnitRange{TI}(start, k - 1)))
+    end
+    ifaces = index.face_list[_range(index.face_ptr, part)]
+    local_faces = vcat(bfaces, ifaces)
+    for (i, f) ∈ enumerate(local_faces)
+        f2l[f] = i
+    end
+
+    # nodes: union over local cells and faces, original order
+    local_nodes = Int[]
+    for c ∈ local_cells, j ∈ cells[c].nodes_range
+        nd = cell_nodes[j]
+        mark[nd] == 0 && (mark[nd] = 1; push!(local_nodes, nd))
+    end
+    for f ∈ local_faces, j ∈ faces[f].nodes_range
+        nd = face_nodes[j]
+        mark[nd] == 0 && (mark[nd] = 1; push!(local_nodes, nd))
+    end
+    foreach(nd -> mark[nd] = 0, local_nodes)
+    sort!(local_nodes)
+    for (i, nd) ∈ enumerate(local_nodes)
+        n2l[nd] = i
+    end
+
+    # cells: geometry copied verbatim; ghost cells keep only locally-present faces
+    new_cell_nodes = TI[]; new_cell_faces = TI[]
+    new_cell_neighbours = TI[]; new_cell_nsign = TI[]
+    new_cells = eltype(cells)[]
+    for c ∈ local_cells
+        cell = cells[c]
+        ns = length(new_cell_nodes) + 1
+        for j ∈ cell.nodes_range
+            push!(new_cell_nodes, n2l[cell_nodes[j]])
+        end
+        fs = length(new_cell_faces) + 1
+        for j ∈ cell.faces_range
+            lf = f2l[cell_faces[j]]
+            iszero(lf) && continue
+            push!(new_cell_faces, lf)
+            push!(new_cell_neighbours, g2l[cell_neighbours[j]])
+            push!(new_cell_nsign, cell_nsign[j])
+        end
+        @reset cell.nodes_range = UnitRange{TI}(ns, length(new_cell_nodes))
+        @reset cell.faces_range = UnitRange{TI}(fs, length(new_cell_faces))
+        push!(new_cells, cell)
+    end
+
+    # faces: only ownerCells and nodes_range change; geometry verbatim
+    new_face_nodes = TI[]
+    new_faces = eltype(faces)[]
+    for f ∈ local_faces
+        face = faces[f]
+        ns = length(new_face_nodes) + 1
+        for j ∈ face.nodes_range
+            push!(new_face_nodes, n2l[face_nodes[j]])
+        end
+        o1, o2 = face.ownerCells
+        @reset face.nodes_range = UnitRange{TI}(ns, length(new_face_nodes))
+        @reset face.ownerCells = SVector{2,TI}(g2l[o1], g2l[o2])
+        push!(new_faces, face)
+    end
+
+    # node_cells: invert local cell_nodes
+    counts = zeros(Int, length(local_nodes))
+    for cell ∈ new_cells, j ∈ cell.nodes_range
+        counts[new_cell_nodes[j]] += 1
+    end
+    stops = cumsum(counts)
+    starts = stops .- counts .+ 1
+    new_node_cells = zeros(TI, isempty(stops) ? 0 : stops[end])
+    fill_pos = copy(starts)
+    for (li, cell) ∈ enumerate(new_cells), j ∈ cell.nodes_range
+        nid = new_cell_nodes[j]
+        new_node_cells[fill_pos[nid]] = li
+        fill_pos[nid] += 1
+    end
+    new_nodes = eltype(nodes)[]
+    for (i, n) ∈ enumerate(local_nodes)
+        node = nodes[n]
+        @reset node.cells_range = UnitRange{TI}(starts[i], stops[i])
+        push!(new_nodes, node)
+    end
+
+    new_boundary_cellsID = TI[g2l[boundary_cellsID[f]] for f ∈ bfaces]
+
+    lmesh = _mesh_like(mesh,
+        new_cells, new_cell_nodes, new_cell_faces, new_cell_neighbours, new_cell_nsign,
+        new_faces, new_face_nodes, new_boundaries, new_nodes, new_node_cells,
+        mesh.get_float, mesh.get_int, new_boundary_cellsID)
+
+    # global block renumbering: new id = part offset + position within part (orig order)
+    l2g = GlobalInt[offs[parts[c]] + pos[c] for c ∈ local_cells]
+    owner = TI[parts[c] - 1 for c ∈ local_cells]
+    partition = Partition(part - 1, nparts, n_owned, n_ghost, l2g, owner,
+        offs[part] + 1, offs[part] + (index.cell_ptr[part+1] - index.cell_ptr[part]))
+
+    # processor patches: one pass over this part's interior faces; send/recv sorted by original
+    # global id (alignment invariant)
+    qs = sort!(unique(parts[g] for g ∈ ghosts))
+    qi = Dict(q => i for (i, q) ∈ enumerate(qs))
+    pfaces = [TI[] for _ ∈ qs]
+    sends = [TI[] for _ ∈ qs]
+    for (lf, f) ∈ enumerate(ifaces)
+        o1, o2 = faces[f].ownerCells
+        p1, p2 = parts[o1], parts[o2]
+        p1 == p2 && continue
+        own, other = p1 == part ? (o1, p2) : (o2, p1)
+        i = qi[other]
+        push!(pfaces[i], length(bfaces) + lf)
+        push!(sends[i], g2l[own])
+    end
+    procs = ProcessorPatch{Vector{TI}}[]
+    for (i, q) ∈ enumerate(qs)
+        recv_ghosts = TI[i for i ∈ n_owned+1:n_owned+n_ghost if parts[local_cells[i]] == q]
+        push!(procs, ProcessorPatch(q - 1, pfaces[i], sort!(unique!(sends[i])), recv_ghosts))
+    end
+
+    foreach(c -> g2l[c] = 0, local_cells)
+    foreach(f -> f2l[f] = 0, local_faces)
+    foreach(nd -> n2l[nd] = 0, local_nodes)
+
+    # halo caches are lazily built on first sync! (per rank/backend) so a DistributedMesh can be
+    # MPI.send-ed intact and adapted to a GPU backend without shipping rank-local MPI state
+    DistributedMesh(lmesh, partition, procs, GlobalInt.(local_cells), GlobalInt.(local_faces), HaloCache(), comm)
+end
+
+# NEW SECTION: entry points
+
+# owner-cell pairs of matched periodic faces (drives colocation in partition_cells)
+function periodic_cell_pairs(mesh, patch_pairs)
+    (; faces, boundaries) = mesh
+    pairs = Tuple{Int,Int}[]
+    for (p1, p2) ∈ patch_pairs
+        parent, _ = construct_periodic(mesh, CPU(), p1, p2)
+        ids1 = boundaries[boundary_index(boundaries, p1)].IDs_range
+        for (fID1, fID2) ∈ zip(ids1, parent.value.face_map)
+            push!(pairs, (Int(faces[fID1].ownerCells[1]), Int(faces[fID2].ownerCells[1])))
+        end
+    end
+    pairs
+end
+
+# single-process decomposition (testing, offline tooling)
+function decompose(mesh, nparts::Integer; periodic_patches=())
+    parts = partition_cells(mesh, nparts;
+        cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
+    index = _PartIndex(mesh, parts)
+    [extract_subdomain(mesh, parts, r; index) for r ∈ 1:nparts]
+end
+
+"""
+    is_root()
+    is_root(comm)
+
+True on the rank that owns terminal output and result writing, and true in a serial run where
+MPI was never initialised, so one guard serves both:
+
+    is_root() && println("final residual ", residuals.p[end])
+"""
+is_root() = !(MPI.Initialized() && !MPI.Finalized()) || is_root(MPI.COMM_WORLD)
+is_root(comm) = MPI.Comm_rank(comm) == 0
+
+# non-root ranks: silence @info/@debug, keep @warn/@error so crashes still surface from any rank
+function quiet_nonroot!(comm)
+    (MPI.Comm_size(comm) > 1 && MPI.Comm_rank(comm) != 0) &&
+        global_logger(ConsoleLogger(stderr, Logging.Warn))
+    nothing
+end
+
+# every rank enters, so a failure on some ranks is an error on all of them rather than a hang
+function _on_all_ranks(f, comm, what)
+    res, err = try
+        f(), nothing
+    catch e
+        nothing, e
+    end
+    failed = MPI.Allgather(err !== nothing, comm)
+    any(failed) || return res
+    err === nothing || throw(err)
+    error("$what failed on rank(s) $(join(findall(failed) .- 1, ", "))")
+end
+
+"""
+    distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
+
+Online mesh distribution: rank 0 partitions `mesh` (Metis k-way) and scatters one
+`DistributedMesh` per rank; other ranks may pass `nothing` as `mesh`.
+
+`periodic_patches` takes patch-name pairs, e.g. `[(:top, :bottom)]`, for meshes with
+periodic boundaries: matched owner cells are contracted in the partition graph so each
+periodic pair lands on one rank, and `construct_periodic` on the `DistributedMesh` then
+works per rank exactly as in serial.
+"""
+function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
+    MPI.Initialized() || MPI.Init()
+    quiet_nonroot!(comm)
+    nranks = MPI.Comm_size(comm)
+    rank = MPI.Comm_rank(comm)
+    nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1; comm)
+    prep = _on_all_ranks(comm, "partitioning") do
+        rank == 0 || return nothing
+        parts = partition_cells(mesh, nranks; cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
+        parts, _PartIndex(mesh, parts)
+    end
+    if rank == 0
+        parts, index = prep
+        for q ∈ 1:nranks-1
+            MPI.send(extract_subdomain(mesh, parts, q + 1; comm, index), comm; dest=q, tag=0)
+        end
+        extract_subdomain(mesh, parts, 1; comm, index)
+    else
+        _with_comm(MPI.recv(comm; source=0, tag=0), comm)
+    end
+end
+
+"""
+    distribute(reader::Function; dir=nothing, key=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
+
+Read and distribute a mesh from a call every rank makes identically. Rank 0 runs `reader()` to
+build the global mesh and the other ranks skip it, so no `rank == 0` guard appears in the script
+and no value can differ in type between ranks:
+
+    mesh = distribute() do
+        UNV3D_mesh(path, scale=0.001)
+    end
+
+With `dir`, the decomposition is written there once and every rank then loads only its own part,
+which removes rank 0's global-mesh memory ceiling from later runs. A decomposition already in
+`dir` for the same number of ranks and the same `key` is reused and `reader()` is never called;
+otherwise it is replaced. Without a `key` only the rank count is compared, so pass one that names
+the mesh (any hashable value, e.g. the reader's arguments) whenever `dir` may hold another mesh's parts:
+
+    mesh = distribute(dir="parts", key=(path, 0.001)) do
+        UNV3D_mesh(path, scale=0.001)
+    end
+
+MPI is initialised if it is not already.
+"""
+function distribute(reader::Function; dir=nothing, key=nothing, comm=MPI.COMM_WORLD, periodic_patches=())
+    MPI.Initialized() || MPI.Init()
+    if dir === nothing
+        mesh = _on_all_ranks(() -> MPI.Comm_rank(comm) == 0 ? reader() : nothing, comm, "reader")
+        return distribute(mesh; comm, periodic_patches)
+    end
+    nranks = MPI.Comm_size(comm)
+    # the all-gather also holds every rank until the parts are on disk
+    _on_all_ranks(comm, "reading and partitioning the mesh") do
+        (MPI.Comm_rank(comm) == 0 && !_parts_match(dir, nranks, key)) || return
+        stale = _part_files(dir; ext=(".xdm", ".jls"))
+        isempty(stale) || @info "replacing the decomposition in $dir: another rank count, mesh or key"
+        foreach(f -> rm(joinpath(dir, f)), stale)
+        partition_mesh(reader(), nranks; dir, periodic_patches, key)
+        GC.gc(true) # drop the global mesh before the ranks claim memory for their own parts
+    end
+    distribute(dir; comm)
+end
+
+_part_files(dir; ext=(".xdm",)) = isdir(dir) ?
+    filter(f -> startswith(f, "rank_") && any(e -> endswith(f, e), ext), readdir(dir)) : String[]
+
+function _parts_match(dir, nranks, key=nothing)
+    hs = [_part_header(joinpath(dir, f), nranks) for f ∈ _part_files(dir)]
+    length(hs) == nranks && all(!isnothing, hs) && allequal(_source.(hs)) && hs[1].key_hash == _key_hash(key)
+end
+
+# NEW SECTION: offline partitioning
+
+"""
+    partition_mesh(mesh, nparts; dir, periodic_patches=(), key=nothing)
+
+Offline decomposition: partition `mesh` into `nparts` rank-local meshes and write one
+`rank_<r>.xdm` per rank into `dir`, recording `key` for `distribute(reader; dir, key)`. Load with `distribute(dir; comm)` under `mpiexec -n nparts`. Each
+file is binary with a header ([`mesh_info`](@ref)) naming its format, kind and rank count; a part of
+another format or rank count is refused at load with the call that fixes it.
+"""
+function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=(), key=nothing)
+    mkpath(dir)
+    source = _mesh_fingerprint(mesh)
+    for (r, dm) ∈ enumerate(decompose(mesh, nparts; periodic_patches))
+        _write_xdm(joinpath(dir, "rank_$(r-1).xdm"), getfield(dm, :mesh), dm; source, key)
+    end
+    dir
+end
+
+"""
+    distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
+
+Load an offline decomposition written by [`partition_mesh`](@ref): each rank reads only
+its own `rank_<rank>.xdm` from `dir` (no rank-0 memory bottleneck).
+"""
+function distribute(dir::AbstractString; comm=MPI.COMM_WORLD)
+    MPI.Initialized() || MPI.Init()
+    quiet_nonroot!(comm)
+    rank = MPI.Comm_rank(comm)
+    dm = _on_all_ranks(comm, "reading parts from $dir") do
+        path = joinpath(dir, "rank_$rank.xdm")
+        dm = _read_part_file(path, MPI.Comm_size(comm))
+        getfield(dm, :partition).rank == rank || error("rank_$rank.xdm in $dir holds another rank's part")
+        dm, hash(_source(open(io -> _read_xdm_header(io, path), path)))
+    end
+    allequal(MPI.Allgather(dm[2], comm)) || error("the parts in $dir were cut from different meshes or " *
+        "decompositions; regenerate them with partition_mesh")
+    dm = dm[1]
+    _with_comm(dm, comm)
+end

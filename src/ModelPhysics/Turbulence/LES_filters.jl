@@ -75,7 +75,7 @@ function cell_surface_area(field, fieldBCs, config)
     areaSum = _convert_array!(zeros(_get_float(mesh),length(field)), backend)
     (; boundaries, faces) = mesh
     ndrange=length(field)
-    kernel! = _area_sum!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_area_sum!, backend, workgroup, ndrange)
     kernel!(areaSum, mesh)
 
     # add non-empty boundary contributions
@@ -136,12 +136,12 @@ function basic_filter_new!(phiFiltered, phif, surfaceArea, config)
     (; boundary_cellsID) = phiFiltered.mesh
     
     ndrange=length(phiFiltered)
-    kernel! = _surface_sum!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_surface_sum!, backend, workgroup, ndrange)
     kernel!(phiFiltered, phif, surfaceArea)
 
     # boundary faces contribution 
     ndrange=length(boundary_cellsID)
-    kernel! = _add_boundary_faces!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_add_boundary_faces!, backend, workgroup, ndrange)
     kernel!(phiFiltered, phif, surfaceArea)
 
 end
@@ -218,13 +218,6 @@ end
         surfaceSum = 0.0
     end 
 
-    # area = nothing
-    # for fi ∈ faces_range
-    #     cfID = cell_faces[fi] # cell-based face ID
-    #     (; area) = faces[cfID]
-    #     # surfaceSum += phif[cfID]*area
-    #     # areaSum += area
-    # end
     bfarea = faces[fID].area
     # areaSum += bfarea
     # surfaceSum += phif[fID]*bfarea
@@ -253,16 +246,10 @@ function basic_filter!(phiFiltered, phi, surfaceArea, config)
     
     # # Launch result calculation kernel
     ndrange=length(phiFiltered)
-    kernel! = _integrate_surface!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_integrate_surface!, backend, workgroup, ndrange)
     kernel!(phiFiltered, phi, surfaceArea)
     KernelAbstractions.synchronize(backend)
 
-    # # number of boundary faces
-    # nbfaces = length(phif.mesh.boundary_cellsID)
-    
-    # ndrange=nbfaces
-    # kernel! = boundary_faces_contribution!(_setup(backend, workgroup, ndrange)...)
-    # kernel!(x, y, z, phif)
 end
 
 @kernel function _integrate_surface!(phiFiltered, phi::ScalarField, surfaceArea)
@@ -286,13 +273,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             # areaSum += area
@@ -322,13 +302,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             # areaSum += area
@@ -358,13 +331,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             # areaSum += area

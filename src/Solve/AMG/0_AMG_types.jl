@@ -412,13 +412,13 @@ struct AMGGalerkinCache{I,W}
 end
 
 struct AMGRAPPlanCPU{I, T}
-    ra_rowptr::Vector{Int}
+    ra_rowptr::Vector{I}
     ra_colval::Vector{I}
     ra_nzval::Vector{T}
     workspace_ra::Vector{T}
     workspace_rap::Vector{T}
-    flag_ra::Vector{Int}
-    flag_rap::Vector{Int}
+    flag_ra::Vector{I}
+    flag_rap::Vector{I}
 end
 
 mutable struct AMGLevel{MA,MP,MR,VD,VI,VX,T}
@@ -499,25 +499,25 @@ function _amg_backend_array(backend, values)
     return adapt(backend, values)
 end
 
-function _empty_amg_matrix(backend, ::Type{T}) where {T}
-    rowptr = KernelAbstractions.zeros(backend, Int, 1)
-    colval = KernelAbstractions.zeros(backend, Int, 0)
+function _empty_amg_matrix(backend, ::Type{T}, ::Type{TI}=Int) where {T,TI}
+    rowptr = KernelAbstractions.zeros(backend, TI, 1)
+    colval = KernelAbstractions.zeros(backend, TI, 0)
     nzval = KernelAbstractions.zeros(backend, T, 0)
     return AMGMatrixCSR(rowptr, colval, nzval, 0, 0)
 end
 
-function _empty_amg_level(backend, ::Type{T}) where {T}
-    A = _empty_amg_matrix(backend, T)
-    P = _empty_amg_matrix(backend, T)
-    R = _empty_amg_matrix(backend, T)
+function _empty_amg_level(backend, ::Type{T}, ::Type{TI}=Int) where {T,TI}
+    A = _empty_amg_matrix(backend, T, TI)
+    P = _empty_amg_matrix(backend, T, TI)
+    R = _empty_amg_matrix(backend, T, TI)
     diag = KernelAbstractions.zeros(backend, T, 0)
     invdiag = KernelAbstractions.zeros(backend, T, 0)
-    diag_index = KernelAbstractions.zeros(backend, Int, 0)
+    diag_index = KernelAbstractions.zeros(backend, TI, 0)
     rhs = KernelAbstractions.zeros(backend, T, 0)
     x = KernelAbstractions.zeros(backend, T, 0)
     tmp = KernelAbstractions.zeros(backend, T, 0)
     direction = KernelAbstractions.zeros(backend, T, 0)
-    aggregate_ids = KernelAbstractions.zeros(backend, Int, 0)
+    aggregate_ids = KernelAbstractions.zeros(backend, TI, 0)
     return AMGLevel(A, P, R, diag, invdiag, diag_index, rhs, x, tmp, direction, aggregate_ids, zero(T), 0, false)
 end
 
@@ -526,10 +526,10 @@ function _placeholder_lu_qr(::Type{T}) where {T}
     return lu(A), qr(A)
 end
 
-function _empty_cpu_coarse_level(::Type{T}) where {T}
+function _empty_cpu_coarse_level(::Type{T}, ::Type{TI}=Int) where {T,TI}
     TC = _coarse_direct_eltype(T)
     lu_factor, qr_factor = _placeholder_lu_qr(TC)
-    A = AMGMatrixCSR([1, 1], Int[], T[], 1, 1)
+    A = AMGMatrixCSR(TI[1, 1], TI[], T[], 1, 1)
     Acsc = sparse([1], [1], [one(TC)], 1, 1)
     csc_nzval_index = Int[]
     rhs = zeros(TC, 1)
@@ -537,14 +537,14 @@ function _empty_cpu_coarse_level(::Type{T}) where {T}
     return AMGCPUCoarseLevel(A, Acsc, csc_nzval_index, rhs, x, lu_factor, qr_factor, false)
 end
 
-function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
-    host_level = _empty_amg_level(CPU(), T)
+function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T, ::Type{TI}=Int) where {T,TS,TI}
+    host_level = _empty_amg_level(CPU(), T, TI)
     # Device level at TS so workspace.hierarchy reassignment after build type-checks
-    device_level = _empty_amg_level(backend, TS)
+    device_level = _empty_amg_level(backend, TS, TI)
     host_levels = typeof(host_level)[]
     # GPU levels are heterogeneously typed (finest may be CuSparseMatrixCSR)
     device_levels = backend isa CPU ? typeof(device_level)[] : Vector{Any}()
-    coarse_cpu = _empty_cpu_coarse_level(T)
+    coarse_cpu = _empty_cpu_coarse_level(T, TI)
     return AMGHierarchy(
         device_levels,
         host_levels,
@@ -553,8 +553,8 @@ function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
         1,
         0,
         0,
-        Int[],
-        Int[],
+        TI[],
+        TI[],
         Ref{Any}(nothing),
         Ref{Any}(nothing),
         UInt64(0),
@@ -575,10 +575,12 @@ amg_hierarchy_kind(solver::AMG, ::KernelAbstractions.GPU) =
     (solver.fuse_levels >= 1 && solver.coarsening isa Geometric && solver.smoother isa AMGJacobi) ?
         MatrixFreeAMG() : MaterialisedAMG()
 
-_amg_empty_hierarchy(::MaterialisedAMG, backend, ::Type{T}, ::Type{TS}) where {T,TS} =
-    _empty_hierarchy(backend, T, TS)
+_amg_empty_hierarchy(::MaterialisedAMG, backend, ::Type{T}, ::Type{TS}, ::Type{TI}) where {T,TS,TI} =
+    _empty_hierarchy(backend, T, TS, TI)
 
-function _workspace(solver::AMG, b)
+# the hierarchy stores indices in the equation matrix index type, which the workspace type fixes here
+_workspace(solver::AMG, b) = _workspace(solver, b, Int)
+function _workspace(solver::AMG, b, ::Type{TI}) where {TI<:Integer}
     T = eltype(b)
     TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     backend = KernelAbstractions.get_backend(b)
@@ -587,7 +589,7 @@ function _workspace(solver::AMG, b)
     # 50% to the workspace. `similar(x, 0)` keeps the field type concrete.
     bicg_vec() = solver.mode isa Bicgstab ? similar(x) : similar(x, 0)
     return AMGWorkspace(
-        _amg_empty_hierarchy(amg_hierarchy_kind(solver, backend), backend, T, TS),
+        _amg_empty_hierarchy(amg_hierarchy_kind(solver, backend), backend, T, TS, TI),
         0,
         similar(x),
         similar(x),

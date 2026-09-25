@@ -86,7 +86,7 @@ GC.gc(true)
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 # test periodic boundaries agree (velocity)
 top = boundary_average(:top, model.momentum.U, BCs.U, config)
@@ -102,3 +102,12 @@ bottom = boundary_average(:bottom, model.momentum.p, BCs.p, config)
 
 
 
+
+# periodic connectivity keeps an Int32 mesh's equation matrix at Int32
+mesh32 = UNV3D_mesh(mesh_file, scale=0.001, integer_type=Int32)
+periodic32 = construct_periodic(mesh32, CPU(), :top, :bottom)
+BCs32 = assign(region=mesh32, (p = [Extrapolated(:inlet), Dirichlet(:outlet, 0.0), Extrapolated(:plate),
+    Extrapolated(:side1), Extrapolated(:side2), periodic32...],))
+eq32 = XCALibre.ModelFramework.ScalarEquation(ScalarField(mesh32), BCs32.p)
+@test eltype(XCALibre.Solve._colval(eq32.A)) == Int32
+@test eltype(periodic32[1].value.face_map) == Int32

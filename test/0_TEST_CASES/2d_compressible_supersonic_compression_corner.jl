@@ -82,7 +82,7 @@ function run_compression_corner(energy, he_inlet)
     @test initialise!(model.momentum.p, pressure) === nothing
     @test initialise!(model.energy.T, temp) === nothing
 
-    residuals = run!(model, config)
+    residuals = run!(model, config; progress=false)
 
     inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
     outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)

@@ -122,7 +122,7 @@ GC.gc()
 @test initialise!(model.turbulence.omega, ω_inlet) === nothing
 @test initialise!(model.turbulence.nut, k_inlet/ω_inlet) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 # test that we are close enough to drag coefficient
 ReL = Umag*L/nu

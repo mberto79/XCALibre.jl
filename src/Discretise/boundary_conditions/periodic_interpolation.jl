@@ -12,18 +12,15 @@ end
         (; transform ) = BC.value
         (; faces, cells) = phif.mesh
         pfID = BC.value.face_map[i] # id of periodic face
-        pface = faces[pfID]
-        pcID = pface.ownerCells[1]
-        pcell = cells[pcID]
-        face = faces[fID]
+        pcID = faces.ownerCells[pfID][1]
         # cID = boundary_cellsID[fID]
-        cID = face.ownerCells[1]
-        cell = cells[cID]
+        cID = faces.ownerCells[fID][1]
 
 
-        Pf = face.centre - cell.centre
-        PN = (pcell.centre - transform.distance) - cell.centre
-        normal = face.normal
+        C1 = cells.centre[cID]
+        Pf = faces.centre[fID] - C1
+        PN = (cells.centre[pcID] - transform.distance) - C1
+        normal = faces.normal[fID]
         wn = (Pf⋅normal)/(PN⋅normal)
         w = one(wn) - wn
 
@@ -42,18 +39,15 @@ end
         (; transform ) = BC.value
         (; faces, cells) = psif.mesh
         pfID = BC.value.face_map[i] # id of periodic face
-        pface = faces[pfID]
-        pcID = pface.ownerCells[1]
-        pcell = cells[pcID]
-        face = faces[fID]
+        pcID = faces.ownerCells[pfID][1]
         # cID = boundary_cellsID[fID]
-        cID = face.ownerCells[1]
-        cell = cells[cID]
+        cID = faces.ownerCells[fID][1]
 
 
-        Pf = face.centre - cell.centre
-        PN = (pcell.centre - transform.distance) - cell.centre
-        normal = face.normal
+        C1 = cells.centre[cID]
+        Pf = faces.centre[fID] - C1
+        PN = (cells.centre[pcID] - transform.distance) - C1
+        normal = faces.normal[fID]
         wn = (Pf⋅normal)/(PN⋅normal)
         w = one(wn) - wn
 

@@ -20,7 +20,8 @@ USER_GUIDE_PAGES = Any[
     "2_physics_and_models.md",
     "3_numerical_setup.md",
     "4_runtime_and_solvers.md",
-    "5_postprocessing.md"
+    "5_postprocessing.md",
+    "6_distributed_mpi.md"
 ]
 
 EXAMPLES_PAGES = Any[

@@ -65,14 +65,16 @@ function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solve
     if isempty(hierarchy.host_levels)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
-        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup; log_diagnostics=true)
+        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup;
+            log_diagnostics=true, index_type=eltype(hierarchy.rowptr_pattern))
         return workspace
     end
 
     if !_pattern_matches(hierarchy, A)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
-        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup; log_diagnostics=false)
+        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup;
+            log_diagnostics=false, index_type=eltype(hierarchy.rowptr_pattern))
         return workspace
     end
 

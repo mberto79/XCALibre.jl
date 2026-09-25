@@ -40,7 +40,7 @@ Adapt.@adapt_structure FixedHeatFlux
 
 
 @define_boundary FixedHeatFlux Laplacian{Linear} begin
-    (; area) = face
+    area = faces.area[fID]
     0.0, -term.sign*bc.value*area
 end
 

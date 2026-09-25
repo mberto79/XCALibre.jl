@@ -81,7 +81,7 @@ initialise!(model.fluid.alpha, 0.0)
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0,
                 min_corner=[0.0, 0.0, -0.5], max_corner=[0.3, 0.4, 0.5], config=config)
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 @test all(isfinite, residuals.Ux)
 @test all(isfinite, residuals.Uy)

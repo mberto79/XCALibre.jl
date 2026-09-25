@@ -30,7 +30,7 @@ Slip(name::Symbol) = Slip(name, 0)
 end
 
 @define_boundary Slip Laplacian{Linear} VectorField begin
-    (; area, delta, normal) = face
+    area, delta, normal = faces.area[fID], faces.delta[fID], faces.normal[fID]
     J = term.flux[fID]
     flux = J*area/delta
     ap = term.sign[1]*(-flux)
@@ -43,7 +43,7 @@ end
 
 @define_boundary Slip Divergence{Upwind} VectorField begin
     ap = term.sign*term.flux[fID]
-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
+    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
 end
 
 @define_boundary Slip Divergence{Upwind} ScalarField begin
@@ -58,7 +58,7 @@ end
 # Scalars cancel exactly. For vectors, the projected face value leaves the normal
 # component from div(phi,U) - Sp(div(phi),U).
 @define_boundary Slip Divergence{BoundedUpwind} VectorField begin
-    (; normal) = face
+    normal = faces.normal[fID]
     ap = term.sign*term.flux[fID]
     vc = term.phi[cellID]
     vn = (vc⋅normal)*normal
@@ -90,12 +90,12 @@ end
 
 @define_boundary Slip Divergence{Linear} VectorField begin
     ap = term.sign*term.flux[fID]
-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
+    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
 end
 
 @define_boundary Slip Divergence{LUST} VectorField begin
     ap = term.sign*term.flux[fID]
-    _tangential_divergence(ap, term.phi[cellID], face.normal, component)
+    _tangential_divergence(ap, term.phi[cellID], faces.normal[fID], component)
 end
 
 @define_boundary Slip Si begin

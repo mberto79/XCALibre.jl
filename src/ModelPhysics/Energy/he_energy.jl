@@ -130,7 +130,7 @@ function initialise(
     ) → eqn
 
     @reset energy_eqn.preconditioner = set_preconditioner(solvers.he.preconditioner, energy_eqn)
-    @reset energy_eqn.solver = _workspace(solvers.he.solver, _b(energy_eqn))
+    @reset energy_eqn.solver = _workspace(solvers.he.solver, _b(energy_eqn), _index_type(_A(energy_eqn)))
 
     init_residual = (:he, 1.0)
     state = ModelState(init_residual, false)
@@ -354,7 +354,7 @@ function viscous_dissipation!(Phi::ScalarField, mueff_cell, gradU, U_BCs, config
     mesh = Phi.mesh
     n_cells = length(mesh.cells)
 
-    kernel! = _viscous_dissipation!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_viscous_dissipation!, backend, workgroup, n_cells)
     kernel!(Phi.values, mueff_cell, gradU.result)
     KernelAbstractions.synchronize(backend)
 
@@ -403,7 +403,7 @@ function _compute_pdivU!(S::ScalarField, p, gradU, config)
     (; backend, workgroup) = hardware
     mesh = S.mesh
     n_cells = length(mesh.cells)
-    kernel! = _pdivU_kernel!(_setup(backend, workgroup, n_cells)...)
+    kernel! = _sized(_pdivU_kernel!, backend, workgroup, n_cells)
     kernel!(S.values, p.values, gradU.result)
 end
 
@@ -420,7 +420,7 @@ function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::Fac
     internal_faces_count = length(mesh.faces) - nbfaces
     (; hardware) = config
     (; backend, workgroup) = hardware
-    kernel! = interpolate_upwind_Scalar!(_setup(backend, workgroup, internal_faces_count)...)
+    kernel! = _sized(interpolate_upwind_Scalar!, backend, workgroup, internal_faces_count)
     kernel!(phif.values, phi.values, mdotf.values, mesh.faces, nbfaces)
 end
 

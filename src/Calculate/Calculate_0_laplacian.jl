@@ -10,7 +10,7 @@ function surface_gradient!(gradf, phif, phi, BCs, time, config)
 
     ndrange = length(mesh.faces)
     n_bfaces = length(mesh.boundary_cellsID)
-    kernel! = _surface_gradient!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_surface_gradient!, backend, workgroup, ndrange)
     kernel!(gradf, phif, phi, mesh.faces, mesh.boundary_cellsID, n_bfaces)
 end
 
@@ -22,8 +22,7 @@ end
     end
 
     @inbounds begin
-        face = faces[fID]
-        (; ownerCells, normal, delta) = face
+        ownerCells, normal, delta = faces.ownerCells[fID], faces.normal[fID], faces.delta[fID]
         snGrad = if fID <= n_bfaces
             (phif[fID] - phi[boundary_cellsID[fID]]) / delta
         else
@@ -46,19 +45,17 @@ function laplacian!(phi_out, phif_in ,phi_in, BCs, time, config; disp_warn=true)
     n_bfaces = length(mesh.boundary_cellsID)
 
     for fID ∈ 1:n_bfaces
-        face = mesh.faces[fID]
         cID = mesh.boundary_cellsID[fID]
-        flux = face.area * (phif_in[fID] - phi_in[cID]) / face.delta
-        phi_out[cID] += flux / mesh.cells[cID].volume
+        flux = mesh.faces.area[fID] * (phif_in[fID] - phi_in[cID]) / mesh.faces.delta[fID]
+        phi_out[cID] += flux / mesh.cells.volume[cID]
     end
 
     for fID ∈ (n_bfaces + 1):length(mesh.faces)
-        face = mesh.faces[fID]
-        cID1 = face.ownerCells[1]
-        cID2 = face.ownerCells[2]
-        flux = face.area * (phi_in[cID2] - phi_in[cID1]) / face.delta
-        phi_out[cID1] += flux / mesh.cells[cID1].volume
-        phi_out[cID2] -= flux / mesh.cells[cID2].volume
+        cID1 = mesh.faces.ownerCells[fID][1]
+        cID2 = mesh.faces.ownerCells[fID][2]
+        flux = mesh.faces.area[fID] * (phi_in[cID2] - phi_in[cID1]) / mesh.faces.delta[fID]
+        phi_out[cID1] += flux / mesh.cells.volume[cID1]
+        phi_out[cID2] -= flux / mesh.cells.volume[cID2]
     end
 
 end

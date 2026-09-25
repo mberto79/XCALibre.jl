@@ -85,7 +85,7 @@ function run_transient_cylinder(energy, he_inlet; tscheme=Euler)
     @test initialise!(model.momentum.p, p_inf) === nothing
     @test initialise!(model.energy.T, T_inf) === nothing
 
-    residuals = run!(model, config)
+    residuals = run!(model, config; progress=false)
     return model, residuals
 end
 

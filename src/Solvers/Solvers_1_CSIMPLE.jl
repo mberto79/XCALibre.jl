@@ -3,7 +3,7 @@ export csimple!
 """
     csimple!(
         model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
@@ -26,14 +26,15 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `e` Vector of energy residuals for each iteration.
 
 """
-function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0) 
+function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true) 
+    check_distributed_support(:CSIMPLE, model)
 
     residuals = setup_compressible_solvers(
         CSIMPLE, model, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -41,7 +42,7 @@ end
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -99,8 +100,8 @@ function setup_compressible_solvers(
 
     @info "Pre-allocating solvers..."
      
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
+    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
   
     @info "Initialising energy model..."
     energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
@@ -113,14 +114,14 @@ function setup_compressible_solvers(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
+        inner_loops=inner_loops, progress=progress)
 
     return residuals    
 end # end function
 
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
     
     # Extract model variables and configuration
@@ -202,7 +203,7 @@ function CSIMPLE(
 
     @info "Starting CSIMPLE loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -344,7 +345,7 @@ function CSIMPLE(
         R_p[iteration] = rp
 
         Uz_convergence = true
-        if typeof(mesh) <: Mesh3
+        if _base_mesh(mesh) isa Mesh3
             Uz_convergence = rz <= solvers.U.convergence
         end
 
@@ -354,8 +355,7 @@ function CSIMPLE(
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            progress.n = iteration
-            finish!(progress)
+            isnothing(bar) || (bar.n = iteration; finish!(bar))
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 save_output(model, outputWriter, iteration, time, config)
@@ -363,8 +363,8 @@ function CSIMPLE(
             break
         end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
@@ -397,12 +397,12 @@ function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScala
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces
-    kernel! = _explicit_shear_stress_internal!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_explicit_shear_stress_internal!, backend, workgroup, ndrange)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
     ndrange=n_bfaces
-    kernel! = _explicit_shear_stress_boundaries!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_explicit_shear_stress_boundaries!, backend, workgroup, ndrange)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
     KernelAbstractions.synchronize(backend)
 

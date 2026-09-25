@@ -2,7 +2,7 @@ export simple!
 
 """
     simple!(model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0)
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -26,16 +26,20 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 """
 function simple!(
-    model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    petsc_options="", restart=nothing
     )
+    check_distributed_support(:SIMPLE, model)
 
     residuals = setup_incompressible_solvers(
-        SIMPLE, model, config; 
+        SIMPLE, model, config;
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops, progress=progress,
+        petsc_options=petsc_options,
+        restart=restart
         )
 
     return residuals
@@ -43,9 +47,10 @@ end
 
 # Setup for all incompressible algorithms
 function setup_incompressible_solvers(
-    solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) 
+    solver_variant, model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    petsc_options="", restart=nothing
+    )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
 
@@ -55,7 +60,7 @@ function setup_incompressible_solvers(
     mesh = model.domain
 
     @info "Pre-allocating fields..."
-    
+
     ∇p = Grad{schemes.p.gradient}(p)
     mdotf = FaceScalarField(mesh, store_mesh=false)
     rDf = FaceScalarField(mesh, store_mesh=false)
@@ -67,9 +72,9 @@ function setup_incompressible_solvers(
 
     U_eqn = (
         Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
-        - Laplacian{schemes.U.laplacian}(nueff, U) 
-        == 
+        + Divergence{schemes.U.divergence}(mdotf, U)
+        - Laplacian{schemes.U.laplacian}(nueff, U)
+        ==
         - Source(∇p.result)
     ) → VectorEquation(U, boundaries.U)
 
@@ -77,32 +82,39 @@ function setup_incompressible_solvers(
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
     ) → ScalarEquation(p, boundaries.p)
 
-    @info "Initialising preconditioners..."
+    # distributed solves use PETSc PCs; Krylov preconditioner/workspace setup is serial-only.
+    # mesh is concrete here so the branch is resolved at compile time (zero serial cost).
+    if !is_distributed_mesh(mesh)
+        @info "Initialising preconditioners..."
+        @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
+        @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
 
-    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
-
-    @info "Pre-allocating solvers..."
-
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+        @info "Pre-allocating solvers..."
+        @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
+        @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
+    end
 
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
+    # wrap eqns for the linear-solve seam: identity serial, DistributedEqn on a DistributedMesh
+    U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, label="U")
+    p_eqn = wrap_eqn(p_eqn, mesh, solvers.p, config; petsc_options, label="p")
+
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops, progress=progress,
+        restart=restart)
 
     return residuals
 end # end function
 
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing
     )
     
     # Extract model variables and configuration
@@ -113,20 +125,30 @@ function SIMPLE(
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
 
+    # wrapped eqns solve through the seam (serial identity / DistributedEqn); the raw eqns
+    # are assembled/discretised in-place below. distributed skips ProgressMeter/postprocess.
+    U_deqn, p_deqn = U_eqn, p_eqn
+    U_eqn, p_eqn = unwrap_eqn(U_eqn), unwrap_eqn(p_eqn)
+    distributed = is_distributed_mesh(mesh)
+    is3d = _base_mesh(mesh) isa Mesh3
+
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
-    
+
+    _warn_skipped_postprocess(mesh, postprocess)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
-    outputWriter = initialise_writer(output, model.domain)
-    
+    # a negative write_interval writes nothing, so the writer (host mesh copy, VTK strings) is never built
+    outputWriter = signbit(write_interval) ? nothing : initialise_writer(output, model.domain)
+    attach_state!(outputWriter, mdotf, config.runtime.dt)
+
     @info "Allocating working memory..."
 
-    # Define aux fields 
+    # Define aux fields
     gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT, U, Uf)
@@ -138,20 +160,23 @@ function SIMPLE(
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
-    prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    prev = KernelAbstractions.zeros(backend, TF, n_cells)
     p_boundary_reference = similar(prev)
 
-    # Pre-allocate vectors to hold residuals 
+    # Pre-allocate vectors to hold residuals
     R_ux = zeros(TF, iterations)
     R_uy = zeros(TF, iterations)
     R_uz = zeros(TF, iterations)
     R_p = zeros(TF, iterations)
-    
+
     # Initial calculations
     time = zero(TF) # assuming time=0
-    interpolate!(Uf, U, config)   
+    start, _ = restart_fields!(mesh, model, restart, config)
+    sync!(U, mesh, config); sync!(p, mesh, config) # prime ghosts (no-op serial)
+    interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    restart_flux!(mesh, mdotf, restart, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -159,37 +184,40 @@ function SIMPLE(
 
     @info "Starting SIMPLE loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress && !distributed)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
-    for iteration ∈ 1:iterations
+    for iteration ∈ start+1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
-        
+        rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+
         # Pressure correction
-        inverse_diagonal!(rD, U_eqn, config)
+        inverse_diagonal!(rD, U_eqn, config; halo=false)
+        remove_pressure_source!(U_eqn, ∇p, config)
+        H!(Hv, U, U_eqn, config; halo=false)
+        sync!((rD, Hv), mesh, config) # one exchange for both (no-op serial)
         interpolate!(rDf, rD, config)
         correct_interpolation_periodic(rDf, rD, boundaries.U, config)
-        remove_pressure_source!(U_eqn, ∇p, config)
-        H!(Hv, U, U_eqn, config)
-        
+
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
         correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
         # old approach
-        # div!(divHv, Uf, config) 
+        # div!(divHv, Uf, config)
 
         # new approach
         flux!(mdotf, Uf, config)
         div!(divHv, mdotf, config)
-        
+
         # Pressure calculations
-        @. prev = p.values
-        @. p_boundary_reference = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        pv = p.values
+        xcal_foreach(prev, config) do i
+            prev[i] = p_boundary_reference[i] = pv[i]
+        end
+        rp = solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -198,11 +226,11 @@ function SIMPLE(
             @. p_boundary_reference = p.values
             discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            # setReference!(p_eqn, pref, 1, config)
+            # setReference!(p_deqn, pref, 1, config)
             nonorthogonal_face_correction(
                 p_eqn, ∇p, rDf, config; correction=nonorthogonal_flux)
             # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
+            rp = solve_system!(p_deqn, solvers.p, p, nothing, config)
         end
 
         # Flux correction must use the unrelaxed pressure solution so that the
@@ -218,7 +246,7 @@ function SIMPLE(
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config) 
+        turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx
@@ -226,29 +254,28 @@ function SIMPLE(
         R_uz[iteration] = rz
         R_p[iteration] = rp
 
-        Uz_convergence = true
-        if typeof(mesh) <: Mesh3
-            Uz_convergence = rz <= solvers.U.convergence
-        end
+        Uz_convergence = is3d ? rz <= solvers.U.convergence : true
 
-        if (R_ux[iteration] <= solvers.U.convergence && 
-            R_uy[iteration] <= solvers.U.convergence && 
+        if (R_ux[iteration] <= solvers.U.convergence &&
+            R_uy[iteration] <= solvers.U.convergence &&
             Uz_convergence &&
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            progress.n = iteration
-            finish!(progress)
-            @info "Simulation converged in $iteration iterations!"
+            if !isnothing(bar)
+                bar.n = iteration
+                finish!(bar)
+            end
+            is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
-                save_output(model, outputWriter, iteration, time, config)
-                save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+                outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
+                distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
         end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
@@ -257,20 +284,18 @@ function SIMPLE(
                 turbulenceModel.state.residuals...
                 ]
             )
-        
-        runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
-        
-        if iteration%write_interval + signbit(write_interval) == 0      
-            save_output(model, outputWriter, iteration, time, config)
-            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+
+        distributed || runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+
+        if iteration%write_interval + signbit(write_interval) == 0
+            outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
+            distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop
-    
+
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
-
-### TEMP LOCATION FOR PROTOTYPING
 
 # Floor on the projection of dPN onto the face normal. Past it the correction is clamped
 # and stops complementing the unclamped implicit coefficient in Discretise_1_schemes.jl,
@@ -292,13 +317,13 @@ function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothi
     (; backend, workgroup) = hardware
 
     (; b) = eqn.equation
-
+    
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces
-    kernel! = _nonorthogonal_face_correction(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_nonorthogonal_face_correction, backend, workgroup, ndrange)
     kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
 end
 
@@ -343,9 +368,8 @@ function correct_mass_flux!(
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
-    kernel! = _correct_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_mass_flux!, backend, workgroup, ndrange)
     kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
-    KernelAbstractions.synchronize(backend)
 
     correct_nonorthogonal_mass_flux!(mdotf, nonorthogonal, config)
 
@@ -366,10 +390,8 @@ function correct_nonorthogonal_mass_flux!(mdotf, correction, config)
     (; backend, workgroup) = config.hardware
     n_bfaces = length(correction.mesh.boundary_cellsID)
     ndrange = length(correction.mesh.faces) - n_bfaces
-    kernel! = _correct_nonorthogonal_mass_flux!(
-        _setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_nonorthogonal_mass_flux!, backend, workgroup, ndrange)
     kernel!(mdotf, correction, n_bfaces)
-    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _correct_nonorthogonal_mass_flux!(mdotf, correction, n_bfaces)
@@ -390,8 +412,9 @@ end
         cID2 = ownerCells[2]
         p1 = p[cID1]
         p2 = p[cID2]
-        # need to get aN from sparse system
-        zID = spindex(rowptr, colval, cID1, cID2)
+        # aN from min-owner canonical row: on partitioned meshes owner1 may be a ghost
+        # whose CSR row is garbage; coeff symmetric so serial value unchanged
+        zID = spindex(rowptr, colval, min(cID1, cID2), max(cID1, cID2))
         aN = nzval[zID]
         mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
     end
@@ -482,10 +505,8 @@ end
 
 ### Correct mass flux at pressure boundaries
 
-# Locate the Laplacian term index in an equation's term tuple at compile time. The
-# boundary mass-flux correction needs the Laplacian face flux (rhorDf); finding it by
-# type keeps correct_mass_flux! independent of term ordering (e.g. the transient p_eqn
-# has the Time term first).
+# Compile-time lookup of the Laplacian term by type (its face flux rhorDf is needed), so
+# correct_mass_flux! is independent of term ordering (the transient p_eqn has Time first).
 @generated function laplacian_term_index(terms)
     for (i, Op) ∈ enumerate(terms.parameters)
         Op <: Operator && Op.parameters[4] <: Laplacian && return :($i)
@@ -506,11 +527,10 @@ function correct_boundary_mass_flux!(
 
     (; faces, boundary_cellsID) = p.mesh
     ndrange = length(boundary_cellsID)
-    kernel! = _correct_boundary_mass_flux!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_correct_boundary_mass_flux!, backend, workgroup, ndrange)
     kernel!(
         p_BCs, U_BCs, mdotf, p, previous, pflux, psign,
         faces, boundary_cellsID, time)
-    KernelAbstractions.synchronize(backend)
 end
 
 @kernel function _correct_boundary_mass_flux!(

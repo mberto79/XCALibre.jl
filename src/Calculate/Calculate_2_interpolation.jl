@@ -14,27 +14,6 @@ function to_cpu(boundaries::AbstractGPUArray)
     return boundaries_cpu
 end
 
-# Function to correct interpolation at boundaries (expands loop to reduce allocations)
-
-
-# @generated function correct_boundaries!(phif, phi, BCs, time, config)
-#     unpacked_BCs = []
-#     for i ∈ 1:length(BCs.parameters)
-#         unpack = quote
-#             #KERNEL LAUNCH
-#             adjust_boundary!(BCs[$i], phif, phi, boundaries, boundary_cellsID, time, backend, workgroup)
-#         end
-#         push!(unpacked_BCs, unpack)
-#     end
-#     quote
-#     (; mesh) = phif
-#     (; boundary_cellsID, boundaries) = mesh 
-#     (; hardware) = config
-#     (; backend, workgroup) = hardware
-#     $(unpacked_BCs...) 
-#     end
-# end
-
 ## SCALAR INTERPOLATION
 
 function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
@@ -50,7 +29,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = interpolate_Scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(interpolate_Scalar!, backend, workgroup, ndrange)
     kernel!(fvals, vals, cells, faces)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -61,8 +40,7 @@ end
 
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
-        face = faces[i]
-        (; weight, ownerCells) = face
+        weight, ownerCells = faces.weight[i], faces.ownerCells[i]
 
         # Calculate initial values based on index queried from ownerCells
         owner1 = ownerCells[1]
@@ -105,7 +83,7 @@ function interpolate_vanleer!(phif::FaceScalarField, phi::ScalarField, grad::Gra
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = _interpolate_vanleer!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_interpolate_vanleer!, backend, workgroup, ndrange)
     kernel!(fvals, vals, grad, mdotf, faces)
 end
 
@@ -113,8 +91,7 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; ownerCells, e, delta) = face
+        ownerCells, e, delta = faces.ownerCells[i], faces.e[i], faces.delta[i]
 
         owner1 = ownerCells[1]
         owner2 = ownerCells[2]
@@ -164,7 +141,7 @@ function interpolate_vanleer!(psif::FaceVectorField, psi::VectorField, mdotf, co
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = _interpolate_vanleer_vector!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_interpolate_vanleer_vector!, backend, workgroup, ndrange)
     kernel!(psif, psi, xx, xy, xz, yx, yy, yz, zx, zy, zz, mdotf, faces)
 end
 
@@ -173,8 +150,7 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; ownerCells, e, delta) = face
+        ownerCells, e, delta = faces.ownerCells[i], faces.e[i], faces.delta[i]
 
         owner1 = ownerCells[1]
         owner2 = ownerCells[2]
@@ -230,7 +206,7 @@ function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf, con
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = _interpolate_upwind!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_interpolate_upwind!, backend, workgroup, ndrange)
     kernel!(fvals, vals, mdotf, faces)
 end
 
@@ -238,9 +214,8 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; weight, ownerCells, normal) = face
-        F = face.centre
+        weight, ownerCells, normal = faces.weight[i], faces.ownerCells[i], faces.normal[i]
+        F = faces.centre[i]
 
         owner1 = ownerCells[1] # [o]
         owner2 = ownerCells[2] # [n]
@@ -270,7 +245,7 @@ function interpolate_upwind!(phif::FaceVectorField, phi::VectorField, mdotf, con
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = _interpolate_upwind_vec!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_interpolate_upwind_vec!, backend, workgroup, ndrange)
     kernel!(phif, phi, mdotf, faces)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -279,9 +254,8 @@ end
     i = @index(Global)
 
     @inbounds begin
-        face = faces[i]
-        (; weight, ownerCells, normal) = face
-        # F = face.centre
+        weight, ownerCells, normal = faces.weight[i], faces.ownerCells[i], faces.normal[i]
+        # F = faces.centre[i]
 
         owner1 = ownerCells[1] # [o]
         owner2 = ownerCells[2] # [n]
@@ -319,7 +293,7 @@ function interpolate_harmonic!(phif::FaceScalarField, phi::ScalarField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = interpolate_harmonic_Scalar!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(interpolate_harmonic_Scalar!, backend, workgroup, ndrange)
     kernel!(fvals, vals, cells, faces)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -330,8 +304,7 @@ end
 
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
-        face = faces[i]
-        (; ownerCells) = face
+        ownerCells = faces.ownerCells[i]
 
         # Calculate initial values based on index queried from ownerCells
         owner1 = ownerCells[1]
@@ -366,7 +339,7 @@ function interpolate!(psif::FaceVectorField, psi::VectorField, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
     ndrange = length(faces)
-    kernel! = interpolate_Vector!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(interpolate_Vector!, backend, workgroup, ndrange)
     kernel!(xv, yv, zv, xf, yf, zf, faces)
     # # KernelAbstractions.synchronize(backend)
 end
@@ -378,7 +351,7 @@ end
     @inbounds begin
         # Deconstruct faces to use weight and ownerCells in calculations
         # @synchronize # commented out on 2024/10/24
-        (; weight, ownerCells) = faces[i]
+        weight, ownerCells = faces.weight[i], faces.ownerCells[i]
 
         # Define indices for initial x and y values from psi struct
         cID1 = ownerCells[1]; cID2 = ownerCells[2]
@@ -407,8 +380,7 @@ function interpolate!(
     nbfaces = total_boundary_faces(mesh)
     start = nbfaces + 1
     @inbounds for fID ∈ start:length(faces)
-        face = faces[fID]
-        (; delta, ownerCells, e) = face
+        delta, ownerCells, e = faces.delta[fID], faces.ownerCells[fID], faces.e[fID]
         cID1 = ownerCells[1]
         cID2 = ownerCells[2]
         grad1 = grad(cID1)

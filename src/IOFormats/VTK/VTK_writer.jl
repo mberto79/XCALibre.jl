@@ -106,28 +106,14 @@ function write_results(
     end
 end
 
-function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.GPU)
-    a_cpu = Array{eltype(a)}(undef, length(a))
-    
-    copyto!(a_cpu, a)
-    return a_cpu
-end
+copy_scalarfield_to_cpu(a, backend::KernelAbstractions.GPU) = adapt(Array, a)
 
 function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.CPU)
     a_cpu = a
     return a_cpu
 end
 
-function copy_to_cpu(a, b, c, backend::KernelAbstractions.GPU)
-    a_cpu = Array{eltype(a)}(undef, length(a))
-    b_cpu = Array{eltype(b)}(undef, length(b))
-    c_cpu = Array{eltype(c)}(undef, length(c))
-    
-    copyto!(a_cpu, a)
-    copyto!(b_cpu, b)
-    copyto!(c_cpu, c)
-    return a_cpu, b_cpu, c_cpu
-end
+copy_to_cpu(a, b, c, backend::KernelAbstractions.GPU) = adapt(Array, a), adapt(Array, b), adapt(Array, c)
 
 function copy_to_cpu(a, b, c, backend::KernelAbstractions.CPU)
     a_cpu = a

@@ -173,7 +173,7 @@ initialise!(model.momentum.U, [0,0,0]);
 h_init = 0.0;
 initialise!(model.momentum.h, h_init)
 
-residuals = run!(model, config, inner_loops=2);
+residuals = run!(model, config, inner_loops=2, progress=false);
 
 @test mean(model.momentum.h.values) ≈ 1.75e-5 atol = 1e-7
 @test mean(model.momentum.U.x.values) ≈ 0.0527 atol = 1e-4

@@ -18,7 +18,7 @@ Adapt.@adapt_structure Dirichlet
 
 @define_boundary Dirichlet Laplacian{Linear} begin
     J = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     flux = J*area/delta
     ap = term.sign*(-flux)
     ap, ap*bc.value
@@ -44,7 +44,7 @@ end
 
 @define_boundary Dirichlet Laplacian{Linear} VectorField begin
     J = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     flux = J*area/delta
     ap = term.sign*(-flux)
     ap, ap*bc.value[component.value]

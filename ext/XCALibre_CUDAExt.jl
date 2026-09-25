@@ -19,6 +19,24 @@ function XCALibre.Mesh._convert_array!(arr, backend::BACKEND)
     return adapt(GPUARRAY, arr) # using GPUARRAY
 end
 
+# NEW SECTION: distributed meshes
+
+import XCALibre.Distribute
+import XCALibre.Distribute: DistributedMesh
+
+# kernels get the wrapped device mesh: host partition/procs metadata is not isbits and
+# no kernel reads it (HaloExchange/PETSc hold their own device copies)
+Adapt.adapt_structure(to::CUDA.KernelAdaptor, dm::DistributedMesh) =
+    Adapt.adapt(to, getfield(dm, :mesh))
+
+Distribute.bind_device!(::BACKEND, rank::Integer) =
+    (CUDA.device!(rank % length(CUDA.devices())); nothing)
+Distribute.ndevices(::BACKEND) = length(CUDA.devices())
+
+Distribute.petsc_device_info(::CuArray) =
+    (pkg="cuda", mat="mpiaijcusparse", sync=CUDA.device_synchronize,
+     vec=(create=:VecCreateMPICUDAWithArray, place=:VecCUDAPlaceArray, reset=:VecCUDAResetArray))
+
 import XCALibre.ModelFramework: _nzval, _rowptr, _colval, get_sparse_fields, 
                                 _build_A, _build_opA
 
@@ -336,10 +354,8 @@ function _device_coarse_refresh!(hierarchy::AMGHierarchy, solver)
     return hierarchy
 end
 
-# Device-resident coarse direct solver: densify the coarsest cuSPARSE operator on device, factor on
-# device (Cholesky for SPD, LU otherwise), and apply per-cycle as a device triangular solve — no
-# host copy of the coarse matrix. Falls back to the host dense-inverse path when the coarsest
-# exceeds the rebuild-cost cap or factorization fails (singular pure-Neumann coarsest).
+# coarsest operator densified and factored on device (Cholesky if SPD, else LU), no host copy; falls
+# back to the host dense inverse above the rebuild-cost cap or when factorisation fails (pure Neumann)
 function _build_coarse_inverse!(::BACKEND, hierarchy::AMGHierarchy, cs::OnDevice)
     coarseA = hierarchy.levels[end].A
     n = size(coarseA, 1)
@@ -366,11 +382,8 @@ end
 
 function _refresh_coarse_operators!(::BACKEND, hierarchy::AMGHierarchy, solver::XCALibre.Solve.AMG)
     _all_cuda_rap_plans(hierarchy) && return _device_coarse_refresh!(hierarchy, solver)
-    # Fallback (mixed CUDA/CPU plans, i.e. a device RAP pattern failed to verify at setup).
-    # WARNING: refresh_hierarchy! routes CUDA-plan levels through _refresh_coarse_level!(::AMGRAPPlanCUDA),
-    # which reads plan.A_dev — stale during this host-ordered refresh — so coarse operators on those
-    # levels lag one update. Not exercised on validated cases (all plans verify CUDA). If reached, a
-    # full rebuild is safer than this refresh; surfaced rather than silently producing stale operators.
+    # mixed CUDA/CPU plans (a device RAP pattern failed to verify): CUDA-plan levels read plan.A_dev,
+    # stale during this host-ordered refresh, so their coarse operators lag one update; warn, not hide
     @warn "AMG: mixed RAP plan types; coarse refresh may use stale device operators — prefer a rebuild" maxlog=1
     refresh_hierarchy!(hierarchy, solver)
     _sync_device_levels_numeric!(hierarchy)

@@ -77,7 +77,7 @@ GC.gc()
 initialise!(model.momentum.U, [0,0,0])
 initialise!(model.momentum.p, 0.0)
 
-@time residuals = run!(model, config)
+@time residuals = run!(model, config; progress=false)
 
 wall_avg = boundary_average(:inner_wall, model.momentum.U, BCs.U, config)
 

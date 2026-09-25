@@ -13,11 +13,13 @@ using LinearAlgebra
 using SparseMatricesCSR
 
 using XCALibre.Multithread
+using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
+using XCALibre.Solve: _index_type
 using XCALibre.Simulate
 
 

@@ -208,8 +208,9 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         _pc_options(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
-    # Krylov.jl's CG stops on sqrt(r'Mr), PETSc's natural norm; keyed on the resolved type so a
-    # passthrough -ksp_type never inherits it
+    # PETSc's natural norm sqrt(r'Mr); serial solves measure rtol on the unpreconditioned
+    # ||b - Ax|| instead (Solve.solve_system!), which "-ksp_norm_type unpreconditioned" matches.
+    # Keyed on the resolved type so a passthrough -ksp_type never inherits it
     opts.ksp_type == "cg" && !haskey(opts, :ksp_norm_type) &&
         (opts = merge(opts, (ksp_norm_type="natural",)))
     isnothing(opts.ksp_type) && error("no PETSc mapping for solver $(typeof(setup.solver)); " *

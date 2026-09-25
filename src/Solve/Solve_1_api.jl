@@ -294,10 +294,34 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
-    krylov_solve!(
-        solver, opA, _like_workspace(x, b), _like_workspace(x, values); 
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
-        )
+    # rtol is the reduction of the unpreconditioned residual: ||b - Ax|| <= rtol*||b - Ax0||.
+    # Krylov.jl's own relative test uses the preconditioned residual, which a few cells with a
+    # tiny diagonal can dominate, so a solve stopped with ||b - Ax|| barely reduced (motorBike
+    # 10M: pressure CG in 7 iterations instead of about 180). atol keeps its meaning, an absolute
+    # bound on the preconditioned residual that Krylov.jl tests itself. With rtol = 0 nothing
+    # changes. Krylov.jl's relative test is switched off and a callback does the relative one.
+    ws_b, ws_x = _like_workspace(x, b), _like_workspace(x, values)
+    ldiv = is_ldiv(precon)
+    if iszero(rtol)
+        krylov_solve!(
+            solver, opA, ws_b, ws_x;
+            M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
+            )
+    elseif solver isa GmresWorkspace
+        # GMRES forms its iterate only at the end, so no callback can see b - Ax; with right
+        # preconditioning its own residual is b - Ax (and atol then applies to it too)
+        krylov_solve!(
+            solver, opA, ws_b, ws_x;
+            N=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
+            )
+    else
+        target = rtol*_residual_norm(phiEqn, values, b, config)
+        krylov_solve!(
+            solver, opA, ws_b, ws_x;
+            M=P, itmax=itmax, atol=atol, rtol=zero(rtol), ldiv=ldiv, history=false,
+            callback = w -> _true_residual_norm(w, precon, phiEqn, b, config) <= target
+            )
+    end
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
     if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
@@ -315,6 +339,51 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     res = residual(phiEqn, component, config)
     return res
+end
+
+# ||b - Ax||_2 through the equation's residual arrays R and Fx (`residual` overwrites them later)
+function _residual_norm(eqn, x, b, config)
+    (; A, R, Fx) = eqn.equation
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_scaled_residual!, backend, workgroup, length(x))
+    kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), x, b)
+    return norm(R)
+end
+
+# ||b - Ax|| during a solve, from the workspace. CG's workspace.r is b - A(x0 + Δx) itself;
+# BiCGStab's and CGS's is the left-preconditioned M⁻¹(b - Ax): for a diagonal M it is undone
+# elementwise, otherwise b - Ax is recomputed from the iterate (x0 in Δx and the correction in
+# x until the solver finishes, when warm-started).
+_true_residual_norm(w::CgWorkspace, precon, eqn, b, config) = Krylov.knorm(length(w.r), w.r)
+_true_residual_norm(w, precon, eqn, b, config) = _left_true_residual_norm(precon, w, eqn, b, config)
+function _left_true_residual_norm(precon::Preconditioner{<:Union{Jacobi,NormDiagonal}}, w, eqn, b, config)
+    R = eqn.equation.R
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_unscale!, backend, workgroup, length(R))
+    kernel!(R, w.r, precon.storage)
+    return Krylov.knorm(length(R), _krylov_vector(R))
+end
+function _left_true_residual_norm(precon, w, eqn, b, config)
+    (; A, R) = eqn.equation
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_warm_residual!, backend, workgroup, length(R))
+    kernel!(R, _rowptr(A), _colval(A), _nzval(A), w.x, w.Δx, b)
+    return Krylov.knorm(length(R), _krylov_vector(R))
+end
+
+@kernel function _unscale!(R, @Const(r), @Const(s))
+    i = @index(Global)
+    @inbounds R[i] = r[i]/s[i]
+end
+
+@kernel function _warm_residual!(R, @Const(rowptr), @Const(colval), @Const(nzval), @Const(x), @Const(Δx), @Const(b))
+    i = @index(Global)
+    Ax = zero(eltype(R))
+    @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
+        j = colval[nzi]
+        Ax += nzval[nzi]*(x[j] + Δx[j])
+    end
+    @inbounds R[i] = b[i] - Ax
 end
 
 @kernel function _copy!(a, b)

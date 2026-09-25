@@ -16,6 +16,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_mesh_conversion.jl")
     end
 
+    @testset "Face orientation" begin
+        include("unit_test_face_orientation.jl")
+    end
+
     @testset "Face-flux reconstruction" begin
         include("test_reconstruct.jl")
     end
@@ -62,6 +66,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_laplace.jl")
     end
 
+    @testset "Neumann Laplacian Sign Unit Test" begin
+        include("unit_test_neumann_sign.jl")
+    end
+
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
     end
@@ -71,9 +79,13 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_wall_function_averaging.jl")
     end
 
-    # @testset "setFields Function Unit Test" begin
-    #     include("unit_test_setFields.jl")
-    # end
+    @testset "setFields Function Unit Test" begin
+        include("unit_test_setFields.jl")
+    end
+
+    @testset "Robin Boundary Condition Unit Test" begin
+        include("unit_test_robin.jl")
+    end
 
     @testset "Fluid Properties Unit Test" begin
         include("unit_test_fluidProperties.jl")

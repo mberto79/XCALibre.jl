@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 * `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)
-* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). Each function now also takes a required `hardware` argument (matching the `hardware` passed to `Configuration`) so kernel launch sizing respects the user's configured workgroup instead of a hardcoded value [#137](@ref)
+* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). Each function now also takes a required `config` keyword argument (the simulation `Configuration`), whose `hardware` sets the backend and kernel workgroup [#137](@ref)
 
 ### Deprecated
 * No functions deprecated

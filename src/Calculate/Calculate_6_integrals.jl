@@ -40,7 +40,10 @@ volume_integral(phi, config) = weighted_volume_integral(phi, _unit_weight, confi
 
 `∫ phi(x) * w(x, y, z) dV` where `w = weight_func(x, y, z)` is evaluated at each
 cell centroid (component-wise for vector fields).  Runs on the field's backend.
-For GPU backends, `weight_func` must be callable from a device kernel.
+On GPU backends `weight_func` is compiled into the kernel, so it must not allocate, and it must
+not read non-`const` globals or capture arrays. Capture parameters with `let`
+(e.g. `w = let x0 = 0.5; (x, y, z) -> x - x0 end`) or use `const` globals; a named function
+needs no `@inline`.
 """
 function weighted_volume_integral(phi::ScalarField, weight_func::Func, config) where Func<:Function
     _weighted_sum(phi, weight_func, eltype(phi), config)
@@ -76,4 +79,26 @@ end
 
 Volume-averaged mean: `(∫ phi dV) / (∫ dV)`.
 """
-volume_average(phi, config) = volume_integral(phi, config) ./ total_volume(phi.mesh, config)
+volume_average(phi::ScalarField, config) = _volume_average(phi, eltype(phi), config)
+volume_average(phi::VectorField, config) = Vector(_volume_average(phi, SVector{3,eltype(phi.x)}, config))
+
+function _volume_average(phi, T, config)
+    (; backend, workgroup) = config.hardware
+    cells    = phi.mesh.cells
+    n        = length(cells)
+    products = KA.zeros(backend, T, n)
+    vols     = KA.zeros(backend, eltype(T), n)
+    kernel!  = _volume_products!(_setup(backend, workgroup, n)...)
+    kernel!(products, vols, phi, cells)
+    KA.synchronize(backend)
+    return sum(products)/sum(vols)
+end
+
+@kernel function _volume_products!(products, vols, phi, cells)
+    i = @index(Global)
+    @inbounds begin
+        (; volume) = cells[i]
+        products[i] = phi[i]*volume
+        vols[i] = volume
+    end
+end

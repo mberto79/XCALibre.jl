@@ -13,6 +13,8 @@ backend = CPU(); workgroup = AutoTune()
 
 hardware = Hardware(backend=backend, workgroup=workgroup)
 mesh_dev = adapt(backend, mesh)
+config = Configuration(schemes=nothing, solvers=nothing, boundaries=nothing, hardware=hardware,
+    runtime=Runtime(iterations=1, write_interval=1, time_step=1))
 
 # Setup dummy model
 model = Physics(
@@ -34,7 +36,7 @@ unmodified_cell_value_expected = 0.0
 box_test_expected_cells_amount = 4
 
 initialise!(model.momentum.p, 0.0)
-box_test_modified_cells_amount = setField_Box!(mesh=mesh, field=model.momentum.p, value=1.0, min_corner=[950.0, 950.0, 0.0], max_corner=[1000.0, 1000.0, 0.0], hardware=hardware)
+box_test_modified_cells_amount = setField_Box!(mesh=mesh, field=model.momentum.p, value=1.0, min_corner=[950.0, 950.0, 0.0], max_corner=[1000.0, 1000.0, 0.0], config=config)
 
 box_test_random_modified_cell_value = model.momentum.p[1]
 box_test_random_unmodified_cell_value = model.momentum.p[100]
@@ -55,13 +57,13 @@ circle_test2_expected_cells_amount = 3
 circle_test3_expected_cells_amount = 4
 
 initialise!(model.momentum.p, 0.0)
-circle_test1_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=100.0, hardware=hardware)
+circle_test1_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=100.0, config=config)
 
 initialise!(model.momentum.p, 0.0)
-circle_test2_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=115.0, hardware=hardware)
+circle_test2_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=115.0, config=config)
 
 initialise!(model.momentum.p, 0.0)
-circle_test3_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=125.0, hardware=hardware)
+circle_test3_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0], radius=125.0, config=config)
 
 @test circle_test1_modified_cells_amount ≈ circle_test1_expected_cells_amount
 @test circle_test2_modified_cells_amount ≈ circle_test2_expected_cells_amount
@@ -77,7 +79,7 @@ circle_test3_modified_cells_amount = setField_Circle2D!(mesh=mesh, field=model.m
 sphere_test_expected_cells_amount = 3
 
 initialise!(model.momentum.p, 0.0)
-sphere_test_modified_cells_amount = setField_Sphere3D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0,100.0], radius=150.0, hardware=hardware)
+sphere_test_modified_cells_amount = setField_Sphere3D!(mesh=mesh, field=model.momentum.p, value=1.0, centre=[1050.0,1050.0,100.0], radius=150.0, config=config)
 
 
 @test sphere_test_modified_cells_amount ≈ sphere_test_expected_cells_amount
@@ -98,8 +100,6 @@ initialise!(model.momentum.U, (x, y, z) -> SVector(x, y, 0.0))
 @test model.momentum.U.x[5] ≈ mesh.cells[5].centre[1]
 ## VOLUME INTEGRAL TESTS
 
-config = Configuration(schemes=nothing, solvers=nothing, boundaries=nothing, hardware=hardware,
-    runtime=Runtime(iterations=1, write_interval=1, time_step=1))
 vols = [c.volume for c ∈ mesh.cells]
 xs = [c.centre[1] for c ∈ mesh.cells]
 

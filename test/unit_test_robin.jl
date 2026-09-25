@@ -156,4 +156,22 @@ BCs_ref_div = assign(
     @test eqns[1].equation.b ≈ eqns[2].equation.b
 end
 
+@testset "Robin with Time{$scheme}" for scheme ∈ (SteadyState, Euler)
+    sch = (T = Schemes(laplacian=Linear, time=scheme),)
+    eqns = map((BCs_robin, BCs_dirichlet)) do BCs
+        cfg = Configuration(solvers=solvers, schemes=sch,
+            runtime=Runtime(iterations=1, write_interval=1, time_step=1),
+            hardware=hardware, boundaries=BCs)
+        T = ScalarField(mesh_dev)
+        eqn = (
+            Time{scheme}(T) - Laplacian{Linear}(gamma, T) == Source(ConstantScalar(0.0))
+        ) → ScalarEquation(T, cfg.boundaries.T)
+        discretise!(eqn, T, cfg)
+        apply_boundary_conditions!(eqn, cfg.boundaries.T, nothing, 0.0, cfg)
+        eqn
+    end
+    @test eqns[1].equation.A.parent ≈ eqns[2].equation.A.parent
+    @test eqns[1].equation.b ≈ eqns[2].equation.b
+end
+
 @test_throws ArgumentError Robin(:left_wall, a=0.0, b=0.0, value=1.0)

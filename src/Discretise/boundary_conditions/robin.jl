@@ -41,7 +41,7 @@ end
 # φf = (value·δ + b·φP)/(a·δ + b), so ∇φ·n = (value - a·φP)/(a·δ + b)
 @define_boundary Robin Laplacian{Linear} ScalarField begin
     J = term.flux[fID]
-    (; area, delta) = face
+    area, delta = faces.area[fID], faces.delta[fID]
     (; a, b, value) = bc.value
     coeff = J*area/(a*delta + b)
     ap = term.sign*(-coeff*a)
@@ -50,21 +50,21 @@ end
 end
 
 @define_boundary Robin Divergence{Linear} ScalarField begin
-    (; delta) = face
+    delta = faces.delta[fID]
     (; a, b, value) = bc.value
     ap = term.sign*(term.flux[fID])/(a*delta + b)
     ap*b, -ap*value*delta
 end
 
 @define_boundary Robin Divergence{Upwind} ScalarField begin
-    (; delta) = face
+    delta = faces.delta[fID]
     (; a, b, value) = bc.value
     ap = term.sign*(term.flux[fID])/(a*delta + b)
     ap*b, -ap*value*delta
 end
 
 @define_boundary Robin Divergence{LUST} ScalarField begin
-    (; delta) = face
+    delta = faces.delta[fID]
     (; a, b, value) = bc.value
     ap = term.sign*(term.flux[fID])/(a*delta + b)
     ap*b, -ap*value*delta
@@ -72,7 +72,7 @@ end
 
 # Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary Robin Divergence{BoundedUpwind} ScalarField begin
-    (; delta) = face
+    delta = faces.delta[fID]
     (; a, b, value) = bc.value
     ap = term.sign*(term.flux[fID])
     apf = ap/(a*delta + b)

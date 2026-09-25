@@ -71,16 +71,9 @@ weight_delta_e(C1F1, normal) = begin
     return weight, delta, e
 end
 
-# Face orientation from topology. Testing a normal against an estimated cell centre fails on
-# skewed or concave cells, where the estimate can lie on the wrong side of a face; these
-# functions use only how the faces of one closed cell connect, then fix the overall sign with
-# the divergence theorem (positive area or volume), so the result holds for any cell shape.
-# Each returns (signs, ok): signs[i] is +1 when face i, in its stored node order, points out of
-# the cell and -1 when it points in; ok is false when the faces do not close up (then signs is
-# meaningless and the caller falls back to another test).
-
-# 2D (x-y plane): edges[i] = (a, b) node IDs. An edge taken from a to b points out of the cell
-# along (b - a) × k when the edges chain head to tail anticlockwise.
+# Orientation from cell topology (exact for any closed cell), not from estimated centres.
+# Returns (signs, ok): signs[i] = +1 if face i in stored order points out of the cell, else -1;
+# ok = false when the faces do not close up. 2D: edges[i] = (a, b), outward along (b - a) × k.
 function _outward_edge_signs(coords, edges)
     n = length(edges)
     signs = zeros(Int8, n)
@@ -112,11 +105,9 @@ function _outward_edge_signs(coords, edges)
     return signs, true
 end
 
-# 2D mesh builders (UNV2, BlockMesher2D): for every face (edge), the sign s such that
-# s*((p2 - p1) × k), with p1, p2 its nodes in stored order, points out of its owner cell, i.e.
-# from owner to neighbour. 0 marks a face whose owner and neighbour cells both fail to close
-# up; the caller orients it another way. cells[c].facesID lists internal faces only, so each
-# cell's boundary faces are added from the boundaries.
+# Per face, the sign s such that s*((p2 - p1) × k) points out of its owner cell (0 when neither
+# owner nor neighbour closes up; the caller orients it another way). cells[c].facesID holds
+# internal faces only, so boundary faces are added from the boundaries.
 function _owner_outward_signs_2d(cells, faces, boundaries, nodes)
     cell_edges = [collect(cell.facesID) for cell in cells]
     for boundary in boundaries
@@ -210,10 +201,9 @@ function face_geometry(nodes, nIDs, apex::SVector{3, TF}) where {TF<:AbstractFlo
     return normal, area, centre
 end
 
-# Reorders face nodes so every normal points out of the owner cell (from owner to neighbour).
-# Each face takes its orientation from the topology of its owner cell, or of its neighbour when
-# the owner's faces do not close up; only when neither closes does the old test against the
-# estimated cell centres decide, with a warning.
+# Reorders face nodes so every normal points out of the owner cell, from the topology of the
+# owner (or neighbour if the owner does not close up); if neither closes, the estimated cell
+# centres decide, with a warning.
 function _orient_faces_3d!(mesh::Mesh3, centre_estimates)
     (; cells, faces, face_nodes, boundary_cellsID) = mesh
     TF = _get_float(mesh)

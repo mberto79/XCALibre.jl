@@ -2,10 +2,9 @@ using XCALibre
 using LinearAlgebra
 using StaticArrays
 
-# Face normals must point out of the owner cell (owner to neighbour). The orientation used to
-# be decided by testing each normal against an estimated cell centre, which fails on skewed or
-# concave cells where the estimate lies on the wrong side of a face (10M-cell motorBike mesh: 92
-# cells whose faces did not close). It is now decided from each cell's topology.
+# Face normals must point out of the owner cell. A test against estimated cell centres fails on
+# skewed or concave cells (10M-cell motorBike mesh: 92 cells whose faces did not close), so the
+# orientation is now decided from each cell's topology.
 
 import XCALibre.Mesh: _outward_edge_signs, _outward_face_signs
 

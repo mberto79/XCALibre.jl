@@ -1,4 +1,6 @@
 using XCALibre
+using Test
+using StaticArrays
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "quad40.unv"
@@ -92,5 +94,23 @@ initialise!(fs, 3.14)
 @test fs[1] ≈ 3.14
 
 # VectorField with function (new overload)
-initialise!(model.momentum.U, (x, y, z) -> [x, y, 0.0])
+initialise!(model.momentum.U, (x, y, z) -> SVector(x, y, 0.0))
 @test model.momentum.U.x[5] ≈ mesh.cells[5].centre[1]
+## VOLUME INTEGRAL TESTS
+
+config = Configuration(schemes=nothing, solvers=nothing, boundaries=nothing, hardware=hardware,
+    runtime=Runtime(iterations=1, write_interval=1, time_step=1))
+vols = [c.volume for c ∈ mesh.cells]
+xs = [c.centre[1] for c ∈ mesh.cells]
+
+@test total_volume(mesh_dev, config) ≈ sum(vols)
+
+initialise!(model.momentum.p, 2.0)
+@test volume_integral(model.momentum.p, config) ≈ 2*sum(vols)
+@test volume_average(model.momentum.p, config) ≈ 2.0
+@test weighted_volume_integral(model.momentum.p, (x, y, z) -> x, config) ≈ 2*sum(xs .* vols)
+
+initialise!(model.momentum.U, [1.0, 2.0, 0.0])
+@test volume_integral(model.momentum.U, config) ≈ [1.0, 2.0, 0.0]*sum(vols)
+@test volume_average(model.momentum.U, config) ≈ [1.0, 2.0, 0.0]
+@test weighted_volume_integral(model.momentum.U, (x, y, z) -> x, config) ≈ [1.0, 2.0, 0.0]*sum(xs .* vols)

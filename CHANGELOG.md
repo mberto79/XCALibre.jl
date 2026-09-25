@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added FixedHeatFlux boundary condition [#149]
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 * Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
+* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). Each function now also takes a required `hardware` argument (matching the `hardware` passed to `Configuration`) so kernel launch sizing respects the user's configured workgroup instead of a hardcoded value [#137](@ref)
+* Added `volume_integral`, `weighted_volume_integral`, `volume_average`, and `total_volume` functions to the `Calculate` module for backend-agnostic volume integration over scalar and vector fields [#137](@ref)
 
 ### Changed
 * Cached the sparse index maps the assembly writes through. The CSR sparsity pattern is fixed for the life of an equation, so `ScalarEquation` and `VectorEquation` now carry `diag_nz` and `face_nz`, the `nzval` index of the diagonal and of each cell-neighbour coefficient, resolved once at construction instead of searched for on every assembly. Both types gain a type parameter and two fields [#161](@ref)
@@ -74,8 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added mixture model inside multiphase solver with supporting unit and functionality tests. [#136](@ref)
 * Extended `initialise!` API with function-based overloads for `ScalarField` and `VectorField`[#135](@ref)
 * Pressure-based compressible solvers have been extended to include `SensibleEnthalpy` and `InternalEnergy` formulations. The solver now correctly handles `Compressible` fluids, activating the transonic correction that allows shock capturing for moderate high-speed applications, typically in the range 0.8 < M < 2 [#145](@ref)
-* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). Each function now also takes a required `hardware` argument (matching the `hardware` passed to `Configuration`) so kernel launch sizing respects the user's configured workgroup instead of a hardcoded value.
-* Added `volume_integral`, `weighted_volume_integral`, `volume_average`, and `total_volume` functions to the `Calculate` module for backend-agnostic volume integration over scalar and vector fields.
 
 ### Fixed
 * Add implementation of `Periodic` boundaries to handle the implicit source term - fixes operation of models that use `Si` terms [#95](@ref)

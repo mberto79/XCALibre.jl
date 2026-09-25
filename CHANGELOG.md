@@ -3,7 +3,23 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.6.1-DEV] - 2026-09-11
+## Version [v0.7.0-DEV] - 2026-09-25
+
+### Added
+
+### Fixed
+* Fixed `Neumann` `Laplacian{Linear}` ignoring the sign of the Laplacian term. The prescribed gradient was always added to the source as if the term were `-Laplacian`, so an equation written with `+Laplacian` applied the gradient with the wrong sign. Every solver writes `-Laplacian`, where the result is unchanged [#164](@ref)
+
+### Changed
+
+### Breaking
+
+### Deprecated
+* No functions deprecated
+
+### Removed
+
+## Version [v0.6.1] - 2026-09-25
 
 ### Added
 * Added FixedHeatFlux boundary condition [#149]

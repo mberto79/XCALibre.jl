@@ -79,7 +79,7 @@ initialise!(model.momentum.p, 0.0)
 initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0,
-                min_corner=[0.0, 0.0, -0.5], max_corner=[0.3, 0.4, 0.5])
+                min_corner=[0.0, 0.0, -0.5], max_corner=[0.3, 0.4, 0.5], config=config)
 
 residuals = run!(model, config)
 

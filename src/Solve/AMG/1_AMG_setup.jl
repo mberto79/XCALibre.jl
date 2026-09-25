@@ -424,54 +424,47 @@ function _regalerkin_numeric!(coarse_A, fine_level::AMGLevel, P_csc, R_csc)
     return updated_A
 end
 
-function _build_ra_pattern(R, A)
-    I = eltype(_rowptr(A))
-    R_rowptr = _rowptr(R); R_colval = _colval(R)
-    A_rowptr = _rowptr(A); A_colval = _colval(A)
-    n_coarse = _m(R); n_fine = _m(A)
-    marker = zeros(Int, n_fine)
-
-    nnz_per_row = zeros(Int, n_coarse)
-    @inbounds for r in 1:n_coarse
-        for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
-            i = Int(R_colval[rp])
-            for ap in A_rowptr[i]:(A_rowptr[i+1]-1)
-                j = Int(A_colval[ap])
-                if marker[j] != r
-                    marker[j] = r
-                    nnz_per_row[r] += 1
-                end
+# symbolic CSR pattern of X*Y with sorted rows; each row is built alone, so it is bitwise at any thread count
+function _product_pattern(Xp, Xc, Yp, Yc, ncols, ::Type{I}) where {I}
+    n = length(Xp) - 1
+    work = length(Xc) + length(Yc)
+    counts = Vector{Int}(undef, n)
+    _foreach_chunk(n, work) do rows
+        mark = zeros(Int, ncols)
+        @inbounds for r in rows
+            c = 0
+            for xp in Xp[r]:(Xp[r+1]-1), yp in Yp[Xc[xp]]:(Yp[Xc[xp]+1]-1)
+                j = Int(Yc[yp])
+                mark[j] != r && (mark[j] = r; c += 1)
             end
+            counts[r] = c
         end
     end
-
-    ra_rowptr = Vector{I}(undef, n_coarse + 1)
-    ra_rowptr[1] = 1
-    for r in 1:n_coarse
-        ra_rowptr[r+1] = ra_rowptr[r] + nnz_per_row[r]
+    rowptr = Vector{I}(undef, n + 1)
+    rowptr[1] = 1
+    @inbounds for r in 1:n
+        rowptr[r+1] = rowptr[r] + counts[r]
     end
-    total_nnz = ra_rowptr[n_coarse+1] - 1
-    ra_colval = Vector{I}(undef, total_nnz)
-
-    fill!(marker, 0)
-    pos = copy(ra_rowptr[1:n_coarse])
-    @inbounds for r in 1:n_coarse
-        for rp in R_rowptr[r]:(R_rowptr[r+1]-1)
-            i = Int(R_colval[rp])
-            for ap in A_rowptr[i]:(A_rowptr[i+1]-1)
-                j = Int(A_colval[ap])
-                if marker[j] != r
-                    marker[j] = r
-                    ra_colval[pos[r]] = I(j)
-                    pos[r] += 1
-                end
+    colval = Vector{I}(undef, rowptr[n+1] - 1)
+    _foreach_chunk(n, work) do rows
+        mark = zeros(Int, ncols)
+        @inbounds for r in rows
+            p = Int(rowptr[r])
+            for xp in Xp[r]:(Xp[r+1]-1), yp in Yp[Xc[xp]]:(Yp[Xc[xp]+1]-1)
+                j = Int(Yc[yp])
+                mark[j] != r && (mark[j] = r; colval[p] = I(j); p += 1)
             end
+            sort!(view(colval, Int(rowptr[r]):Int(rowptr[r+1])-1))
         end
-        lo = ra_rowptr[r]; hi = ra_rowptr[r+1] - 1
-        lo < hi && sort!(@view ra_colval[lo:hi])
     end
-    return ra_rowptr, ra_colval
+    return rowptr, colval
 end
+
+_build_ra_pattern(R, A) = _product_pattern(_rowptr(R), _colval(R), _rowptr(A), _colval(A), _n(A), eltype(_rowptr(A)))
+
+# the CSC arrays of Pᵀ are the CSR arrays of P, and those of P the CSR arrays of Pᵀ
+_csr_of_transpose(Xt::SparseMatrixCSC, m, n, ::Type{TI}) where {TI} =
+    AMGMatrixCSR(TI.(Xt.colptr), TI.(Xt.rowval), copy(Xt.nzval), m, n)
 
 function _build_rap_plan_cpu(R, A, P)
     T = eltype(_nzval(A))
@@ -793,17 +786,19 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
             break
         end
 
-        R_csc_lazy = transpose(P_csc)
-        R_csc = sparse(R_csc_lazy)
-        coarse_A = _amg_matrix(R_csc * _csr_to_csc(current_A) * P_csc, TI)
-        P = _amg_matrix(P_csc, TI)
-        R = _amg_matrix(R_csc, TI)
+        R_csc = sparse(transpose(P_csc))
+        P = _csr_of_transpose(R_csc, size(P_csc)..., TI)
+        R = _csr_of_transpose(P_csc, reverse(size(P_csc))..., TI)
         plan = _build_rap_plan_cpu(R, current_A, P)
+        n_coarse = _n(P)
+        rap_rowptr, rap_colval = _product_pattern(plan.ra_rowptr, plan.ra_colval, _rowptr(P), _colval(P), n_coarse, TI)
+        coarse_A = AMGMatrixCSR(rap_rowptr, rap_colval, zeros(T, length(rap_colval)), n_coarse, n_coarse)
         push!(galerkin_caches, nothing)
         P_csc = nothing; R_csc = nothing  # CSC matrices no longer needed
         push!(transfer_csc, plan)
         GC.gc(false)
         level = _allocate_level(current_A, P, R, level_id, aggregate_ids, CPU(), solver.smoother)
+        _refresh_rap_numeric!(coarse_A, level, plan)
         if isnothing(host_levels)
             host_levels = typeof(level)[]
         end

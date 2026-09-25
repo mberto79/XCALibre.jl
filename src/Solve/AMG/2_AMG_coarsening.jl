@@ -111,47 +111,65 @@ end
 _initial_candidates(coarsening::SmoothAggregation) = coarsening.near_nullspace
 _initial_candidates(::AbstractAMGCoarsening) = nothing
 
-function _sa_filtered_matrix(A, strong)
-    rowptr = _rowptr(A)
-    colval = _colval(A)
-    nzval = _nzval(A)
+# filtered matrix in CSR, rows sorted: strong off-diagonals kept, the rest lumped into the diagonal
+function _sa_filtered_rows(A, strong)
+    rowptr = _rowptr(A); colval = _colval(A); nzval = _nzval(A)
     n = _m(A)
     T = eltype(nzval)
-    marker = zeros(Int, n)
-    I = Int[]
-    J = Int[]
-    V = T[]
-    sizehint!(I, length(nzval))
-    sizehint!(J, length(nzval))
-    sizehint!(V, length(nzval))
+    fptr = Vector{Int}(undef, n + 1)
+    fptr[1] = 1
     @inbounds for i in 1:n
-        for j in strong[i]
-            marker[j] = i
-        end
-        dii = zero(T)
-        lump = zero(T)
-        for p in rowptr[i]:(rowptr[i + 1] - 1)
-            j = colval[p]
-            aij = nzval[p]
-            if j == i
-                dii += aij
-            elseif marker[j] == i
-                push!(I, i); push!(J, j); push!(V, aij)
-            else
-                lump += aij
-            end
-        end
-        push!(I, i); push!(J, i); push!(V, dii + lump)
+        fptr[i+1] = fptr[i] + length(strong[i]) + 1
     end
-    return sparse(I, J, V, n, n)
+    fcol = Vector{Int}(undef, fptr[n+1] - 1)
+    fval = Vector{T}(undef, fptr[n+1] - 1)
+    _foreach_chunk(n, length(nzval)) do rows
+        marker = zeros(Int, n)
+        @inbounds for i in rows
+            for j in strong[i]
+                marker[j] = i
+            end
+            dii = zero(T); lump = zero(T)
+            q = fptr[i]; qd = 0
+            for p in rowptr[i]:(rowptr[i + 1] - 1)
+                j = Int(colval[p]); aij = nzval[p]
+                qd == 0 && j > i && (qd = q; q += 1)
+                if j == i
+                    dii += aij
+                elseif marker[j] == i
+                    fcol[q] = j; fval[q] = aij; q += 1
+                else
+                    lump += aij
+                end
+            end
+            qd == 0 && (qd = q)
+            fcol[qd] = i; fval[qd] = dii + lump
+        end
+    end
+    return fptr, fcol, fval
 end
 
-function _spectral_radius_DinvA(DinvA, ::Type{T}) where {T}
-    n = size(DinvA, 1)
+# D⁻¹Af v, each row summed in column order as the CSC product does
+function _dinv_rows_mul!(w, fptr, fcol, fval, dinv, v)
+    _foreach_chunk(length(w), length(fval)) do rows
+        @inbounds for i in rows
+            s = zero(eltype(w))
+            for q in fptr[i]:(fptr[i+1] - 1)
+                s += (dinv[i] * fval[q]) * v[fcol[q]]
+            end
+            w[i] = s
+        end
+    end
+    return w
+end
+
+function _spectral_radius_DinvA(fptr, fcol, fval, dinv, ::Type{T}) where {T}
+    n = length(dinv)
     v = T[isodd(i) ? one(T) : -one(T) for i in 1:n]
+    w = similar(v)
     rho = one(T)
     for _ in 1:15
-        w = DinvA * v
+        _dinv_rows_mul!(w, fptr, fcol, fval, dinv, v)
         nw = norm(w)
         nv = norm(v)
         rho = nw / max(nv, eps(T))
@@ -161,18 +179,63 @@ function _spectral_radius_DinvA(DinvA, ::Type{T}) where {T}
     return rho
 end
 
-function _smooth_prolongation(A, P, strong, weight)
+# P0 has one entry per row, so row i of P0 - ω D⁻¹Af P0 sums Af's row i into coarse columns;
+# each entry accumulates in fine-column order, so it equals the sparse-product form bit for bit
+function _smooth_prolongation(A, P, agg, strong, weight)
     weight <= 0 && return P
-    Af = _sa_filtered_matrix(A, strong)
-    T = eltype(nonzeros(Af))
-    d = diag(Af)
-    Dinv = T[abs(d[i]) > eps(T) ? one(T) / d[i] : zero(T) for i in eachindex(d)]
-    DinvA = Diagonal(Dinv) * Af
-    rho = T(11//10) * _spectral_radius_DinvA(DinvA, T) # margin: power iteration approaches rho from below
+    n, nc = size(P)
+    T = eltype(nonzeros(P))
+    V = zeros(T, n)
+    @inbounds for k in 1:nc, p in P.colptr[k]:(P.colptr[k+1] - 1)
+        V[P.rowval[p]] = P.nzval[p]
+    end
+    fptr, fcol, fval = _sa_filtered_rows(A, strong)
+    dinv = Vector{T}(undef, n)
+    @inbounds for i in 1:n
+        d = zero(T)
+        for q in fptr[i]:(fptr[i+1] - 1)
+            fcol[q] == i && (d = fval[q])
+        end
+        dinv[i] = abs(d) > eps(T) ? one(T) / d : zero(T)
+    end
+    rho = T(11//10) * _spectral_radius_DinvA(fptr, fcol, fval, dinv, T) # margin: power iteration approaches rho from below
     omega = T(weight) / max(rho, eps(T))
-    Ps = P - omega * (DinvA * P)
-    dropzeros!(Ps)
-    return Ps
+    # a row has at most as many coarse columns as filtered entries: rows go to Af's slots, then compact
+    counts = Vector{Int}(undef, n)
+    scol = Vector{Int}(undef, length(fcol))
+    sval = Vector{T}(undef, length(fcol))
+    _foreach_chunk(n, length(fval)) do rows
+        acc = zeros(T, nc); seen = zeros(Int, nc); touched = Int[]
+        @inbounds for i in rows
+            empty!(touched)
+            for q in fptr[i]:(fptr[i+1] - 1)
+                j = fcol[q]; k = agg[j]
+                seen[k] != i && (seen[k] = i; acc[k] = zero(T); push!(touched, k))
+                acc[k] += (dinv[i] * fval[q]) * V[j]
+            end
+            sort!(touched)
+            c = 0
+            for k in touched
+                x = (k == agg[i] ? V[i] : zero(T)) - omega * acc[k]
+                iszero(x) || (scol[fptr[i]+c] = k; sval[fptr[i]+c] = x; c += 1)
+            end
+            counts[i] = c
+        end
+    end
+    tptr = Vector{Int}(undef, n + 1)
+    tptr[1] = 1
+    @inbounds for i in 1:n
+        tptr[i+1] = tptr[i] + counts[i]
+    end
+    tcol = Vector{Int}(undef, tptr[n+1] - 1)
+    tval = Vector{T}(undef, tptr[n+1] - 1)
+    _foreach_chunk(n, length(tcol)) do rows
+        @inbounds for i in rows
+            copyto!(tcol, tptr[i], scol, fptr[i], counts[i])
+            copyto!(tval, tptr[i], sval, fptr[i], counts[i])
+        end
+    end
+    return copy(transpose(SparseMatrixCSC(nc, n, tptr, tcol, tval)))
 end
 
 function _standard_aggregates(strong)
@@ -454,7 +517,7 @@ function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing,
     agg, nagg = _standard_aggregates(strong)
     nagg < 1 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
-    P = _smooth_prolongation(A, P0, strong, coarsening.smoother_weight)
+    P = _smooth_prolongation(A, P0, agg, strong, coarsening.smoother_weight)
     return agg, P, coarse_candidate
 end
 

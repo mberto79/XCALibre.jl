@@ -9,7 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added FixedHeatFlux boundary condition [#149]
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 * Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
-* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). Each function now also takes a required `hardware` argument (matching the `hardware` passed to `Configuration`) so kernel launch sizing respects the user's configured workgroup instead of a hardcoded value [#137](@ref)
 * Added `volume_integral`, `weighted_volume_integral`, `volume_average`, and `total_volume` functions to the `Calculate` module for backend-agnostic volume integration over scalar and vector fields [#137](@ref)
 
 ### Changed
@@ -54,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 * `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)
+* GPU-upgraded `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!`, and `setField_Expression!` to use `KernelAbstractions` kernels, making them backend-agnostic (CPU and GPU). Each function now also takes a required `hardware` argument (matching the `hardware` passed to `Configuration`) so kernel launch sizing respects the user's configured workgroup instead of a hardcoded value [#137](@ref)
 
 ### Deprecated
 * No functions deprecated

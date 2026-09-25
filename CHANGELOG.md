@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Added
+* Added `Robin` boundary condition for scalar fields supporting mixed (`a·φ + b·∇φ·n = value`) constraints, with implementations for `Laplacian{Linear}`, all `Divergence` schemes and `Si` terms [#138](@ref)
 
 ### Fixed
 * Fixed `Neumann` `Laplacian{Linear}` ignoring the sign of the Laplacian term. The prescribed gradient was always added to the source as if the term were `-Laplacian`, so an equation written with `+Laplacian` applied the gradient with the wrong sign. Every solver writes `-Laplacian`, where the result is unchanged [#164](@ref)
@@ -25,7 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added FixedHeatFlux boundary condition [#149]
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
 * Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
-* Added `Robin` boundary condition for scalar fields supporting mixed (`a·φ + b·∇φ·n = value`) constraints, with implementations for `Laplacian{Linear}`, all `Divergence` schemes and `Si` terms [#138](@ref)
 
 ### Changed
 * Cached the sparse index maps the assembly writes through. The CSR sparsity pattern is fixed for the life of an equation, so `ScalarEquation` and `VectorEquation` now carry `diag_nz` and `face_nz`, the `nzval` index of the diagonal and of each cell-neighbour coefficient, resolved once at construction instead of searched for on every assembly. Both types gain a type parameter and two fields [#161](@ref)

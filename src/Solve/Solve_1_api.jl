@@ -315,12 +315,30 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
             N=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
             )
     else
+        tr = time_ns()   # INVESTIGATION timers
         target = rtol*_residual_norm(phiEqn, values, b, config)
+        prof_add!("solve: initial residual norm", tr)
+        kind = solver isa CgWorkspace ? "CG" : "BiCGStab"
+        tk = time_ns()
+        tcb = Ref(0.0)
         krylov_solve!(
             solver, opA, ws_b, ws_x;
             M=P, itmax=itmax, atol=atol, rtol=zero(rtol), ldiv=ldiv, history=false,
-            callback = w -> _true_residual_norm(w, precon, phiEqn, b, config) <= target
+            callback = w -> begin
+                tc = time_ns()
+                done = _true_residual_norm(w, precon, phiEqn, b, config) <= target
+                tcb[] += (time_ns() - tc)/1e9
+                done
+            end
             )
+        if PROF_ON[]
+            its = Krylov.iteration_count(solver)
+            total = (time_ns() - tk)/1e9
+            PROF_T["krylov $kind (excl. stop check)"] = get(PROF_T, "krylov $kind (excl. stop check)", 0.0) + total - tcb[]
+            PROF_N["krylov $kind (excl. stop check)"] = get(PROF_N, "krylov $kind (excl. stop check)", 0) + its
+            PROF_T["krylov $kind stop check"] = get(PROF_T, "krylov $kind stop check", 0.0) + tcb[]
+            PROF_N["krylov $kind stop check"] = get(PROF_N, "krylov $kind stop check", 0) + its
+        end
     end
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution

@@ -191,8 +191,9 @@ function SIMPLE(
     for iteration ∈ start+1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = Solve.@prof "U equation (assemble+solve)" solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
+        tpp = time_ns()   # INVESTIGATION timers
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config; halo=false)
         remove_pressure_source!(U_eqn, ∇p, config)
@@ -217,7 +218,8 @@ function SIMPLE(
         xcal_foreach(prev, config) do i
             prev[i] = p_boundary_reference[i] = pv[i]
         end
-        rp = solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref)
+        Solve.prof_add!("p prep (rD, H, interp, flux, div)", tpp)
+        rp = Solve.@prof "p equation (assemble+solve)" solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref)
 
         # non-orthogonal correction
         for i ∈ 1:ncorrectors
@@ -236,6 +238,7 @@ function SIMPLE(
         # Flux correction must use the unrelaxed pressure solution so that the
         # pressure equation removes the full predicted continuity error. Pressure
         # relaxation applies only to the momentum/velocity correction.
+        tcorr = time_ns()   # INVESTIGATION timers
         correct_mass_flux!(
             mdotf, p_eqn, config;
             previous=p_boundary_reference, time=time,
@@ -245,9 +248,10 @@ function SIMPLE(
         grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
+        Solve.prof_add!("correct (flux, relax p, grad p, U)", tcorr)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config)
-        update_nueff!(nueff, nu, model.turbulence, config)
+        Solve.@prof "turbulence (assemble+solve)" turbulence!(turbulenceModel, model, S, prev, time, config)
+        Solve.@prof "update nueff" update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx
         R_uy[iteration] = ry

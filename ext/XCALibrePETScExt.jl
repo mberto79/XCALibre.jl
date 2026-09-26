@@ -400,7 +400,10 @@ end
 
 function psolve!(s::XPETScSolver, x::AbstractVector)
     _maybe_freeze_pc!(s)
-    _with_placed(_ksp_solve, s, x)
+    t0 = time_ns()   # INVESTIGATION timer
+    r = _with_placed(_ksp_solve, s, x)
+    XCALibre.Solve.prof_add!("petsc KSP solve", t0, Int(LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp)))
+    r
 end
 
 psolve_transpose!(s::XPETScSolver, x::AbstractVector) = _with_placed(_ksp_solve_transpose, s, x)

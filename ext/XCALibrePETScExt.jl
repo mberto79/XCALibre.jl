@@ -238,6 +238,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
             "the documentation.")
     end
     ksp = PETSc.KSP(Amat; opts...)
+    _PROBE_LABEL[ksp] = label   # INVESTIGATION
     # tolerances mean what they mean to Krylov.jl: rtol is relative to the warm-started initial
     # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only
     (; atol, rtol) = setup
@@ -403,7 +404,26 @@ function psolve!(s::XPETScSolver, x::AbstractVector)
     t0 = time_ns()   # INVESTIGATION timer
     r = _with_placed(_ksp_solve, s, x)
     XCALibre.Solve.prof_add!("petsc KSP solve", t0, Int(LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp)))
+    _probe_log(s)   # INVESTIGATION
     r
+end
+
+# INVESTIGATION: with XCAL_PROBE_PETSC_LOG=<file>, rank 0 writes one row per KSP solve
+# (field, iterations, converged reason, final residual norm in the KSP's norm type)
+const _PROBE_LABEL = IdDict{Any,String}()
+const _PROBE_IO = Ref{Any}(nothing)
+function _probe_log(s)
+    haskey(ENV, "XCAL_PROBE_PETSC_LOG") || return
+    MPI.Comm_rank(MPI.COMM_WORLD) == 0 || return
+    if _PROBE_IO[] === nothing
+        _PROBE_IO[] = open(ENV["XCAL_PROBE_PETSC_LOG"], "w")
+        println(_PROBE_IO[], "field,iterations,reason,resnorm")
+    end
+    it = LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp)
+    reason = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
+    rn = LibPETSc.KSPGetResidualNorm(s.petsclib, s.ksp)
+    println(_PROBE_IO[], join((get(_PROBE_LABEL, s.ksp, "?"), it, reason, rn), ","))
+    flush(_PROBE_IO[])
 end
 
 psolve_transpose!(s::XPETScSolver, x::AbstractVector) = _with_placed(_ksp_solve_transpose, s, x)

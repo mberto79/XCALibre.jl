@@ -98,7 +98,23 @@ end
 
 _solve_owned!(deqn, result, component) = begin
     passemble!(deqn.solver, deqn.eqn, deqn.partition; component)
+    _cksum!(deqn, result, component, "pre")   # INVESTIGATION
     psolve!(deqn.solver, result.values)
+    _cksum!(deqn, result, component, "post")   # INVESTIGATION
+    result.values
+end
+
+# INVESTIGATION: Solve.CKSUMLOG checksums over owned rows, reduced over ranks
+function _cksum!(deqn, result, component, when)
+    S = Solve
+    haskey(ENV, "XCAL_CKSUM") || return
+    A = _A(deqn.eqn); b = _b(deqn.eqn, component)
+    s = MPI.Allreduce(S._cksum_local(A, b, result.values, deqn.partition.n_owned), +, MPI.COMM_WORLD)
+    if MPI.Comm_rank(MPI.COMM_WORLD) == 0
+        S.CKSUMLOG[] === nothing && (S.CKSUMLOG[] = open(ENV["XCAL_CKSUM"], "w"); println(S.CKSUMLOG[], S.CKSUM_HEADER))
+        S._cksum_write(get(S.SOLVE_NAMES, result, "?"), when, s)
+        flush(S.CKSUMLOG[])
+    end
 end
 
 function _save_diag!(deqn, off, config)

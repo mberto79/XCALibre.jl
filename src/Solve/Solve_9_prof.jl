@@ -43,3 +43,41 @@ function _solvelog!(eqn, result, solver, values, b, config, l2_0)
         status, l2_0, l2, l2/l2_0), ","))
     nothing
 end
+
+# INVESTIGATION: partition-invariant checksums of each linear system, written while
+# CKSUMLOG[] holds an open IO. Sums over the owned rows 1:n of diag(A), |offdiag(A)|, b,
+# b^2, x, x^2; the distributed path reduces them over ranks before writing.
+const CKSUMLOG = Ref{Any}(nothing)
+const CKSUM_HEADER = "field,when,diag,absoff,bsum,bnorm,xsum,xnorm"
+
+function _cksum_local(A, b, x, n)
+    rp, cv, nz = _rowptr(A), _colval(A), _nzval(A)
+    s = zeros(6)
+    @inbounds for i ∈ 1:n
+        for k ∈ rp[i]:(rp[i + 1] - 1)
+            cv[k] == i ? (s[1] += nz[k]) : (s[2] += abs(nz[k]))
+        end
+        s[3] += b[i]; s[4] += b[i]^2; s[5] += x[i]; s[6] += x[i]^2
+    end
+    s
+end
+
+_cksum_write(name, when, s) = println(CKSUMLOG[],
+    join((name, when, s[1], s[2], s[3], sqrt(s[4]), s[5], sqrt(s[6])), ","))
+
+# INVESTIGATION: XCAL_DUMP=<field>:<k> writes the k-th solve of <field> (CSR, b, x0) to
+# system_<field>_<k>.bin before it is solved (format of norm_compare.jl)
+const DUMP_COUNT = Dict{String,Int}()
+function _maybe_dump(name, A, b, x)
+    spec = get(ENV, "XCAL_DUMP", "")
+    isempty(spec) && return
+    f, k = split(spec, ":"); k = parse(Int, k)
+    f == name || return
+    c = DUMP_COUNT[name] = get(DUMP_COUNT, name, 0) + 1
+    c == k || return
+    rp, cv, nz = _rowptr(A), _colval(A), _nzval(A)
+    open("system_$(name)_$(k).bin", "w") do io
+        write(io, Int64(length(b)), Int64(length(nz)))
+        write(io, Int64.(rp), Int64.(cv), Float64.(nz), Float64.(b), Float64.(x))
+    end
+end

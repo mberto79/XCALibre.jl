@@ -293,6 +293,8 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     b = _b(phiEqn, component)
 
     apply_smoother!(setup.smoother, values, A, b, hardware)
+    CKSUMLOG[] === nothing || _cksum_write(get(SOLVE_NAMES, result, "?"), "pre", _cksum_local(A, b, values, length(values)))   # INVESTIGATION
+    _maybe_dump(get(SOLVE_NAMES, result, "?"), A, b, values)   # INVESTIGATION
 
     # rtol is the reduction of the unpreconditioned residual: ||b - Ax|| <= rtol*||b - Ax0||.
     # Krylov.jl's own relative test uses the preconditioned residual, which a few cells with a
@@ -353,6 +355,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     kernel! = _sized(_copy!, backend, workgroup, ndrange)
     kernel!(values, x)
     SOLVELOG[] === nothing || _solvelog!(phiEqn, result, solver, values, b, config, l2_0)   # INVESTIGATION
+    CKSUMLOG[] === nothing || _cksum_write(get(SOLVE_NAMES, result, "?"), "post", _cksum_local(A, b, values, length(values)))   # INVESTIGATION
 
     iterations = Krylov.iteration_count(solver)
     iterations == itmax && @warn "Maximum number of iterations reached!"

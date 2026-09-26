@@ -294,9 +294,11 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
+    ldiv = is_ldiv(precon)
     krylov_solve!(
-        solver, opA, _like_workspace(x, b), _like_workspace(x, values); 
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=is_ldiv(precon), history=false
+        solver, opA, _like_workspace(x, b), _like_workspace(x, values);
+        _shadow(solver, P, ldiv, phiEqn, values, b, config)...,
+        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
         )
 
     # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
@@ -315,6 +317,32 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     res = residual(phiEqn, component, config)
     return res
+end
+
+# BiCGStab's shadow vector c must overlap the residual being reduced. Krylov.jl defaults to
+# c = b, which matches only from a zero initial guess; every solve here is warm-started, and as
+# the outer iterations converge b - Ax0 shrinks and turns away from b, so the iterates degrade
+# (motorBike 10M: the steady run drifted from about iteration 40 and diverged). The shadow is
+# M⁻¹(b - Ax0), PETSc bcgs's choice, so serial and distributed runs take the same iterates. It
+# is built in the equation's scratch arrays R and Fx, which nothing touches until `residual`.
+_shadow(solver, P, ldiv, eqn, x0, b, config) = (;)
+function _shadow(solver::BicgstabWorkspace, P, ldiv, eqn, x0, b, config)
+    (; A, R, Fx) = eqn.equation
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_initial_residual!, backend, workgroup, length(R))
+    kernel!(R, _rowptr(A), _colval(A), _nzval(A), x0, b)
+    r0, c = _like_workspace(solver.x, R), _like_workspace(solver.x, Fx)
+    ldiv ? ldiv!(c, P, r0) : mul!(c, P, r0)
+    return (; c)
+end
+
+@kernel function _initial_residual!(R, @Const(rowptr), @Const(colval), @Const(nzval), @Const(x), @Const(b))
+    i = @index(Global)
+    Ax = zero(eltype(R))
+    @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
+        Ax += nzval[nzi]*x[colval[nzi]]
+    end
+    @inbounds R[i] = b[i] - Ax
 end
 
 @kernel function _copy!(a, b)

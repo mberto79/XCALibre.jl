@@ -62,6 +62,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_laplace.jl")
     end
 
+    @testset "BiCGStab shadow vector" begin
+        include("unit_test_bicgstab_shadow.jl")
+    end
+
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
     end

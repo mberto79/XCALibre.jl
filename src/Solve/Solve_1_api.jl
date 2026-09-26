@@ -260,7 +260,7 @@ function solve_equation!(
     apply_boundary_conditions!(psiEqn, psiBCs, ydir, time, config)
     # implicit_relaxation!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
     implicit_relaxation_diagdom!(psiEqn, psi.y.values, solversetup.relax, ydir, config)
-    # update_preconditioner!(psiEqn.preconditioner, mesh, config)
+    uprecon_each() && update_preconditioner!(psiEqn.preconditioner, mesh, config)   # INVESTIGATION
     resy = solve_system!(psiEqn, solversetup, psi.y, ydir, config)
     
     # Z velocity calculations (3D Mesh only)
@@ -270,7 +270,7 @@ function solve_equation!(
         apply_boundary_conditions!(psiEqn, psiBCs, zdir, time, config)
         # implicit_relaxation!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
         implicit_relaxation_diagdom!(psiEqn, psi.z.values, solversetup.relax, zdir, config)
-        # update_preconditioner!(psiEqn.preconditioner, mesh, config)
+        uprecon_each() && update_preconditioner!(psiEqn.preconditioner, mesh, config)   # INVESTIGATION
         resz = solve_system!(psiEqn, solversetup, psi.z, zdir, config)
     end
     return resx, resy, resz
@@ -302,7 +302,8 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     # changes. Krylov.jl's relative test is switched off and a callback does the relative one.
     ws_b, ws_x = _like_workspace(x, b), _like_workspace(x, values)
     ldiv = is_ldiv(precon)
-    if iszero(rtol)
+    l2_0 = SOLVELOG[] === nothing ? 0.0 : _residual_norm(phiEqn, values, b, config)   # INVESTIGATION
+    if iszero(rtol) || stockstop()   # INVESTIGATION: XCAL_STOCKSTOP=1 restores the pre-fix stop
         krylov_solve!(
             solver, opA, ws_b, ws_x;
             M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
@@ -351,6 +352,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     ndrange = length(values)
     kernel! = _sized(_copy!, backend, workgroup, ndrange)
     kernel!(values, x)
+    SOLVELOG[] === nothing || _solvelog!(phiEqn, result, solver, values, b, config, l2_0)   # INVESTIGATION
 
     iterations = Krylov.iteration_count(solver)
     iterations == itmax && @warn "Maximum number of iterations reached!"

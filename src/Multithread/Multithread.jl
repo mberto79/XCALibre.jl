@@ -14,9 +14,11 @@ import Base
 import LinearAlgebra
 import SparseArrays
 import KernelAbstractions
+import Adapt
 
 include("spmvm.jl")
 include("xvector.jl")
+include("firsttouch.jl")
 
 struct AutoTune end
 

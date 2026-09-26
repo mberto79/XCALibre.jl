@@ -68,7 +68,7 @@ ScalarField(mesh::AbstractMesh; store_mesh=true) =begin
     ncells  = length(mesh.cells)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    arr = KernelAbstractions.zeros(backend, F, ncells)
+    arr = first_touch_zeros(backend, F, ncells)
     if store_mesh
         return ScalarField(arr, mesh)
     else
@@ -86,7 +86,7 @@ FaceScalarField(mesh::AbstractMesh; store_mesh=true) = begin
     nfaces  = length(mesh.faces)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    arr = KernelAbstractions.zeros(backend, F, nfaces)
+    arr = first_touch_zeros(backend, F, nfaces)
     if store_mesh
         return FaceScalarField(arr, mesh)
     else

@@ -62,8 +62,8 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_laplace.jl")
     end
 
-    @testset "Krylov solves stop on the true residual" begin
-        include("unit_test_solver_stopping.jl")
+    @testset "BiCGStab shadow vector" begin
+        include("unit_test_bicgstab_shadow.jl")
     end
 
     @testset "Wall Distance Unit Test" begin

@@ -306,10 +306,21 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     ldiv = is_ldiv(precon)
     l2_0 = SOLVELOG[] === nothing ? 0.0 : _residual_norm(phiEqn, values, b, config)   # INVESTIGATION
     if iszero(rtol) || stockstop()   # INVESTIGATION: XCAL_STOCKSTOP=1 restores the pre-fix stop
+        if solver isa BicgstabWorkspace && shadow_r0()
+            # INVESTIGATION: XCAL_SHADOW_R0=1 uses PETSc bcgs's shadow vector M^-1 (b - A x0)
+            # instead of Krylov.jl's default c = b
+            r0 = similar(ws_b); mul!(r0, opA, ws_x); r0 .= ws_b .- r0
+            c = similar(ws_b); ldiv ? ldiv!(c, P, r0) : mul!(c, P, r0)
+            krylov_solve!(
+                solver, opA, ws_b, ws_x;
+                c=c, M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
+                )
+        else
         krylov_solve!(
             solver, opA, ws_b, ws_x;
             M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
             )
+        end
     elseif solver isa GmresWorkspace
         # GMRES forms its iterate only at the end, so no callback can see b - Ax; with right
         # preconditioning its own residual is b - Ax (and atol then applies to it too)

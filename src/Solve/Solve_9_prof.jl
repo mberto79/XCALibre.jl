@@ -31,6 +31,7 @@ end
 # Krylov.jl status, true ||b-Ax||_2 before and after (one extra SpMV each).
 stockstop() = get(ENV, "XCAL_STOCKSTOP", "0") == "1"
 uprecon_each() = get(ENV, "XCAL_UPRECON_EACH", "0") == "1"
+shadow_r0() = get(ENV, "XCAL_SHADOW_R0", "0") == "1"   # PETSc bcgs shadow vector (stock stop only)
 
 const SOLVELOG = Ref{Any}(nothing)
 const SOLVE_NAMES = IdDict{Any,String}()      # field => label, filled by the driver

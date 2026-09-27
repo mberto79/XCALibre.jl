@@ -86,6 +86,109 @@ weight_delta_e(C1F1, normal) = begin
     return weight, delta, e
 end
 
+# Orientation from cell topology (exact for any closed cell), not from estimated centres.
+# Returns (signs, ok): signs[i] = +1 if face i in stored order points out of the cell, else -1;
+# ok = false when the faces do not close up. 2D: edges[i] = (a, b), outward along (b - a) × k.
+function _outward_edge_signs(coords, edges)
+    n = length(edges)
+    signs = zeros(Int8, n)
+    n >= 3 || return signs, false
+    signs[1] = 1
+    start, head = edges[1]
+    @inbounds for _ in 2:n
+        found = false
+        for j in 2:n
+            signs[j] == 0 || continue
+            a, b = edges[j]
+            if a == head
+                signs[j] = 1; head = b; found = true; break
+            elseif b == head
+                signs[j] = -1; head = a; found = true; break
+            end
+        end
+        found || return signs, false
+    end
+    head == start || return signs, false
+    area2 = zero(eltype(coords[edges[1][1]]))
+    @inbounds for j in 1:n
+        a, b = signs[j] > 0 ? edges[j] : (edges[j][2], edges[j][1])
+        pa, pb = coords[a], coords[b]
+        area2 += pa[1]*pb[2] - pb[1]*pa[2]
+    end
+    area2 == zero(area2) && return signs, false
+    area2 < zero(area2) && (signs .= -signs)
+    return signs, true
+end
+
+# Per face, the sign s such that s*((p2 - p1) × k) points out of its owner cell (0 when neither
+# owner nor neighbour closes up; the caller orients it another way). cells[c].facesID holds
+# internal faces only, so boundary faces are added from the boundaries.
+function _owner_outward_signs_2d(cells, faces, boundaries, nodes)
+    cell_edges = [collect(cell.facesID) for cell in cells]
+    for boundary in boundaries
+        for (c, f) in zip(boundary.cellsID, boundary.facesID)
+            push!(cell_edges[c], f)
+        end
+    end
+    coords = [node.coords for node in nodes]
+    owner_sign = zeros(Int8, length(faces))
+    neighbour_sign = zeros(Int8, length(faces))
+    for (c, fIDs) in enumerate(cell_edges)
+        edges = [(faces[f].nodesID[1], faces[f].nodesID[2]) for f in fIDs]
+        signs, ok = _outward_edge_signs(coords, edges)
+        ok || continue
+        for (i, f) in enumerate(fIDs)
+            if faces[f].ownerCells[1] == c
+                owner_sign[f] = signs[i]
+            else
+                neighbour_sign[f] = signs[i]
+            end
+        end
+    end
+    return [owner_sign[f] != 0 ? owner_sign[f] : -neighbour_sign[f] for f in eachindex(faces)]
+end
+
+# 3D: face_nodes[i] = node IDs of face i in stored order, area_vectors[i] its area vector (right-
+# hand rule on that order) and centres[i] its centre. In a closed cell every edge belongs to two
+# faces that traverse it in opposite directions when both point outwards.
+function _outward_face_signs(face_nodes, area_vectors, centres)
+    n = length(face_nodes)
+    signs = zeros(Int8, n)
+    n >= 4 || return signs, false
+    signs[1] = 1
+    stack = [1]
+    @inbounds while !isempty(stack)
+        f = pop!(stack)
+        nf = face_nodes[f]; kf = length(nf)
+        for i in 1:kf
+            p = nf[i]; q = nf[i == kf ? 1 : i + 1]
+            for g in 1:n
+                g == f && continue
+                ng = face_nodes[g]; kg = length(ng)
+                for j in 1:kg
+                    u = ng[j]; v = ng[j == kg ? 1 : j + 1]
+                    s = (u == p && v == q) ? -signs[f] : (u == q && v == p) ? signs[f] : Int8(0)
+                    s == 0 && continue
+                    if signs[g] == 0
+                        signs[g] = s; push!(stack, g)
+                    elseif signs[g] != s
+                        return signs, false # edge used inconsistently: not a closed manifold
+                    end
+                end
+            end
+        end
+    end
+    any(iszero, signs) && return signs, false
+    p0 = centres[1]
+    volume3 = zero(eltype(p0))
+    @inbounds for i in 1:n
+        volume3 += signs[i]*(area_vectors[i] ⋅ (centres[i] - p0))
+    end
+    volume3 == zero(volume3) && return signs, false
+    volume3 < zero(volume3) && (signs .= -signs)
+    return signs, true
+end
+
 function face_geometry(nodes, nIDs, apex::SVector{3, TF}) where {TF<:AbstractFloat}
     area_vector = SVector{3, TF}(0, 0, 0)
     n_nodes = length(nIDs)
@@ -113,7 +216,77 @@ function face_geometry(nodes, nIDs, apex::SVector{3, TF}) where {TF<:AbstractFlo
     return normal, area, centre
 end
 
-function compute_3d_geometry!(mesh::Mesh3)
+# Reorders face nodes so every normal points out of the owner cell, from the topology of the
+# owner (or neighbour if the owner does not close up); if neither closes, the estimated cell
+# centres decide, with a warning.
+function _orient_faces_3d!(mesh::Mesh3, centre_estimates)
+    (; cells, faces, face_nodes, boundary_cellsID) = mesh
+    TF = _get_float(mesh)
+    n_cells = length(cells)
+    n_bfaces = length(boundary_cellsID)
+
+    # all faces of every cell, owner and neighbour roles
+    counts = zeros(Int, n_cells + 1)
+    for (fID, face) in enumerate(faces)
+        counts[face.ownerCells[1] + 1] += 1
+        fID > n_bfaces && (counts[face.ownerCells[2] + 1] += 1)
+    end
+    offsets = cumsum(counts) # offsets[c]+1 : offsets[c+1] are the faces of cell c
+    all_cell_faces = Vector{Int}(undef, offsets[end])
+    cursor = offsets[1:n_cells]
+    for (fID, face) in enumerate(faces)
+        c = face.ownerCells[1]; cursor[c] += 1; all_cell_faces[cursor[c]] = fID
+        if fID > n_bfaces
+            c = face.ownerCells[2]; cursor[c] += 1; all_cell_faces[cursor[c]] = fID
+        end
+    end
+
+    owner_sign = zeros(Int8, length(faces))
+    neighbour_sign = zeros(Int8, length(faces))
+    for c in 1:n_cells
+        fIDs = @view all_cell_faces[(offsets[c] + 1):offsets[c + 1]]
+        fnodes = [@view(face_nodes[faces[f].nodes_range]) for f in fIDs]
+        areas = [faces[f].area*faces[f].normal for f in fIDs]
+        centres = [faces[f].centre for f in fIDs]
+        signs, ok = _outward_face_signs(fnodes, areas, centres)
+        ok || continue
+        for (i, f) in enumerate(fIDs)
+            if faces[f].ownerCells[1] == c
+                owner_sign[f] = signs[i]
+            else
+                neighbour_sign[f] = signs[i]
+            end
+        end
+    end
+
+    n_fallback = 0
+    for (fID, face) in enumerate(faces)
+        flip = if owner_sign[fID] != 0
+            owner_sign[fID] < 0
+        elseif neighbour_sign[fID] != 0
+            neighbour_sign[fID] > 0
+        else
+            n_fallback += 1
+            owner = face.ownerCells[1]
+            direction = fID <= n_bfaces ?
+                face.centre - centre_estimates[owner] :
+                centre_estimates[face.ownerCells[2]] - centre_estimates[owner]
+            direction ⋅ face.normal < zero(TF)
+        end
+        flip || continue
+        reverse!(@view face_nodes[face.nodes_range])
+        faces[fID] = Face3D(
+            face.nodes_range, face.ownerCells, face.centre, -face.normal, face.e,
+            face.area, face.delta, face.weight,
+        )
+    end
+    n_fallback > 0 && @warn "compute_3d_geometry!: $n_fallback face(s) belong only to cells whose faces do not close up; they were oriented against estimated cell centres, which can fail on skewed cells."
+    return mesh
+end
+
+# orient_faces=false keeps the stored face orientation, for formats that define it (OpenFOAM:
+# right-hand rule points from owner to neighbour, and out of the domain on boundaries)
+function compute_3d_geometry!(mesh::Mesh3; orient_faces::Bool=true)
     (; cells, faces, face_nodes, nodes, boundary_cellsID) = mesh
     TF = _get_float(mesh)
     n_cells = length(cells)
@@ -146,18 +319,7 @@ function compute_3d_geometry!(mesh::Mesh3)
         centre_estimates[cID] /= TF(n_cell_faces[cID])
     end
 
-    for (fID, face) in enumerate(faces)
-        owner = face.ownerCells[1]
-        direction = fID <= n_bfaces ?
-            face.centre - centre_estimates[owner] :
-            centre_estimates[face.ownerCells[2]] - centre_estimates[owner]
-        direction ⋅ face.normal >= zero(TF) && continue
-        reverse!(@view face_nodes[face.nodes_range])
-        faces[fID] = Face3D(
-            face.nodes_range, face.ownerCells, face.centre, -face.normal, face.e,
-            face.area, face.delta, face.weight,
-        )
-    end
+    orient_faces && _orient_faces_3d!(mesh, centre_estimates)
 
     centre_sums = fill(SVector{3, TF}(0, 0, 0), n_cells)
     triple_volumes = zeros(TF, n_cells)

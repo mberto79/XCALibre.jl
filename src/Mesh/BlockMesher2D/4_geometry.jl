@@ -19,15 +19,18 @@ function geometric_centre(nodes, nodeList) # made generic - requires Node type
 end
 
 function geometry!(mesh::Mesh2{I,F}) where {I,F}
-    internal_face_properties!(mesh)
-    boundary_face_properties!(mesh)
+    # normals point out of the owner cell, decided from each cell's topology (exact for any
+    # cell shape); a test against cell centres is only the fallback for cells that do not close
+    owner_signs = XMesh._owner_outward_signs_2d(mesh.cells, mesh.faces, mesh.boundaries, mesh.nodes)
+    internal_face_properties!(mesh, owner_signs)
+    boundary_face_properties!(mesh, owner_signs)
     cell_properties!(mesh)
     correct_boundary_cell_volumes!(mesh)
     nothing
 end
 
 # Calculate face properties: area, normal, delta (internal faces)
-function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
+function internal_face_properties!(mesh::Mesh2{I,F}, owner_signs) where {I,F}
     (; nodes, faces, cells) = mesh
     nbfaces = total_boundary_faces(mesh)
     for facei ∈ (nbfaces + 1):length(faces) # loop over internal faces only!
@@ -52,7 +55,9 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
         # Calculate normal and check direction (from owner1 to owner2)
         unit_tangent = tangent/area
         normal = unit_tangent × UnitVectors().k
-        if d_12⋅normal < zero(F)
+        if owner_signs[facei] != 0
+            normal = owner_signs[facei]*normal
+        elseif d_12⋅normal < zero(F)
             normal = -1.0*normal
         end
 
@@ -72,7 +77,7 @@ function internal_face_properties!(mesh::Mesh2{I,F}) where {I,F}
 end
 
 # Calculate face properties: area, normal, delta (boundary faces)
-function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
+function boundary_face_properties!(mesh::Mesh2{I,F}, owner_signs) where {I,F}
     (; boundaries, nodes, faces, cells) = mesh
     for boundary ∈ boundaries
         (;facesID) = boundary
@@ -92,7 +97,9 @@ function boundary_face_properties!(mesh::Mesh2{I,F}) where {I,F}
             cf = face.centre
             cc = cells[ownerCells[1]].centre
             d_cf = cf - cc # distance vector from cell to face centre
-            if d_cf⋅normal < zero(F)
+            if owner_signs[ID] != 0
+                normal = owner_signs[ID]*normal
+            elseif d_cf⋅normal < zero(F)
                 normal = -1.0*normal
             end
             # delta = abs(d_cf⋅normal) # face-normal distance
@@ -124,12 +131,8 @@ function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
             fnormal = face.normal
             farea = face.area
             d_cf = fcentre - centre # x_f : face location from cell centre
-            fnsign = zero(I)
-            if d_cf⋅fnormal > zero(F) # normal direction check
-                fnsign = one(I)
-            else
-                fnsign = -one(I)
-            end
+            # normals point from owner to neighbour, so they point out of the owner
+            fnsign = face.ownerCells[1] == celli ? one(I) : -one(I)
             push!(nsign, fnsign)
             volume += (d_cf ⋅ fnormal*fnsign)*farea
             cells[celli] = @set cell.volume = 0.5*volume

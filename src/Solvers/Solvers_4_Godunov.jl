@@ -1101,6 +1101,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function godunov!(model, config; output=VTK(), progress=true)
     check_distributed_support(:Godunov, model)
+    _check_godunov_bcs(config.boundaries)
     residuals = _setup_godunov(model, config; output=output, progress=progress)
     return residuals
 end
@@ -1114,6 +1115,15 @@ end
 function update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
     @. mueff.values     = rhof.values * nueff.values
     @. kappa_eff.values = mueff.values * cp_val / Pr_val
+end
+
+# Robin has no ghost-state/heat-flux method here; the generic fallbacks would silently treat it as zero-gradient
+function _check_godunov_bcs(boundaries)
+    for name ∈ (:U, :p, :T)
+        haskey(boundaries, name) || continue
+        any(bc -> bc isa Robin, boundaries[name]) && throw(ArgumentError(
+            "Robin boundary conditions on `$name` are not supported by the density-based (Godunov) solver"))
+    end
 end
 
 function _setup_godunov(model, config; output=VTK(), progress=true)

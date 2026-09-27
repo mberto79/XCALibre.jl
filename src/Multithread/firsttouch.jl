@@ -1,19 +1,13 @@
-export FirstTouch, first_touch, first_touch_copy, first_touch_zeros, first_touch_enabled
+export FirstTouch, first_touch
 
 # NEW SECTION: NUMA placement by parallel first touch
-# Linux places a page in the NUMA domain of the thread that first writes it. Arrays built on the
-# main thread therefore sit in one domain, and on a multi-domain node every thread streams them
-# through that domain's memory channels. Copying them with the solver's static partition (chunk c
-# written by thread c, as in xmul! and the XVector ops) puts each chunk next to the thread using it.
+# Linux places a page in the NUMA domain of the thread that first writes it, so arrays built on the main
+# thread sit in one domain; writing each chunk from the thread that uses it (as xmul!) places it locally.
 
 const FIRST_TOUCH = Ref(false)
 
-"""
-    first_touch_enabled()
-
-`true` after `activate_multithread(CPU(static=true); first_touch=true)` on more than one thread:
-equations, fields and preconditioners are then allocated by parallel first touch.
-"""
+# true after activate_multithread(CPU(static=true); first_touch=true) on more than one thread:
+# equations, fields and preconditioners are then allocated by parallel first touch
 first_touch_enabled() = FIRST_TOUCH[] && Threads.nthreads() > 1
 
 # chunk c on thread c; a nested call cannot pin chunks to threads, so it places pages at random
@@ -30,14 +24,8 @@ function _chunk_starts(start, n, len, k)
     s[1] == 1 && issorted(s) ? s : nothing
 end
 
-"""
-    first_touch_copy(a::Vector)
-    first_touch_copy(a::Vector, ranges)
-
-Copy `a` into a new vector whose pages are first written by the threads that work on them. By
-default chunk c of `a` is the solver's chunk c. With `ranges` (e.g. `mesh.cell_faces_range`),
-`a` is indexed through a range per row, and chunk c holds the entries of the rows in chunk c.
-"""
+# copy of `a` whose chunk c is first written by thread c; with `ranges` (e.g. cell_faces_range)
+# `a` is indexed through a range per row, and chunk c holds the entries of the rows in chunk c
 first_touch_copy(a::Vector) = _first_touch_copy(a, identity, length(a))
 first_touch_copy(a::Vector, ranges::AbstractVector{<:AbstractRange}) =
     _first_touch_copy(a, i -> first(ranges[i]), length(ranges))
@@ -55,12 +43,8 @@ function _first_touch_copy(a::Vector, start, n)
     b
 end
 
-"""
-    first_touch_zeros(backend, T, n)
-
-Zero vector of length `n`. With first touch enabled on the CPU, each thread writes the chunk it
-later works on; otherwise it is `KernelAbstractions.zeros(backend, T, n)`.
-"""
+# zero vector; with first touch enabled on the CPU each thread writes the chunk it works on,
+# otherwise KernelAbstractions.zeros(backend, T, n)
 first_touch_zeros(backend, ::Type{T}, n) where T = KernelAbstractions.zeros(backend, T, n)
 first_touch_zeros(backend::CPU, ::Type{T}, n) where T = first_touch_enabled() ?
     _first_touch_zeros(T, n) : KernelAbstractions.zeros(backend, T, n)
@@ -79,9 +63,8 @@ end
 """
     FirstTouch()
 
-Adapt.jl target that copies every `Vector` of a structure by parallel first touch (see
-[`first_touch_copy`](@ref)); `first_touch(x)` is `adapt(FirstTouch(), x)`. A mesh cuts its
-range-indexed arrays (cell faces, neighbours, ...) by the cell, face or node owning them.
+Adapt.jl target that copies every `Vector` of a structure by parallel first touch, so that each
+thread writes first the chunk it later works on; see [`first_touch`](@ref).
 """
 struct FirstTouch end
 
@@ -95,6 +78,15 @@ Adapt.adapt_structure(to::FirstTouch, A::SparseXCSR{Bi}) where Bi = begin
         _first_touch_copy(B.colval, start, B.m), _first_touch_copy(B.nzval, start, B.m)))
 end
 
+"""
+    first_touch(mesh)
+
+Copy `mesh` (or any structure of `Vector`s, e.g. a matrix) so that each thread first writes, and
+so places in its NUMA domain, the chunk of cells, faces or rows it later works on. Call it after
+pinning the threads and after `activate_multithread(CPU(static=true); first_touch=true)`, and
+build the model from the returned mesh: `mesh = first_touch(mesh)`. Pays on multi-socket (NUMA)
+nodes; results are unchanged.
+"""
 first_touch(x) = Adapt.adapt(FirstTouch(), x)
 
 # construction sites: a copy only when first touch is enabled

@@ -99,3 +99,29 @@ end
     activate_multithread(XCALibre.CPU(static=true))
     @test !first_touch_enabled()
 end
+
+# xcal_foreach on CPU(static=true) runs the solver's fixed chunks: same result as CPU(), and every
+# chunk on one thread, so field loops touch the pages first touch placed for that thread
+@testset "Static xcal_foreach ($(Threads.nthreads()) threads)" begin
+    MT = XCALibre.Multithread
+    config(backend) = (; hardware=Hardware(backend=backend, workgroup=AutoTune()))
+    for n ∈ (1_000, 300_001)
+        x = rand(n)
+        ys, yd = zeros(n), zeros(n)
+        xcal_foreach(ys, config(XCALibre.CPU(static=true))) do i
+            ys[i] = 2x[i] + i
+        end
+        xcal_foreach(yd, config(XCALibre.CPU())) do i
+            yd[i] = 2x[i] + i
+        end
+        @test ys == yd == 2 .* x .+ (1:n)
+    end
+    n, k = 300_001, Threads.nthreads()
+    tid = zeros(Int, n)
+    xcal_foreach(tid, config(XCALibre.CPU(static=true))) do i
+        tid[i] = Threads.threadid()
+    end
+    owners = [unique(tid[MT._chunk(n, k, c)]) for c ∈ 1:k]
+    @test all(length(o) == 1 for o ∈ owners)
+    @test length(unique(first.(owners))) == k
+end

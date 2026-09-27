@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.6.1-DEV] - 2026-09-11
 
 ### Added
+* `activate_multithread(backend; first_touch=true)` and `first_touch(mesh)` place memory by parallel first touch on multi-socket (NUMA) nodes: the mesh, matrices, fields, equation vectors and Jacobi storage are first written by the thread that later works on each chunk, so their pages sit in that thread's NUMA domain. Opt-in, for `CPU(static=true)` with pinned threads; call `mesh = first_touch(mesh)` after pinning and before building the model. On a 2 x 48-core EPYC node (16 NUMA domains) a 10M-cell motorBike run on 96 threads took 41% less time
 * `run!` takes a `progress` keyword (default `true`); `progress=false` turns off the progress bar, which we recommend for large-scale runs that are not on a local PC, such as cluster batch jobs. The test suite runs with `progress=false` [#162](@ref)
 * Added FixedHeatFlux boundary condition [#149]
 * Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150]
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `MPI` and `Metis` are now hard dependencies of XCALibre (PETSc stays a weak dependency loaded through an extension) [#162](@ref)
 
 ### Changed
+* `xcal_foreach` on `CPU(static=true)` splits the range into the same fixed chunks as the threaded SpMV and vector operations (chunk c always on thread c), instead of AcceleratedKernels' dynamically scheduled tasks, so field loops work on the cells whose pages the thread owns; it also stops one thread idling on every call (AcceleratedKernels split most ranges into `nthreads - 1` tasks). `CPU()` and GPU backends are unchanged
 * `activate_multithread(backend::CPU)` defaults `nthreads` back to 1, reverting [#161](@ref): the CPU Krylov solvers now run their vector operations on Julia's own threads (`-t`) rather than through BLAS, so BLAS needs no threads of its own and more would oversubscribe the cores [#162](@ref)
 * The multiphase and thin-film solvers no longer print an `@time` summary of their iteration loop, matching the other solvers, whose progress output already reports the run time [#162](@ref)
 * `run!` with a negative `write_interval` (SIMPLE and PISO) no longer builds an output writer, which for VTK copied the mesh to the host and prepared its output strings, about 2.5 s per run on the motorBike case (GPU 500 iterations 17.2 s to 14.0 s). The equation assembly no longer clears matrix entries that it then overwrites, and the pressure copies, the k-omega eddy viscosity and the wall-function scratch reset run threaded [#162](@ref)

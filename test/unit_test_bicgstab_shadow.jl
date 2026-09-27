@@ -5,11 +5,9 @@ using LinearAlgebra
 using SparseArrays
 const Krylov = XCALibre.Solve.Krylov
 
-# Serial BiCGStab solves use the shadow vector c = M⁻¹(b - Ax0), as PETSc bcgs does, instead of
-# Krylov.jl's default c = b, which fits only a zero initial guess. Every serial solve is
-# warm-started, and with c = b the iterates degraded as a steady run converged (motorBike 10M
-# diverged). Check that a warm-started solve_system! takes exactly the iterates of Krylov.jl's
-# bicgstab given that shadow, and that they differ from the default's.
+# Serial BiCGStab uses the shadow vector c = M⁻¹(b - Ax0), as PETSc bcgs, not Krylov.jl's default c = b.
+# A warm-started solve_system! must take exactly Krylov.jl's bicgstab iterates with that shadow,
+# and differ from the default's.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh = UNV2D_mesh(joinpath(grids_dir, "finer_mesh_laplace.unv"))

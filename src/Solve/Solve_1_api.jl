@@ -319,12 +319,9 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     return res
 end
 
-# BiCGStab's shadow vector c must overlap the residual being reduced. Krylov.jl defaults to
-# c = b, which matches only from a zero initial guess; every solve here is warm-started, and as
-# the outer iterations converge b - Ax0 shrinks and turns away from b, so the iterates degrade
-# (motorBike 10M: the steady run drifted from about iteration 40 and diverged). The shadow is
-# M⁻¹(b - Ax0), PETSc bcgs's choice, so serial and distributed runs take the same iterates. It
-# is built in the equation's scratch arrays R and Fx, which nothing touches until `residual`.
+# BiCGStab shadow vector M⁻¹(b - Ax0), as PETSc bcgs: Krylov.jl's default c = b suits only a zero
+# initial guess, and warm-started iterates degraded as steady runs converged (10M motorBike diverged).
+# Built in the scratch arrays R and Fx, which nothing touches until `residual`.
 _shadow(solver, P, ldiv, eqn, x0, b, config) = (;)
 function _shadow(solver::BicgstabWorkspace, P, ldiv, eqn, x0, b, config)
     (; A, R, Fx) = eqn.equation

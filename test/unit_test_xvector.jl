@@ -70,3 +70,58 @@ end
     XCALibre.Multithread._xcal_foreach(i -> push!(hits, i), Int[], backend, AutoTune())
     @test isempty(hits)
 end
+
+# first touch changes where pages live, never values: every copy must equal its source
+@testset "First touch ($(Threads.nthreads()) threads)" begin
+    MT = XCALibre.Multithread
+    n = 200_003
+    a = rand(n)
+    @test first_touch_copy(a) == a && first_touch_copy(a) !== a
+    # entries cut by per-row ranges; 0:0 empty ranges fall back to the plain cut
+    ranges = [3i-2:3i for i ∈ 1:n]
+    v = rand(Int32, 3n)
+    @test first_touch_copy(v, ranges) == v
+    @test first_touch_copy(v, [i == 2 ? (0:0) : r for (i, r) ∈ enumerate(ranges)]) == v
+    A = SparseXCSR(MT.SparseMatricesCSR.sparsecsr([1:n; 1:n-1], [1:n; 2:n], rand(2n - 1), n, n))
+    B = first_touch(A)
+    @test typeof(B) == typeof(A)
+    @test all(getfield(parent(B), f) == getfield(parent(A), f) for f ∈ fieldnames(typeof(parent(A))))
+    @test B*a == A*a
+    mesh = FOAM3D_mesh(joinpath(pkgdir(XCALibre), "test", "grids", "OF_cavity_hex", "polyMesh"), scale=0.001)
+    m = first_touch(mesh)
+    @test typeof(m) == typeof(mesh)
+    @test all(getfield(m, f) == getfield(mesh, f) for f ∈ fieldnames(typeof(mesh)))
+    # construction sites copy only when enabled; activate_multithread resets the switch
+    activate_multithread(XCALibre.CPU(static=true); first_touch=true)
+    @test first_touch_enabled() == (Threads.nthreads() > 1)
+    @test first_touch_zeros(XCALibre.CPU(), Float64, n) == zeros(n)
+    @test ScalarField(mesh).values == zeros(length(mesh.cells))
+    activate_multithread(XCALibre.CPU(static=true))
+    @test !first_touch_enabled()
+end
+
+# xcal_foreach on CPU(static=true) runs the solver's fixed chunks: same result as CPU(), and every
+# chunk on one thread, so field loops touch the pages first touch placed for that thread
+@testset "Static xcal_foreach ($(Threads.nthreads()) threads)" begin
+    MT = XCALibre.Multithread
+    config(backend) = (; hardware=Hardware(backend=backend, workgroup=AutoTune()))
+    for n ∈ (1_000, 300_001)
+        x = rand(n)
+        ys, yd = zeros(n), zeros(n)
+        xcal_foreach(ys, config(XCALibre.CPU(static=true))) do i
+            ys[i] = 2x[i] + i
+        end
+        xcal_foreach(yd, config(XCALibre.CPU())) do i
+            yd[i] = 2x[i] + i
+        end
+        @test ys == yd == 2 .* x .+ (1:n)
+    end
+    n, k = 300_001, Threads.nthreads()
+    tid = zeros(Int, n)
+    xcal_foreach(tid, config(XCALibre.CPU(static=true))) do i
+        tid[i] = Threads.threadid()
+    end
+    owners = [unique(tid[MT._chunk(n, k, c)]) for c ∈ 1:k]
+    @test all(length(o) == 1 for o ∈ owners)
+    @test length(unique(first.(owners))) == k
+end

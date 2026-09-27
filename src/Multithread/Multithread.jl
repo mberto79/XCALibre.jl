@@ -14,9 +14,11 @@ import Base
 import LinearAlgebra
 import SparseArrays
 import KernelAbstractions
+import Adapt
 
 include("spmvm.jl")
 include("xvector.jl")
+include("firsttouch.jl")
 
 struct AutoTune end
 
@@ -63,8 +65,21 @@ xcal_foreach(func, arr, config) = begin
 end
 
 _xcal_foreach(func, arr, backend::CPU, workgroup) = begin
+    backend.static && return _static_foreach(func, length(arr))
     _, workgroup, _ = _setup(backend, workgroup, length(arr))
     AK.foreachindex(func, arr, min_elems=workgroup, block_size=workgroup)
+end
+
+# CPU(static=true): the solver's fixed partition (chunk c on thread c, as xmul!, the XVector ops
+# and first touch), so each thread keeps working on the cells whose pages sit in its NUMA domain.
+# AcceleratedKernels schedules its tasks dynamically, which moves chunks between threads from call
+# to call, and splits most ranges into nthreads - 1 tasks, leaving one thread idle
+@inline function _static_foreach(func::F, n) where F
+    _foreach_chunk(n) do r
+        for i ∈ r
+            @inline func(i)
+        end
+    end
 end
 
 # AcceleratedKernels passes the closure to a callee that is not inlined, so its captured

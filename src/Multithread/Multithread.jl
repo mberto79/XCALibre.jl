@@ -70,10 +70,9 @@ _xcal_foreach(func, arr, backend::CPU, workgroup) = begin
     AK.foreachindex(func, arr, min_elems=workgroup, block_size=workgroup)
 end
 
-# CPU(static=true): the solver's fixed partition (chunk c on thread c, as xmul!, the XVector ops
-# and first touch), so each thread keeps working on the cells whose pages sit in its NUMA domain.
-# AcceleratedKernels schedules its tasks dynamically, which moves chunks between threads from call
-# to call, and splits most ranges into nthreads - 1 tasks, leaving one thread idle
+# CPU(static=true): the solver's fixed chunks (chunk c on thread c, as xmul! and first touch), so each
+# thread keeps the cells whose pages sit in its NUMA domain; AcceleratedKernels schedules tasks
+# dynamically and splits most ranges into nthreads - 1 tasks, leaving one thread idle
 @inline function _static_foreach(func::F, n) where F
     _foreach_chunk(n) do r
         for i ∈ r

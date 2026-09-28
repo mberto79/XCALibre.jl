@@ -1,0 +1,121 @@
+export Partition, ProcessorPatch, DistributedMesh
+export AbstractDistributedSolver
+export bind_device!
+
+# implemented by solver backends (PETSc/HYPRE extensions)
+abstract type AbstractDistributedSolver end
+
+# global ids outgrow Int32 before any per-rank count does, so they never follow the mesh index type
+const GlobalInt = Int64
+
+# cell ownership for one rank: owned local ids 1:n_owned, then ghosts; local_to_global maps to
+# the block-contiguous global numbering where this rank owns rows row_start:row_end
+struct Partition{VI<:AbstractVector{<:Integer}, VG<:AbstractVector{GlobalInt}}
+    rank::Int                 # MPI rank (0-based)
+    nranks::Int
+    n_owned::Int
+    n_ghost::Int
+    local_to_global::VG       # length n_owned+n_ghost, owned block first
+    owner::VI                 # owning MPI rank per local cell
+    row_start::Int
+    row_end::Int
+end
+
+# schedule with one neighbour; send_cells and recv_ghosts are both sorted by original global id,
+# so the two sides align index-for-index without negotiation
+struct ProcessorPatch{VI<:AbstractVector{<:Integer}}
+    neighbour::Int            # neighbour MPI rank (0-based)
+    faces::VI                 # local processor-face ids shared with neighbour
+    send_cells::VI            # owned local cell ids to send
+    recv_ghosts::VI           # ghost local cell ids to fill on receipt
+end
+
+# width-keyed halo-exchange cache; lazily filled on first sync! (per rank/backend). Mutable +
+# built locally so it survives MPI.send of a DistributedMesh (requests/comm are rank-local) and
+# composes with adapt(backend, dm) — the device copy starts empty and rebuilds on device.
+mutable struct HaloCache
+    w1::Any                   # HaloExchange (width 1) or nothing
+    w3::Any                   # HaloExchange (width 3) or nothing
+    w4::Any                   # HaloExchange (width 4, a scalar and a vector packed) or nothing
+end
+HaloCache() = HaloCache(nothing, nothing, nothing)
+
+"""
+    DistributedMesh <: AbstractMesh
+
+Wraps a rank-local mesh (owned + one ghost layer) with partition and communication
+metadata. All non-metadata properties forward to the wrapped mesh, so fields, `Physics`
+and kernels treat it as a normal mesh.
+"""
+struct DistributedMesh{M<:AbstractMesh,P<:Partition,PP<:ProcessorPatch,VG<:AbstractVector{GlobalInt}} <: AbstractMesh
+    mesh::M                   # local Mesh3/Mesh2
+    partition::P
+    procs::Vector{PP}
+    orig_cells::VG            # original global cell id per local cell (I/O, gather)
+    orig_faces::VG            # original global face id per local face
+    halos::HaloCache          # lazily-built width-1/3 halo caches for self-syncing sync!
+    comm::MPI.Comm            # communicator the partition was made for; every exchange and reduction uses it
+end
+
+const _DM_FIELDS = (:mesh, :partition, :procs, :orig_cells, :orig_faces, :halos, :comm)
+
+# a received or deserialised part carries the sender's handle, which means nothing on this rank
+_with_comm(dm::DistributedMesh, comm) = DistributedMesh(getfield(dm, :mesh), getfield(dm, :partition),
+    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), HaloCache(), comm)
+
+Base.getproperty(dm::DistributedMesh, s::Symbol) =
+    s in _DM_FIELDS ? getfield(dm, s) : getproperty(getfield(dm, :mesh), s)
+Base.propertynames(dm::DistributedMesh) =
+    (_DM_FIELDS..., propertynames(getfield(dm, :mesh))...)
+
+# NEW SECTION: GPU adaptation
+
+Adapt.@adapt_structure Partition
+Adapt.@adapt_structure ProcessorPatch
+
+# metadata stays on host (kernels never read it; HaloExchange and PETSc make their own device copies);
+# only the wrapped mesh moves, and the device copy gets an empty HaloCache so it builds its halos on
+# device at first sync!
+Adapt.adapt_structure(to, dm::DistributedMesh) = DistributedMesh(
+    Adapt.adapt(to, getfield(dm, :mesh)), getfield(dm, :partition),
+    getfield(dm, :procs), getfield(dm, :orig_cells), getfield(dm, :orig_faces), HaloCache(),
+    getfield(dm, :comm))
+
+"""
+    bind_device!(backend; comm=MPI.COMM_WORLD)
+    bind_device!(backend, rank)
+
+Bind this MPI rank to a GPU. Without `rank`, the rank's position among the ranks on its own node
+picks the device, so ranks on one node take its devices in turn whatever the global rank order;
+when a node has more ranks than devices they share, and a warning says so. `bind_device!(backend,
+rank)` binds to device `rank % ndevices` explicitly. No-op on CPU. Call before `adapt(backend,
+dmesh)` or building fields/`HaloExchange` on a GPU backend.
+"""
+function bind_device!(backend; comm=MPI.COMM_WORLD)
+    backend isa KernelAbstractions.CPU && return nothing
+    MPI.Initialized() || MPI.Init()
+    node = MPI.Comm_split_type(comm, MPI.COMM_TYPE_SHARED, MPI.Comm_rank(comm))
+    lrank, lsize = MPI.Comm_rank(node), MPI.Comm_size(node)
+    MPI.free(node)
+    nd = ndevices(backend)
+    lrank == 0 && lsize > nd && @warn "bind_device!: $lsize ranks on this node share $nd GPU(s)" maxlog=1
+    bind_device!(backend, lrank)
+end
+bind_device!(::KernelAbstractions.CPU, rank::Integer) = nothing
+bind_device!(backend, rank::Integer) =
+    error("bind_device!: no GPU extension loaded for $(typeof(backend)) — e.g. `using CUDA`")
+ndevices(backend) =
+    error("ndevices: no GPU extension loaded for $(typeof(backend)) — e.g. `using CUDA`")
+
+# GPU exts declare their PETSc pairing: external-package name, device MPIAIJ mat type and a
+# device-wide sync (CUDA → "cuda"/"mpiaijcusparse"/device_synchronize)
+petsc_device_info(nzval) =
+    error("petsc_device_info: no PETSc device mapping for $(typeof(nzval))")
+
+Base.show(io::IO, dm::DistributedMesh) = begin
+    p = getfield(dm, :partition)
+    m = getfield(dm, :mesh)
+    print(io, "DistributedMesh (rank $(p.rank+1)/$(p.nranks)): ",
+        "$(p.n_owned) owned + $(p.n_ghost) ghost cells, ",
+        "$(length(m.faces)) faces, $(length(getfield(dm, :procs))) processor patches")
+end

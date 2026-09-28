@@ -45,7 +45,7 @@ function update_preconditioner!(P::Preconditioner{NormDiagonal,M,PT,S}, mesh, co
     storage = P.storage
 
     ndrange = _m(A)
-    kernel! = update_NormDiagonal!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(update_NormDiagonal!, backend, workgroup, ndrange)
     kernel!(colptr_array, nzval_array, storage)
     # KernelAbstractions.synchronize(backend)
 end
@@ -78,7 +78,7 @@ function update_preconditioner!(P::Preconditioner{Jacobi,M,PT,S}, mesh, config) 
     idx_diagonal = zero(eltype(m)) # index to diagonal element
 
     ndrange = m
-    kernel! = update_Jacobi!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(update_Jacobi!, backend, workgroup, ndrange)
     kernel!(rowval, colptr, nzval, idx_diagonal, storage)
     # KernelAbstractions.synchronize(backend)
 end
@@ -93,17 +93,6 @@ end
     end
 end
 
-# update_preconditioner!(P::Preconditioner{LDL,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
-# begin
-#     nothing
-# end
-
-
-# update_preconditioner!(P::Preconditioner{ILU0,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
-# begin
-#     ilu0!(P.storage, P.A)
-#     nothing
-# end
 
 update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:AbstractSparseArray,PT,S} =
 begin
@@ -122,3 +111,41 @@ _n(A::SparseMatricesCSR.SparseMatrixCSR) = A.n
 
 _m(A::SparseXCSR) = parent(A).m
 _n(A::SparseXCSR) = parent(A).n
+
+# DIAGONAL OPERATOR
+
+# LinearOperators' opDiagonal applies the diagonal with a serial broadcast, once (Cg) or twice
+# (Bicgstab) per Krylov iteration; threading it is worth 6% of every Krylov iteration.
+function diagonal_operator(d::AbstractVector{T}) where T
+    backend = get_backend(d)
+    n = length(d)
+    apply! = (res, v, α, β) -> begin
+        kernel! = _diagonal_mul!(_setup(backend, 256, n)...)
+        kernel!(res, d, v, α, β)
+        res
+    end
+    LinearOperator{T,typeof(d)}(n, n, true, isreal(d), apply!, apply!, apply!)
+end
+
+# CPU rows in the Krylov vectors' static chunks, so each thread scales the rows it owns
+function diagonal_operator(d::Vector{T}) where T
+    n = length(d)
+    apply! = (res, v, α, β) -> begin
+        _foreach_chunk(n) do r
+            @inbounds for i ∈ r
+                res[i] = iszero(β) ? α*d[i]*v[i] : α*d[i]*v[i] + β*res[i]
+            end
+        end
+        res
+    end
+    LinearOperator{T,typeof(d)}(n, n, true, isreal(d), apply!, apply!, apply!)
+end
+
+@kernel function _diagonal_mul!(res, d, v, α, β)
+    i = @index(Global)
+
+    @inbounds begin
+        # res may hold garbage when β is zero, so the two cases cannot be merged
+        res[i] = iszero(β) ? α*d[i]*v[i] : α*d[i]*v[i] + β*res[i]
+    end
+end

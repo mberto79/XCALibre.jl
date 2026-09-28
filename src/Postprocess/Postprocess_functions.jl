@@ -31,8 +31,9 @@ function pressure_force(patch::Symbol, model, config)
     fy = KernelAbstractions.zeros(backend, TF, n)
     fz = KernelAbstractions.zeros(backend, TF, n)
 
-    kernel! = _pressure_force!(_setup(backend, workgroup, n)...)
-    kernel!(fx, fy, fz, p, rhoref, faces, boundary_cellsID, IDs_range)
+    kernel! = _pressure_force!(backend)
+    kernel!(fx, fy, fz, p, rhoref, faces, boundary_cellsID, IDs_range;
+        _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
     Fp = TF[sum(fx), sum(fy), sum(fz)]
@@ -84,8 +85,9 @@ function viscous_force(patch::Symbol, model, config)
     fy = KernelAbstractions.zeros(backend, TF, n)
     fz = KernelAbstractions.zeros(backend, TF, n)
 
-    kernel! = _viscous_force!(_setup(backend, workgroup, n)...)
-    kernel!(fx, fy, fz, U, Uw, nu, nut, rho, faces, boundary_cellsID, IDs_range)
+    kernel! = _viscous_force!(backend)
+    kernel!(fx, fy, fz, U, Uw, nu, nut, rho, faces, boundary_cellsID, IDs_range;
+        _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
     Fv = TF[sum(fx), sum(fy), sum(fz)]
@@ -225,6 +227,7 @@ wall_shear_stress(patch::Symbol, model,config)  = begin
         cID = boundary_cellsID[fID]
         face = faces[fID]
         nueff = nu[cID]  + nut[fID] # nut is wall-face value νtf (wall funcs)
+        tauw.x[i] *= nueff
         tauw.y[i] *= nueff
         tauw.z[i] *= nueff
         pos[i] = face.centre
@@ -261,29 +264,3 @@ stress_tensor(U, ν, νt, config) = begin
     end
     return Reff
 end
-
-# viscous_forces(patch::Symbol, Reff::TensorField, U::VectorField, rho, ν, νt) = begin
-#     mesh = U.mesh
-#     faces = mesh.faces
-#     ID = boundary_index(mesh.boundaries, patch)
-#     @info "calculating viscous forces on patch: $patch at index $ID"
-#     boundary = mesh.boundaries[ID]
-#     (; facesID, cellsID) = boundary
-#     x = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     y = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     z = FaceScalarField(zeros(Float64, length(cellsID)), mesh)
-#     snGrad = FaceVectorField(x,y,z, mesh)
-#     surface_flux(snGrad, facesID, cellsID, Reff)
-#     # surface_normal_gradient(snGrad, facesID, cellsID, U, boundaries.U[ID].value)
-#     sumx, sumy, sumz = 0.0, 0.0, 0.0, 0.0
-#     for i ∈ eachindex(snGrad)
-#         fID = facesID[i]
-#         cID = cellsID[i]
-#         face = faces[fID]
-#         area = face.area
-#         sumx += snGrad.x[i] #*area*(ν + νt[cID]) # this may need to be using νtf?
-#         sumy += snGrad.y[i] #*area*(ν + νt[cID])
-#         sumz += snGrad.z[i] #*area*(ν + νt[cID])
-#     end
-#     rho.*[sumx, sumy, sumz]
-# end

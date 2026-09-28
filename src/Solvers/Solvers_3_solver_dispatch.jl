@@ -3,7 +3,7 @@ export run!
 """
     function run!(
         model::Physics, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         )
 
         # here an internal function is used for solver dispatch
@@ -19,6 +19,9 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 - Steady weakly compressible (SIMPLE algorithm for coupling)
 - Transient weakly compressible (PISO algorithm for coupling)
 
+On a distributed mesh only the incompressible SIMPLE and PISO solvers and the Laplace solver are
+supported; any other solver or model errors rather than solving each rank's block on its own.
+
 # Input arguments
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.
@@ -26,6 +29,8 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `progress` show a progress bar with the iteration and residuals (default = `true`). Use `progress=false` for large-scale runs that are not on a local PC, e.g. cluster batch jobs. Distributed runs never show it
+- `restart` resume an incompressible run on a distributed mesh from results it wrote with `output=OpenFOAM()`: the iteration (steady) or time (transient) of a written time directory, or that directory's name. The resumed run continues from that point up to `iterations` and retraces the uninterrupted run (default = `nothing`)
 
 # Output
 
@@ -47,7 +52,7 @@ run!() = nothing # dummy function for providing general documentation
 
 run!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3, progress=true
     ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =
 begin
     residuals = multiphase!(
@@ -55,7 +60,7 @@ begin
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops,
+        inner_loops=inner_loops, progress=progress,
         )
     return residuals
 end
@@ -64,7 +69,7 @@ end
 """
     run!(
         model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         ) where{T,F,SO<:Uniform,M,Tu,E,D,BI} = 
     begin
         residuals = laplace!(model, config, pref=pref)
@@ -90,16 +95,18 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `T`   - (Vector?) of temperature residuals for each iteration.
 """
 run!(
-    model::Physics{T,F,SO,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T,F,SO,M,Tu,E<:Conduction,D,BI} = 
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    petsc_options=""
+    ) where{T,F,SO,M,Tu,E<:Conduction,D,BI} =
 begin
     residuals = laplace!(
-        model, config, 
+        model, config,
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops, progress=progress,
+        petsc_options=petsc_options
         )
     return residuals
 end
@@ -109,7 +116,7 @@ end
 """
     run!(
         model::Physics{T,F,M,Tu,E,D,BI}, config;
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
     begin
         residuals = simple!(model, config, pref=pref)
@@ -134,17 +141,20 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 - `p`   - Vector of pressure residuals for each iteration.
 """
 run!(
-    model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
-    ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
+    model::Physics{T,F,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    petsc_options="", restart=nothing
+    ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} =
 begin
     residuals=nothing
     residuals = simple!(
-        model, config, 
+        model, config,
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops, progress=progress,
+        petsc_options=petsc_options,
+        restart=restart
     )
 
     return residuals
@@ -154,7 +164,7 @@ end
 """
     run!(
         model::Physics{T,F,M,Tu,E,D,BI}, config;
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} = 
     begin
         residuals = simple!(model, config, pref=pref)
@@ -180,7 +190,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) where{T<:Steady,F<:Incompressible_MRF,M,Tu,E,D,BI} = 
 begin
     residuals = simple_MRF!(
@@ -188,7 +198,7 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -198,7 +208,7 @@ end
 """
     run!(
         model::Physics{T,F,M,Tu,E,D,BI}, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         ) where{T<:Transient,F<:Incompressible,M,Tu,E,D,BI} = 
     begin
         residuals = piso!(model, config, pref=pref); #, pref=0.0)
@@ -226,29 +236,32 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true
     ) where{T<:Transient,F<:Incompressible,S,M<:EFM,Tu,E,D,BI} = 
 begin
     
     residuals=filmModel!(
         model,config,
         output=output,
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
     )
     return residuals
 end
 
 run!(
-    model::Physics{T,F,S,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
-    ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} = 
+    model::Physics{T,F,S,M,Tu,E,D,BI}, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    petsc_options="", restart=nothing
+    ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} =
 begin
     residuals = piso!(
-        model, config, 
+        model, config,
         output=output,
-        pref=pref, 
-        ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        pref=pref,
+        ncorrectors=ncorrectors,
+        inner_loops=inner_loops, progress=progress,
+        petsc_options=petsc_options,
+        restart=restart
     )
     return residuals
 end
@@ -257,7 +270,7 @@ end
 """
     run!(
         model::Physics{T,F,M,Tu,E,D,BI}, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
     begin
         residuals = csimple!(model, config, pref=pref); #, pref=0.0)
@@ -286,7 +299,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
@@ -294,7 +307,7 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -302,7 +315,7 @@ end
 # Compressible solver (steady)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) where{T<:Steady,F<:Compressible,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
@@ -310,7 +323,7 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -319,7 +332,7 @@ end
 """
     run!(
         model::Physics{T,F,M,Tu,E,D,BI}; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
     begin
         residuals = cpiso!(model, config)
@@ -346,7 +359,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
     residuals = cpiso!(
@@ -354,7 +367,7 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -362,7 +375,7 @@ end
 # Compressible solver (transient)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} =
 begin
     residuals = cpiso!(
@@ -370,7 +383,7 @@ begin
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -379,7 +392,7 @@ end
 """
     run!(
         model::Physics{T,F,M,Tu,E,D,BI}, config;
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
         ) where{T,F<:SupersonicFlow,M,Tu,E,D,BI}
 
 Calls the explicit density-based solver using the Rusanov (Local Lax-Friedrichs) flux
@@ -397,9 +410,9 @@ Returns a `NamedTuple` with the field:
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) where{T,F<:SupersonicFlow,M,Tu,E,D,BI} =
 begin
-    residuals = godunov!(model, config, output=output)
+    residuals = godunov!(model, config, output=output, progress=progress)
     return residuals
 end

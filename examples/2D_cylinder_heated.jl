@@ -115,9 +115,3 @@ initialise!(model.energy.T, temp)
 println("Maxh ", maximum(model.energy.T.values), " minh ", minimum(model.energy.T.values))
 
 residuals = run!(model, config, ncorrectors=2); #, pref=0.0)
-
-# plot(; xlims=(0,runtime.iterations), ylims=(1e-8,0))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-# plot!(1:length(Rh), Rh, yscale=:log10, label="h")

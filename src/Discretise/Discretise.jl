@@ -14,6 +14,7 @@ using SparseMatricesCSR
 using Statistics
 
 using XCALibre.Multithread
+using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework
@@ -36,6 +37,8 @@ include("boundary_conditions/dirichletFunction.jl")
 include("boundary_conditions/dirichletFunction_interpolation.jl")
 include("boundary_conditions/fixedTemperature.jl")
 include("boundary_conditions/fixedTemperature_interpolation.jl")
+include("boundary_conditions/fixedHeatFlux.jl")
+include("boundary_conditions/fixedHeatFlux_interpolation.jl")
 include("boundary_conditions/empty.jl")
 include("boundary_conditions/empty_interpolation.jl")
 include("boundary_conditions/neumann.jl")
@@ -57,6 +60,7 @@ include("boundary_conditions/rotating_wall.jl")
 include("boundary_conditions/rotating_wall_interpolation.jl")
 include("boundary_conditions/slip.jl")
 include("boundary_conditions/slip_interpolation.jl")
-
+include("boundary_conditions/robin.jl")
+include("boundary_conditions/robin_interpolation.jl")
 
 end

@@ -18,7 +18,7 @@ function update_viscosity_cell!(fluid, energy, config)
     (; nu, visc_model) = fluid
 
     ndrange = length(nu)
-    kernal! = _update_viscosity_cell!(_setup(backend, workgroup, ndrange)...)
+    kernal! = _sized(_update_viscosity_cell!, backend, workgroup, ndrange)
     kernal!(nu, visc_model, fluid, energy)
 end
 
@@ -35,12 +35,7 @@ Viscosity{ConstantViscosity}(; nu) = begin
     Viscosity{ConstantViscosity,ARG}(coeffs)
 end
 
-# Function to initialize constant viscosity model from a ConstatViscosity input
-# Arguments:
-# - nu: Kinematic viscosity as ConstantViscosity model
-# - mesh: Computational mesh
-# Returns:
-# - Initialized ConstantViscosity object with scalar fields
+# Initialise ConstantViscosity fields on mesh from a ConstantViscosity input
 initialise_viscosity(nu::ConstantViscosity, mesh) = begin
     backend = _get_backend(mesh)
     float_type = _get_float(mesh)
@@ -50,12 +45,7 @@ initialise_viscosity(nu::ConstantViscosity, mesh) = begin
     return nu, nuf, ConstantViscosity()
 end
 
-# Function to initialize constant viscosity model from a Float64 value
-# Arguments:
-# - nu: Kinematic viscosity as Float64
-# - mesh: Computational mesh
-# Returns:
-# - Initialized ConstantViscosity object with scalar fields
+# Initialise ConstantViscosity fields on mesh from a Float64 kinematic viscosity
 initialise_viscosity(nu::Float64, mesh) = begin
     backend = _get_backend(mesh)
     float_type = _get_float(mesh)

@@ -3,7 +3,7 @@ export csimple!
 """
     csimple!(
         model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
@@ -26,14 +26,15 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `e` Vector of energy residuals for each iteration.
 
 """
-function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0) 
+function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true) 
+    check_distributed_support(:CSIMPLE, model)
 
     residuals = setup_compressible_solvers(
         CSIMPLE, model, config; 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops
+        inner_loops=inner_loops, progress=progress
         )
     return residuals
 end
@@ -41,7 +42,7 @@ end
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -99,8 +100,8 @@ function setup_compressible_solvers(
 
     @info "Pre-allocating solvers..."
      
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn))
+    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
+    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
   
     @info "Initialising energy model..."
     energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)
@@ -113,14 +114,14 @@ function setup_compressible_solvers(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops)
+        inner_loops=inner_loops, progress=progress)
 
     return residuals    
 end # end function
 
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
     )
     
     # Extract model variables and configuration
@@ -172,10 +173,12 @@ function CSIMPLE(
     divmugradUTx = ScalarField(mesh)
     divmugradUTy = ScalarField(mesh)
     divmugradUTz = ScalarField(mesh)
+    nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
     TF = _get_float(mesh)
     prev = KernelAbstractions.zeros(backend, TF, n_cells) 
+    p_boundary_reference = similar(prev)
 
     # Pre-allocate vectors to hold residuals 
     R_ux = ones(TF, iterations)
@@ -200,7 +203,7 @@ function CSIMPLE(
 
     @info "Starting CSIMPLE loops..."
 
-    progress = Progress(iterations; dt=1.0, showspeed=true)
+    bar = _progress_bar(iterations, progress)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -265,12 +268,27 @@ function CSIMPLE(
         # Pressure calculations
         rp = 0.0
         @. prev = p.values
+        @. p_boundary_reference = p.values
         if typeof(model.fluid) <: Compressible
             rp = solve_equation!(
                 p_eqn, p, boundaries.p, solvers.p, config; 
-                ref=nothing, irelax=solvers.p.relax) # perform implicit relaxation
+                ref=nothing)
         elseif typeof(model.fluid) <: WeaklyCompressible
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+        end
+
+        # non-orthogonal correction
+        for i ∈ 1:ncorrectors
+            grad!(∇p, pf, p, boundaries.p, time, config)
+            limit_gradient!(schemes.p.limiter, ∇p, p, config)
+            @. p_boundary_reference = p.values
+            discretise!(p_eqn, p, config)
+            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
+            setReference!(p_eqn, pref, 1, config)
+            nonorthogonal_face_correction(
+                p_eqn, ∇p, rhorDf, config; correction=nonorthogonal_flux)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
         end
 
         if !isnothing(solvers.p.limit)
@@ -278,36 +296,20 @@ function CSIMPLE(
             clamp!(p.values, pmin, pmax)
         end
 
-        if typeof(model.fluid) <: WeaklyCompressible
-            explicit_relaxation!(p, prev, solvers.p.relax, config)
-        end
+        # Correct pressure-dependent fluxes before under-relaxing cell pressure.
         grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
-
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
-            discretise!(p_eqn, p, config)
-            apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            setReference!(p_eqn, pref, 1, config)
-            nonorthogonal_face_correction(p_eqn, ∇p, rhorDf, config)
-            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
-            rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
-            if typeof(model.fluid) <: WeaklyCompressible
-                explicit_relaxation!(p, prev, solvers.p.relax, config)
-            end
-
-            grad!(∇p, pf, p, boundaries.p, time, config)
-            project_grad_tangent!(∇p, boundaries.U, config)
-            limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        end
-
-        # Correct mass flux and cell velocity
-
         if typeof(model.fluid) <: Compressible
             @. mdotf.values += pconv.values*(pf.values)
         end
-        correct_mass_flux!(mdotf, p_eqn, config)
+        correct_mass_flux!(
+            mdotf, p_eqn, config;
+            previous=p_boundary_reference, time=time,
+            nonorthogonal=nonorthogonal_flux)
 
+        explicit_relaxation!(p, prev, solvers.p.relax, config)
+        grad!(∇p, pf, p, boundaries.p, time, config)
+        limit_gradient!(schemes.p.limiter, ∇p, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
         # interpolate!(Uf, U, config) # Careful: reusing Uf for interpolation
         # correct_boundaries!(Uf, U, boundaries.U, time, config)
@@ -343,7 +345,7 @@ function CSIMPLE(
         R_p[iteration] = rp
 
         Uz_convergence = true
-        if typeof(mesh) <: Mesh3
+        if _base_mesh(mesh) isa Mesh3
             Uz_convergence = rz <= solvers.U.convergence
         end
 
@@ -353,8 +355,7 @@ function CSIMPLE(
             R_p[iteration] <= solvers.p.convergence &&
             turbulenceModel.state.converged)
 
-            progress.n = iteration
-            finish!(progress)
+            isnothing(bar) || (bar.n = iteration; finish!(bar))
             @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 save_output(model, outputWriter, iteration, time, config)
@@ -362,8 +363,8 @@ function CSIMPLE(
             break
         end
 
-        ProgressMeter.next!(
-            progress, showvalues = [
+        isnothing(bar) || ProgressMeter.next!(
+            bar, showvalues = [
                 (:iter,iteration),
                 (:Ux, R_ux[iteration]),
                 (:Uy, R_uy[iteration]),
@@ -396,12 +397,12 @@ function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScala
     n_ifaces = n_faces - n_bfaces
 
     ndrange = n_ifaces
-    kernel! = _explicit_shear_stress_internal!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_explicit_shear_stress_internal!, backend, workgroup, ndrange)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
     KernelAbstractions.synchronize(backend)
 
     ndrange=n_bfaces
-    kernel! = _explicit_shear_stress_boundaries!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_explicit_shear_stress_boundaries!, backend, workgroup, ndrange)
     kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
     KernelAbstractions.synchronize(backend)
 
@@ -417,8 +418,9 @@ function zero_explicit_stress!(
     (; IDs_range) = BC
     ndrange = length(IDs_range)
     ndrange == 0 && return nothing
-    kernel! = _zero_explicit_stress!(_setup(backend, workgroup, ndrange)...)
-    kernel!(mugradUTx, mugradUTy, mugradUTz, IDs_range)
+    kernel! = _zero_explicit_stress!(backend)
+    kernel!(mugradUTx, mugradUTy, mugradUTz, IDs_range;
+        _dynamic_setup(backend, workgroup, ndrange)...)
     KernelAbstractions.synchronize(backend)
 end
 

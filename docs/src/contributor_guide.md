@@ -66,10 +66,10 @@ Boundary
 
 To fully characterise how mesh information is represented in XCALibre.jl, it is important to highlight the following "contracts" that are exploited throughout:
 
-* Node, face and cell IDs correspond to the index where they are stored in their corresponding vector in the `Mesh3` structure e.g. `Mesh3.Faces[10]` would return information for the face whose ID is 10. These vectors are 1-indexed as standard in Julia.
+* Node, face and cell IDs are the index of their properties in the mesh arrays, e.g. `mesh.face_area[10]` (or `mesh.faces.area[10]`) is the area of the face whose ID is 10, and `mesh.faces[10]` builds that whole `Face3D`. Each property is its own array (`cell_volume`, `face_area`, `node_coords`, ...), so a kernel reads only the arrays it needs. Arrays are 1-indexed as standard in Julia.
 * Face normals at boundary faces is always pointing outside the domain e.g. they point in the direction expected in the FVM
-* Face normals for internal faces is always pointing in the direction from the ownerCell with the smallest ID to the largest. Since the discretisation loop is cell based, for the cell with the highest ID the direction must be reversed. This information is tracked in `Mesh3.nsign` which stores 1 if the face normal is correctly aligned or -1 if the normal needs to be reversed.
-* Boundary faces (e.g. patches) are stored consecutively in `Mesh3.Faces` starting at the beginning of the array followed by all the internal faces.
+* Face normals for internal faces is always pointing in the direction from the ownerCell with the smallest ID to the largest. Since the discretisation loop is cell based, for the cell with the highest ID the direction must be reversed. This information is tracked in `mesh.cell_nsign` (`Int8`, aligned with `mesh.cell_faces`), which stores 1 if the face normal is correctly aligned or -1 if the normal needs to be reversed.
+* Boundary faces (e.g. patches) are stored consecutively in the face arrays starting at the beginning of the array followed by all the internal faces.
 * Boundary faces are those connected only to 1 `Cell`, thus, for these faces the entry `Face3D.ownerCells` is a 2-element vector with a repeated index e.g. [3, 3]
 * Boundary cells only store information for internal faces. This improves performance for the main discretisation loop (cell based) since it can always been assumed that none of the faces will be a boundary face, which are dealt with in a separate loop.
 

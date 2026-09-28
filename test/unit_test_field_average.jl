@@ -43,10 +43,6 @@ BCs = assign(
             DirichletFunction(:inlet, inflow),
             # Extrapolated(:outlet),
             Zerogradient(:outlet),
-            # Wall(:wall, [0.0, 0.0, 0.0]),
-            # Symmetry(:bottom, [0.0, 0.0, 0.0]),
-            # Symmetry(:top, [0.0, 0.0, 0.0])
-            # Zerogradient(:bottom),
             DirichletFunction(:bottom, inflow),
 
             Zerogradient(:top)
@@ -111,7 +107,7 @@ config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardwa
 
 @test initialise!(model.momentum.U, velocity) === nothing
 @test initialise!(model.momentum.p, 0.0) === nothing
-residuals = run!(model, config);
+residuals = run!(model, config; progress=false);
 
 
 #check middle 10 cells of inlet agree with analytical mean
@@ -124,11 +120,4 @@ v_mean = mean(postprocess[1].mean.y.values)
 @test u_mean ≈ u_mean_exact atol = 0.05
 @test v_mean ≈ v_mean_exact atol = 0.05
 
-# This needs some thought
-#testing start and end and update_interval logic
-# u_mean_first_half = mean(postprocess[2].mean.x.values)
-# u_mean_second_half = mean(postprocess[3].mean.x.values)
-
-
-# @test u_mean ≈ u_mean_first_half atol = 0.005
-# @test u_mean ≈ u_mean_second_half atol = 0.005
+# Start/end and update_interval logic not yet tested

@@ -58,36 +58,15 @@ solvers = (
             mode = Cg(),  
             pre_sweeps=10,
             post_sweeps=10,
-            #                     # GAMG-like iteration counts. Use SA/RS, not Geometric.
-            # mode = Cg(),          # AMG-preconditioned CG (default; fastest single-device)
-            # scale_correction = true  # default: GAMG energy-min coarse-correction scaling. Applies
-            #                          # to AMGSolver only (gated; would break PCG's fixed-SPD prec).
-            # coarse_solve = OnDevice(max_rows=512)  # default: coarsest solved on device (no host
-            #                                        # round-trip) up to max_rows, else host LU
-            # coarse_solve = CPU()                   # force coarsest solve on host (LU/QR)
-            # coarse_solve = OnDeviceKrylov(), 
+            # scale_correction = true  # default; applies to AMGSolver only
+            # coarse_solve = OnDevice(max_rows=512)  # default: coarsest solved on device up to max_rows, else host LU
+            # alternatives: coarse_solve = CPU() (host LU/QR) or OnDeviceKrylov()
             coarse_solve = OnDeviceJacobi(iterations=30), 
             max_coarse_rows=20000,  
 
-            #   truncate to a large, well-conditioned coarsest + solve it on-device with Cg/Bicgstab
-            #   +Jacobi (no host-LU sync point). LARGE 3D wins: F1 1.68M -> 2.5x vs Cg+Jacobi baseline,
-            #   1.5x vs same-mode OnDevice. Small/mildly-coarsened cases (this cylinder) LOSE — Jacobi-
-            #   CG on the coarsest needs many iters. Set max_coarse_rows high enough to truncate at a
-            #   sizeable coarsest. See src/Solve/AMG/AMG_OnDeviceKrylov_findings.md.
-            # coarse_storage = Float32  # store the hierarchy in single precision (outer Krylov stays
-            #   Float64, so iteration count + final residual are UNCHANGED). Halves V-cycle SpMV/
-            #   smoother/RAP bandwidth. GPU-only win, scales with size: F1 1.68M pressure solve 1.77x
-            #   (Cg) / 1.75x (AMGSolver) faster at identical iters. Valid in both modes. See
-            #   src/Solve/AMG/AMG_mixed_precision_findings.md.
-            # coarsening = Geometric(merge_levels=1)
-            # fuse_levels = 1  # opt-in: matrix-free greenfield GPU V-cycle (GPU + Geometric +
-            #   AMGJacobi only; default 0 = off). Erases the P/R transfer operators (formed on the
-            #   fly) and refreshes coarse operators in-place on device each timestep, cutting the
-            #   hierarchy footprint ~24% at iteration-parity (F1 1.68M: 518 vs 681 MB, Cg 156 vs 161
-            #   iters). EXPERIMENTAL. WIN is VRAM on large 3D GPU transients near the memory ceiling;
-            #   small/medium cases are ~10-15% SLOWER with no VRAM relief (refresh + matrix-free
-            #   recompute overhead) -> leave at 0 unless VRAM-bound.
-            # coarsening = RugeStuben()
+            # coarse_storage = Float32  # GPU-only: single-precision hierarchy, same iterations, less bandwidth
+            # fuse_levels = 1  # experimental matrix-free V-cycle (GPU + Geometric + AMGJacobi); saves VRAM, else slower
+            # alternatives: coarsening = Geometric(merge_levels=1) or RugeStuben()
             coarsening = SmoothAggregation(strength_threshold=0.05)  # opt-in: fewer iters on
             #                          # anisotropic (boundary-layer) pressure matrices; denser
             #                          # hierarchy (small wall-clock cost on warm-started solves)

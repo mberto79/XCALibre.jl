@@ -120,10 +120,10 @@ initialise!(model.fluid.p_rgh, 0.0)
 initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0,
-              min_corner=min_corner_vec, max_corner=max_corner_vec)
+              min_corner=min_corner_vec, max_corner=max_corner_vec, config=config)
 
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 U = model.momentum.U
 vel_mag = sqrt.(U.x.values.^2 .+ U.y.values.^2 .+ U.z.values.^2)

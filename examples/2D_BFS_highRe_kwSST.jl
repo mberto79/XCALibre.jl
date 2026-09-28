@@ -138,12 +138,3 @@ initialise!(model.turbulence.nut, νt_inlet)
 
 residuals = run!(model, config) # 145 iterations
 
-# Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
-# Fp = pressure_force(:wall, model.momentum.p, 1.25)
-# Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
-
-
-# plot(; xlims=(0,494))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p")

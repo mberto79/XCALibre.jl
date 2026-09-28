@@ -1,18 +1,8 @@
 using XCALibre
-# using CUDA # Run this if using NVIDIA GPU
-# using AMDGPU # Run this if using AMD GPU
+# using CUDA # or AMDGPU, to run on GPU
 
-# Mach 1.2 flow over a cylinder using the pressure-based transient compressible
-# solver (CPISO). A detached bow shock forms ahead of the cylinder.
-#
-# Notes for pressure-based shock capturing:
-#  - `p` MUST use `divergence = Upwind`. The compressible pressure equation carries a
-#    pressure-convection (transonic-correction) term; central differencing (`Linear`,
-#    the default) oscillates and diverges at shocks. Upwind is essential here.
-#  - Solver `limit` clamps on p and he keep the solution bounded through the strong
-#    startup transient (standard practice for pressure-based compressible solvers).
-#  - This is the pressure-based route; for strongly supersonic flow the density-based
-#    `SupersonicFlow`/Godunov solver (see 2D_cylinder_supersonic.jl) is more robust.
+# Mach 1.2 cylinder with pressure-based CPISO; `p` needs divergence=Upwind (Linear oscillates at shocks).
+# Solver `limit` clamps on p and he bound the startup transient; for strongly supersonic flow see 2D_cylinder_supersonic.jl.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh_file = joinpath(grids_dir, "cylinder_d10mm_25mm.unv")
@@ -67,8 +57,8 @@ boundaries = assign(
             Dirichlet(:inlet, p_inf),
             Zerogradient(:outlet),
             Wall(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         he = [
             FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
@@ -76,54 +66,54 @@ boundaries = assign(
             Zerogradient(:outlet),
             FixedTemperature(:cylinder, T=T_inf, Enthalpy(cp=cp, Tref=Tref)),
             # FixedTemperature(:cylinder, T=T_inf, IEnergy(cv=cv, Tref=Tref)),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         k = [
             Dirichlet(:inlet, k_inlet),
             Zerogradient(:outlet),
             KWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         omega = [
             Dirichlet(:inlet, ω_inlet),
             Zerogradient(:outlet),
             OmegaWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ],
         nut = [
             Dirichlet(:inlet, νt_inlet),
             Extrapolated(:outlet),
             NutWallFunction(:cylinder),
-            Zerogradient(:top),
-            Zerogradient(:bottom)
+            Slip(:top),
+            Slip(:bottom)
         ]
     )
 )
 time = SteadyState # Euler
 
-relax_p = time() isa SteadyState ? 0.3 : 1.00
-relax_U = time() isa SteadyState ? 0.7 : 1.00
+relax_p = time() isa SteadyState ? 0.4 : 1.00
+relax_U = time() isa SteadyState ? 0.6 : 1.00
 convergence = 1e-8
 solvers = (
     U = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_U, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_U, rtol=1e-1
         ),
     p = SolverSetup(
         solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_p, 
-        limit=(0.02*p_inf, 50*p_inf), rtol=1e-2
+        limit=(0.02*p_inf, 50*p_inf), rtol=1e-1
         ),
     he = SolverSetup(
         solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_p,
-        limit=(50.0, 6000.0), rtol=1e-2
+        limit=(50.0, 6000.0), rtol=1e-1
         ),
     k = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-1
         ),
     omega = SolverSetup(
-        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-2
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=0.6, rtol=1e-1
         )
 )
 

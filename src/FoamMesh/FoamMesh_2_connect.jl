@@ -23,6 +23,7 @@ end
 
 function connect_cell_faces(foamdata, TI, TF)
     (;n_cells, n_ifaces, n_bfaces, face_owner, face_neighbour) = foamdata
+    _check_index_capacity(TI, 2n_ifaces, "the cell-face count")
 
     # CSR two-pass fill: byte-identical to push!-then-flatten ordering
     # Pass 1: degree count per cell
@@ -71,6 +72,9 @@ end
 function connect_cell_nodes(foamdata, TI, TF)
     (; n_cells, face_nodes, face_nodes_range, face_owner, face_neighbour) = foamdata
     n_points = length(foamdata.points)
+    # counted in Int: TI offsets would wrap silently
+    _check_index_capacity(TI, 2sum(fi -> length(face_nodes_range[fi]), eachindex(face_owner); init=0),
+        "the cell-node count before deduplication")
 
     # Pass 1: raw count (boundary faces: owner==neighbour → each node counted twice)
     rcount = zeros(TI, n_cells)
@@ -151,6 +155,7 @@ function connect_face_nodes(foamdata, TI, TF)
     src_face_nodes_range = foamdata.face_nodes_range
 
     nFaceNodes = length(src_face_nodes) # number of nodes to store
+    _check_index_capacity(TI, nFaceNodes, "the face-node count")
 
     face_nodes = zeros(TI, nFaceNodes)
     face_nodes_range = UnitRange{TI}[0:0 for _ ∈ 1:n_faces]

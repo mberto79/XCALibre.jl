@@ -9,7 +9,7 @@ radial_mask!(x0, radius_inner, radius_outer, hardware, mesh; ID = 1, mask=nothin
     end
 
     ndrange = length(cells)
-    kernel! = _radial_mask!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_radial_mask!, backend, workgroup, ndrange)
     kernel!(x0, radius_inner, radius_outer, mask, cells, ID)
     return mask
 end
@@ -36,7 +36,7 @@ disc_mask!(x0, x1, radius_inner, radius_outer, hardware, mesh; ID = 1, mask=noth
     end
 
     ndrange = length(cells)
-    kernel! = _disc_mask!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_disc_mask!, backend, workgroup, ndrange)
     kernel!(x0, x1, radius_inner, radius_outer, mask, cells, ID)
     return mask
 end

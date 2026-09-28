@@ -126,7 +126,7 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.nut, 0.0)
 
 # Step 11. Run simulation
-residuals = run!(model, config, inner_loops=2, ncorrectors=0, output=OpenFOAM());
+residuals = run!(model, config, inner_loops=2, ncorrectors=0, output=OpenFOAM(), progress=false);
 
 inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)

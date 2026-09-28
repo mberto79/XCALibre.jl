@@ -31,6 +31,6 @@ include("LES_filters.jl")
 include("LES_Smagorinsky.jl")
 include("LES_KEquation.jl")
 
-export initialise, turbulence!, save_output
+export initialise, turbulence!, save_output, restart_turbulence!
 
 # end # end module

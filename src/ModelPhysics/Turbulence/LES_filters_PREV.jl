@@ -11,11 +11,6 @@ function basic_filter!(phiFiltered, phi, config)
     kernel! = _integrate_surface!(backend, workgroup)
     kernel!(phiFiltered, phi, ndrange=length(phiFiltered))
 
-    # # number of boundary faces
-    # nbfaces = length(phif.mesh.boundary_cellsID)
-    
-    # kernel! = boundary_faces_contribution!(backend, workgroup)
-    # kernel!(x, y, z, phif, ndrange=nbfaces)
 end
 
 @kernel function _integrate_surface!(phiFiltered, phi::ScalarField)
@@ -39,13 +34,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             areaSum += area
@@ -77,13 +65,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             areaSum += area
@@ -115,13 +96,6 @@ end
             (; area, weight, ownerCells) = faces[fID]
             cID1 = ownerCells[1]
             cID2 = ownerCells[2]
-            # isowner = signbit(-nsign) # owner if nsign is positive - so negating 
-            # notowner = signbit(nsign) # not owner if nsign is positive
-            # w = 1*notowner - weight*notowner + weight*isowner # correct if not owner
-            # oneMinusW = 1 - w
-            # phif = phi[cID1]*w + phi[cID2]*oneMinusW
-
-            # phif = phi[cID1]*weight + phi[cID2]*(1 - weight)
             phif = phi[cID1]*0.5 + phi[cID2]*0.5
             surfaceSum += phif*area
             areaSum += area

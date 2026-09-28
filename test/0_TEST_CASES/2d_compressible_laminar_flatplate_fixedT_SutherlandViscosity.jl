@@ -102,7 +102,7 @@ GC.gc()
 @test initialise!(model.momentum.p, 100000.0) === nothing
 @test initialise!(model.energy.T, 300.0) === nothing
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 inlet = boundary_average(:inlet, model.momentum.U, BCs.U, config)
 outlet = boundary_average(:outlet, model.momentum.U, BCs.U, config)

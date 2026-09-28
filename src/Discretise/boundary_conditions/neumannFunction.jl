@@ -27,7 +27,7 @@ Adapt.@adapt_structure NeumannFunction
     phi = term.phi 
     values = get_values(phi, component)
     J = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     flux = -J*area/delta
     ap = term.sign*(flux)
     ap, ap*values[cellID] # original

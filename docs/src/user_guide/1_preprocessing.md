@@ -47,7 +47,7 @@ In this section we summarise the key limitations of the mesh loaders presented a
 
 #### OpenFOAM mesh files
 * Only ASCII files are supported
-* Boundary groups are not supported (must be deleted manually or the conversion may fail)
+* Boundary groups (`inGroups`) are read and ignored, so they do not need to be deleted manually
 * Boundary information is not preserved (walls, symmetry, etc)
 * 2D setups are not currently supported (but will be)
 

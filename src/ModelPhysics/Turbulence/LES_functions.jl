@@ -8,7 +8,7 @@ function delta!(Δ, mesh, config)
 
     # set up and launch kernel
     ndrange = length(cells)
-    kernel! = _delta!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_delta!, backend, workgroup, ndrange)
     kernel!(Δ, distance, power, cells)
     # KernelAbstractions.synchronize(backend)
 end
@@ -56,7 +56,7 @@ end
 
 function get_normal(mesh, BC)
     (; faces) = mesh
-    backend = get_backend(faces)
+    backend = _get_backend(mesh)
 
     n = KernelAbstractions.zeros(backend, _get_float(mesh), 3)
 

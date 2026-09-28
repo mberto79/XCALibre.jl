@@ -11,8 +11,7 @@ function correct!(eqn::ScalarEquation{I,F}, term, corr_flux::FaceScalarField{I,F
     (; b) = eqn 
     (; values) = corr_flux
     for fID ∈ eachindex(faces)
-        face = faces[fID]
-        owners = face.ownerCells
+        owners = faces.ownerCells[fID]
         cell1 = owners[1]
         cell2 = owners[2]
         correction = -sign*J(fID)*values[fID]
@@ -37,8 +36,7 @@ function nonorthogonal_flux!(phif::FaceScalarField{I,F}, gradf) where{I,F}
     start = total_boundary_faces(mesh) + 1
     for fi ∈ start:length(faces)
     # for fi ∈ eachindex(faces)
-        face = faces[fi]
-        (; area, normal, e) = face
+        area, normal, e = faces.area[fi], faces.normal[fi], faces.e[fi]
         T = (normal-e)*area
         phif.values[fi] = gradf(fi)⋅T
     end
@@ -47,11 +45,11 @@ end
 ### Weight functions
 
 function weight(::Type{Linear}, cells, faces, fi)
-    (; ownerCells, centre) = faces[fi]
+    ownerCells, centre = faces.ownerCells[fi], faces.centre[fi]
     cID1 = ownerCells[1]
     cID2 = ownerCells[2]
-    c1 = cells[cID1].centre
-    c2 = cells[cID2].centre
+    c1 = cells.centre[cID1]
+    c2 = cells.centre[cID2]
     c1_f = centre - c1
     c1_c2 = c2 - c1
     q = (c1_f⋅c1_c2)/(c1_c2⋅c1_c2)

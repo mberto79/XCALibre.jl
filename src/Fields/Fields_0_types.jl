@@ -108,7 +108,7 @@ KA.get_backend(s::AbstractScalarField) = KA.get_backend(s.values)
 # VECTOR FIELD IMPLEMENTATION
 
 """
-    struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh,BC} <: AbstractVectorField
+    struct VectorField{S1<:ScalarField,S2,S3,M,BC} <: AbstractVectorField
         x::S1   # x-component is itself a `ScalarField`
         y::S2   # y-component is itself a `ScalarField`
         z::S3   # z-component is itself a `ScalarField`
@@ -116,7 +116,7 @@ KA.get_backend(s::AbstractScalarField) = KA.get_backend(s.values)
         BCs::BC
     end
 """
-struct VectorField{S1<:ScalarField,S2,S3,M<:AbstractMesh} <: AbstractVectorField
+struct VectorField{S1<:ScalarField,S2,S3,M} <: AbstractVectorField
     x::S1
     y::S2
     z::S3
@@ -253,6 +253,45 @@ Base.length(t::AbstractTensorField) = length(t.xx)
 Base.eachindex(t::AbstractTensorField) = eachindex(t.xx)
 KA.get_backend(t::AbstractTensorField) = KA.get_backend(t.xx)
 _mesh(field::AbstractField) = field.mesh # catch all accessor to mesh
+
+# VALUE VIEWS
+
+# The bare storage behind a field, indexed exactly as the field is. Kernel arguments are passed
+# by value, so a captured field drags its mesh (416 B for Mesh3) into per-thread local memory.
+field_values(f::ConstantScalar) = f # already mesh-free, and its getindex returns the constant
+field_values(f::Union{ScalarField,FaceScalarField}) = f.values
+field_values(t::TensorField) = TensorValues(
+    t.xx.values, t.xy.values, t.xz.values,
+    t.yx.values, t.yy.values, t.yz.values,
+    t.zx.values, t.zy.values, t.zz.values)
+
+struct TensorValues{A}
+    xx::A
+    xy::A
+    xz::A
+    yx::A
+    yy::A
+    yz::A
+    zx::A
+    zy::A
+    zz::A
+end
+Adapt.@adapt_structure TensorValues
+
+@inline Base.getindex(t::TensorValues, i::Integer) = begin
+    Tf = eltype(t.xx)
+    @inbounds SMatrix{3,3,Tf,9}(
+        t.xx[i],
+        t.yx[i],
+        t.zx[i],
+        t.xy[i],
+        t.yy[i],
+        t.zy[i],
+        t.xz[i],
+        t.yz[i],
+        t.zz[i],
+        )
+end
 
 #Symmetric tensor 
 struct SymmetricTensorField{S1,S2,S3,S4,S5,S6,S7,S8,S9,M} <: AbstractTensorField
@@ -421,7 +460,7 @@ end
 function initialise!(s::ScalarField, func::Func) where Func<:Function
     backend = KA.get_backend(s)
     ndrange = length(s)
-    kernel! = _initialise_scalar!(_setup(backend, 64, ndrange)...)
+    kernel! = _sized(_initialise_scalar!, backend, 64, ndrange)
     kernel!(s, func)
     KA.synchronize(backend)
     nothing
@@ -439,7 +478,7 @@ end
 function initialise!(v::VectorField, func::Func) where Func<:Function
     backend = KA.get_backend(v.x)
     ndrange = length(v.x)
-    kernel! = _initialise_vector!(_setup(backend, 64, ndrange)...)
+    kernel! = _sized(_initialise_vector!, backend, 64, ndrange)
     kernel!(v, func)
     KA.synchronize(backend)
     nothing

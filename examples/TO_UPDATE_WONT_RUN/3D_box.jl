@@ -38,12 +38,6 @@ model = Physics(
     Dirichlet(:top, noSlip),
     Dirichlet(:side1, noSlip),
     Dirichlet(:side2, noSlip),
-    # Dirichlet(:inlet, velocity),
-    # Neumann(:outlet, 0.0),
-    # Dirichlet(:bottom, noSlip),
-    # Dirichlet(:top, noSlip),
-    # Dirichlet(:side1, noSlip),
-    # Dirichlet(:side2, noSlip)
     Dirichlet(:inlet, velocity),
     Neumann(:outlet, 0.0),
     Neumann(:bottom, 0.0),
@@ -61,10 +55,6 @@ model = Physics(
     Neumann(:side2, 0.0)
 )
 
-# schemes = (
-#     U = Schemes(time=Euler, divergence=Upwind, gradient=Midpoint),
-#     p = Schemes(time=Euler, divergence=Upwind, gradient=Midpoint)
-# )
 
 schemes = (
     U = Schemes(divergence=Upwind),

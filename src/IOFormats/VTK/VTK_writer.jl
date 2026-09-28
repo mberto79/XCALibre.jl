@@ -14,14 +14,6 @@ function write_results(
     end
     filename = name*suffix*".vtk"
 
-    # UxNodes = FVM.NodeScalarField(Ux)
-    # UyNodes = FVM.NodeScalarField(Uy)
-    # UzNodes = FVM.NodeScalarField(Uz)
-    # pNodes = FVM.NodeScalarField(p)
-    # FVM.interpolate2nodes!(UxNodes, Ux)
-    # FVM.interpolate2nodes!(UyNodes, Uy)
-    # FVM.interpolate2nodes!(UzNodes, Uz)
-    # FVM.interpolate2nodes!(pNodes, p)
 
     (; cell_nodes) = mesh
     open(filename, "w") do io
@@ -111,43 +103,17 @@ function write_results(
             end
         end
         
-        # write(io, "POINT_DATA $(nPoints)\n")
-        # write(io, "SCALARS p double 1\n")
-        # write(io, "LOOKUP_TABLE default\n")
-        # for p ∈ pNodes.values
-        #     println(io, p)
-        # end
-        # write(io, "VECTORS U double\n")
-        # for i ∈ 1:length(UxNodes.values)
-        #     println(io, UxNodes.values[i]," ",UyNodes.values[i] ," ",UzNodes.values[i] )
-        # end
-        # # Boundary information
-        # # to be implemented
     end
 end
 
-function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.GPU)
-    a_cpu = Array{eltype(a)}(undef, length(a))
-    
-    copyto!(a_cpu, a)
-    return a_cpu
-end
+copy_scalarfield_to_cpu(a, backend::KernelAbstractions.GPU) = adapt(Array, a)
 
 function copy_scalarfield_to_cpu(a, backend::KernelAbstractions.CPU)
     a_cpu = a
     return a_cpu
 end
 
-function copy_to_cpu(a, b, c, backend::KernelAbstractions.GPU)
-    a_cpu = Array{eltype(a)}(undef, length(a))
-    b_cpu = Array{eltype(b)}(undef, length(b))
-    c_cpu = Array{eltype(c)}(undef, length(c))
-    
-    copyto!(a_cpu, a)
-    copyto!(b_cpu, b)
-    copyto!(c_cpu, c)
-    return a_cpu, b_cpu, c_cpu
-end
+copy_to_cpu(a, b, c, backend::KernelAbstractions.GPU) = adapt(Array, a), adapt(Array, b), adapt(Array, c)
 
 function copy_to_cpu(a, b, c, backend::KernelAbstractions.CPU)
     a_cpu = a

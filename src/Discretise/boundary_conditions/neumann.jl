@@ -4,7 +4,7 @@ export Neumann
 """
     Neumann <: AbstractNeumann
 
-Neumann boundary condition model to set the gradient at the boundary explicitly *(currently only configured for zero gradient)*
+Neumann boundary condition model to set the face normal gradient at the boundary explicitly
 
 # Inputs
 - `ID` Name of the boundary given as a symbol (e.g. :inlet). Internally it gets replaced with the boundary index ID
@@ -21,39 +21,34 @@ end
 Adapt.@adapt_structure Neumann
 
 @define_boundary Neumann Laplacian{Linear} ScalarField begin
-    # For now this is hard-coded as zero-gradient. To-do extension to any input gradient
-    phi = term.phi 
-    values = get_values(phi, component)
     J = term.flux[fID]
-    (; area, delta) = face 
-    flux = J*area
-    0.0, flux*bc.value # draft implementation to test!
+    0.0, -term.sign*J*faces.area[fID]*bc.value
 end
 
 @define_boundary Neumann Divergence{Linear} ScalarField begin
     flux = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     ap = term.sign*(flux) 
     ap, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Divergence{Upwind} ScalarField begin
     flux = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     ap = term.sign*(flux) 
     ap, -bc.value*ap*delta
 end
 
 @define_boundary Neumann Divergence{LUST} ScalarField begin
     flux = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     ap = term.sign*(flux) 
     ap, -bc.value*ap*delta
 end
 
 # Bounded = upwind boundary with -Sp(div phi): subtract ap from the diagonal
 @define_boundary Neumann Divergence{BoundedUpwind} ScalarField begin
-    (; delta) = face
+    delta = faces.delta[fID]
     ap = term.sign*(term.flux[fID])
     0.0, -bc.value*ap*delta
 end

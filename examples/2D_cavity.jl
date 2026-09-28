@@ -37,10 +37,7 @@ BCs = assign(
             Wall(:inlet, noSlip)
         ],
         p = [
-            # Extrapolated(:top),
-            # Extrapolated(:inlet),
-            # Extrapolated(:outlet),
-            # Extrapolated(:bottom),
+            # alternative: Extrapolated on all four patches
             Extrapolated(:top),
             Wall(:inlet),
             Wall(:outlet),

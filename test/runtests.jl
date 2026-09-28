@@ -16,12 +16,37 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_mesh_conversion.jl")
     end
 
+    @testset "Face orientation" begin
+        include("unit_test_face_orientation.jl")
+    end
+
+    @testset "Face-flux reconstruction" begin
+        include("test_reconstruct.jl")
+    end
+
+    @testset "Physical boundary conditions" begin
+        include("test_physical_boundary_conditions.jl")
+    end
+
+    @testset "Potential-flow initialisation" begin
+        include("test_potential_flow.jl")
+    end
+
+    @testset "Wall functions on an empty patch" begin
+        include("unit_test_wall_function_empty_patch.jl")
+    end
+
     @testset "Smoothers" begin
         include("test_smoothers.jl")
     end
 
     @testset "DILU" begin
         include("test_DILU.jl")
+    end
+
+    @testset "AMG preconditioner freeze" begin
+        @test BoomerAMG(freeze=7).freeze == 7 && GAMG(freeze=7).freeze == 7
+        @test BoomerAMG().freeze == 10 && GAMG().freeze == 25
     end
 
     @testset "Mixture Multiphase Unit Test" begin
@@ -33,17 +58,34 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_AMG_matrices.jl")
     end
 
+    @testset "XVector Unit Test" begin
+        include("unit_test_xvector.jl")
+    end
+
     @testset "Laplace Unit Test" begin
         include("unit_test_laplace.jl")
+    end
+
+    @testset "Neumann Laplacian Sign Unit Test" begin
+        include("unit_test_neumann_sign.jl")
     end
 
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
     end
 
-    # @testset "setFields Function Unit Test" begin
-    #     include("unit_test_setFields.jl")
-    # end
+    @testset "Wall Production Density Unit Test" begin
+        include("unit_test_wall_production_density.jl")
+        include("unit_test_wall_function_averaging.jl")
+    end
+
+    @testset "setFields Function Unit Test" begin
+        include("unit_test_setFields.jl")
+    end
+
+    @testset "Robin Boundary Condition Unit Test" begin
+        include("unit_test_robin.jl")
+    end
 
     @testset "Fluid Properties Unit Test" begin
         include("unit_test_fluidProperties.jl")
@@ -141,6 +183,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Thin Film Solver" begin
         include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))
+    end
+
+    @testset "Distributed (MPI)" begin
+        include("distributed/gate.jl")
     end
 
     foreach(rm, filter(endswith(".vtk"), readdir(pwd(), join=true)))

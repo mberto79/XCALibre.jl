@@ -131,29 +131,3 @@ initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, k_inlet/ω_inlet)
 
 residuals = run!(model, config) # 9.39k allocs
-
-# using Plots
-# using DelimitedFiles
-# using LinearAlgebra
-
-# OF_data = readdlm("flatplate_OF_wall_kOmega_lowRe.csv", ',', Float64, skipstart=1)
-# oRex = OF_data[:,7].*velocity[1]./nu[1]
-# oCf = sqrt.(OF_data[:,12].^2 + OF_data[:,13].^2)/(0.5*velocity[1]^2)
-
-# tauw, pos = wall_shear_stress(:wall, model)
-# tauMag = [norm(tauw[i]) for i ∈ eachindex(tauw)]
-# x = [pos[i][1] for i ∈ eachindex(pos)]
-# Rex = velocity[1].*x./nu
-
-# x_corr = [0:0.0002:1;]
-# Rex_corr = velocity[1].*x_corr/nu
-# Cf_corr = 0.074.*(Rex_corr).^(-1/5)
-# plot(; xaxis="Rex", yaxis="Cf")
-# plot!(Rex_corr, Cf_corr, color=:red, ylims=(0, 0.05), xlims=(0,2e4), label="Blasius",lw=1.5)
-# plot!(oRex, oCf, color=:green, lw=1.5, label="OpenFOAM") # |> display
-# plot!(Rex,tauMag./(0.5*velocity[1]^2), color=:blue, lw=1.5,label="Code") |> display
-
-# plot(; xlims=(0,1000))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p") |> display

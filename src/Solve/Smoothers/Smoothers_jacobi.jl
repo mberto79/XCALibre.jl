@@ -91,7 +91,7 @@ function _smoother_launch(
     backend::GPU, smoother, x, b, nzval, colval, rowptr, workgroup
     )
     ndrange = length(x)
-    kernel! = _apply_smoother_gpu!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(_apply_smoother_gpu!, backend, workgroup, ndrange)
     for _ ∈ 1:smoother.loops
         kernel!(smoother, x, b, nzval, colval, rowptr)
         # KernelAbstractions.synchronize(backend)

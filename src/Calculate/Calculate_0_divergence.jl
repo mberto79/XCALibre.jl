@@ -32,7 +32,7 @@ function div!(phi::ScalarField, psif::FaceVectorField, config)
 
     # Launch main calculation kernel
     ndrange = length(cells)
-    kernel! = div_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_kernel!, backend, workgroup, ndrange)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
     # KernelAbstractions.synchronize(backend)
 
@@ -41,7 +41,7 @@ function div!(phi::ScalarField, psif::FaceVectorField, config)
 
     # Launch boundary faces contribution kernel
     ndrange = nbfaces
-    kernel! = div_boundary_faces_contribution_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_boundary_faces_contribution_kernel!, backend, workgroup, ndrange)
     kernel!(faces, cells, phi, psif)
     # KernelAbstractions.synchronize(backend)
 end
@@ -53,7 +53,7 @@ end
     
     @inbounds begin
         # Extract required fields from cells structure
-        (; volume, faces_range) = cells[i]
+        volume, faces_range = cells.volume[i], cells.faces_range[i]
         
         # Set work item scalar field value as zero
         # phi.values[i] = 0.0 #zero(TF)
@@ -65,7 +65,7 @@ end
             nsign = cell_nsign[fi]
 
             # Extract required fields from faces structure
-            (; area, normal) = faces[fID]
+            area, normal = faces.area[fID], faces.normal[fID]
 
             # Scalar field values calculation
             Sf = area*normal
@@ -83,9 +83,9 @@ end
     
     @inbounds begin
         # Retreive variables from work item boundary face
-        cID = faces[i].ownerCells[1]
-        volume = cells[cID].volume
-        (; area, normal) = faces[i]
+        cID = faces.ownerCells[i][1]
+        volume = cells.volume[cID]
+        area, normal = faces.area[i], faces.normal[i]
 
         # Boundary contribution calculation (boundary normals are correct by definition)
         Sf = area*normal
@@ -109,7 +109,7 @@ function div!(phi::ScalarField, psif::FaceScalarField, config)
 
     # Launch main calculation kernel
     ndrange = length(cells)
-    kernel! = div_noS_kernel!(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_noS_kernel!, backend, workgroup, ndrange)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
     # KernelAbstractions.synchronize(backend)
 
@@ -118,8 +118,7 @@ function div!(phi::ScalarField, psif::FaceScalarField, config)
 
     # Launch boundary faces contribution kernel
     ndrange = nbfaces
-    kernel! = div_noS_boundary_faces_contribution_kernel!(
-        _setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(div_noS_boundary_faces_contribution_kernel!, backend, workgroup, ndrange)
     kernel!(faces, cells, phi, psif)
     # KernelAbstractions.synchronize(backend)
 end
@@ -131,7 +130,7 @@ end
     
     @inbounds begin
         # Extract required fields from cells structure
-        (; volume, faces_range) = cells[i]
+        volume, faces_range = cells.volume[i], cells.faces_range[i]
         
         # Set work item scalar field value as zero
         # phi.values[i] = 0.0 #zero(TF)
@@ -143,7 +142,7 @@ end
             nsign = cell_nsign[fi]
 
             # Extract required fields from faces structure
-            (; area, normal) = faces[fID]
+            area, normal = faces.area[fID], faces.normal[fID]
 
             # Atomix.@atomic phi.values[i] += psif[fID]⋅Sf*nsign/volume
             reduction += psif[fID]*nsign
@@ -159,9 +158,9 @@ end
     
     @inbounds begin
         # Retreive variables from work item boundary face
-        cID = faces[i].ownerCells[1]
-        volume = cells[cID].volume
-        (; area, normal) = faces[i]
+        cID = faces.ownerCells[i][1]
+        volume = cells.volume[cID]
+        area, normal = faces.area[i], faces.normal[i]
 
         # Boundary contribution calculation (boundary normals are correct by definition)
         # Sf = area*normal

@@ -205,17 +205,5 @@ function thermal_conductivity_H2_wrapper(rho::F, T::F, cp::F, cv::F, kT::F,
 
 end
 
-# Parametric study for model switcher (at 1 bar, improvements remain for other pressures too):
-
-# [Temperature range to switch for complex function] error% at T=T_test
-# [7 K]  8.443% at T=25.75 K
-# [10 K] 6.408% at T=22.75 K
-# [14 K] 2.388% at T=47.00 K
-# [15 K] 2.181% at T=48.00 K
-# [17 K] 1.847% at T=50.00 K
-# [25 K] 1.082% at T=58.00 K
-# [50 K] 0.359% at T=83.0 K
-# [70 K] 0.216% at T=20.25 K
-# [90 K] 0.216% at T=20.25 K
-
-# [pure complex model] 0.216% at T=20.25 K
+# Model-switcher study at 1 bar: widening the temperature range that uses the complex function lowers the error,
+# matching the pure complex model from a 70 K range upwards.

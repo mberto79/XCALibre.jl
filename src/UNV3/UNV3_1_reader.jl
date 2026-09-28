@@ -142,12 +142,9 @@ function read_UNV3(unv_mesh; scale=1.0, integer::Type{I}=Int64, float::Type{F}=F
     return points, faces, cells, boundaryElements
 end
 
-# ==============================================================================
 # UTILITY AND AUXILIARY FUNCTIONS
-# ==============================================================================
 
-# Zero-allocation wrapper for float parsing. 
-# Only triggers the string-replacing allocation if legacy FORTRAN 'D' notation is strictly detected.
+# Zero-allocation float parse; allocates only when legacy FORTRAN 'D' notation is detected.
 @inline function _parse_unv_float(::Type{F}, s::AbstractString) where F
     if occursin('D', s) || occursin('d', s)
         return parse(F, replace(replace(s, 'D' => 'e'), 'd' => 'e'))

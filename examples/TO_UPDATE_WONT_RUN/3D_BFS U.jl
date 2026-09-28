@@ -31,11 +31,6 @@ model = Physics(
     )
 
 @assign! model momentum U (
-    # Dirichlet(:inlet, velocity),
-    # Neumann(:outlet, 0.0),
-    # Dirichlet(:wall, [0.0, 0.0, 0.0]),
-    # Dirichlet(:top, [0.0, 0.0, 0.0]),
-    # Dirichlet(:sides, [0.0, 0.0, 0.0])
     Dirichlet(:inlet, velocity),
     Dirichlet(:wall, [0.0, 0.0, 0.0]),
     Neumann(:outlet, 0.0),

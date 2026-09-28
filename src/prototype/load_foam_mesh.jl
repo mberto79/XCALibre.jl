@@ -88,10 +88,3 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
 @time residuals = run!(model, config, output=OpenFOAM())
-
-# iterations = runtime.iterations
-# plot(yscale=:log10, ylims=(1e-7,1e-1))
-# plot!(1:iterations, residuals.Ux, label="Ux")
-# plot!(1:iterations, residuals.Uy, label="Uy")
-# plot!(1:iterations, residuals.Uz, label="Uz")
-# plot!(1:iterations, residuals.p, label="p")

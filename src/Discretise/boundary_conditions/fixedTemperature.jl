@@ -121,7 +121,7 @@ end
 
 @define_boundary FixedTemperature Laplacian{Linear} begin
     J = term.flux[fID]
-    (; area, delta) = face 
+    area, delta = faces.area[fID], faces.delta[fID]
     (; T, energy_model) = bc.value
     flux = J*area/delta
     ap = term.sign[1]*(-flux)

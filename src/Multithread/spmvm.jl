@@ -14,9 +14,6 @@ KernelAbstractions.get_backend(A::SparseXCSR) = get_backend(A.parent.nzval)
 Base.show(io::IO, A::SparseXCSR) = begin
     print(io, "CSR Matrix with $(length(A.parent.nzval)) entries")
 end
-# Base.show(io::IO, ::MIME"text/plain", ::SparseXCSR) =
-#     print(io, "Array of CSR matrices")
-
 # NOTE: The code below has been taken from https://github.com/BacAmorim/ThreadedSparseCSR.jl
 # ThreadedSparseCSR has not been updated in a while and precompilation fails on Julia 1.11.1
 
@@ -41,8 +38,8 @@ function xmul!(
 
     o = getoffset(A)
 
-    @sync for r in RangeIterator(size(y, 1), Threads.nthreads())
-        Threads.@spawn for row in r
+    _foreach_chunk(size(y, 1), length(A.nzval)) do r
+        for row in r
             @inbounds begin
                 accu = zero(eltype(y))
                 for nz in nzrange(A, row)
@@ -58,24 +55,21 @@ function xmul!(
 
 end
 
-function xmul!(A::SparseXCSR, x::AbstractVector)
-    xmul!(y, parent(A), x, true, false)
-end
-
-function xmul(y::AbstractVector, A::SparseXCSR, x::AbstractVector)
-    y = similar(x)
-    xmul!(y, parent(A), x, true, false)
-end
 
 """
-    activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
+    activate_multithread(backend::CPU; nthreads=1)
 
-Convenience function to set number of BLAS threads. 
-    
+Set the number of OpenBLAS threads.
+
 # Input arguments
 
 - `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`
-- `nthreads` can be used to set the number of BLAS cores (default `nthreads=1`)
+- `nthreads` is the number of BLAS threads (default: 1)
+
+!!! note
+    The CPU linear solvers run their vector operations on Julia's own threads (`-t`), so BLAS
+    needs no threads of its own. Julia picks its OpenBLAS thread count from the machine rather
+    than from `-t`, and a second thread pool competes with Julia's for the same cores.
 """
 activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
 
@@ -90,6 +84,4 @@ function  LinearAlgebra.mul!(y::AbstractVector, A::SparseXCSR, x::AbstractVector
     return xmul!(y, A, x, true, false)
 end
 
-function  Base.:*(A::SparseMatrixCSR, x::SparseXCSR)
-    return xmul(A, x)
-end
+Base.:*(A::SparseXCSR, x::AbstractVector) = xmul!(similar(x, promote_type(eltype(A), eltype(x)), size(A, 1)), A, x, true, false)

@@ -4,6 +4,7 @@ using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.Discretise
 using KernelAbstractions
+using Adapt
 using LinearAlgebra
 using StaticArrays
 using Printf

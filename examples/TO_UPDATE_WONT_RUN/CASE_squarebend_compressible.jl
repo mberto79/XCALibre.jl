@@ -3,9 +3,6 @@ using XCALibre
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU
 
-# quad, backwardFacingStep_2mm, backwardFacingStep_10mm, trig40
-# mesh_file = "unv_sample_meshes/OF_squareBend_laminar/constant/polyMesh/"
-
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "OF_squareBend/polyMesh"
 mesh_file = joinpath(grids_dir, grid)
@@ -134,9 +131,3 @@ initialise!(model.energy.T, temp)
 residuals = run!(model, config, output=VTK()); #, pref=0.0)
 
 
-
-# plot(; xlims=(0,runtime.iterations), ylims=(1e-8,1))
-# plot!(1:length(residuals.Ux), residuals.Ux, yscale=:log10, label="Ux")
-# plot!(1:length(residuals.Uy), residuals.Uy, yscale=:log10, label="Uy")
-# plot!(1:length(residuals.p), residuals.p, yscale=:log10, label="p")
-# plot!(1:length(residuals.e), residuals.e, yscale=:log10, label="h")

@@ -42,50 +42,131 @@ function assign_faces!(foamdata, face_nodes, face_nodes_range, face_neighbours, 
     foamdata.face_neighbour = face_neighbour
 end
 
+function _foam_tokens(file_path)
+    contents = read(file_path, String)
+    contents = replace(contents, r"(?s)/\*.*?\*/" => " ")
+    contents = replace(contents, r"//[^\r\n]*" => " ")
+    token_pattern = r"\"(?:\\.|[^\"])*\"|'(?:\\.|[^'])*'|[{}();]|[^\s{}();]+"
+    return [match.match for match in eachmatch(token_pattern, contents)]
+end
+
+@inline function _foam_name(token)
+    if length(token) >= 2 && ((first(token) == '"' && last(token) == '"') ||
+                              (first(token) == '\'' && last(token) == '\''))
+        return token[2:(end - 1)]
+    end
+    return token
+end
+
+function _parse_boundary_integer(token, TI, field, patch_name)
+    value = tryparse(TI, token)
+    isnothing(value) && throw(ArgumentError(
+        "invalid $field value '$token' for OpenFOAM boundary '$patch_name'",
+    ))
+    value < zero(TI) && throw(ArgumentError(
+        "$field must be non-negative for OpenFOAM boundary '$patch_name'",
+    ))
+    return value
+end
+
 function read_boundary(file_path, TI, TF)
-    delimiters = [' ', ';', '{', '}']
+    tokens = _foam_tokens(file_path)
 
-    # find the total number of boundaries and line to start reading data from
-    nBoundaries = 0
-    readfrom = 0
-    for (n, line) ∈ enumerate(eachline(file_path))
-        if isnothing(tryparse(TI, line))
-            continue
-        else 
-            nBoundaries = parse(TI, line)
-            readfrom = n + 1
-            println("number of boundaries is ", nBoundaries)
-            break
+    # The patch count is the first integer token immediately followed by the
+    # outer list opener. This deliberately skips the FoamFile header dictionary.
+    count_index = findfirst(eachindex(tokens)) do index
+        index < length(tokens) && tryparse(TI, tokens[index]) !== nothing &&
+            tokens[index + 1] == "("
+    end
+    isnothing(count_index) && throw(ArgumentError(
+        "could not find the declared OpenFOAM boundary list in '$file_path'",
+    ))
+
+    n_boundaries = parse(TI, tokens[count_index])
+    n_boundaries < zero(TI) && throw(ArgumentError(
+        "the OpenFOAM boundary count must be non-negative in '$file_path'",
+    ))
+    boundaries = Vector{Boundary{TI,Symbol}}()
+    sizehint!(boundaries, Int(n_boundaries))
+    names = Set{Symbol}()
+    index = count_index + 2
+
+    for patch_index in 1:Int(n_boundaries)
+        while index <= length(tokens) && tokens[index] == ";"
+            index += 1
         end
+        index > length(tokens) && throw(ArgumentError(
+            "OpenFOAM boundary list ended after $(patch_index - 1) of $n_boundaries patches",
+        ))
+        tokens[index] == ")" && throw(ArgumentError(
+            "OpenFOAM boundary list contains $(patch_index - 1) patches, expected $n_boundaries",
+        ))
+
+        patch_name = Symbol(_foam_name(tokens[index]))
+        patch_name in names && throw(ArgumentError(
+            "duplicate OpenFOAM boundary name '$patch_name'",
+        ))
+        index += 1
+        index <= length(tokens) && tokens[index] == "{" || throw(ArgumentError(
+            "expected a dictionary for OpenFOAM boundary '$patch_name'",
+        ))
+        index += 1
+
+        brace_depth = 1
+        n_faces = nothing
+        start_face = nothing
+        while index <= length(tokens) && brace_depth > 0
+            token = tokens[index]
+            if token == "{"
+                brace_depth += 1
+            elseif token == "}"
+                brace_depth -= 1
+            elseif brace_depth == 1 && (token == "nFaces" || token == "startFace")
+                index == length(tokens) && throw(ArgumentError(
+                    "missing value for $token in OpenFOAM boundary '$patch_name'",
+                ))
+                value = _parse_boundary_integer(tokens[index + 1], TI, token, patch_name)
+                if token == "nFaces"
+                    isnothing(n_faces) || throw(ArgumentError(
+                        "duplicate nFaces entry for OpenFOAM boundary '$patch_name'",
+                    ))
+                    n_faces = value
+                else
+                    isnothing(start_face) || throw(ArgumentError(
+                        "duplicate startFace entry for OpenFOAM boundary '$patch_name'",
+                    ))
+                    start_face = value
+                end
+                index += 1
+            end
+            index += 1
+        end
+        brace_depth == 0 || throw(ArgumentError(
+            "unterminated dictionary for OpenFOAM boundary '$patch_name'",
+        ))
+        isnothing(n_faces) && throw(ArgumentError(
+            "missing nFaces entry for OpenFOAM boundary '$patch_name'",
+        ))
+        isnothing(start_face) && throw(ArgumentError(
+            "missing startFace entry for OpenFOAM boundary '$patch_name'",
+        ))
+        start_face == typemax(TI) && throw(ArgumentError(
+            "startFace overflows one-based indexing for OpenFOAM boundary '$patch_name'",
+        ))
+        n_faces > zero(TI) && start_face > typemax(TI) - n_faces && throw(ArgumentError(
+            "face range overflows for OpenFOAM boundary '$patch_name'",
+        ))
+
+        push!(names, patch_name)
+        push!(boundaries, Boundary{TI,Symbol}(patch_name, start_face + one(TI), n_faces))
     end
 
-    boundaries = [Boundary(TI) for _ ∈ 1:nBoundaries]
-
-    bcounter = 0
-    for (n, line) ∈ enumerate(eachline(file_path)) 
-        if line == ")"
-            break 
-        elseif n > readfrom
-            sline = split(line, delimiters, keepempty=false)
-
-            if length(sline) == 1
-                bcounter += 1
-                boundaries[bcounter].name = Symbol(sline[1])
-                continue
-            end
-
-            if length(sline) == 2 && sline[1] == "nFaces"
-                boundaries[bcounter].nFaces = parse(TI, sline[2])
-                continue
-            end
-
-            if length(sline) == 2 && sline[1] == "startFace"
-                boundaries[bcounter].startFace = parse(TI, sline[2]) + one(TI) # make 1-indexed
-                continue
-            end
-
-        end
+    while index <= length(tokens) && tokens[index] == ";"
+        index += 1
     end
+    index <= length(tokens) && tokens[index] == ")" || throw(ArgumentError(
+        "OpenFOAM boundary list declares $n_boundaries patches but contains additional or malformed entries",
+    ))
     return boundaries
 end
 # advance pos past non-digit bytes, then parse one non-negative integer
@@ -114,7 +195,47 @@ end
     return pos
 end
 
+# binary files (`format binary`): after the header, `N (raw bytes)` lists; widths from `arch`, nothing if ascii
+function _foam_binary(file_path, kind)
+    hdr = open(io -> readuntil(io, '}'; keep=true), file_path) # an ascii file is never read whole here
+    endswith(hdr, '}') && occursin(r"format\s+binary", hdr) || return nothing
+    b = read(file_path)
+    hend = ncodeunits(hdr)
+    lb = (m = match(r"label=(\d+)", hdr)) === nothing ? 32 : parse(Int, m[1])
+    sb = (m = match(r"scalar=(\d+)", hdr)) === nothing ? 64 : parse(Int, m[1])
+    T = kind == :label ? (lb == 64 ? Int64 : Int32) : SVector{3,sb == 32 ? Float32 : Float64}
+    out = Vector{T}[]
+    pos, len = hend + 1, length(b)
+    while true
+        while pos <= len
+            if b[pos] == UInt8('/') && pos < len && b[pos+1] == UInt8('/')
+                pos = something(findnext(==(UInt8('\n')), b, pos), len) + 1
+            elseif isspace(Char(b[pos]))
+                pos += 1
+            else
+                break
+            end
+        end
+        (pos > len || !isdigit(Char(b[pos]))) && break
+        q = pos
+        while isdigit(Char(b[q])); q += 1; end
+        n = parse(Int, String(b[pos:q-1]))
+        while b[q] != UInt8('('); q += 1; end
+        v = Vector{T}(undef, n)
+        copyto!(reinterpret(UInt8, v), 1, b, q + 1, n * sizeof(T))
+        push!(out, v)
+        pos = q + 2 + n * sizeof(T)
+    end
+    out
+end
+
 function read_faces(file_path, TI, TF)
+    lists = _foam_binary(file_path, :label)
+    if lists !== nothing
+        offsets, labels = lists
+        ranges = [UnitRange{TI}(offsets[i] + 1, offsets[i+1]) for i ∈ 1:length(offsets)-1]
+        return TI.(labels) .+ one(TI), ranges
+    end
     # find count line (skips FoamFile header safely)
     startLine = 0
     nfaces = 0
@@ -136,22 +257,24 @@ function read_faces(file_path, TI, TF)
     face_nodes = Vector{TI}(undef, 0)
     sizehint!(face_nodes, 4 * Int(nfaces))
     face_nodes_range = Vector{UnitRange{TI}}(undef, nfaces)
-    startIdx = one(TI)
+    startIdx = 1 # Int: the checked conversion to TI below is what catches overflow
     for facei ∈ 1:nfaces
         nnodes, pos = _next_uint(bytes, pos, len) # per-face node count
         for i ∈ 1:nnodes
             nid, pos = _next_uint(bytes, pos, len)
             push!(face_nodes, TI(nid) + one(TI)) # +1 shift
         end
-        endIdx = startIdx + TI(nnodes) - one(TI)
+        endIdx = startIdx + Int(nnodes) - 1
         face_nodes_range[facei] = UnitRange{TI}(startIdx, endIdx)
-        startIdx = endIdx + one(TI)
+        startIdx = endIdx + 1
     end
 
     return face_nodes, face_nodes_range
 end
 
 function read_neighbour(file_path, TI, TF)
+    lists = _foam_binary(file_path, :label)
+    lists === nothing || return TI.(lists[1]) .+ one(TI)
     nfaces = 0
     startLine = 0
     for (n, line) ∈ enumerate(eachline(file_path))
@@ -182,6 +305,8 @@ function read_owner(file_path, TI, TF)
 end
 
 function read_points(file_path, scale, TI, TF)
+    lists = _foam_binary(file_path, :vector)
+    lists === nothing || return [SVector{3,TF}(ntuple(i -> scale * TF(p[i]), 3)) for p ∈ lists[1]]
     npoints = 0
     startLine = 0
     for (n, line) ∈ enumerate(eachline(file_path))

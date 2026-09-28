@@ -164,24 +164,6 @@ function turbulence!(
     grad!(gradU, Uf, U, U.BCs, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     
-    # update fluxes
-    # divUf = FaceVectorField(mesh)
-    # AK.foreachindex(divUf, min_elems=workgroup, block_size=workgroup) do i 
-    #     divUf[i] = mdotf[i]*Uf[i]
-    # end
-    # div!(divU, divUf, config)
-
-    # AK.foreachindex(Pk, min_elems=workgroup, block_size=workgroup) do i 
-    #     Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(S)[i])
-    #     # Pk[i] = 2*nut[i]*(gradU[i]⋅Dev(gradU.result)[i])
-    #     mueffk[i] = rhof[i] * (nuf[i] + nutf[i])
-    #     # divU[i] = abs(2/3*rho[i]*divU[i])
-    #     divU[i] = 2/3*rho[i]*tr(gradU[i]) #/mesh.cells[i].volume
-    #     kSource[i] = k[i] #/mesh.cells[i].volume
-    #     outScalar[i] = mesh.cells[i].volume
-    # end
-
-    #
 
     _filter = TopHatFilter(U, config)
     # Umag2hat = ScalarField(model.domain)
@@ -209,16 +191,6 @@ function turbulence!(
     @. nut.values = Ck.values*Δ.values*sqrt(k.values)
     Ce!(Ce, tensorForm, KK, mag2DF, DevF, nu, nut, Δ, _filter, workgroup)
 
-    # @. nut.values = Ck.values*Δ.values*sqrt(k.values)
-
-    # interpolate!(nutf, nut, config)
-    # correct_boundaries!(nutf, nut, nut.BCs, time, config)
-    # correct_eddy_viscosity!(nutf, nut.BCs, model, config)
-
-
-    # goodish iwth gradU.result
-
-    #
     
     @. Dkf.values = Ce.values*rho.values*sqrt(k.values)/(Δ.values)
     # @. Dkf.values = 1.048*rho.values*sqrt(k.values)/(Δ.values)

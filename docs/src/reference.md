@@ -17,6 +17,7 @@ Modules = [
     XCALibre.Simulate,
     XCALibre.Solvers,
     XCALibre.Postprocess,
-    XCALibre.Preprocess
+    XCALibre.Preprocess,
+    XCALibre.Distribute
     ]
 ```

@@ -118,39 +118,39 @@ solvers = (
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         convergence = 1e-8,
-        relax       = 0.6,
-        rtol = 1e-3
+        relax       = 0.7,
+        rtol = 1e-2
     ),
     p = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
         # preconditioner = DILU(), # CPU Only
-        convergence = 1e-11,
-        relax       = 0.1,
+        convergence = 1e-8,
+        relax       = 0.3,
         rtol = 1e-3,
         itmax = 4000
     ),
     y = SolverSetup(
         solver      = Cg(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(),
-        convergence = 1e-10,
-        rtol = 1e-5,
+        convergence = 1e-8,
+        rtol = 1e-2,
         relax       = 0.7,
         itmax = 5000
     ),
     k = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), # DILU Jacobi
-        convergence = 1e-10,
+        convergence = 1e-8,
         relax       = 0.6,
-        rtol = 1e-3
+        rtol = 1e-2
     ),
     omega = SolverSetup(
         solver      = Bicgstab(), # Bicgstab(), Gmres()
         preconditioner = Jacobi(), 
-        convergence = 1e-10,
+        convergence = 1e-8,
         relax       = 0.6,
-        rtol = 1e-3
+        rtol = 1e-2
     )
 )
 
@@ -170,34 +170,3 @@ initialise!(model.turbulence.omega, ω_inlet) # ω_inlet
 initialise!(model.turbulence.nut, k_inlet/ω_inlet) # k_inlet/ω_inlet
 
 residuals = run!(model, config, output=OpenFOAM()) # 36.90k allocs
-
-# Reff = stress_tensor(model.momentum.U, nu, model.turbulence.nut)
-# Fp = pressure_force(:wall, model.momentum.p, 1.25)
-# Fv = viscous_force(:wall, model.momentum.U, 1.25, nu, model.turbulence.nut)
-
-
-# plot(; xlims=(0,494))
-# plot!(1:length(Rx), Rx, yscale=:log10, label="Ux")
-# plot!(1:length(Ry), Ry, yscale=:log10, label="Uy")
-# plot!(1:length(Rp), Rp, yscale=:log10, label="p")
-
-# # PROFILING CODE
-
-# using Profile, PProf
-
-# GC.gc()
-
-# initialise!(model.momentum.U, velocity)
-# initialise!(model.momentum.p, 0.0)
-# initialise!(model.turbulence.k, k_inlet)
-# initialise!(model.turbulence.omega, ω_inlet)
-# initialise!(model.turbulence.nut, νt_inlet)
-
-# residuals = run!(model, config)
-
-# Profile.Allocs.clear()
-# Profile.Allocs.@profile sample_rate=0.1 begin 
-# residuals = run!(model, config)
-# end
-
-# PProf.Allocs.pprof()

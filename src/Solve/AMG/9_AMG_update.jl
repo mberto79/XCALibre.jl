@@ -65,14 +65,16 @@ function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solve
     if isempty(hierarchy.host_levels)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
-        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup; log_diagnostics=true)
+        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup;
+            log_diagnostics=true, index_type=eltype(hierarchy.rowptr_pattern))
         return workspace
     end
 
     if !_pattern_matches(hierarchy, A)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
-        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup; log_diagnostics=false)
+        workspace.hierarchy = setup_hierarchy(setup_matrix, solver, hardware.backend, hardware.workgroup;
+            log_diagnostics=false, index_type=eltype(hierarchy.rowptr_pattern))
         return workspace
     end
 
@@ -124,12 +126,17 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     end
 
     copyto!(values, x)
-    workspace.iterations == itmax && @warn "Maximum number of iterations reached!"
+    workspace.iterations >= itmax && @warn "Maximum number of iterations reached!" maxlog=10
+
     return residual(phiEqn, component, config)
 end
 
 function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::AMGSolver, A, b, x; itmax, atol, rtol)
     return amg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+end
+
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Bicgstab, A, b, x; itmax, atol, rtol)
+    return amg_bicgstab_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 end
 
 function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol)

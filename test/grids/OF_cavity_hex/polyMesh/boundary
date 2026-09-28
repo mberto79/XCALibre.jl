@@ -19,12 +19,19 @@ FoamFile
     walls
     {
         type            patch;
+        inGroups        List<word> 1(wallGroup);
         nFaces          125;
         startFace       300;
     }
     top
     {
         type            patch;
+        inGroups        List<word>
+        2
+        (
+            lidGroup
+            movingGroup
+        );
         nFaces          25;
         startFace       425;
     }

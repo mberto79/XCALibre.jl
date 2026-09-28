@@ -109,14 +109,14 @@ initialise!(model.momentum.p, operating_pressure)
 initialise!(model.momentum.U, noSlipVelocity)
 initialise!(model.fluid.alpha, 0.0)
 setField_Box!(mesh=mesh, field=model.fluid.alpha, value=1.0,
-              min_corner=min_corner_vec, max_corner=max_corner_vec)
+              min_corner=min_corner_vec, max_corner=max_corner_vec, config=config)
 
 
 # Total water volume before the solve
 cell_volumes = [c.volume for c ∈ mesh.cells]
 initial_water_volume = sum(model.fluid.alpha.values .* cell_volumes)
 
-residuals = run!(model, config)
+residuals = run!(model, config; progress=false)
 
 
 # 1) Mass conservation: total water volume must be unchanged

@@ -9,6 +9,7 @@ using StaticArrays
 import KernelAbstractions as KA
 
 using XCALibre.Multithread
+using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 
 include("Fields_0_types.jl")

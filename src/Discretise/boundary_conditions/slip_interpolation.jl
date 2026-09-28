@@ -11,11 +11,8 @@ end
     BC::Slip, psif::FaceVectorField, psi, boundary_cellsID, time, fID)
     @inbounds begin
         cID = boundary_cellsID[fID]
-        face = psi.mesh.faces[fID]
-        (; normal) = face
+        normal = psi.mesh.faces.normal[fID]
 
-        psi_cell = psi[cID]
-        
         psi_cell = psi[cID]
         psi_normal = (psi_cell⋅normal)*normal
 

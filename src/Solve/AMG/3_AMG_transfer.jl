@@ -35,7 +35,7 @@ _launch_amg_kernel!(hierarchy::AbstractAMGHierarchy, kernel, ndrange, args...) =
 
 function _launch_amg_kernel!(backend, workgroup::Integer, kernel, ndrange, args...)
     ndrange <= 0 && return nothing
-    kernel! = kernel(_setup(backend, workgroup, ndrange)...)
+    kernel! = _sized(kernel, backend, workgroup, ndrange)
     kernel!(args...)
     return nothing
 end

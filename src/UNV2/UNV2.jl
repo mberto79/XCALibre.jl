@@ -8,6 +8,7 @@ using Printf
 
 using XCALibre.Mesh
 
+using XCALibre.Mesh: _with_index_capacity
 include("UNV2_0_types.jl")
 include("UNV2_1_loader.jl")
 include("UNV2_2_geometry.jl")

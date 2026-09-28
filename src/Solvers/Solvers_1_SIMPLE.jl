@@ -28,7 +28,8 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing
+    petsc_options="", restart=nothing,
+    boundedturb=false, wallfn_v2=false, wallfn_binomial=false
     )
     check_distributed_support(:SIMPLE, model)
 
@@ -39,7 +40,10 @@ function simple!(
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
-        restart=restart
+        restart=restart,
+        boundedturb=boundedturb,
+        wallfn_v2=wallfn_v2,
+        wallfn_binomial=wallfn_binomial
         )
 
     return residuals
@@ -49,7 +53,8 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing
+    petsc_options="", restart=nothing,
+    boundedturb=false, wallfn_v2=false, wallfn_binomial=false
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -107,14 +112,18 @@ function setup_incompressible_solvers(
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
-        restart=restart)
+        restart=restart,
+        boundedturb=boundedturb,
+        wallfn_v2=wallfn_v2,
+        wallfn_binomial=wallfn_binomial)
 
     return residuals
 end # end function
 
 function SIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing,
+    boundedturb=false, wallfn_v2=false, wallfn_binomial=false
     )
     
     # Extract model variables and configuration
@@ -246,7 +255,8 @@ function SIMPLE(
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
         correct_velocity!(U, Hv, ∇p, rD, config)
 
-        turbulence!(turbulenceModel, model, S, prev, time, config)
+        turbulence!(turbulenceModel, model, S, prev, time, config;
+            boundedturb=boundedturb, wallfn_v2=wallfn_v2, wallfn_binomial=wallfn_binomial)
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx

@@ -157,7 +157,7 @@ Run turbulence model transport equations.
 
 """
 function turbulence!(
-    rans::KOmegaModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config
+    rans::KOmegaModel, model::Physics{T,F,SO,M,Tu,E,D,BI}, S, prev, time, config; kwargs...
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain

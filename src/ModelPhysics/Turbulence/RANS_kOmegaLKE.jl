@@ -144,7 +144,7 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmegaLKE, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::KOmegaLKE, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config; kwargs...
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     @info "Initialising k-ω LKE model..."

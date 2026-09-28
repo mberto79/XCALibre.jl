@@ -67,7 +67,7 @@ Returns a structure holding the fields and data needed for this model
 
 """
 function initialise(
-    turbulence::Smagorinsky, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::Smagorinsky, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config; kwargs...
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime, boundaries) = config

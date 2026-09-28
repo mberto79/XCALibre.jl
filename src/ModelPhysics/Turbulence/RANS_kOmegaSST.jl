@@ -100,7 +100,8 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmegaSST, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
+    turbulence::KOmegaSST, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config;
+    meshwave::Bool=false
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime, boundaries) = config
@@ -169,7 +170,11 @@ function initialise(
     k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config; label="k")
     ω_eqn = wrap_eqn(ω_eqn, mesh, solvers.omega, config; label="omega")
 
-    new_config = wall_distance!(model, model.wall_info, config)
+    new_config = if meshwave
+        wall_distance_meshwave!(model, model.wall_info, config)
+    else
+        wall_distance!(model, model.wall_info, config)
+    end
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω, wall_scratch(mesh, boundaries, config)), new_config

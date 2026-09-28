@@ -28,7 +28,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing
+    petsc_options="", restart=nothing, linearupwind=false
     )
     check_distributed_support(:SIMPLE, model)
 
@@ -39,7 +39,8 @@ function simple!(
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
-        restart=restart
+        restart=restart,
+        linearupwind=linearupwind
         )
 
     return residuals
@@ -49,7 +50,7 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing
+    petsc_options="", restart=nothing, linearupwind=false
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -107,16 +108,22 @@ function setup_incompressible_solvers(
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
-        restart=restart)
+        restart=restart,
+        linearupwind=linearupwind)
 
     return residuals
 end # end function
 
 function SIMPLE(
-    model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing
+    model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing,
+    linearupwind=false
     )
-    
+
+    if linearupwind
+        @info "linearupwind=true: U convection uses Upwind + deferred gradient correction."
+    end
+
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
@@ -191,7 +198,9 @@ function SIMPLE(
     for iteration ∈ start+1:iterations
         time = iteration
 
-        rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
+        rx, ry, rz = solve_equation!(
+            U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config;
+            gradU = linearupwind ? gradU : nothing, mdotf = mdotf)
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config; halo=false)
@@ -247,6 +256,11 @@ function SIMPLE(
         correct_velocity!(U, Hv, ∇p, rD, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config)
+        if linearupwind
+            # OpenFOAM pairs linearUpwindV with a *limited* gradient (cellLimited
+            # Gauss linear 1); the raw gradient alone diverges (confirmed by ablation).
+            limit_gradient!(CellBased(), gradU, U, config)
+        end
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx

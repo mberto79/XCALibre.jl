@@ -368,7 +368,7 @@ function turbulence!(
     implicit_relaxation!(kl_eqn, kl.values, solvers.kl.relax, nothing, config)
     update_preconditioner!(kl_eqn.preconditioner, mesh, config)
     kl_res = solve_system!(kl_eqn, solvers.kl, kl, nothing, config)
-    bound!(kl, config)
+    bound!(kl, prev, config)
 
     # Calculate Gradients for Cross-Diffusion  
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
@@ -398,7 +398,7 @@ function turbulence!(
     constrain_equation!(ω_eqn, boundaries.omega, model, config, wall_scratch) 
     update_preconditioner!(ω_eqn.preconditioner, mesh, config)
     ω_res = solve_system!(ω_eqn, solvers.omega, omega, nothing, config)
-    bound!(omega, config)
+    bound!(omega, prev, config)
 
     # Calculate fv and setup k equation (fused)
     xcal_foreach(k, config) do i
@@ -434,7 +434,7 @@ function turbulence!(
     implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
-    bound!(k, config)
+    bound!(k, prev, config)
 
     # Calculate Final nutL and nut
     xcal_foreach(nut, config) do i

@@ -1,5 +1,7 @@
 # TO DO: These functions needs to be organised in a more sensible manner
-function bound!(field, config)
+bound!(field, config) = bound!(field, similar(field.values), config)
+
+function bound!(field, work, config)
     # Extract hardware configuration
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -7,14 +9,18 @@ function bound!(field, config)
     (; values, mesh) = field
     (; cells, cell_neighbours) = mesh
 
+    # Jacobi update: every cell reads its neighbours from the unbounded copy in `work`,
+    # so the result does not depend on the order in which cells are bounded.
+    copyto!(work, values)
+
     # set up and launch kernel
     ndrange = length(values)
     kernel! = _sized(_bound!, backend, workgroup, ndrange)
-    kernel!(values, cells, cell_neighbours)
+    kernel!(values, work, cells, cell_neighbours)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _bound!(values, cells, cell_neighbours)
+@kernel function _bound!(values, unbounded, cells, cell_neighbours)
     i = @index(Global)
 
     sum_flux = 0.0
@@ -25,15 +31,16 @@ end
     @inbounds begin
         for fi ∈ cells[i].faces_range
             cID = cell_neighbours[fi]
-            sum_flux += max(values[cID], mzero) # bounded sum
+            sum_flux += max(unbounded[cID], mzero) # bounded sum
             sum_area += 1
         end
         average = sum_flux/sum_area
 
+        vi = unbounded[i]
         values[i] = max(
             max(
-                values[i],
-                average*signbit(values[i])
+                vi,
+                average*signbit(vi)
             ),
             mzero
         )

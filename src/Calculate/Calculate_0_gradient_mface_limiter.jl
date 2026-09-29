@@ -31,8 +31,9 @@ end
             fID = cell_faces[fi]
             FN = F[cell_neighbours[fi]]
 
-            minF = min(FP, FN)
-            maxF = max(FP, FN)
+            # componentwise: min/max of two vectors compare them lexicographically
+            minF = min.(FP, FN)
+            maxF = max.(FP, FN)
             d = faces.centre[fID] - c
 
             set_limiter(method, ∇F, cID, maxF - FP, minF - FP, d)

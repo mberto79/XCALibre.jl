@@ -322,7 +322,8 @@ function turbulence!(
         S_dev = 0.5*(g + g') - divU_val/3*I # Dev(S)
         S2[i] = 2.0 * sum(S_dev.^2) # S2 = 2*magSqr(dev(symm(gradU)))
         Ω[i] = sqrt(2.0 * sum((0.5*(g - g')).^2)) # Omega = sqrt(2)*mag(skew(gradU))
-        Pk[i] = sum(g .* 2*S_dev) # Pk = gradU && dev(twoSymm(gradU))
+        # g .* 2*S_dev parses as (g .* 2)*S_dev, a matrix product; the double contraction needs the brackets
+        Pk[i] = 2.0*sum(g .* S_dev) # Pk = gradU && dev(twoSymm(gradU))
 
         # Calculate velocity magnitude
         u = U[i]

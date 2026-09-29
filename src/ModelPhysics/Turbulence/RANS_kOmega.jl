@@ -196,7 +196,7 @@ function turbulence!(
     xcal_foreach(Pkv, config) do i
         @inbounds begin
             gradi = gradUv[i]
-            Sij = 0.5*(gradi + gradi')
+            Sij = (gradi + gradi')/2
             GbyNu = 2*sum(Sij .* Sij)
             rhoi = rhov[i]
             omegai = omegav[i]

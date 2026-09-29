@@ -70,7 +70,8 @@ end
     omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
     (; β⁺, α1, σk1, σk2, σω1, σω2, β1, β2, κ) = rans.args
-    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ)
+    coeffs = map(ScalarFloat(mesh),
+        (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ))
     gamma1 = (coeffs.β1/coeffs.β⁺) - coeffs.σω1*coeffs.κ^2/sqrt(coeffs.β⁺)
     gamma2 = (coeffs.β2/coeffs.β⁺) - coeffs.σω2*coeffs.κ^2/sqrt(coeffs.β⁺)
 
@@ -205,6 +206,7 @@ function turbulence!(
     (; solvers, runtime, boundaries) = config
 
     distributed = is_distributed_mesh(mesh)
+    scalar = ScalarFloat(mesh)
     # wrapped eqns solve through the seam; raw eqns are assembled/discretised in place
     k_deqn, ω_deqn = k_eqn, ω_eqn
     k_eqn, ω_eqn = unwrap_eqn(k_eqn), unwrap_eqn(ω_eqn)
@@ -232,22 +234,22 @@ function turbulence!(
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
 
-    @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, 1e-10)
+    @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, scalar(1e-10))
 
     @. arg1.values = min( min(
             max(
-                sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 
+                sqrt(max(k.values, scalar(eps())))/(coeffs.β⁺*omega.values*y.values), 
                 500*nu.values/(omega.values*y.values^2)
                 ),
             4*coeffs.σω2*k.values/(CDkω.values*y.values^2)),
-         10.0
+         scalar(10)
              )
     
 
     @. arg2.values = min(max(
-            2*sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 
+            2*sqrt(max(k.values, scalar(eps())))/(coeffs.β⁺*omega.values*y.values), 
             500*nu.values/(y.values^2*omega.values)) ,
-        100.0
+        scalar(100)
         )
 
     @. F2.values = tanh(arg2.values^2)
@@ -255,11 +257,11 @@ function turbulence!(
     interpolate!(F1f, F1, config)
 
 
-    @. σkf.values = coeffs.σk1*F1f.values + (1.0 - F1f.values)*coeffs.σk2
-    @. σωf.values = coeffs.σω1*F1f.values + (1.0 - F1f.values)*coeffs.σω2
-    @. β.values = coeffs.β1*F1.values + (1.0 - F1.values)*coeffs.β2
+    @. σkf.values = coeffs.σk1*F1f.values + (1 - F1f.values)*coeffs.σk2
+    @. σωf.values = coeffs.σω1*F1f.values + (1 - F1f.values)*coeffs.σω2
+    @. β.values = coeffs.β1*F1.values + (1 - F1.values)*coeffs.β2
     # Here I'm using hard-coded values - need to revert to proper defs used above
-    @. γ.values = 5/9*F1.values + (1.0 - F1.values)*0.44 # Chris: revert if you want
+    @. γ.values = scalar(5/9)*F1.values + (1 - F1.values)*scalar(0.44) # Chris: revert if you want
 
     @. mueffω.values = rhof.values * (nuf.values + σωf.values*nutf.values)
     @. mueffk.values = rhof.values * (nuf.values + σkf.values*nutf.values)

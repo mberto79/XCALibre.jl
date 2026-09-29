@@ -17,9 +17,9 @@ end
 @kernel function _bound!(values, cells, cell_neighbours)
     i = @index(Global)
 
-    sum_flux = 0.0
+    sum_flux = zero(eltype(values))
     sum_area = 0
-    average = 0.0
+    average = zero(eltype(values))
     @uniform mzero = eps(eltype(values)) # machine zero
 
     @inbounds begin
@@ -47,9 +47,9 @@ end
 
 ω_vis(nu, y, beta1) = 6*nu/(beta1*y^2)
 
-ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu^0.25*kappa*y)
+ω_log(k, y, cmu::T, kappa) where T = sqrt(k)/(cmu^T(0.25)*kappa*y)
 
-y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
+y_plus(k, nu, y, cmu::T) where T = cmu^T(0.25)*y*sqrt(k)/nu
 
 sngrad(Ui, Uw, delta, normal) = begin
     Udiff = (Ui - Uw)
@@ -61,7 +61,7 @@ end
 mag(vector) = sqrt(vector[1]^2 + vector[2]^2 + vector[3]^2) 
 
 nut_wall(nu, yplus, kappa, E::T) where T = begin
-    max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
+    max(nu*(yplus*kappa/log(max(E*yplus, T(1.0 + 1e-4))) - one(T)), zero(T))
 end
 
 # A wall cell can own several faces of one patch and faces on several patches. Summing
@@ -183,7 +183,7 @@ end
     face = faces[fID]
     nuc = nu[cID]
     (; delta, normal)= face
-    uStar = cmu^0.25*sqrt(k[cID])
+    uStar = cmu^eltype(sums)(0.25)*sqrt(k[cID])
     dUdy = uStar/(kappa*delta)
     yplus = y_plus(k[cID], nuc, delta, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
@@ -261,7 +261,7 @@ end
     if yplus > yPlusLam
         values[fID] = nutw
     else
-        values[fID] = 0.0
+        values[fID] = zero(eltype(values))
     end
 end
 

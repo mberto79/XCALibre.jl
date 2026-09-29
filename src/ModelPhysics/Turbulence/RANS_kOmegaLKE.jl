@@ -383,7 +383,7 @@ function turbulence!(
         Pω[i] = coeffs.Cω1 * Pk[i] # production
         Pω[i] -= (2.0/3.0) * coeffs.Cω1 * divU[i] * omega_i # desctruction
         Dωf[i] = coeffs.Cω2 * omega_i # dissipation
-        nueffωS[i] = nu[i] + coeffs.σω * (k[i] / safe_omega) # diffusion
+        nueffωS[i] = nu[i] + coeffs.σω * γ[i] * (k[i] / safe_omega) # diffusion (Medina et al. 2018, Eq. 23)
         dkdomegadx[i] = max((coeffs.σd / (safe_omega^2)) * dkdomegadx[i], 0.0) # x-diffusion
     end
 
@@ -420,7 +420,7 @@ function turbulence!(
         Dkf[i] = coeffs.Cμ * gamma_val * omega_i
 
         # Diffusion
-        nueffkS[i] = nu[i] + coeffs.σk * (safe_k / safe_omega)
+        nueffkS[i] = nu[i] + coeffs.σk * gamma_val * (safe_k / safe_omega) # Medina et al. 2018, Eq. 22
     end
 
     interpolate!(nueffk, nueffkS, config)

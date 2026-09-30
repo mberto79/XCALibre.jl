@@ -86,4 +86,41 @@ config_for(workgroup) = (hardware = Hardware(backend=CPU(), workgroup=workgroup)
         # bitwise identical for every schedule
         @test all(limited(workgroup) == serial for _ ∈ 1:repeats for workgroup ∈ workgroups)
     end
+
+    @testset "MFaceBased limiter bounds each vector component" begin
+        U0 = [SVector(phi0[i], cos(8000xs[i])*sin(6000ys[i]), 0.0) for i ∈ 1:ncells]
+        grad0 = [SMatrix{3,3}(4000*sin(3000xs[i]), 2000*cos(4000xs[i]), 0.0,
+            3000*cos(5000ys[i]), 5000*sin(2000ys[i]), 0.0, 0.0, 0.0, 0.0) for i ∈ 1:ncells]
+        # serial reference: the scalar limiter applied to each row (component gradient) in turn
+        reference = copy(grad0)
+        for i ∈ 1:ncells, fi ∈ cells[i].faces_range
+            d = faces[cell_faces[fi]].centre - cells[i].centre
+            rows = map(1:3) do r
+                g = reference[i][r, :]
+                FP, FN = U0[i][r], U0[cell_neighbours[fi]][r]
+                δmax, δmin = max(FP, FN) - FP, min(FP, FN) - FP
+                fval = g⋅d
+                fval > δmax && return g + d*(δmax - fval)/(d⋅d)
+                fval < δmin && return g + d*(δmin - fval)/(d⋅d)
+                g
+            end
+            reference[i] = vcat(transpose.(rows)...)
+        end
+        @test count(reference .!= grad0) > ncells ÷ 10 # the limiter is active
+        # non-vacuous: on some faces the lexicographic and per-component minima differ
+        @test any(min(U0[i], U0[cell_neighbours[fi]]) != min.(U0[i], U0[cell_neighbours[fi]])
+            for i ∈ 1:ncells for fi ∈ cells[i].faces_range)
+
+        U = VectorField(mesh)
+        U.x.values .= getindex.(U0, 1)
+        U.y.values .= getindex.(U0, 2)
+        U.z.values .= getindex.(U0, 3)
+        ∇U = Grad{Gauss}(U)
+        for i ∈ 1:ncells
+            ∇U.result[i] = grad0[i]
+        end
+        limit_gradient!(MFaceBased(mesh), ∇U, U, config_for(3))
+        scale = maximum(norm, grad0)
+        @test all(norm(∇U[i] - reference[i]) <= 1e-12*scale for i ∈ 1:ncells)
+    end
 end

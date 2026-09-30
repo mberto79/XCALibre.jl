@@ -230,7 +230,7 @@ function turbulence!(
     ω_res = solve_system!(ω_deqn, solvers.omega, omega, nothing, config)
 
     # constrain_boundary!(omega, boundaries.omega, model, config) # active with WFs only
-    bound!(omega, config)
+    bound!(omega, prev, config)
     # explicit_relaxation!(omega, prev, solvers.omega.relax, config)
 
     # Solve k equation
@@ -241,7 +241,7 @@ function turbulence!(
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     distributed || update_preconditioner!(k_eqn.preconditioner, mesh, config)
     k_res = solve_system!(k_deqn, solvers.k, k, nothing, config)
-    bound!(k, config)
+    bound!(k, prev, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     kv = k.values # nutv and omegav are bound above; rebinding a captured name boxes it

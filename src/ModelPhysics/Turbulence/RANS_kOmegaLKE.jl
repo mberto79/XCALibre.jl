@@ -284,7 +284,8 @@ function turbulence!(
     mesh = model.domain
     (; momentum) = model
     (; k, omega, kl, nut, y, kf, omegaf, klf, nutf, coeffs, Tu) = rans.turbulence
-    (; nu) = model.fluid
+    (; nu, nuf) = model.fluid
+    (; boundary_cellsID) = mesh
     (; U, Uf, gradU) = S
     
     (; k_eqn, ω_eqn, kl_eqn, nueffkLS, nueffkS, nueffωS, nuL, nuts, Ω, γ, ∇k, ∇ω, normU, divU, S2, ReLambda, state, wall_scratch) = rans
@@ -322,7 +323,8 @@ function turbulence!(
         S_dev = 0.5*(g + g') - divU_val/3*I # Dev(S)
         S2[i] = 2.0 * sum(S_dev.^2) # S2 = 2*magSqr(dev(symm(gradU)))
         Ω[i] = sqrt(2.0 * sum((0.5*(g - g')).^2)) # Omega = sqrt(2)*mag(skew(gradU))
-        Pk[i] = sum(g .* 2*S_dev) # Pk = gradU && dev(twoSymm(gradU))
+        # g .* 2*S_dev parses as (g .* 2)*S_dev, a matrix product; the double contraction needs the brackets
+        Pk[i] = 2.0*sum(g .* S_dev) # Pk = gradU && dev(twoSymm(gradU))
 
         # Calculate velocity magnitude
         u = U[i]
@@ -359,7 +361,13 @@ function turbulence!(
     end
 
     interpolate!(nueffkL, nueffkLS, config)
-    correct_boundaries!(nueffkL, nueffkLS, boundaries.nut, time, config)
+    # Boundary faces use the boundary values of kl, k and omega (gamma from the owner cell), not the
+    # nut boundary conditions: a low-Re wall has nut = 0, which would remove the viscous wall flux.
+    correct_boundaries!(klf, kl, boundaries.kl, time, config)
+    xcal_foreach(boundary_cellsID, config) do fID
+        cID = boundary_cellsID[fID]
+        nueffkL[fID] = nuf[fID] + coeffs.σkL * sqrt(max(klf[fID], 0.0)) * y[cID]
+    end
 
     # Solve kl equation
     prev .= kl.values
@@ -383,12 +391,17 @@ function turbulence!(
         Pω[i] = coeffs.Cω1 * Pk[i] # production
         Pω[i] -= (2.0/3.0) * coeffs.Cω1 * divU[i] * omega_i # desctruction
         Dωf[i] = coeffs.Cω2 * omega_i # dissipation
-        nueffωS[i] = nu[i] + coeffs.σω * (k[i] / safe_omega) # diffusion
+        nueffωS[i] = nu[i] + coeffs.σω * γ[i] * (k[i] / safe_omega) # diffusion (Medina et al. 2018, Eq. 23)
         dkdomegadx[i] = max((coeffs.σd / (safe_omega^2)) * dkdomegadx[i], 0.0) # x-diffusion
     end
 
     interpolate!(nueffω, nueffωS, config)
-    correct_boundaries!(nueffω, nueffωS, boundaries.nut, time, config)
+    correct_boundaries!(kf, k, boundaries.k, time, config)
+    correct_boundaries!(omegaf, omega, boundaries.omega, time, config)
+    xcal_foreach(boundary_cellsID, config) do fID
+        cID = boundary_cellsID[fID]
+        nueffω[fID] = nuf[fID] + coeffs.σω * γ[cID] * max(kf[fID], 0.0) / max(omegaf[fID], 1e-15)
+    end
 
     # Solve omega equation
     prev .= omega.values
@@ -420,11 +433,15 @@ function turbulence!(
         Dkf[i] = coeffs.Cμ * gamma_val * omega_i
 
         # Diffusion
-        nueffkS[i] = nu[i] + coeffs.σk * (safe_k / safe_omega)
+        nueffkS[i] = nu[i] + coeffs.σk * gamma_val * (safe_k / safe_omega) # Medina et al. 2018, Eq. 22
     end
 
     interpolate!(nueffk, nueffkS, config)
-    correct_boundaries!(nueffk, nueffkS, boundaries.nut, time, config)
+    correct_boundaries!(omegaf, omega, boundaries.omega, time, config) # omega was just solved
+    xcal_foreach(boundary_cellsID, config) do fID
+        cID = boundary_cellsID[fID]
+        nueffk[fID] = nuf[fID] + coeffs.σk * γ[cID] * max(kf[fID], 0.0) / max(omegaf[fID], 1e-15)
+    end
     correct_production!(Pk, boundaries.k, model, S.gradU, config, wall_scratch)
 
     # Solve k equation

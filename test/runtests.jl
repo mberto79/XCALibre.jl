@@ -79,6 +79,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_wall_function_averaging.jl")
     end
 
+    @testset "Parallel cell updates Unit Test" begin
+        include("unit_test_parallel_cell_updates.jl")
+    end
+  
     @testset "KOmegaLKE Diffusion Unit Test" begin
         include("unit_test_lke_diffusion.jl")
     end

@@ -70,6 +70,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_neumann_sign.jl")
     end
 
+    @testset "BiCGStab shadow vector" begin
+        include("unit_test_bicgstab_shadow.jl")
+    end
+
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
     end
@@ -77,6 +81,18 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     @testset "Wall Production Density Unit Test" begin
         include("unit_test_wall_production_density.jl")
         include("unit_test_wall_function_averaging.jl")
+    end
+
+    @testset "Parallel cell updates Unit Test" begin
+        include("unit_test_parallel_cell_updates.jl")
+    end
+  
+    @testset "KOmegaLKE Diffusion Unit Test" begin
+        include("unit_test_lke_diffusion.jl")
+    end
+  
+    @testset "KOmegaLKE Production Unit Test" begin
+        include("unit_test_lke_production.jl")
     end
 
     @testset "setFields Function Unit Test" begin

@@ -44,7 +44,7 @@ end
     nutf = FaceScalarField(mesh)
     k = ScalarField(mesh)
     kf = FaceScalarField(mesh)
-    coeffs = les.args
+    coeffs = map(ScalarFloat(mesh), les.args)
     KEquation(nut, nutf, k, kf, coeffs)
 end
 
@@ -162,7 +162,7 @@ function turbulence!(
         mueffk[i] = rhof[i]*(nuf[i] + nutf[i])
     end
 
-    twoThirds = 2/3
+    twoThirds = ScalarFloat(mesh)(2/3)
     wk = _setup(backend, workgroup, length(Pk))[2]
     AK.foreachindex(Pk, min_elems=wk, block_size=wk) do i 
         Pk[i] = 2*nut[i]*rho[i]*(gradU[i]⋅Dev(S)[i])

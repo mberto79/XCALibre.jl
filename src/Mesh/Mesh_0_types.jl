@@ -392,6 +392,17 @@ Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_no
     face_gDiff_coefficients(faces), boundaries, nodes, node_cells, get_float, get_int,
     boundary_cellsID)
 
+# first touch: arrays reached through a per-cell, face or node range are cut by that range, so
+# each thread places the entries of the elements it owns
+Adapt.adapt_structure(to::FirstTouch, m::Mesh2) = _first_touch_mesh(Mesh2, to, m)
+Adapt.adapt_structure(to::FirstTouch, m::Mesh3) = _first_touch_mesh(Mesh3, to, m)
+_first_touch_mesh(M, to, m) = M(adapt(to, m.cells), first_touch_copy(m.cell_nodes, m.cell_nodes_range),
+    first_touch_copy(m.cell_faces, m.cell_faces_range), first_touch_copy(m.cell_neighbours, m.cell_faces_range),
+    first_touch_copy(m.cell_nsign, m.cell_faces_range), adapt(to, m.faces),
+    first_touch_copy(m.face_nodes, m.face_nodes_range), adapt(to, m.face_gDiff), adapt(to, m.boundaries),
+    adapt(to, m.nodes), first_touch_copy(m.node_cells, m.node_cells_range), adapt(to, m.get_float),
+    adapt(to, m.get_int), adapt(to, m.boundary_cellsID))
+
 Base.show(io::IO, mesh::AbstractMesh) = begin
     if typeof(mesh) <: Mesh2
         meshType = "2D"

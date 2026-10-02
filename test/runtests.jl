@@ -4,6 +4,9 @@ using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
 using Statistics
+using Random
+using Interpolations: linear_interpolation
+using FFTW
 using Test
 
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
@@ -156,6 +159,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "3d_incompressible_laminar_cascade_periodic.jl",
             "2d_incompressible_pitzdaily_KEquation.jl",
             "2d_incompressible_pitzdaily_Smagorinsky.jl",
+            "3d_incompressible_isotropic_turbulence_WALE.jl",
             "2d_taylor_couette_laminar.jl"
         ]
 

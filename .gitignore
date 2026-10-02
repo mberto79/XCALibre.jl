@@ -10,6 +10,7 @@ constant/
 docs/[0-9]*/
 # solver time directories written by the test suite (/[0-9]*/ is root-anchored)
 test/[0-9]*/
+!test/0_TEST_CASES/
 
 *.csv
 *.unv
@@ -21,6 +22,7 @@ processor*/
 *.jls
 
 !NIST_*.csv
+!test/CBC_Data/*.csv
 *.txt
 CLAUDE.md
 AGENTS.md

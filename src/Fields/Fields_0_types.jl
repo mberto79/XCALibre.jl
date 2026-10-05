@@ -68,7 +68,7 @@ ScalarField(mesh::AbstractMesh; store_mesh=true) =begin
     ncells  = length(mesh.cells)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    arr = KernelAbstractions.zeros(backend, F, ncells)
+    arr = first_touch_zeros(backend, F, ncells)
     if store_mesh
         return ScalarField(arr, mesh)
     else
@@ -86,7 +86,7 @@ FaceScalarField(mesh::AbstractMesh; store_mesh=true) = begin
     nfaces  = length(mesh.faces)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    arr = KernelAbstractions.zeros(backend, F, nfaces)
+    arr = first_touch_zeros(backend, F, nfaces)
     if store_mesh
         return FaceScalarField(arr, mesh)
     else
@@ -366,7 +366,7 @@ _mesh(field::Vorticity) = _mesh(field.U)
 
 Base.getindex(S::Vorticity, i::I) where {I<:Integer} = begin
     gradi = S.gradU[i]
-    0.5*(gradi - gradi')
+    (gradi - gradi')/2
 end
 
 struct StrainRate{G, GT, TU, TUF} <: AbstractTensorField
@@ -380,7 +380,7 @@ _mesh(field::StrainRate) = _mesh(field.U)
 
 Base.getindex(S::StrainRate{G, GT, TU, TUF}, i::I) where {G, GT, TU, TUF, I<:Integer} = begin
     gradi = S.gradU[i]
-    0.5*(gradi + gradi')
+    (gradi + gradi')/2
 end
 
 struct Dev{T<:AbstractTensorField} <: AbstractTensorField
@@ -390,7 +390,7 @@ Adapt.@adapt_structure Dev
 
 Base.getindex(T::Dev{Tensor}, i::Idx) where {Tensor<:AbstractTensorField,Idx<:Integer} = begin
     Ti = T.parent[i]
-    Ti - 1/3*tr(Ti)*I
+    Ti - eltype(Ti)(1/3)*tr(Ti)*I
 end
 
 _mesh(field::Dev) = _mesh(field.parent)

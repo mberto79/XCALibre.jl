@@ -55,8 +55,11 @@ end
 Adapt.@adapt_structure KOmegaSSTModel
 
 # Model API constructor (pass user input as keyword arguments and process as needed)
-RANS{KOmegaSST}(; β⁺=0.09, α1=0.31, σk1=0.85, σk2=1.0, σω1=0.5, σω2=0.856, β1=0.075, β2=0.0828, κ=0.41, walls) = begin 
-    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ, walls=walls)
+# `wall_distance`: `MeshWave()` (default) or `Poisson()`, see `AbstractWallDistance`
+RANS{KOmegaSST}(; β⁺=0.09, α1=0.31, σk1=0.85, σk2=1.0, σω1=0.5, σω2=0.856, β1=0.075, β2=0.0828, κ=0.41, walls,
+    wall_distance::AbstractWallDistance=MeshWave()) = begin
+    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ, walls=walls,
+        wall_distance=wall_distance)
     ARG = typeof(coeffs)
     RANS{KOmegaSST,ARG}(coeffs)
 end
@@ -101,8 +104,7 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmegaSST, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config;
-    meshwave::Bool=false
+    turbulence::KOmegaSST, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime, boundaries) = config
@@ -171,11 +173,7 @@ function initialise(
     k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config; label="k")
     ω_eqn = wrap_eqn(ω_eqn, mesh, solvers.omega, config; label="omega")
 
-    new_config = if meshwave
-        wall_distance_meshwave!(model, model.wall_info, config)
-    else
-        wall_distance!(model, model.wall_info, config)
-    end
+    new_config = wall_distance!(model, model.wall_info.walls, config; method=model.wall_info.method)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω, wall_scratch(mesh, boundaries, config)), new_config

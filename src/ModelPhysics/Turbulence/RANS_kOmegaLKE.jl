@@ -63,8 +63,9 @@ end
 Adapt.@adapt_structure KOmegaLKEModel
 
 # Model API constructor
-RANS{KOmegaLKE}(; Tu, walls) = begin
-    args = (Tu=Tu, walls=walls)
+# `wall_distance`: `MeshWave()` (default) or `Poisson()`, see `AbstractWallDistance`
+RANS{KOmegaLKE}(; Tu, walls, wall_distance::AbstractWallDistance=MeshWave()) = begin
+    args = (Tu=Tu, walls=walls, wall_distance=wall_distance)
     ARG = typeof(args)
     RANS{KOmegaLKE,ARG}(args)
 end
@@ -144,7 +145,7 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KOmegaLKE, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config; kwargs...
+    turbulence::KOmegaLKE, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     @info "Initialising k-ω LKE model..."
@@ -229,7 +230,7 @@ function initialise(
     grad!(∇k, kf, k, boundaries.k, time, config)
 
     # Wall distance calculation
-    new_config = wall_distance!(model, model.wall_info, config)
+    new_config = wall_distance!(model, model.wall_info.walls, config; method=model.wall_info.method)
 
 
     init_residuals = (:k, 1.0),(:kl, 1.0),(:omega, 1.0)

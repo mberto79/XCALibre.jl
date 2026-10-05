@@ -28,7 +28,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, meshwave=false
+    petsc_options="", restart=nothing
     )
     check_distributed_support(:SIMPLE, model)
 
@@ -39,8 +39,7 @@ function simple!(
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
-        restart=restart,
-        meshwave=meshwave
+        restart=restart
         )
 
     return residuals
@@ -50,7 +49,7 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, meshwave=false
+    petsc_options="", restart=nothing
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -96,7 +95,7 @@ function setup_incompressible_solvers(
     end
 
     @info "Initialising turbulence model..."
-    turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config; meshwave=meshwave)
+    turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     # wrap eqns for the linear-solve seam: identity serial, DistributedEqn on a DistributedMesh
     U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, label="U")

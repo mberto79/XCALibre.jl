@@ -73,7 +73,7 @@ Initialisation of turbulent transport equations.
 
 """
 function initialise(
-    turbulence::KEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config; kwargs...
+    turbulence::KEquation, model::Physics{T,F,SO,M,Tu,E,D,BI}, mdotf, peqn, config
     ) where {T,F,SO,M,Tu,E,D,BI}
 
     (; solvers, schemes, runtime) = config

@@ -168,3 +168,74 @@ end
         # phi.values[cID] += psif[i]⋅Sf/volume
     end
 end
+# Divergence of a cell tensor field scaled by a face coefficient
+
+"""
+    div!(phi::VectorField, Γf, tensor, BCs, config)
+
+Cell values of ∇·(Γ tensor): `phi[i] = (1/V_i) Σ_f Γf[f] (tensor_f ⋅ S_f)`, where `tensor` is any
+cell tensor field indexed as `tensor[i]` (including lazy forms such as `Dev2(T(gradU))`) and
+`S_f` is the outward face area vector. At internal faces `tensor_f` is the linear interpolation
+of the two cell values with the mesh weights; at boundary faces it is the owner-cell value.
+Faces of `Slip`, `Symmetry` and `Empty` boundaries carry no flux. `BCs` are the boundary
+conditions of the field `tensor` derives from (e.g. `boundaries.U`). Ghost cells of a
+distributed mesh must hold current values of `tensor`.
+"""
+function div!(phi::VectorField, Γf, tensor, BCs, config)
+    mesh = phi.mesh
+    (; cells, cell_faces, cell_nsign, faces) = mesh
+    (; backend, workgroup) = config.hardware
+
+    kernel! = _sized(_div_tensor_cells!, backend, workgroup, length(cells))
+    kernel!(phi, Γf, tensor, cells, cell_faces, cell_nsign, faces)
+    KernelAbstractions.synchronize(backend)
+
+    for BC ∈ BCs
+        _div_tensor_boundary!(phi, Γf, tensor, BC, cells, faces, backend, workgroup)
+    end
+    nothing
+end
+
+# each cell sums the fluxes through its internal faces
+@kernel inbounds=true function _div_tensor_cells!(
+    phi, Γf, tensor, cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, cell_nsign, faces
+    ) where {TF,SV,UR}
+    i = @index(Global)
+    volume, faces_range = cells.volume[i], cells.faces_range[i]
+    Ti = tensor[i]
+    flux_sum = zero(SVector{3,TF})
+    for fi ∈ faces_range
+        fID = cell_faces[fi]
+        nsign = cell_nsign[fi]
+        ownerCells, area, normal, weight = faces.ownerCells[fID], faces.area[fID], faces.normal[fID], faces.weight[fID]
+        # weight is the owner's (ownerCells[1]) share of the face value
+        owner = ownerCells[1] == i
+        wi = owner ? weight : one(TF) - weight
+        nID = owner ? ownerCells[2] : ownerCells[1]
+        Tf = wi*Ti + (one(TF) - wi)*tensor[nID]
+        flux_sum += Γf[fID]*(Tf*normal)*(area*nsign)
+    end
+    phi[i] = flux_sum/volume
+end
+
+_div_tensor_boundary!(phi, Γf, tensor, ::Union{Slip,Symmetry,Empty}, cells, faces, backend, workgroup) =
+    nothing
+
+# boundary faces add their flux to the owner cell (normals point out of the domain)
+function _div_tensor_boundary!(phi, Γf, tensor, BC, cells, faces, backend, workgroup)
+    (; IDs_range) = BC
+    isempty(IDs_range) && return nothing
+    kernel! = _sized(_div_tensor_boundary_kernel!, backend, workgroup, length(IDs_range))
+    kernel!(phi, Γf, tensor, IDs_range, cells, faces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel inbounds=true function _div_tensor_boundary_kernel!(phi, Γf, tensor, IDs_range, cells, faces)
+    i = @index(Global)
+    fID = IDs_range[i]
+    cID = faces.ownerCells[fID][1]
+    flux = Γf[fID]*(tensor[cID]*faces.normal[fID])*(faces.area[fID]/cells.volume[cID])
+    Atomix.@atomic phi.x.values[cID] += flux[1]
+    Atomix.@atomic phi.y.values[cID] += flux[2]
+    Atomix.@atomic phi.z.values[cID] += flux[3]
+end

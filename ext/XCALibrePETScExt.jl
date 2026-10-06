@@ -7,6 +7,26 @@ import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!,
 import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval
 import XCALibre.Mesh: _get_float
 
+# NEW SECTION: PETSc.jl 0.4/0.5 compatibility
+
+# 0.5 (Julia 1.12+) returns outputs instead of filling Refs and takes Strings for C strings;
+# 0.4 serves Julia 1.10. Drop the 0.4 branch once Julia 1.12 is the floor.
+const _V05 = pkgversion(PETSc) >= v"0.5"
+const _destroy! = _V05 ? PETSc.destroy! : PETSc.destroy
+
+if _V05
+    _petsc_has_pkg(petsclib, pkg) = LibPETSc.PetscHasExternalPackage(petsclib, pkg)
+    _mat_info(petsclib, M) = LibPETSc.MatGetInfo(petsclib, M, LibPETSc.MAT_LOCAL)
+    _mat_set_type(petsclib, A, mt) = LibPETSc.MatSetType(petsclib, A, mt)
+else
+    _petsc_has_pkg(petsclib, pkg) =
+        LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits(pkg * "\0")))
+    _mat_info(petsclib, M) =
+        (info = Ref{LibPETSc.MatInfo}(); LibPETSc.MatGetInfo(petsclib, M, LibPETSc.MAT_LOCAL, info); info[])
+    _mat_set_type(petsclib, A, mt) =
+        GC.@preserve mt LibPETSc.MatSetType(petsclib, A, Base.unsafe_convert(Cstring, mt))
+end
+
 # NEW SECTION: KSP/PC mapping (curated; anything else via petsc_options passthrough)
 
 # unmapped types return nothing and must be named through petsc_options
@@ -68,7 +88,7 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     ksp::TK
     n_owned::Int
     sync::SY           # device-wide sync (nothing on host): PETSc and XCALibre use separate streams
-    fill::FI           # host block scatter; nothing on device, where values go through the COO map
+    fill::FI           # host block scatter, or the COO map on device
     place::Ptr{Cvoid}  # Vec(CUDA)PlaceArray: x and b own no storage and borrow the caller's arrays
     reset::Ptr{Cvoid}  # Vec(CUDA)ResetArray
     bptr::Base.RefValue{Ptr{Cvoid}} # b's array, set by passemble! and placed by the next solve
@@ -76,20 +96,17 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     nsolve::Base.RefValue{Int}
 end
 
-_petsc_has_pkg(petsclib, pkg) =
-    LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits(pkg * "\0")))
-
-# narrowest index type that addresses the global system: MatMult is memory-bound, so 32-bit
-# indices move a quarter fewer bytes per nonzero. Only preference-configured libs exist at
-# runtime (wrappers are generated at precompile), so other precisions need their own env.
+# one PetscInt width is loaded per process, fixed by PETSc's "PetscInt" preference at precompile
+# (Int64 unless the user ran PETSc.set_petscint!(Int32)); other precisions need their own env
 function _petsclib(TF, nnz_global)
     libs = filter(l -> l.PetscScalar == TF, PETSc.petsclibs)
     isempty(libs) && error("no PETSc library with PetscScalar=$TF (available: " *
         join(("$(l.PetscScalar)/$(l.PetscInt)" for l ∈ PETSc.petsclibs), ", ") *
         "); run in an env whose PETSc preference points at a $TF build")
     fits = filter(l -> nnz_global <= typemax(l.PetscInt), libs)
-    isempty(fits) && error("the global matrix has $nnz_global nonzeros, more than any " *
-        "$TF PETSc library's index type can address; use a 64-bit-index PETSc build")
+    isempty(fits) && error("the global matrix has $nnz_global nonzeros, more than the loaded " *
+        "$TF PETSc library's $(libs[1].PetscInt) indices can address; run " *
+        "PETSc.set_petscint!(Int64) and restart Julia")
     fits[argmin(map(l -> sizeof(l.PetscInt), fits))]
 end
 
@@ -163,8 +180,8 @@ end
 
 _release!(::Nothing) = nothing
 function _release!(s)
-    isnothing(s.ksp.opts) || PETSc.destroy(s.ksp.opts)
-    foreach(PETSc.destroy, (s.ksp, s.A, s.x, s.b))
+    isnothing(s.ksp.opts) || _destroy!(s.ksp.opts)
+    foreach(_destroy!, (s.ksp, s.A, s.x, s.b))
 end
 
 function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
@@ -292,9 +309,14 @@ function _coo_matrix(petsclib, comm, mt, rowptr, colval, l2g, n, N, nnz_owned)
     coo_j = PI[l2g[colval[k]] - 1 for k ∈ 1:nnz_owned]
     Amat = LibPETSc.MatCreate(petsclib, comm)
     LibPETSc.MatSetSizes(petsclib, Amat, PI(n), PI(n), PI(N), PI(N))
-    GC.@preserve mt LibPETSc.MatSetType(petsclib, Amat, Base.unsafe_convert(Cstring, mt))
+    _mat_set_type(petsclib, Amat, mt)
     LibPETSc.MatSetPreallocationCOO(petsclib, Amat, LibPETSc.PetscCount(nnz_owned), coo_i, coo_j)
-    Amat, nothing
+    Amat, _COOFill(_petsc_sym(petsclib, :MatSetValuesCOO))
+end
+
+# PETSc.jl 0.5 wraps MatSetValuesCOO for host Vectors only; device values need the raw pointer
+struct _COOFill
+    set::Ptr{Cvoid}
 end
 
 # owned rows list owned columns then ghosts, each ascending in global id (ghosts are sorted by
@@ -310,11 +332,7 @@ struct _SplitFill{M,VI}
     restore::Ptr{Cvoid} # MatSeqAIJRestoreArrayWrite
 end
 
-function _seqaij_nnz(petsclib, M)
-    info = Ref{LibPETSc.MatInfo}()
-    LibPETSc.MatGetInfo(petsclib, M, LibPETSc.MAT_LOCAL, info)
-    Int(info[].nz_used)
-end
+_seqaij_nnz(petsclib, M) = Int(_mat_info(petsclib, M).nz_used)
 
 # PETSc.jl's MatSeqAIJGetArrayWrite wrapper is broken (sizes by an undefined Vec), so call it direct
 function _seqaij_array(fp, M, ::Type{T}) where T
@@ -341,10 +359,10 @@ function _split_matrix(petsclib, comm, rowptr, colval, nzval, l2g, n, N)
 end
 
 # PETSc reads the values where they live (host or device) through its COO map; no staging copy
-function _set_values!(petsclib, A, nzval, sync, ::Nothing)
+function _set_values!(petsclib, A, nzval, sync, f::_COOFill)
     _sync(sync)
-    GC.@preserve nzval LibPETSc.MatSetValuesCOO(petsclib, A,
-        reinterpret(Ptr{eltype(nzval)}, pointer(nzval)), LibPETSc.INSERT_VALUES)
+    GC.@preserve nzval ccall(f.set, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, LibPETSc.InsertMode),
+        A.ptr, _raw_ptr(nzval), LibPETSc.INSERT_VALUES) == 0 || error("PETSc: MatSetValuesCOO failed")
 end
 
 function _set_values!(petsclib, A, nzval::Vector{T}, sync, f::_SplitFill) where T
@@ -448,7 +466,7 @@ function _parallel_partition(dm::DistributedMesh, method, petsc_options)
     ok(ccall(sym(:ISRestoreIndices), Cint, (Ptr{Cvoid}, Ptr{Ptr{Cvoid}}), is[], idx), "ISRestoreIndices")
     ok(ccall(sym(:ISDestroy), Cint, (Ptr{Ptr{Cvoid}},), is), "ISDestroy")
     ok(ccall(sym(:MatPartitioningDestroy), Cint, (Ptr{Ptr{Cvoid}},), part), "MatPartitioningDestroy")
-    PETSc.destroy(A)
+    _destroy!(A)
     dest
 end
 

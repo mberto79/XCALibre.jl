@@ -70,7 +70,7 @@ function setup_incompressible_solvers(
     initialise!(rDf, 1.0)
     nueff = FaceScalarField(mesh, store_mesh=false)
     divHv = ScalarField(mesh)
-    divτT = stress_source(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
+    divτT = VectorField(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
     @info "Defining models..."
 
@@ -149,7 +149,6 @@ function SIMPLE(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     divτT = get_source(U_eqn, 2)
-    τT_fluxes = stress_fluxes(mesh, transpose_stress)
 
     # a negative write_interval writes nothing, so the writer (host mesh copy, VTK strings) is never built
     outputWriter = signbit(write_interval) ? nothing : initialise_writer(output, model.domain)
@@ -203,7 +202,7 @@ function SIMPLE(
         time = iteration
 
         # gradU and nueff of the current velocity (updated by turbulence! below)
-        transpose_stress!(divτT, τT_fluxes, nueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(divτT, nueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 

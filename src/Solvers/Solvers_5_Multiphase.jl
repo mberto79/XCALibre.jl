@@ -112,7 +112,7 @@ function setup_multiphase_solvers(
     compute_gh!(gh, g, config)
     compute_ghf!(ghf, g, config)
 
-    divτT = stress_source(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
+    divτT = VectorField(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
     @info "Defining models..."
 
@@ -213,7 +213,6 @@ function MULTIPHASE(
     rDf   = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     divτT = get_source(U_eqn, 2)
-    τT_fluxes = stress_fluxes(mesh, transpose_stress)
     nueff = FaceScalarField(mesh)
 
     outputWriter = initialise_writer(output, mesh)
@@ -363,7 +362,7 @@ function MULTIPHASE(
             sigma=sigma, kappaf=kappaf, alpha=alpha)
 
         # gradU of the start-of-step velocity (updated by turbulence! below), mueff of the new alpha
-        transpose_stress!(divτT, τT_fluxes, mueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(divτT, mueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho_prev, time=time)

@@ -67,7 +67,7 @@ function setup_incompressible_solvers_MRF(
     nueff = FaceScalarField(mesh)
     divHv = ScalarField(mesh)
     omegaU = VectorField(mesh)
-    divτT = stress_source(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
+    divτT = VectorField(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
     @info "Defining models..."
 
@@ -132,7 +132,6 @@ function SIMPLE_MRF(
     nueff = get_flux(U_eqn, 3)
     omegaU = get_source(U_eqn, 2)
     divτT = get_source(U_eqn, 3)
-    τT_fluxes = stress_fluxes(mesh, transpose_stress)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
@@ -186,7 +185,7 @@ function SIMPLE_MRF(
 
         # Updates the OmegaU source term (function is defined below)
         update_mrf_sources!(omegaU, U, refFrames, config)
-        transpose_stress!(divτT, τT_fluxes, nueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(divτT, nueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         

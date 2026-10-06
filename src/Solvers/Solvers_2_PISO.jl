@@ -72,7 +72,6 @@ function PISO(
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
     divτT = get_source(U_eqn, 2)
-    τT_fluxes = stress_fluxes(mesh, transpose_stress)
 
     # a negative write_interval writes nothing, so the writer (host mesh copy, VTK strings) is never built
     outputWriter = signbit(write_interval) ? nothing : initialise_writer(output, model.domain)
@@ -135,7 +134,7 @@ function PISO(
         time += dt_cpu[1]
 
         # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
-        transpose_stress!(divτT, τT_fluxes, nueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(divτT, nueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(
             U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)

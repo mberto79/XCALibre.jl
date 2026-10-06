@@ -67,7 +67,7 @@ function setup_compressible_solvers(
     rhorDf = FaceScalarField(mesh)
     initialise!(rhorDf, 1.0)
     mueff = FaceScalarField(mesh)
-    mueffgradUt = stress_source(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
+    mueffgradUt = VectorField(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
@@ -174,7 +174,6 @@ function CSIMPLE(
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
-    τT_fluxes = stress_fluxes(mesh, transpose_stress)
     nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
@@ -215,7 +214,7 @@ function CSIMPLE(
         time = iteration
 
         # gradU and mueff of the current velocity (updated by turbulence! below)
-        transpose_stress!(mueffgradUt, τT_fluxes, mueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(mueffgradUt, mueff, gradU, boundaries.U, config)
 
         # Store previous values for next time step energy source terms
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)

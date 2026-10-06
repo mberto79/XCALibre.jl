@@ -31,8 +31,8 @@ function stress_case(mesh)
     sync!(U, mesh, config)
     gradU = Grad{Gauss}(U)
     grad!(gradU, FaceVectorField(mesh), U, BCs.U, 0.0, config)
-    source = SV.stress_source(mesh)
-    SV.transpose_stress!(source, SV.stress_fluxes(mesh, true), nu, gradU, BCs.U, config)
+    source = VectorField(mesh)
+    SV.transpose_stress!(source, nu, gradU, BCs.U, config)
     source
 end
 

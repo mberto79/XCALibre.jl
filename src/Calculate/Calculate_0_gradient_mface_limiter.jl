@@ -10,44 +10,34 @@ function limit_gradient!(method::MFaceBased, ∇F, F, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
 
-    (; cells, faces, boundary_cellsID,) = F.mesh
+    (; cells, faces, cell_faces, cell_neighbours) = F.mesh
 
-    nbfaces = length(boundary_cellsID)
-    internal_faces = length(faces) - nbfaces
-
-    ndrange = internal_faces
+    ndrange = length(cells)
     kernel! = _sized(_limit_gradient!, backend, workgroup, ndrange)
-    kernel!(method, ∇F, F, cells, faces, nbfaces)
+    kernel!(method, ∇F, F, cells, faces, cell_faces, cell_neighbours)
     sync!(∇F.result, F.mesh, config) # ghost updates depend on faces absent locally
 end
 
-@kernel function _limit_gradient!(method::MFaceBased, ∇F, F, cells, faces, nbfaces)
-    i = @index(Global)
-    fID = i + nbfaces
+# One work item per cell, visiting its internal faces in order: only this cell's gradient
+# is written, so the successive face corrections cannot race with those of its neighbours.
+@kernel function _limit_gradient!(
+    method::MFaceBased, ∇F, F, cells, faces, cell_faces, cell_neighbours)
+    cID = @index(Global)
 
-    ownerCells = faces.ownerCells[fID]
-    owner1 = ownerCells[1]
-    owner2 = ownerCells[2]
+    @inbounds begin
+        c = cells.centre[cID]
+        FP = F[cID]
+        for fi ∈ cells.faces_range[cID]
+            fID = cell_faces[fi]
+            FN = F[cell_neighbours[fi]]
 
-    cf = faces.centre[fID]
-    c1 = cells.centre[owner1]
-    c2 = cells.centre[owner2]
-    d1 = (cf - c1)
-    d2 = (cf - c2)
+            minF = min(FP, FN)
+            maxF = max(FP, FN)
+            d = faces.centre[fID] - c
 
-
-    F1 = F[owner1]
-    F2 = F[owner2]
-    # grad1 = ∇F[owner1]
-    # grad2 = ∇F[owner2]
-
-    minF = min(F1, F2)
-    maxF = max(F1, F2)
-    F1_ext = d1
-    F2_ext = d2
-
-    set_limiter(method, ∇F, owner1, maxF - F1, minF - F1, F1_ext)
-    set_limiter(method, ∇F, owner2, maxF - F2, minF - F2, F2_ext)
+            set_limiter(method, ∇F, cID, maxF - FP, minF - FP, d)
+        end
+    end
 end
 
 function set_limiter(

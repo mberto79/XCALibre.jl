@@ -199,9 +199,51 @@ Solvers._warn_skipped_postprocess(dm::DistributedMesh, postprocess) =
     Solvers._has_postprocess(postprocess) && dm.partition.rank == 0 &&
         @warn "runtime post-processing (config.postprocess) is not distributed yet and is skipped" maxlog=1
 Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) == 0
+Solve.global_any(flag::Bool, dm::DistributedMesh) =
+    (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(Int(flag), max, getfield(dm, :comm)) > 0)
 
 # global_max seam: Courant dt must be identical on every rank
 Solvers.global_max(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, max, getfield(dm, :comm)))
 # courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh
 Solvers._base_mesh(dm::DistributedMesh) = getfield(dm, :mesh)
+
+# MeshWave wall distance: a cell touching a wall node needs every wall face through that node,
+# and some belong to other ranks. A node shared between ranks lies on a processor face of each
+# rank that holds a cell around it (the cells around a node connect through faces containing
+# it), so each rank sends its wall faces that touch a processor-face node, packed as
+# [n_nodes, centre, node coordinates...], to all ranks.
+function Calculate.remote_wall_faces(dm::DistributedMesh, wall_faces)
+    TF = _get_float(dm)
+    comm = getfield(dm, :comm)
+    face_centre = Array(dm.face_centre)
+    face_nodes_range = Array(dm.face_nodes_range)
+    face_nodes = Array(dm.face_nodes)
+    node_coords = Array(dm.node_coords)
+    shared = Set{Int}()
+    for pp ∈ getfield(dm, :procs), fID ∈ pp.faces
+        union!(shared, face_nodes[face_nodes_range[fID]])
+    end
+    send = TF[]
+    for fID ∈ wall_faces
+        ids = face_nodes[face_nodes_range[fID]]
+        any(∈(shared), ids) || continue
+        push!(send, length(ids))
+        append!(send, face_centre[fID])
+        foreach(n -> append!(send, node_coords[n]), ids)
+    end
+    counts = MPI.Allgather(Int32(length(send)), comm)
+    recv = Vector{TF}(undef, sum(counts))
+    MPI.Allgatherv!(send, MPI.VBuffer(recv, counts), comm)
+    V = eltype(node_coords)
+    faces = Tuple{V,Vector{V}}[]
+    k = 1
+    while k <= length(recv)
+        nn = Int(recv[k])
+        fc = V(recv[k+1], recv[k+2], recv[k+3])
+        pts = [V(recv[k+4+3j], recv[k+5+3j], recv[k+6+3j]) for j ∈ 0:nn-1]
+        push!(faces, (fc, pts))
+        k += 4 + 3nn
+    end
+    faces
+end

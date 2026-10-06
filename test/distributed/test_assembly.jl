@@ -4,6 +4,9 @@ using LinearAlgebra, SparseArrays
 using PETSc: LibPETSc
 using XCALibre.ModelFramework: _A, _b, _nzval
 
+# renamed in PETSc.jl 0.5
+const with_local_array! = pkgversion(PETSc) >= v"0.5" ? PETSc.with_local_array! : PETSc.withlocalarray!
+
 MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
@@ -73,14 +76,14 @@ s = PETScSolver(T_eqn, dm, config.solvers)
 XCALibre.Distribute.passemble!(s, T_eqn, part)
 
 xv, y = LibPETSc.MatCreateVecs(s.petsclib, s.A) # the solver's x owns no storage outside a solve
-owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
+owned_vals(v) = with_local_array!(copy, v; read=true, write=false)
 
 @testset "Phase 3 assembly (rank $rank)" begin
     # owned block is contiguous in the global row numbering
     @test all(part.local_to_global[i] == part.row_start + i - 1 for i ∈ 1:n_owned)
 
     # MatMult matches serial SpMV
-    PETSc.withlocalarray!(xv; read=false, write=true) do arr
+    with_local_array!(xv; read=false, write=true) do arr
         for i ∈ 1:n_owned
             arr[i] = xg[orig[i]]
         end
@@ -93,7 +96,7 @@ owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
     @test maximum(abs.(owned_vals(y) .- yref[orig[1:n_owned]]); init=0.0) <= 1e-12
 
     # global row sums match serial
-    PETSc.withlocalarray!(a -> fill!(a, 1.0), xv; read=false, write=true)
+    with_local_array!(a -> fill!(a, 1.0), xv; read=false, write=true)
     LinearAlgebra.mul!(y, s.A, xv)
     @test maximum(abs.(owned_vals(y) .- rsref[orig[1:n_owned]]); init=0.0) <= 1e-12
 
@@ -110,7 +113,7 @@ owned_vals(v) = PETSc.withlocalarray!(copy, v; read=true, write=false)
     # values-only re-assembly: scaled coefficients give scaled MatMult
     _nzval(_A(T_eqn)) .*= 2
     XCALibre.Distribute.passemble!(s, T_eqn, part)
-    PETSc.withlocalarray!(xv; read=false, write=true) do arr
+    with_local_array!(xv; read=false, write=true) do arr
         for i ∈ 1:n_owned
             arr[i] = xg[orig[i]]
         end

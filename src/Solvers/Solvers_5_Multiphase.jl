@@ -2,7 +2,8 @@ export multiphase!
 
 function multiphase!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true)
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    transpose_stress=true)
     check_distributed_support(:multiphase, model)
 
     residuals = setup_multiphase_solvers(
@@ -10,7 +11,8 @@ function multiphase!(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
 
     return residuals
@@ -25,7 +27,8 @@ end
 
 function setup_multiphase_solvers(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -109,6 +112,8 @@ function setup_multiphase_solvers(
     compute_gh!(gh, g, config)
     compute_ghf!(ghf, g, config)
 
+    divτT = stress_source(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
+
     @info "Defining models..."
 
     if typeof(mp_model) <: VOF
@@ -119,6 +124,7 @@ function setup_multiphase_solvers(
             - Laplacian{schemes.U.laplacian}(mueff, U)
             ==
             - Source(∇p_rgh.result)
+            + Source(divτT)
         ) → VectorEquation(U, boundaries.U)
 
     elseif typeof(mp_model) <: Mixture
@@ -131,6 +137,7 @@ function setup_multiphase_solvers(
             - Laplacian{schemes.U.laplacian}(mueff, U)
             ==
             - Source(∇p_rgh.result)
+            + Source(divτT)
             - Source(div_slip_momentum)
         ) → VectorEquation(U, boundaries.U)
 
@@ -159,7 +166,8 @@ function setup_multiphase_solvers(
         model, turbulenceModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
         mdotf, rhoPhi, gh, ghf, phi_g, phi_gf, extra_models, mules, config;
         output=output, pref=pref,
-        ncorrectors=ncorrectors, inner_loops=inner_loops, progress=progress)
+        ncorrectors=ncorrectors, inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress)
 
     return residuals
 end
@@ -170,7 +178,8 @@ function MULTIPHASE(
     model, turbulenceModel, ∇p, ∇p_rgh, U_eqn, p_eqn,
     mdotf, rhoPhi, gh, ghf, phi_g, phi_gf,
     extra_models, mules, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3, progress=true,
+    transpose_stress=true
     )
 
     (; alpha_prev, div_alpha, div_mdotf, alpha_fluxf,
@@ -203,6 +212,8 @@ function MULTIPHASE(
     mueff = get_flux(U_eqn, 3)
     rDf   = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+    divτT = get_source(U_eqn, 2)
+    τT_fluxes = stress_fluxes(mesh, transpose_stress)
     nueff = FaceScalarField(mesh)
 
     outputWriter = initialise_writer(output, mesh)
@@ -284,6 +295,8 @@ function MULTIPHASE(
     @. rhoPhi.values = mdotf.values * rhof.values
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
+    grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first time step
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -348,6 +361,9 @@ function MULTIPHASE(
             ∇p_rgh.result, pressure_force_face,
             p_rgh, rho, ghf, mesh, moments, config;
             sigma=sigma, kappaf=kappaf, alpha=alpha)
+
+        # gradU of the start-of-step velocity (updated by turbulence! below), mueff of the new alpha
+        transpose_stress!(divτT, τT_fluxes, mueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho_prev, time=time)

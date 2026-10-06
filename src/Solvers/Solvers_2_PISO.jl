@@ -14,6 +14,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `transpose_stress` include the explicit viscous stress ∇·(ν_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
 
 # Output
 
@@ -25,7 +26,7 @@ Incompressible and transient variant of the SIMPLE algorithm to solving coupled 
 function piso!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
-    petsc_options="", restart=nothing)
+    petsc_options="", restart=nothing, transpose_stress=true)
     check_distributed_support(:PISO, model)
 
     residuals = setup_incompressible_solvers(
@@ -35,7 +36,8 @@ function piso!(
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
-        restart=restart
+        restart=restart,
+        transpose_stress=transpose_stress
         )
 
     return residuals
@@ -43,7 +45,8 @@ end
 
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true, restart=nothing
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true, restart=nothing,
+    transpose_stress=true
     )
     
     # Extract model variables and configuration
@@ -68,6 +71,8 @@ function PISO(
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
+    divτT = get_source(U_eqn, 2)
+    τT_fluxes = stress_fluxes(mesh, transpose_stress)
 
     # a negative write_interval writes nothing, so the writer (host mesh copy, VTK strings) is never built
     outputWriter = signbit(write_interval) ? nothing : initialise_writer(output, model.domain)
@@ -113,6 +118,8 @@ function PISO(
     restart_flux!(mesh, mdotf, restart, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first time step
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -126,6 +133,9 @@ function PISO(
     for iteration ∈ start+1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
+
+        # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
+        transpose_stress!(divτT, τT_fluxes, nueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(
             U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)

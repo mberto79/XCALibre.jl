@@ -1,8 +1,9 @@
 export simple!
 
 """
-    simple!(model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true)
+    simple!(model_in, config;
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+        transpose_stress=true)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -14,6 +15,7 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `transpose_stress` include the explicit viscous stress ∇·(ν_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
 
 # Output
 
@@ -28,7 +30,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, stresscorrection=false
+    petsc_options="", restart=nothing, transpose_stress=true
     )
     check_distributed_support(:SIMPLE, model)
 
@@ -40,7 +42,7 @@ function simple!(
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
         restart=restart,
-        stresscorrection=stresscorrection
+        transpose_stress=transpose_stress
         )
 
     return residuals
@@ -50,7 +52,7 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, stresscorrection=false
+    petsc_options="", restart=nothing, transpose_stress=true
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -68,30 +70,18 @@ function setup_incompressible_solvers(
     initialise!(rDf, 1.0)
     nueff = FaceScalarField(mesh, store_mesh=false)
     divHv = ScalarField(mesh)
+    divτT = stress_source(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
     @info "Defining models..."
 
-    U_eqn = if stresscorrection
-        # Adds OpenFOAM's divDevReff deviatoric transpose-stress term,
-        # +div(nueff*dev2(grad(U)^T)); sign verified analytically and on motorBike.
-        mueffgradUt = VectorField(mesh)
-        (
-            Time{schemes.U.time}(U)
-            + Divergence{schemes.U.divergence}(mdotf, U)
-            - Laplacian{schemes.U.laplacian}(nueff, U)
-            ==
-            - Source(∇p.result)
-            + Source(mueffgradUt)
-        ) → VectorEquation(U, boundaries.U)
-    else
-        (
-            Time{schemes.U.time}(U)
-            + Divergence{schemes.U.divergence}(mdotf, U)
-            - Laplacian{schemes.U.laplacian}(nueff, U)
-            ==
-            - Source(∇p.result)
-        ) → VectorEquation(U, boundaries.U)
-    end
+    U_eqn = (
+        Time{schemes.U.time}(U)
+        + Divergence{schemes.U.divergence}(mdotf, U)
+        - Laplacian{schemes.U.laplacian}(nueff, U)
+        ==
+        - Source(∇p.result)
+        + Source(divτT)
+    ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
         - Laplacian{schemes.p.laplacian}(rDf, p) == - Source(divHv)
@@ -123,7 +113,7 @@ function setup_incompressible_solvers(
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         restart=restart,
-        stresscorrection=stresscorrection)
+        transpose_stress=transpose_stress)
 
     return residuals
 end # end function
@@ -131,7 +121,7 @@ end # end function
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing,
-    stresscorrection=false
+    transpose_stress=true
     )
     
     # Extract model variables and configuration
@@ -158,16 +148,8 @@ function SIMPLE(
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
-
-    # mugradUTx/y/z and divmugradUTx/y/z rebuild mueffgradUt each iteration
-    # (mirrors CSIMPLE's term); left unallocated when disabled.
-    mueffgradUt = stresscorrection ? get_source(U_eqn, 2) : nothing
-    mugradUTx = stresscorrection ? FaceScalarField(mesh) : nothing
-    mugradUTy = stresscorrection ? FaceScalarField(mesh) : nothing
-    mugradUTz = stresscorrection ? FaceScalarField(mesh) : nothing
-    divmugradUTx = stresscorrection ? ScalarField(mesh) : nothing
-    divmugradUTy = stresscorrection ? ScalarField(mesh) : nothing
-    divmugradUTz = stresscorrection ? ScalarField(mesh) : nothing
+    divτT = get_source(U_eqn, 2)
+    τT_fluxes = stress_fluxes(mesh, transpose_stress)
 
     # a negative write_interval writes nothing, so the writer (host mesh copy, VTK strings) is never built
     outputWriter = signbit(write_interval) ? nothing : initialise_writer(output, model.domain)
@@ -206,6 +188,8 @@ function SIMPLE(
     restart_flux!(mesh, mdotf, restart, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first iteration
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -218,19 +202,8 @@ function SIMPLE(
     for iteration ∈ start+1:iterations
         time = iteration
 
-        if stresscorrection
-            # Uses gradU as of the end of the previous iteration (updated in
-            # turbulence! below), same timing CSIMPLE uses for this term.
-            explicit_shear_stress!(
-                mugradUTx, mugradUTy, mugradUTz, nueff, gradU, boundaries.U, config)
-            div!(divmugradUTx, mugradUTx, config)
-            div!(divmugradUTy, mugradUTy, config)
-            div!(divmugradUTz, mugradUTz, config)
-
-            @. mueffgradUt.x.values = divmugradUTx.values
-            @. mueffgradUt.y.values = divmugradUTy.values
-            @. mueffgradUt.z.values = divmugradUTz.values
-        end
+        # gradU and nueff of the current velocity (updated by turbulence! below)
+        transpose_stress!(divτT, τT_fluxes, nueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 

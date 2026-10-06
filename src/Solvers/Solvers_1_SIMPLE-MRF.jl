@@ -14,6 +14,7 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `transpose_stress` include the explicit viscous stress ∇·(ν_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
 
 # Output
 
@@ -27,7 +28,8 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple_MRF!(
     model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     )
     check_distributed_support(:SIMPLE_MRF, model)
 
@@ -36,7 +38,8 @@ function simple_MRF!(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
     )
 
     return residuals
@@ -44,7 +47,8 @@ end
 
 function setup_incompressible_solvers_MRF(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -63,6 +67,7 @@ function setup_incompressible_solvers_MRF(
     nueff = FaceScalarField(mesh)
     divHv = ScalarField(mesh)
     omegaU = VectorField(mesh)
+    divτT = stress_source(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
     @info "Defining models..."
 
@@ -73,6 +78,7 @@ function setup_incompressible_solvers_MRF(
         == 
         - Source(∇p.result)
         - Source(omegaU)
+        + Source(divτT)
     ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
@@ -97,7 +103,8 @@ function setup_incompressible_solvers_MRF(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress)
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress)
 
     return residuals
 end # end function
@@ -105,7 +112,8 @@ end # end function
 
 function SIMPLE_MRF(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     )
     
     # Extract model variables and configuration
@@ -123,6 +131,8 @@ function SIMPLE_MRF(
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     omegaU = get_source(U_eqn, 2)
+    divτT = get_source(U_eqn, 3)
+    τT_fluxes = stress_fluxes(mesh, transpose_stress)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
@@ -158,6 +168,8 @@ function SIMPLE_MRF(
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first iteration
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
 
@@ -174,6 +186,7 @@ function SIMPLE_MRF(
 
         # Updates the OmegaU source term (function is defined below)
         update_mrf_sources!(omegaU, U, refFrames, config)
+        transpose_stress!(divτT, τT_fluxes, nueff, gradU, boundaries.U, config)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         

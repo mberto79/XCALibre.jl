@@ -14,6 +14,7 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `transpose_stress` include the explicit viscous stress ∇·(μ_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
 
 # Output
 
@@ -24,7 +25,8 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 """
 function cpiso!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true)
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    transpose_stress=true)
     check_distributed_support(:CPISO, model)
 
     residuals = setup_unsteady_compressible_solvers(
@@ -32,7 +34,8 @@ function cpiso!(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
 
     return residuals
@@ -41,7 +44,8 @@ end
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    transpose_stress=true
     )
 
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
@@ -59,7 +63,7 @@ function setup_unsteady_compressible_solvers(
     rhorDf = FaceScalarField(mesh)
     initialise!(rhorDf, 1.0)
     mueff = FaceScalarField(mesh)
-    mueffgradUt = VectorField(mesh)
+    mueffgradUt = stress_source(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
     divHv = ScalarField(mesh)
     psi = ScalarField(mesh)
 
@@ -118,14 +122,16 @@ function setup_unsteady_compressible_solvers(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress)
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress)
 
     return residuals
 end # end function
 
 function CPISO(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true)
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    transpose_stress=true)
 
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
@@ -174,13 +180,7 @@ function CPISO(
     rD = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
-    mugradUTx = FaceScalarField(mesh)
-    mugradUTy = FaceScalarField(mesh)
-    mugradUTz = FaceScalarField(mesh)
-
-    divmugradUTx = ScalarField(mesh)
-    divmugradUTy = ScalarField(mesh)
-    divmugradUTz = ScalarField(mesh)
+    τT_fluxes = stress_fluxes(mesh, transpose_stress)
     nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
@@ -213,6 +213,8 @@ function CPISO(
     update_viscosity!(model.fluid, model.energy, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values = rhof.values*nueff.values
+    grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first time step
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -224,14 +226,8 @@ function CPISO(
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
 
-        explicit_shear_stress!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, boundaries.U, config)
-        div!(divmugradUTx, mugradUTx, config)
-        div!(divmugradUTy, mugradUTy, config)
-        div!(divmugradUTz, mugradUTz, config)
-
-        @. mueffgradUt.x.values = divmugradUTx.values
-        @. mueffgradUt.y.values = divmugradUTy.values
-        @. mueffgradUt.z.values = divmugradUTz.values
+        # gradU and mueff of the start-of-step velocity (updated by turbulence! below)
+        transpose_stress!(mueffgradUt, τT_fluxes, mueff, gradU, boundaries.U, config)
 
         # Store previous values for next time step energy source terms
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)

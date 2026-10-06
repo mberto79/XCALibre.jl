@@ -219,6 +219,22 @@ RANS{KOmegaLKE}(; Tu::Number, walls::Tuple) # no defaults defined
 RANS{KOmegaLKE}(Tu = 0.01, walls=(:cylinder,)) # user should provide information for Tu and walls
 ```
 
+KOmegaSST model: the user must provide a tuple of symbols specifying wall boundaries; the model coefficients have defaults.
+```julia
+RANS{KOmegaSST}(walls=(:wall,))
+```
+
+#### Wall distance
+
+`KOmegaSST` and `KOmegaLKE` use the distance to the nearest wall, `y`, computed once when the run starts from the patches given in `walls`. The method is chosen with the `wall_distance` keyword:
+```julia
+RANS{KOmegaSST}(walls=(:wall,))                                      # MeshWave() (default)
+RANS{KOmegaSST}(walls=(:wall,), wall_distance=Poisson())             # Poisson distance
+RANS{KOmegaLKE}(Tu=0.01, walls=(:cylinder,), wall_distance=Poisson(iterations=2000))
+```
+- `MeshWave()`: each cell carries the location of its nearest wall point and the straight-line distance to it. Cells touching a wall start from the exact closest point on the wall faces through their nodes; sweeps over the internal faces then let each cell take a neighbour's wall point whenever it is closer, until no cell changes. Exact on meshes aligned with the walls and at convex corners, and works unchanged on distributed meshes.
+- `Poisson(; iterations=1000)`: y from the solution φ of ∇²φ = -1 with φ = 0 on the walls, y = -|∇φ| + √(|∇φ|² + 2φ). Exact for a single plane wall but inaccurate away from walls; it needs `y` entries in `solvers` and `schemes`.
+
 For example, a steady, incompressible simulation using the `KOmega` model can be specified as
 ```julia
 Physics(

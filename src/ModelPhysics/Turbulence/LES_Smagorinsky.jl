@@ -38,7 +38,7 @@ end
 (les::LES{Smagorinsky, ARG})(mesh) where ARG = begin
     nut = ScalarField(mesh)
     nutf = FaceScalarField(mesh)
-    coeffs = les.args
+    coeffs = map(ScalarFloat(mesh), les.args)
     Smagorinsky(nut, nutf, coeffs)
 end
 
@@ -77,7 +77,7 @@ function initialise(
 
     delta!(Δ, mesh, config)
     (; coeffs) = model.turbulence
-    @. Δ.values = (Δ.values*coeffs.C)^2.0
+    @. Δ.values = (Δ.values*coeffs.C)^2
     
     return SmagorinskyModel(
         turbulence, 

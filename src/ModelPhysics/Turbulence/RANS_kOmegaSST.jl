@@ -55,8 +55,11 @@ end
 Adapt.@adapt_structure KOmegaSSTModel
 
 # Model API constructor (pass user input as keyword arguments and process as needed)
-RANS{KOmegaSST}(; β⁺=0.09, α1=0.31, σk1=0.85, σk2=1.0, σω1=0.5, σω2=0.856, β1=0.075, β2=0.0828, κ=0.41, walls) = begin 
-    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ, walls=walls)
+# `wall_distance`: `MeshWave()` (default) or `Poisson()`, see `AbstractWallDistance`
+RANS{KOmegaSST}(; β⁺=0.09, α1=0.31, σk1=0.85, σk2=1.0, σω1=0.5, σω2=0.856, β1=0.075, β2=0.0828, κ=0.41, walls,
+    wall_distance::AbstractWallDistance=MeshWave()) = begin
+    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ, walls=walls,
+        wall_distance=wall_distance)
     ARG = typeof(coeffs)
     RANS{KOmegaSST,ARG}(coeffs)
 end
@@ -70,7 +73,8 @@ end
     omegaf = FaceScalarField(mesh)
     nutf = FaceScalarField(mesh)
     (; β⁺, α1, σk1, σk2, σω1, σω2, β1, β2, κ) = rans.args
-    coeffs = (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ)
+    coeffs = map(ScalarFloat(mesh),
+        (β⁺=β⁺, α1=α1, σk1=σk1, σk2=σk2, σω1=σω1, σω2=σω2, β1=β1, β2=β2, κ=κ))
     gamma1 = (coeffs.β1/coeffs.β⁺) - coeffs.σω1*coeffs.κ^2/sqrt(coeffs.β⁺)
     gamma2 = (coeffs.β2/coeffs.β⁺) - coeffs.σω2*coeffs.κ^2/sqrt(coeffs.β⁺)
 
@@ -169,7 +173,7 @@ function initialise(
     k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config; label="k")
     ω_eqn = wrap_eqn(ω_eqn, mesh, solvers.omega, config; label="omega")
 
-    new_config = wall_distance!(model, model.wall_info, config)
+    new_config = wall_distance!(model, model.wall_info.walls, config; method=model.wall_info.method)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω, wall_scratch(mesh, boundaries, config)), new_config
@@ -205,6 +209,7 @@ function turbulence!(
     (; solvers, runtime, boundaries) = config
 
     distributed = is_distributed_mesh(mesh)
+    scalar = ScalarFloat(mesh)
     # wrapped eqns solve through the seam; raw eqns are assembled/discretised in place
     k_deqn, ω_deqn = k_eqn, ω_eqn
     k_eqn, ω_eqn = unwrap_eqn(k_eqn), unwrap_eqn(ω_eqn)
@@ -232,22 +237,22 @@ function turbulence!(
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
 
-    @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, 1e-10)
+    @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, scalar(1e-10))
 
     @. arg1.values = min( min(
             max(
-                sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 
+                sqrt(max(k.values, scalar(eps())))/(coeffs.β⁺*omega.values*y.values), 
                 500*nu.values/(omega.values*y.values^2)
                 ),
             4*coeffs.σω2*k.values/(CDkω.values*y.values^2)),
-         10.0
+         scalar(10)
              )
     
 
     @. arg2.values = min(max(
-            2*sqrt(max(k.values, eps()))/(coeffs.β⁺*omega.values*y.values), 
+            2*sqrt(max(k.values, scalar(eps())))/(coeffs.β⁺*omega.values*y.values), 
             500*nu.values/(y.values^2*omega.values)) ,
-        100.0
+        scalar(100)
         )
 
     @. F2.values = tanh(arg2.values^2)
@@ -255,11 +260,11 @@ function turbulence!(
     interpolate!(F1f, F1, config)
 
 
-    @. σkf.values = coeffs.σk1*F1f.values + (1.0 - F1f.values)*coeffs.σk2
-    @. σωf.values = coeffs.σω1*F1f.values + (1.0 - F1f.values)*coeffs.σω2
-    @. β.values = coeffs.β1*F1.values + (1.0 - F1.values)*coeffs.β2
+    @. σkf.values = coeffs.σk1*F1f.values + (1 - F1f.values)*coeffs.σk2
+    @. σωf.values = coeffs.σω1*F1f.values + (1 - F1f.values)*coeffs.σω2
+    @. β.values = coeffs.β1*F1.values + (1 - F1.values)*coeffs.β2
     # Here I'm using hard-coded values - need to revert to proper defs used above
-    @. γ.values = 5/9*F1.values + (1.0 - F1.values)*0.44 # Chris: revert if you want
+    @. γ.values = scalar(5/9)*F1.values + (1 - F1.values)*scalar(0.44) # Chris: revert if you want
 
     @. mueffω.values = rhof.values * (nuf.values + σωf.values*nutf.values)
     @. mueffk.values = rhof.values * (nuf.values + σkf.values*nutf.values)

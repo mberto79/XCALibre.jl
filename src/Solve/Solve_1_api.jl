@@ -6,6 +6,7 @@ export wrap_eqn
 export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
+export global_any
 export solve_equation!
 export AdaptiveTimeStepping
 
@@ -537,6 +538,9 @@ wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
 
 # true where solver progress/@info should print: always serial, only rank 0 when distributed
 @inline is_report_rank(mesh) = true
+
+# true on every rank if flag is true on any rank: serial identity, Distribute reduces over ranks
+global_any(flag::Bool, mesh) = flag
 
 function make_symmetric!(eqn, config)
     (; hardware) = config

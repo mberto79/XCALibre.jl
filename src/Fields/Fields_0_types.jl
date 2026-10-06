@@ -3,7 +3,7 @@ export ScalarFloat, ConstantScalar, ConstantVector
 export AbstractScalarField, ScalarField, FaceScalarField
 export AbstractVectorField, VectorField, FaceVectorField
 export AbstractTensorField, TensorField, T, SymmetricTensorField
-export StrainRate, Vorticity, Dev, Sqr, MagSqr
+export StrainRate, Vorticity, Dev, Dev2, Sqr, MagSqr
 export _mesh
 export initialise!
 
@@ -394,6 +394,17 @@ Base.getindex(T::Dev{Tensor}, i::Idx) where {Tensor<:AbstractTensorField,Idx<:In
 end
 
 _mesh(field::Dev) = _mesh(field.parent)
+
+# A - (2/3) tr(A) I of any cell tensor `parent` (e.g. `T(gradU)`), evaluated on access
+struct Dev2{T}
+    parent::T
+end
+Adapt.@adapt_structure Dev2
+
+Base.getindex(T::Dev2, i::Integer) = begin
+    Ti = T.parent[i]
+    Ti - eltype(Ti)(2)/3*tr(Ti)*I
+end
 
 # Initialise Scalar and Vector fields
 """

@@ -30,6 +30,7 @@ supported; any other solver or model errors rather than solving each rank's bloc
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
 - `progress` show a progress bar with the iteration and residuals (default = `true`). Use `progress=false` for large-scale runs that are not on a local PC, e.g. cluster batch jobs. Distributed runs never show it
+- `transpose_stress` include the explicit part of the viscous stress, ∇·(μ_eff dev2((∇U)ᵀ)), in the momentum equation of the incompressible, compressible and multiphase solvers (default = `true`). It is zero for a constant viscosity in incompressible flow and needed wherever the effective viscosity varies, e.g. with a turbulence model; `false` drops it
 - `restart` resume an incompressible run on a distributed mesh from results it wrote with `output=OpenFOAM()`: the iteration (steady) or time (transient) of a written time directory, or that directory's name. The resumed run continues from that point up to `iterations` and retraces the uninterrupted run (default = `nothing`)
 
 # Output
@@ -52,7 +53,8 @@ run!() = nothing # dummy function for providing general documentation
 
 run!(
     model::Physics{T,F,SO,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=3, progress=true,
+    transpose_stress=true
     ) where{T,F<:Multiphase,SO,M,Tu,E,D,BI} =
 begin
     residuals = multiphase!(
@@ -61,6 +63,7 @@ begin
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
     return residuals
 end
@@ -143,7 +146,8 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing
+    petsc_options="", restart=nothing,
+    transpose_stress=true
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} =
 begin
     residuals=nothing
@@ -154,7 +158,8 @@ begin
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
-        restart=restart
+        restart=restart,
+        transpose_stress=transpose_stress
     )
 
     return residuals
@@ -190,7 +195,8 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     ) where{T<:Steady,F<:Incompressible_MRF,M,Tu,E,D,BI} = 
 begin
     residuals = simple_MRF!(
@@ -198,7 +204,8 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
     return residuals
 end
@@ -251,7 +258,8 @@ end
 run!(
     model::Physics{T,F,S,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
-    petsc_options="", restart=nothing
+    petsc_options="", restart=nothing,
+    transpose_stress=true
     ) where{T<:Transient,F<:Incompressible,S,M,Tu,E,D,BI} =
 begin
     residuals = piso!(
@@ -261,7 +269,8 @@ begin
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
-        restart=restart
+        restart=restart,
+        transpose_stress=transpose_stress
     )
     return residuals
 end
@@ -299,7 +308,8 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     ) where{T<:Steady,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
@@ -307,7 +317,8 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
     return residuals
 end
@@ -315,7 +326,8 @@ end
 # Compressible solver (steady)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     ) where{T<:Steady,F<:Compressible,M,Tu,E,D,BI} = 
 begin
     residuals = csimple!(
@@ -323,7 +335,8 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
     return residuals
 end
@@ -359,7 +372,8 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    transpose_stress=true
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
     residuals = cpiso!(
@@ -367,7 +381,8 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
     return residuals
 end
@@ -375,7 +390,8 @@ end
 # Compressible solver (transient)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    transpose_stress=true
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} =
 begin
     residuals = cpiso!(
@@ -383,7 +399,8 @@ begin
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
     return residuals
 end

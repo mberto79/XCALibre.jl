@@ -16,6 +16,7 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `transpose_stress` include the explicit viscous stress ∇·(μ_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
 
 # Output
 
@@ -26,7 +27,10 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `e` Vector of energy residuals for each iteration.
 
 """
-function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true) 
+function csimple!(
+    model, config;
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, transpose_stress=true
+    )
     check_distributed_support(:CSIMPLE, model)
 
     residuals = setup_compressible_solvers(
@@ -34,7 +38,8 @@ function csimple!(model, config; output=VTK(), pref=nothing, ncorrectors=0, inne
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
         )
     return residuals
 end
@@ -42,7 +47,8 @@ end
 # Setup for all compressible algorithms
 function setup_compressible_solvers(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -61,7 +67,7 @@ function setup_compressible_solvers(
     rhorDf = FaceScalarField(mesh)
     initialise!(rhorDf, 1.0)
     mueff = FaceScalarField(mesh)
-    mueffgradUt = VectorField(mesh)
+    mueffgradUt = VectorField(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
     divHv = ScalarField(mesh)
 
     @info "Defining models..."
@@ -114,14 +120,16 @@ function setup_compressible_solvers(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress)
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress)
 
     return residuals    
 end # end function
 
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     )
     
     # Extract model variables and configuration
@@ -166,13 +174,6 @@ function CSIMPLE(
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
-    mugradUTx = FaceScalarField(mesh)
-    mugradUTy = FaceScalarField(mesh)
-    mugradUTz = FaceScalarField(mesh)
-
-    divmugradUTx = ScalarField(mesh)
-    divmugradUTy = ScalarField(mesh)
-    divmugradUTz = ScalarField(mesh)
     nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
@@ -199,6 +200,8 @@ function CSIMPLE(
     update_viscosity!(model.fluid, model.energy, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
+    grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first iteration
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
 
 
     @info "Starting CSIMPLE loops..."
@@ -210,16 +213,8 @@ function CSIMPLE(
     for iteration ∈ 1:iterations
         time = iteration
 
-        # gradU is updated in turbulence! function
-        explicit_shear_stress!(
-            mugradUTx, mugradUTy, mugradUTz, mueff, gradU, boundaries.U, config)
-        div!(divmugradUTx, mugradUTx, config)
-        div!(divmugradUTy, mugradUTy, config)
-        div!(divmugradUTz, mugradUTz, config)
-        
-        @. mueffgradUt.x.values = divmugradUTx.values
-        @. mueffgradUt.y.values = divmugradUTy.values
-        @. mueffgradUt.z.values = divmugradUTz.values
+        # gradU and mueff of the current velocity (updated by turbulence! below)
+        transpose_stress && transpose_stress!(mueffgradUt, mueff, gradU, boundaries.U, config)
 
         # Store previous values for next time step energy source terms
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
@@ -384,92 +379,4 @@ function CSIMPLE(
     end # end for loop
 
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, e=R_e)
-end
-
-function explicit_shear_stress!(mugradUTx::FaceScalarField, mugradUTy::FaceScalarField, mugradUTz::FaceScalarField, mueff, gradU, U_BCs, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    (; faces, boundary_cellsID) = mugradUTx.mesh
-
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
-
-    ndrange = n_ifaces
-    kernel! = _sized(_explicit_shear_stress_internal!, backend, workgroup, ndrange)
-    kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
-    KernelAbstractions.synchronize(backend)
-
-    ndrange=n_bfaces
-    kernel! = _sized(_explicit_shear_stress_boundaries!, backend, workgroup, ndrange)
-    kernel!(mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
-    KernelAbstractions.synchronize(backend)
-
-    for BC ∈ U_BCs
-        zero_explicit_stress!(BC, mugradUTx, mugradUTy, mugradUTz, backend, workgroup)
-    end
-end
-
-zero_explicit_stress!(BC, mugradUTx, mugradUTy, mugradUTz, backend, workgroup) = nothing
-
-function zero_explicit_stress!(
-    BC::Union{Slip,Symmetry}, mugradUTx, mugradUTy, mugradUTz, backend, workgroup)
-    (; IDs_range) = BC
-    ndrange = length(IDs_range)
-    ndrange == 0 && return nothing
-    kernel! = _zero_explicit_stress!(backend)
-    kernel!(mugradUTx, mugradUTy, mugradUTz, IDs_range;
-        _dynamic_setup(backend, workgroup, ndrange)...)
-    KernelAbstractions.synchronize(backend)
-end
-
-@kernel function _zero_explicit_stress!(mugradUTx, mugradUTy, mugradUTz, IDs_range)
-    i = @index(Global)
-    fID = IDs_range[i]
-    mugradUTx[fID] = 0
-    mugradUTy[fID] = 0
-    mugradUTz[fID] = 0
-end
-
-@kernel function _explicit_shear_stress_internal!(
-    mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces, n_bfaces)
-    i = @index(Global)
-
-    fID = i + n_bfaces
-    face = faces[fID]
-    (; area, normal, ownerCells) = face 
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
-    
-    # Linear interpolation of gradU at the face
-    gradUf = 0.5 * (gradU[cID1] + gradU[cID2])
-    
-    # Explicit part of the stress projection: mu * ( (grad U)^T . n - 2/3 * (div U) * n )
-    divU = sum(diag(gradUf))
-    projection = transpose(gradUf) * normal - (2/3 * divU) * normal
-    
-    mueffi = mueff[fID]
-    mugradUTx[fID] = mueffi * projection[1] * area
-    mugradUTy[fID] = mueffi * projection[2] * area
-    mugradUTz[fID] = mueffi * projection[3] * area
-end
-
-@kernel function _explicit_shear_stress_boundaries!(
-    mugradUTx, mugradUTy, mugradUTz, mueff, gradU, faces)
-    fID = @index(Global)
-
-    face = faces[fID]
-    (; area, normal, ownerCells) = face 
-    cID1 = ownerCells[1]
-    gradUi = gradU[cID1]
-    
-    # Explicit part of the stress projection at boundary: mu * ( (grad U)^T . n - 2/3 * (div U) * n )
-    divUi = sum(diag(gradUi))
-    projection = transpose(gradUi) * normal - (2/3 * divUi) * normal
-    
-    mueffi = mueff[fID]
-    mugradUTx[fID] = mueffi * projection[1] * area
-    mugradUTy[fID] = mueffi * projection[2] * area
-    mugradUTz[fID] = mueffi * projection[3] * area
 end

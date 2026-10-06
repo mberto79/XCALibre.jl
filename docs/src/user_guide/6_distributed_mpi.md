@@ -74,6 +74,26 @@ PETSc.library_info()   # shows the configured library, scalar and index types
   ranks can fail with "Precompiled image ... not available with flags".
 - `PETSc.unset_library!()` returns the environment to `PETSc_jll`.
 
+### 32-bit PETSc indices
+
+`PETSc_jll` loads 64-bit index (`Int64`) libraries by default, which work for any mesh, including
+meshes built with `Int32` indices. The 32-bit libraries store the matrix in less memory and solve
+somewhat faster, and address up to about 2.1 billion nonzeros in the global matrix. To use them:
+
+```julia
+using PETSc
+PETSc.set_petscint!(Int32)   # PETSc.set_petscint!(Int64) switches back
+# restart Julia, then precompile before the first mpiexec launch:
+using Pkg; Pkg.precompile()
+```
+
+- The choice is stored in `LocalPreferences.toml` and applies to the whole process; it cannot be
+  switched at run time.
+- It has no effect when PETSc.jl points at your own library, whose `PetscInt` is set by
+  `set_library!`.
+- A matrix with more nonzeros than the loaded index type can address stops with an error that
+  names the fix.
+
 ### GPU runs without compiling PETSc
 
 conda-forge publishes CUDA-enabled PETSc builds (`cuda12_real_*` and `cuda13_real_*`, Float64 with

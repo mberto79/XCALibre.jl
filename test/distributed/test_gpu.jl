@@ -12,7 +12,7 @@ rank = MPI.Comm_rank(comm)
 
 petsclib = PETSc.petsclibs[findfirst(l -> l.PetscScalar == Float64, PETSc.petsclibs)]
 PETSc.initialize(petsclib)
-petsc_cuda = LibPETSc.PetscHasExternalPackage(petsclib, Vector{Int8}(codeunits("cuda\0")))
+petsc_cuda = Base.get_extension(XCALibre, :XCALibrePETScExt)._petsc_has_pkg(petsclib, "cuda")
 rank == 0 && println("PETSc CUDA: $petsc_cuda → $(petsc_cuda ? "native device solve" : "error path only")")
 
 include(joinpath(@__DIR__, "psimple_case.jl"))

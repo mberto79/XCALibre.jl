@@ -7,17 +7,22 @@ _potential_boundary(bc::PeriodicParent, value) = bc
 _potential_boundary(bc, value) = Zerogradient(bc.ID, value, bc.IDs_range)
 
 """
-    potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="")
+    potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="", from_rest=true)
 
-Project the current velocity field onto a divergence-free potential-flow field.
-Velocity boundary conditions supply the initial face flux. Velocity-potential
+Set the velocity to a divergence-free potential-flow field. With `from_rest=true` (default) the
+internal velocity is first set to zero, so the face flux to be corrected comes from the velocity
+boundary conditions only; with `from_rest=false` the current velocity field is projected. A
+nonzero initial field that is not a discrete gradient (a uniform field on a non-orthogonal mesh,
+for instance) keeps a solenoidal part after the projection, which shows up as spurious
+circulation, notably in enclosed or near-stagnant regions. Velocity-potential
 boundary conditions are inferred from pressure: fixed pressure becomes fixed
 zero potential, periodic patches remain periodic, and other patches use zero
 normal gradient.
 
 The corrected face-volume flux is returned with the linear-solver residual.
 """
-function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="")
+function potential_flow!(
+    model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="", from_rest=true)
     ncorrectors >= 0 || throw(ArgumentError("ncorrectors must be non-negative"))
 
     mesh = model.domain
@@ -51,6 +56,9 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, pet
     Phi_deqn = wrap_eqn(Phi_eqn, mesh, solvers.p, config; petsc_options, label="Phi")
     Phi_eqn = unwrap_eqn(Phi_deqn)
 
+    if from_rest # the initial flux comes from the boundary conditions only
+        fill!(U.x.values, zero(TF)); fill!(U.y.values, zero(TF)); fill!(U.z.values, zero(TF))
+    end
     # nothing has run before this call, so a distributed U still has unset ghosts
     sync!(U, mesh, potential_config)
     interpolate!(Uf, U, potential_config)

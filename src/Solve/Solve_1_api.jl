@@ -15,7 +15,8 @@ struct SolverSetup{
     I<:Integer,
     S1<:AbstractLinearSolver,
     S2<:Union{Nothing, AbstractSmoother},
-    PT<:PreconditionerType
+    PT<:PreconditionerType,
+    PR<:AbstractSolvePrecision
     }
     solver::S1
     smoother::S2
@@ -26,6 +27,7 @@ struct SolverSetup{
     itmax::I
     atol::F
     rtol::F
+    precision::PR
 end
 
 """
@@ -44,7 +46,8 @@ end
             limit=nothing,
             itmax::Integer=1000, 
             atol=(eps(_get_float(region)))^0.9,
-            rtol=_get_float(region)(1e-1)
+            rtol=_get_float(region)(1e-1),
+            precision=FullPrecision()
 
         ) where {S,PT<:PreconditionerType} = begin
 
@@ -65,6 +68,7 @@ This function is used to provide solver settings that will be used internally in
 - `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9). Also applies to PETSc solves.
 - `rtol`: set relative tolerance for the solver (defaults to 1e-1). Also applies to PETSc solves.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
+- `precision`: precision of the linear solve, `FullPrecision()` (default) or `MixedPrecision(T)` with `T` one of `Float32` (`MixedPrecision()`), `Float16`, `BFloat16`. See [`MixedPrecision`](@ref).
 """
 SolverSetup(;
         float_type=Float64,
@@ -76,16 +80,35 @@ SolverSetup(;
         limit=nothing,
         itmax::I=(solver isa AMG ? 200 : 1000),
         atol=(eps(float_type))^0.9,
-        rtol=1e-1 |> float_type
-        ) where{S1,S2,PT,I} = 
-        SolverSetup{float_type,I,S1,S2,PT}(
+        rtol=1e-1 |> float_type,
+        precision::PR=FullPrecision()
+        ) where{S1,S2,PT,I,PR} = begin
+        _check_precision(precision, solver, preconditioner)
+        SolverSetup{float_type,I,S1,S2,PT,PR}(
             solver, smoother,preconditioner, 
             float_type(convergence), 
             float_type(relax), 
             limit,
             itmax, 
             float_type(atol),
-            float_type(rtol))
+            float_type(rtol),
+            precision)
+    end
+
+_check_precision(::FullPrecision, solver, preconditioner) = nothing
+_check_precision(::MixedPrecision, solver, preconditioner) =
+    solver isa Union{Cg,Cgs,Bicgstab,Gmres} ||
+        throw(ArgumentError("MixedPrecision supports Cg, Cgs, Bicgstab and Gmres only"))
+
+# equation workspace honouring the setup's precision
+_workspace(setup::SolverSetup, eqn, dir...) = _workspace(setup.precision, setup, eqn, _b(eqn, dir...))
+_workspace(::FullPrecision, setup, eqn, b) = _workspace(setup.solver, b, _index_type(_A(eqn)))
+# serial meshes only: distributed MixedPrecision solves go through PETSc and its preconditioners
+function _workspace(::MixedPrecision{T}, setup, eqn, b) where T
+    setup.preconditioner isa Jacobi ||
+        throw(ArgumentError("MixedPrecision on serial meshes supports the Jacobi preconditioner only"))
+    MixedWorkspace(T, setup.solver, _A(eqn), b)
+end
 
 struct AdaptiveTimeStepping{F<:AbstractFloat}
     maxCo::F
@@ -278,6 +301,9 @@ function solve_equation!(
 end
 
 function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
+    phiEqn.solver isa MixedWorkspace && return _mixed_solve_system!(phiEqn, setup, result, component, config)
+    setup.precision isa MixedPrecision &&
+        throw(ArgumentError("MixedPrecision is not yet supported by this solver or equation"))
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
@@ -318,6 +344,18 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
 
     res = residual(phiEqn, component, config)
     return res
+end
+
+function _mixed_solve_system!(phiEqn, setup, result, component, config)
+    (; values) = result
+    A = _A(phiEqn)
+    b = _b(phiEqn, component)
+    apply_smoother!(setup.smoother, values, A, b, config.hardware)
+    # Crank-Nicolson's explicit step 2x_new - x_old is x_old + 2d
+    α = typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson} ? 2 : 1
+    iterations = _mixed_correction!(phiEqn.solver, A, b, values, α, setup, config.hardware)
+    iterations == setup.itmax && @warn "Maximum number of iterations reached!"
+    return residual(phiEqn, component, config)
 end
 
 # BiCGStab shadow vector M⁻¹(b - Ax0), as PETSc bcgs: Krylov.jl's default c = b suits only a zero

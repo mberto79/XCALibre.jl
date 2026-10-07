@@ -220,9 +220,9 @@ function initialise(
     
     # preallocating solvers
 
-    @reset kl_eqn.solver = _workspace(solvers.kl.solver, _b(kl_eqn), _index_type(_A(kl_eqn)))
-    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
-    @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn), _index_type(_A(ω_eqn)))
+    @reset kl_eqn.solver = _workspace(solvers.kl, kl_eqn)
+    @reset k_eqn.solver = _workspace(solvers.k, k_eqn)
+    @reset ω_eqn.solver = _workspace(solvers.omega, ω_eqn)
 
     TF = _get_float(mesh)
     time = zero(TF) # assuming time=0

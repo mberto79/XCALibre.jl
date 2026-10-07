@@ -9,6 +9,7 @@ using SparseArrays
 using SparseMatricesCSR
 using LinearAlgebra
 import Krylov
+using BFloat16s: BFloat16
 
 import Base
 import LinearAlgebra

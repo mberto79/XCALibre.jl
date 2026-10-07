@@ -89,15 +89,21 @@ end
 
 # NEW SECTION: Krylov.jl vector primitives
 
+# half-precision sums stagnate after a few hundred terms, so they accumulate in Float32
+_acc_type(::Type{T}) where T = T
+_acc_type(::Type{<:Union{Float16,BFloat16}}) = Float32
+
 function Krylov.kdot(n::Integer, x::XVector{T}, y::XVector{T}) where T<:AbstractFloat
     xd, yd = x.data, y.data
-    _reduce_chunks(n, T) do r
-        s = zero(T)
+    TA = _acc_type(T)
+    acc = _reduce_chunks(n, TA) do r
+        s = zero(TA)
         @inbounds @simd for i ∈ r
-            s += xd[i]*yd[i]
+            s += TA(xd[i])*TA(yd[i])
         end
         s
     end
+    T(acc)
 end
 
 Krylov.knorm(n::Integer, x::XVector{T}) where T<:AbstractFloat = sqrt(Krylov.kdot(n, x, x))

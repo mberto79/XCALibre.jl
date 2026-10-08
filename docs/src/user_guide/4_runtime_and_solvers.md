@@ -30,7 +30,7 @@ initialise!
 
 A uniform initial guess leaves a velocity field that does not satisfy continuity, which the first few solver iterations must work off before making physical progress. For external and internal flows around bodies, a potential-flow field is a much better starting point: it already satisfies continuity and carries the shape of the geometry.
 
-`potential_flow!` solves a velocity-potential equation on the current mesh and projects the velocity field onto the resulting divergence-free field. Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
+`potential_flow!` solves a velocity-potential equation on the current mesh and sets the velocity to the resulting divergence-free field. By default it starts from rest: the internal velocity is set to zero first, so the flow is driven by the velocity boundary conditions alone (pass `from_rest=false` to project the current field instead). Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
 
 ```@docs; canonical=false
 potential_flow!

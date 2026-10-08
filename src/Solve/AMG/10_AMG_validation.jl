@@ -143,8 +143,11 @@ function measure_cycle_allocations(A, merge_levels::Integer, backend; pre::Int=2
     st = h.st; T = h.T; n = st.n
     rhs = backend isa CPU ? rand(T, n) : Adapt.adapt(backend, rand(T, n))
     matrix_free_cycle!(st, rhs)                                # warmup (compile + cuBLAS handle)
-    a1 = @allocated matrix_free_cycle!(st, rhs)
-    a2 = @allocated matrix_free_cycle!(st, rhs)                # KA launch adds a fixed host alloc — report, don't assert zero
+    GC.gc()                                                    # run pending finalizers outside the measurement
+    # KA launch adds a fixed host alloc — report, don't assert zero. Threaded launches and finalizers
+    # occasionally add bytes to one call, so compare the minimum of two batches of cycles
+    a1 = minimum(@allocated(matrix_free_cycle!(st, rhs)) for _ in 1:3)
+    a2 = minimum(@allocated(matrix_free_cycle!(st, rhs)) for _ in 1:3)
     return (host_bytes=(a1, a2), constant=(a1 == a2), coarse_n=st.coarse_n,
             branch=(st.coarse_inv[] === nothing ? :host_lu : :gemv), levels=length(st.levels) + 1)
 end

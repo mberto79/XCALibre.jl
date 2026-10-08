@@ -190,9 +190,10 @@ end
     face = faces[fID]
     nuc = nu[cID]
     (; delta, normal)= face
+    y = wall_normal_distance(face) # wall distance; delta (floored) stays in the face snGrad
     uStar = cmu^eltype(sums)(0.25)*sqrt(k[cID])
-    dUdy = uStar/(kappa*delta)
-    yplus = y_plus(k[cID], nuc, delta, cmu)
+    dUdy = uStar/(kappa*y)
+    yplus = y_plus(k[cID], nuc, y, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
     Uw = Uf[fID]
     mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
@@ -260,10 +261,9 @@ end
     cID = boundary_cellsID[fID]
     face = faces[fID]
     # nuf = nu[fID]
-    (; delta)= face
-    # yplus = y_plus(k[cID], nuf, delta, cmu)
+    y = wall_normal_distance(face)
     nuc = nu[cID]
-    yplus = y_plus(k[cID], nuc, delta, cmu)
+    yplus = y_plus(k[cID], nuc, y, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
     if yplus > yPlusLam
         values[fID] = nutw
@@ -302,7 +302,8 @@ end
 
     cID = boundary_cellsID[fID]
     face = faces[fID]
-    (; delta, normal) = face
+    (; normal) = face
+    delta = wall_normal_distance(face) # wall distance of the cell centre
     nuc = nu[cID]
 
     # Tangential velocity magnitude at cell centre (wall velocity = 0)
@@ -424,7 +425,7 @@ end
     @inbounds begin
         cID = boundary_cellsID[fID]
         face = faces[fID]
-        y = face.delta
+        y = wall_normal_distance(face)
         ωvis = ω_vis(nu[cID], y, beta1)
         ωlog = ω_log(k[cID], y, cmu, kappa)
         yplus = y_plus(k[cID], nu[cID], y, cmu) 

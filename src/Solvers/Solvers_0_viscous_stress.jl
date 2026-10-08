@@ -12,7 +12,8 @@
 Set `source` = ∇·(μ_eff dev2((∇U)ᵀ)) from the cell gradient `gradU` and the face viscosity
 `mueff` (ν_eff for the incompressible solvers), using the current values of both. With the
 cell viscosity `cell_mueff` (see `cell_nueff` and `cell_mueff`) internal faces interpolate the
-product μ_eff dev2((∇U)ᵀ) of the two cells; `mueff` is then used on boundary faces only.
+product μ_eff dev2((∇U)ᵀ) of the two cells, and boundary faces use `mueff` times the
+boundary-face gradient (see `_transpose_stress_boundary!`).
 """
 function transpose_stress!(source, mueff, gradU, U_BCs, config; cell_mueff=nothing)
     mesh = source.mesh
@@ -22,7 +23,55 @@ function transpose_stress!(source, mueff, gradU, U_BCs, config; cell_mueff=nothi
     sync!(VectorField(t.yx, t.yy, t.yz, mesh), mesh, config)
     sync!(VectorField(t.zx, t.zy, t.zz, mesh), mesh, config)
     _sync_cell_viscosity!(cell_mueff, mesh, config)
-    div!(source, mueff, Dev2(T(gradU)), U_BCs, config; Γc=cell_mueff)
+    isnothing(cell_mueff) && return div!(source, mueff, Dev2(T(gradU)), U_BCs, config)
+    div!(source, mueff, Dev2(T(gradU)), (), config; Γc=cell_mueff) # internal faces
+    (; backend, workgroup) = config.hardware
+    for BC ∈ U_BCs
+        _transpose_stress_boundary!(source, mueff, gradU, BC, mesh, backend, workgroup)
+    end
+    nothing
+end
+
+# Boundary faces: owner-cell gradient with its normal derivative replaced by the boundary
+# condition's: (U_b - U_c)/delta (fixed value), 0 (zero gradient), -(U_c·n)n/delta (slip,
+# symmetry). Empty faces carry no flux; other conditions keep the owner-cell gradient.
+_transpose_stress_boundary!(source, mueff, gradU, ::Empty, mesh, backend, workgroup) = nothing
+
+function _transpose_stress_boundary!(source, mueff, gradU, BC, mesh, backend, workgroup)
+    (; IDs_range) = BC
+    isempty(IDs_range) && return nothing
+    (; cells, faces) = mesh
+    kernel! = _sized(_transpose_stress_boundary_kernel!, backend, workgroup, length(IDs_range))
+    kernel!(source, mueff, gradU, gradU.field, BC, IDs_range, cells, faces)
+    KernelAbstractions.synchronize(backend)
+end
+
+# face-normal gradient of U, or nothing to keep the owner-cell normal derivative
+@inline _boundary_sngrad(BC::Union{Wall,Dirichlet}, Uc, delta) =
+    (SVector{3}(BC.value[1], BC.value[2], BC.value[3]) - Uc)/delta
+@inline _boundary_sngrad(::Union{Zerogradient,Extrapolated}, Uc, delta) = zero(Uc)
+# mirror condition: face value U_c - (U_c·n)n, normal gradient -(U_c·n)n/delta
+@inline _boundary_sngrad(::Union{Slip,Symmetry}, Uc, delta, normal) = -(Uc⋅normal)*normal/delta
+@inline _boundary_sngrad(BC, Uc, delta, normal) = _boundary_sngrad(BC, Uc, delta)
+@inline _boundary_sngrad(BC, Uc, delta) = nothing
+
+@inline _patch_gradient(Mc, ::Nothing, normal) = Mc
+@inline _patch_gradient(Mc, sngrad, normal) = Mc + (sngrad - Mc*normal)*normal'
+
+@kernel inbounds=true function _transpose_stress_boundary_kernel!(
+    source, mueff, gradU, U, BC, IDs_range, cells, faces)
+    i = @index(Global)
+    fID = IDs_range[i]
+    cID = faces.ownerCells[fID][1]
+    normal, area, delta = faces.normal[fID], faces.area[fID], faces.delta[fID]
+    TF = typeof(area)
+    Mc = gradU[cID] # Mc[i,j] = ∂U_i/∂x_j
+    Mb = _patch_gradient(Mc, _boundary_sngrad(BC, U[cID], delta, normal), normal)
+    Tb = Mb' - TF(2)/3*tr(Mb)*I
+    flux = mueff[fID]*(Tb*normal)*(area/cells.volume[cID])
+    Atomix.@atomic source.x.values[cID] += flux[1]
+    Atomix.@atomic source.y.values[cID] += flux[2]
+    Atomix.@atomic source.z.values[cID] += flux[3]
 end
 
 # Cell μ_eff = ρ(ν + ν_t), evaluated on access. `rho === nothing` gives the kinematic ν_eff of

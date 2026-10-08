@@ -120,7 +120,9 @@ function PISO(
     grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first time step
     limit_gradient!(schemes.U.limiter, gradU, U, config)
 
+    transpose_stress && prime_face_nut!(model, boundaries, config)
     update_nueff!(nueff, nu, model.turbulence, config)
+    nueffc = cell_nueff(nu, model.turbulence) # cell ν_eff for the transpose stress
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
 
@@ -134,7 +136,8 @@ function PISO(
         time += dt_cpu[1]
 
         # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
-        transpose_stress && transpose_stress!(divτT, nueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(
+            divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
 
         rx, ry, rz = solve_equation!(
             U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)

@@ -198,8 +198,10 @@ function CSIMPLE(
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
     update_viscosity!(model.fluid, model.energy, config)
+    transpose_stress && prime_face_nut!(model, boundaries, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values = nueff.values * rhof.values
+    mueffc = cell_mueff(rho, nu, model.turbulence) # cell μ_eff for the transpose stress
     grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first iteration
     limit_gradient!(schemes.U.limiter, gradU, U, config)
 
@@ -214,7 +216,8 @@ function CSIMPLE(
         time = iteration
 
         # gradU and mueff of the current velocity (updated by turbulence! below)
-        transpose_stress && transpose_stress!(mueffgradUt, mueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(
+            mueffgradUt, mueff, gradU, boundaries.U, config; cell_mueff=mueffc)
 
         # Store previous values for next time step energy source terms
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)

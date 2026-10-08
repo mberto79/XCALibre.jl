@@ -4,6 +4,7 @@ export bounding_box
 export boundary_info, boundary_map
 export total_boundary_faces, boundary_index
 export norm_static
+export wall_normal_distance
 export is_boundary
 export convert_mesh_float
 export validate_single_precision_mesh
@@ -34,9 +35,9 @@ end
 is_boundary(ownerCells::SVector{2,<:Integer}) = ownerCells[1] == ownerCells[2]
 is_boundary(face::Union{Face2D,Face3D}) = is_boundary(face.ownerCells)
 
-# Laplacian face coefficient. norm(((Sf.Sf)/(Sf.e))*e)/delta reduces to area/(|normal.e|*delta)
-# because ns cancels and normal and e are unit vectors. Boundary faces keep area/delta, which
-# is what every @define_boundary Laplacian block uses.
+# Laplacian face coefficient: norm(((Sf.Sf)/(Sf.e))*e)/delta reduces to area/(|normal.e|*delta).
+# Boundary faces keep area/delta (delta is already the floored wall-normal distance there),
+# as every @define_boundary Laplacian block does.
 _gDiff(ownerCells, normal, e, area, delta) = begin
     den = is_boundary(ownerCells) ? delta : abs(normal ⋅ e)*delta
     den > zero(den) ? area/den : zero(den)
@@ -77,14 +78,28 @@ weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
     return weight, delta, e
 end
 
-# function to calculate boundary face properties
+# Boundary face properties: delta = (Cf - C)·n, floored at 5% of |Cf - C| to keep area/delta
+# bounded. On skewed boundary cells |Cf - C| overstates the normal distance that boundary
+# gradients and Laplacian coefficients need (wall functions use wall_normal_distance).
 weight_delta_e(C1F1, normal) = begin
     weight = one(eltype(C1F1))
-    delta = norm(C1F1)
-    e = delta > zero(delta) ? C1F1/delta : normal
+    distance = norm(C1F1)
+    e = distance > zero(distance) ? C1F1/distance : normal
+    delta = max(C1F1⋅normal, oftype(distance, 0.05)*distance)
     delta = max(delta, eps(one(delta))) # keep delta > 0 for degenerate faces (area is 0 there)
     return weight, delta, e
 end
+
+# Unfloored wall-normal distance |d| e·n for the wall functions (a floored y overestimates y+
+# and nu_t in thin, skewed near-wall cells). |d| is recovered from delta = |d| max(e·n, 0.05);
+# a 0.1% floor keeps the result positive.
+@inline wall_normal_distance(delta, e, normal) = begin
+    en = e⋅normal
+    distance = delta/max(en, oftype(delta, 0.05))
+    distance*max(en, oftype(delta, 0.001))
+end
+@inline wall_normal_distance(face::Union{Face2D,Face3D}) =
+    wall_normal_distance(face.delta, face.e, face.normal)
 
 # Orientation from cell topology (exact for any closed cell), not from estimated centres.
 # Returns (signs, ok): signs[i] = +1 if face i in stored order points out of the cell, else -1;

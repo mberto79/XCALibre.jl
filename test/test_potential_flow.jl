@@ -86,16 +86,37 @@ end
     end
 end
 
-# A field that is already the potential-flow solution must come back unchanged. This is the only
-# check on the reconstructed U that is exact rather than a tolerance on a perturbed field.
+# Projecting a field that is already the potential-flow solution must return it unchanged. This
+# is the only check on the reconstructed U that is exact rather than a tolerance on a perturbed
+# field.
 @testset "potential flow preserves the exact solution" begin
     model, config, _, _ = potential_flow_case()
 
     initialise!(model.momentum.U, [1.0, 0.0, 0.0])
-    result = potential_flow!(model, config; ncorrectors=10)
+    result = potential_flow!(model, config; ncorrectors=10, from_rest=false)
 
     @test result.residual < 1e-8
     @test maximum(abs, model.momentum.U.x.values .- 1.0) < 1e-10
     @test maximum(abs, model.momentum.U.y.values) < 1e-10
     @test maximum(abs, model.momentum.U.z.values) < 1e-10
+end
+
+# By default the projection starts from rest: the flux comes from the velocity boundary conditions
+# only, so the result does not depend on the initial internal field.
+@testset "potential flow from rest" begin
+    model, config, mesh, _ = potential_flow_case()
+    initialise!(model.momentum.U, [1.0, 0.0, 0.0])
+    result = potential_flow!(model, config; ncorrectors=10)
+    Ux = copy(model.momentum.U.x.values)
+
+    divergence = ScalarField(mesh)
+    div!(divergence, result.flux, config)
+    volumes = getproperty.(mesh.cells, :volume)
+    @test sum(abs.(divergence.values).*volumes)/sum(volumes) < 1e-9
+    @test mean(Ux) ≈ 1.0 atol=1e-2
+
+    model2, config2, _, _ = potential_flow_case()
+    initialise!(model2.momentum.U, [-3.0, 2.0, 5.0])
+    potential_flow!(model2, config2; ncorrectors=10)
+    @test maximum(abs, model2.momentum.U.x.values .- Ux) < 1e-8
 end

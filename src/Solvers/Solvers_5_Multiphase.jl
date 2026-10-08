@@ -292,8 +292,10 @@ function MULTIPHASE(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
     @. rhoPhi.values = mdotf.values * rhof.values
+    transpose_stress && prime_face_nut!(model, boundaries, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
     @. mueff.values  = rhof.values * nueff.values
+    mueffc = cell_mueff(rho, nu, model.turbulence) # cell mixture μ_eff for the transpose stress
     grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first time step
     limit_gradient!(schemes.U.limiter, gradU, U, config)
 
@@ -362,7 +364,8 @@ function MULTIPHASE(
             sigma=sigma, kappaf=kappaf, alpha=alpha)
 
         # gradU of the start-of-step velocity (updated by turbulence! below), mueff of the new alpha
-        transpose_stress && transpose_stress!(divτT, mueff, gradU, boundaries.U, config)
+        transpose_stress && transpose_stress!(
+            divτT, mueff, gradU, boundaries.U, config; cell_mueff=mueffc)
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho_prev, time=time)

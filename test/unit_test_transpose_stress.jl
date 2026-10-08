@@ -132,3 +132,59 @@ end
     end
     @test maximum(norm(phi[i] - reference[i]) for i ∈ eachindex(mesh.cells)) < 1e-9
 end
+
+@testset "Explicit viscous stress with a cell viscosity (interpolated product)" begin
+    # With ν = 1 + c x as a cell field the face product ν dev2((∇U)ᵀ) interpolated with the
+    # mesh weights is still exact for constant ∇U on this uniform mesh, so the source is again
+    # c (G_xx, G_xy, G_xz); boundary faces use the face viscosity
+    for TF ∈ (Float64, Float32)
+        mesh, config = stress_setup(TF)
+        c = TF(2.5)
+        U, gradU, nu = stress_fields(mesh, TF, c)
+        nuc = ScalarField(mesh)
+        for i ∈ eachindex(mesh.cells)
+            nuc.values[i] = 1 + c*mesh.cells[i].centre[1]
+        end
+        source = VectorField(mesh)
+        cell_mueff = TS.cell_nueff(nuc, nothing) # laminar: ν alone
+        @test cell_mueff[7] == nuc.values[7]
+        TS.transpose_stress!(source, nu, gradU, config.boundaries.U, config; cell_mueff)
+        @test eltype(source.x.values) === TF
+        tol = TF === Float64 ? 1e-9 : 2e-3
+        @test maximum(abs.(source.x.values .- c*ts_a)) < tol
+        @test maximum(abs.(source.y.values .- c*ts_b)) < tol
+    end
+
+    # Internal faces carry w Γ[P] T[P] + (1 - w) Γ[N] T[N] (the divergence of the face-interpolated product),
+    # not Γf (w T[P] + (1 - w) T[N]): checked against a direct sum with a jumping Γ
+    mesh, config = stress_setup(Float64; grid="flatplate_2D_lowRe.unv")
+    ncells = length(mesh.cells)
+    Γc = ScalarField(mesh)
+    Γc.values .= [isodd(i) ? 1.0 : 50.0 for i ∈ 1:ncells]
+    tensor = TensorField(mesh)
+    for i ∈ 1:ncells
+        x, y, _ = mesh.cells[i].centre
+        tensor[i] = @SMatrix [1+x 2y 0; -y 0.5+x*y 0; 0 0 0]
+    end
+    Γf = FaceScalarField(mesh)
+    Γf.values .= 1
+    phi = VectorField(mesh)
+    div!(phi, Γf, tensor, (), config; Γc=Γc)
+    expected = zeros(SVector{3,Float64}, ncells)
+    nb = length(mesh.boundary_cellsID)
+    for fID ∈ nb+1:length(mesh.faces)
+        f = mesh.faces[fID]
+        P, N = f.ownerCells
+        flux = (f.weight*Γc[P]*tensor[P] + (1 - f.weight)*Γc[N]*tensor[N])*f.normal*f.area
+        expected[P] += flux/mesh.cells[P].volume
+        expected[N] -= flux/mesh.cells[N].volume
+    end
+    @test maximum(norm(phi[i] - expected[i]) for i ∈ 1:ncells) < 1e-9*maximum(norm, expected)
+
+    # Compressible/multiphase cell μ_eff = ρ(ν + ν_t)
+    rho = ScalarField(mesh); rho.values .= 2.0
+    nut = ScalarField(mesh); nut.values .= 0.25
+    μ = TS.cell_mueff(rho, ConstantScalar(0.5), (; nut))
+    @test μ[3] == 2.0*(0.5 + 0.25)
+    @test TS.cell_mueff(rho, FaceScalarField(mesh), (; nut)) === nothing
+end

@@ -171,23 +171,29 @@ end
 # Divergence of a cell tensor field scaled by a face coefficient
 
 """
-    div!(phi::VectorField, Γf, tensor, BCs, config)
+    div!(phi::VectorField, Γf, tensor, BCs, config; Γc=nothing)
 
 Cell values of ∇·(Γ tensor): `phi[i] = (1/V_i) Σ_f Γf[f] (tensor_f ⋅ S_f)`, where `tensor` is any
 cell tensor field indexed as `tensor[i]` (including lazy forms such as `Dev2(T(gradU))`) and
 `S_f` is the outward face area vector. At internal faces `tensor_f` is the linear interpolation
 of the two cell values with the mesh weights; at boundary faces it is the owner-cell value.
+With a cell coefficient `Γc` (any cell-indexable value, e.g. ν + ν_t) internal faces take the
+interpolated product, `w Γc[P] tensor[P] + (1 - w) Γc[N] tensor[N]`, i.e. the face value of
+the cell flux tensor Γ·tensor; boundary faces keep `Γf[f]` times the owner value. Interpolating
+Γ and the tensor separately instead lets a large neighbour viscosity multiply the steep
+gradient of a thin near-wall cell (a face weight close to 1 on the thin side), which makes an
+explicit source built this way unstable.
 Faces of `Slip`, `Symmetry` and `Empty` boundaries carry no flux. `BCs` are the boundary
 conditions of the field `tensor` derives from (e.g. `boundaries.U`). Ghost cells of a
 distributed mesh must hold current values of `tensor`.
 """
-function div!(phi::VectorField, Γf, tensor, BCs, config)
+function div!(phi::VectorField, Γf, tensor, BCs, config; Γc=nothing)
     mesh = phi.mesh
     (; cells, cell_faces, cell_nsign, faces) = mesh
     (; backend, workgroup) = config.hardware
 
     kernel! = _sized(_div_tensor_cells!, backend, workgroup, length(cells))
-    kernel!(phi, Γf, tensor, cells, cell_faces, cell_nsign, faces)
+    kernel!(phi, Γf, Γc, tensor, cells, cell_faces, cell_nsign, faces)
     KernelAbstractions.synchronize(backend)
 
     for BC ∈ BCs
@@ -197,12 +203,22 @@ function div!(phi::VectorField, Γf, tensor, BCs, config)
 end
 
 # each cell sums the fluxes through its internal faces
+# Γ times the face tensor: face coefficient times interpolated tensor, or the interpolated
+# product of cell coefficient and tensor
+@inline _face_flux_tensor(Γf, ::Nothing, fID, wi, Γi, Ti, nID, Tn) = Γf[fID]*(wi*Ti + (one(wi) - wi)*Tn)
+@inline _face_flux_tensor(Γf, Γc, fID, wi, Γi, Ti, nID, Tn) =
+    wi*Γi*Ti + (one(wi) - wi)*_cell_coefficient(Γc, nID, typeof(wi))*Tn
+
+@inline _cell_coefficient(::Nothing, i, ::Type{TF}) where TF = zero(TF)
+@inline _cell_coefficient(Γc, i, ::Type{TF}) where TF = TF(Γc[i])
+
 @kernel inbounds=true function _div_tensor_cells!(
-    phi, Γf, tensor, cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, cell_nsign, faces
+    phi, Γf, Γc, tensor, cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, cell_nsign, faces
     ) where {TF,SV,UR}
     i = @index(Global)
     volume, faces_range = cells.volume[i], cells.faces_range[i]
     Ti = tensor[i]
+    Γi = _cell_coefficient(Γc, i, TF)
     flux_sum = zero(SVector{3,TF})
     for fi ∈ faces_range
         fID = cell_faces[fi]
@@ -212,8 +228,8 @@ end
         owner = ownerCells[1] == i
         wi = owner ? weight : one(TF) - weight
         nID = owner ? ownerCells[2] : ownerCells[1]
-        Tf = wi*Ti + (one(TF) - wi)*tensor[nID]
-        flux_sum += Γf[fID]*(Tf*normal)*(area*nsign)
+        ΓTf = _face_flux_tensor(Γf, Γc, fID, wi, Γi, Ti, nID, tensor[nID])
+        flux_sum += (ΓTf*normal)*(area*nsign)
     end
     phi[i] = flux_sum/volume
 end

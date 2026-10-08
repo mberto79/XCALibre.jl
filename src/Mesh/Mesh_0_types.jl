@@ -94,7 +94,7 @@ Adapt.@adapt_structure Face2D
         normal::SV3     # face normal unit vector
         e::SV3          # unit vector in the direction between owner cells
         area::F         # face area
-        delta::F        # distance between owner cells centres
+        delta::F        # distance between owner cells centres (boundary: wall-normal distance)
         weight::F       # linear interpolation weight
     end
 """
@@ -111,7 +111,7 @@ struct Face3D{
     normal::SV3     # face normal unit vector
     e::SV3          # unit vector in the direction between owner cells
     area::F         # face area
-    delta::F        # distance between owner cells centres
+    delta::F        # distance between owner cells centres (boundary: wall-normal distance)
     weight::F       # linear interpolation weight
 end
 Adapt.@adapt_structure Face3D
@@ -254,7 +254,7 @@ struct Mesh2{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
     face_normal::VV      # face unit normals
     face_e::VV           # unit vectors between owner cell centres
     face_area::VTF       # face areas
-    face_delta::VTF      # distance between owner cell centres
+    face_delta::VTF      # distance between owner cell centres (boundary: wall-normal distance)
     face_weight::VTF     # linear interpolation weights
     face_nodes::VI       # node IDs of each face
     face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
@@ -319,7 +319,7 @@ its own array; `mesh.cells`, `mesh.faces` and `mesh.nodes` return views that ind
     face_normal::VV      # face unit normals
     face_e::VV           # unit vectors between owner cell centres
     face_area::VTF       # face areas
-    face_delta::VTF      # distance between owner cell centres
+    face_delta::VTF      # distance between owner cell centres (boundary: wall-normal distance)
     face_weight::VTF     # linear interpolation weights
     face_nodes::VI       # node IDs of each face
     face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
@@ -347,7 +347,7 @@ struct Mesh3{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
     face_normal::VV      # face unit normals
     face_e::VV           # unit vectors between owner cell centres
     face_area::VTF       # face areas
-    face_delta::VTF      # distance between owner cell centres
+    face_delta::VTF      # distance between owner cell centres (boundary: wall-normal distance)
     face_weight::VTF     # linear interpolation weights
     face_nodes::VI       # node IDs of each face
     face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)

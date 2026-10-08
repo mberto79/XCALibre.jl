@@ -34,10 +34,9 @@ end
 is_boundary(ownerCells::SVector{2,<:Integer}) = ownerCells[1] == ownerCells[2]
 is_boundary(face::Union{Face2D,Face3D}) = is_boundary(face.ownerCells)
 
-# Laplacian face coefficient. norm(((Sf.Sf)/(Sf.e))*e)/delta reduces to area/(|normal.e|*delta)
-# because ns cancels and normal and e are unit vectors. Boundary faces keep area/delta (delta is
-# already the floored wall-normal distance there), which is what every @define_boundary
-# Laplacian block uses.
+# Laplacian face coefficient: norm(((Sf.Sf)/(Sf.e))*e)/delta reduces to area/(|normal.e|*delta).
+# Boundary faces keep area/delta (delta is already the floored wall-normal distance there),
+# as every @define_boundary Laplacian block does.
 _gDiff(ownerCells, normal, e, area, delta) = begin
     den = is_boundary(ownerCells) ? delta : abs(normal ⋅ e)*delta
     den > zero(den) ? area/den : zero(den)
@@ -78,11 +77,9 @@ weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
     return weight, delta, e
 end
 
-# Boundary face properties. delta is the face-normal distance from the cell centre to the face,
-# (Cf - C)·n, floored at 5% of |Cf - C| so that the boundary coefficient area/delta stays bounded
-# when the centre lies almost in the plane of the face. On skewed or concave boundary cells
-# (e·n down to ~0.006 in collapsed near-wall layers) |Cf - C| overstates the normal distance that
-# boundary gradients, Laplacian coefficients and wall functions need.
+# Boundary face properties: delta = (Cf - C)·n, floored at 5% of |Cf - C| to keep area/delta
+# bounded. On skewed boundary cells |Cf - C| overstates the normal distance that boundary
+# gradients, Laplacian coefficients and wall functions need.
 weight_delta_e(C1F1, normal) = begin
     weight = one(eltype(C1F1))
     distance = norm(C1F1)

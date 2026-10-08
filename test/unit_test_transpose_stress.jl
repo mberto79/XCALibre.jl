@@ -151,8 +151,10 @@ end
         TS.transpose_stress!(source, nu, gradU, config.boundaries.U, config; cell_mueff)
         @test eltype(source.x.values) === TF
         tol = TF === Float64 ? 1e-9 : 2e-3
-        @test maximum(abs.(source.x.values .- c*ts_a)) < tol
-        @test maximum(abs.(source.y.values .- c*ts_b)) < tol
+        # boundary cells: the boundary-face gradient takes the (uniform) BC values, not the linear field
+        interior = setdiff(eachindex(mesh.cells), mesh.boundary_cellsID)
+        @test maximum(abs.(source.x.values[interior] .- c*ts_a)) < tol
+        @test maximum(abs.(source.y.values[interior] .- c*ts_b)) < tol
     end
 
     # Internal faces carry w Γ[P] T[P] + (1 - w) Γ[N] T[N] (the divergence of the face-interpolated product),

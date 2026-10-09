@@ -42,7 +42,7 @@ Every kernel that loops over cells reads the values of each cell's neighbours, s
 mesh = reorder_mesh!(UNV3D_mesh(mesh_file, scale=0.001))
 ```
 
-```@docs; canonical=false
+```@docs
 reorder_mesh!
 ```
 

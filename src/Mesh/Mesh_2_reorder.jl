@@ -174,15 +174,6 @@ end
 
 # NEW SECTION: orderings
 
-"""
-    rcm_permutation(rowptr, colval) -> perm
-
-Reverse Cuthill-McKee ordering of the graph with adjacency lists `colval[rowptr[i]:rowptr[i+1]-1]`
-(entries equal to `i` are ignored); `perm[new] = old`.
-"""
-rcm_permutation(rowptr, colval) =
-    _rcm(length(rowptr) - 1, u -> rowptr[u]:(rowptr[u + 1] - 1), colval, eltype(colval))
-
 # neighbours of u are colval[adjacency(u)]; perm, level and queue are the only n-sized arrays
 function _rcm(n, adjacency, colval, ::Type{TI}) where TI
     perm = Vector{TI}(undef, n)

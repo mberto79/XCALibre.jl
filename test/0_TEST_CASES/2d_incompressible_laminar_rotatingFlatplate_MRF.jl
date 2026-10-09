@@ -96,10 +96,8 @@ initialise!(model.momentum.p, 0.0)
 
 residuals = run!(model, config; progress=false)
 
-# cells chosen by position, so the check holds for any cell numbering
-distance_to_axis(i) = norm(mesh.cells[i].centre - rotating_frames.frames.x0[1])
-MRFCell = argmin(distance_to_axis, eachindex(mesh.cells))
-inertialCell = argmax(distance_to_axis, eachindex(mesh.cells))
+MRFCell = 2000 
+inertialCell = 10
 
 @test rotating_frames.global_mask[MRFCell] == 1.0
 @test rotating_frames.global_mask[inertialCell] == 0.0

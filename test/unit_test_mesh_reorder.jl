@@ -46,7 +46,7 @@ end
 neighbour_distance(m) = sum(f -> abs(Int(f[1]) - Int(f[2])), m.face_ownerCells[length(m.boundary_cellsID)+1:end])
 
 @testset "reorder_mesh! keeps the solution ($method)" for method ∈ (:rcm, :morton)
-    mesh = UNV2D_mesh(joinpath(grids_dir, "trig100.unv"); reorder=false)
+    mesh = UNV2D_mesh(joinpath(grids_dir, "trig100.unv"))
     reordered = deepcopy(mesh)
     perm = XCALibre.Mesh._reorder_mesh!(reordered, method)
     @test perm !== nothing
@@ -55,7 +55,7 @@ neighbour_distance(m) = sum(f -> abs(Int(f[1]) - Int(f[2])), m.face_ownerCells[l
 end
 
 @testset "reorder_mesh! on a 3D mesh" begin
-    mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_15mm.unv"); scale=0.001, reorder=false)
+    mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_15mm.unv"); scale=0.001)
     reordered = deepcopy(mesh)
     perm = XCALibre.Mesh._reorder_mesh!(reordered, :rcm)
     @test reordered.cell_volume == mesh.cell_volume[perm]
@@ -63,26 +63,28 @@ end
     @test [b.IDs_range for b ∈ reordered.boundaries] == [b.IDs_range for b ∈ mesh.boundaries]
     @test consistent_connectivity(reordered)
     @test neighbour_distance(reordered) < neighbour_distance(mesh)/10
-    # an ordered mesh is left as it is, so reading back a mesh written after reordering is stable
+    # an ordered mesh is left as it is
     @test XCALibre.Mesh._reorder_mesh!(reordered, :rcm) === nothing
-    @test UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_15mm.unv"); scale=0.001).cell_volume == reordered.cell_volume
 end
 
-@testset "polyMesh written from a reordered mesh" begin
-    mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_15mm.unv"); scale=0.001, reorder=false)
-    reordered = reorder_mesh!(deepcopy(mesh))
+@testset "reorder_mesh! rewrites the stored mesh" begin
+    mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_15mm.unv"); scale=0.001)
     mktempdir() do dir
         cd(dir) do
             IOFormats = XCALibre.IOFormats
             IOFormats.initialise_writer(OpenFOAM(), mesh)
             @test !IOFormats._polyMesh_order_mismatch("constant/polyMesh", mesh)
-            @test IOFormats._polyMesh_order_mismatch("constant/polyMesh", reordered)
-            # same counts, different numbering: the files are rewritten in the order of the mesh
-            IOFormats.initialise_writer(OpenFOAM(), reordered)
-            back = FOAM3D_mesh("constant/polyMesh"; reorder=false)
+            # the files are rewritten in the new order, faces owned by their lower-numbered cell
+            reordered = reorder_mesh!(deepcopy(mesh))
+            back = FOAM3D_mesh("constant/polyMesh")
             @test back.cell_volume ≈ reordered.cell_volume
-            @test !IOFormats._polyMesh_order_mismatch("constant/polyMesh", reordered)
             @test consistent_connectivity(back)
+            @test !IOFormats._polyMesh_order_mismatch("constant/polyMesh", reordered)
+            # polymesh=nothing leaves them as they are; the writer then replaces them before writing
+            again = reorder_mesh!(deepcopy(mesh); method=:morton, polymesh=nothing)
+            @test IOFormats._polyMesh_order_mismatch("constant/polyMesh", again)
+            IOFormats.initialise_writer(OpenFOAM(), again)
+            @test FOAM3D_mesh("constant/polyMesh").cell_volume ≈ again.cell_volume
         end
     end
 end

@@ -1,27 +1,3 @@
-export reorder_mesh!
-
-"""
-    reorder_mesh!(mesh::Union{Mesh2,Mesh3}; method=:rcm) -> mesh
-
-Reorder the cells, faces and nodes of a host `mesh` in place for memory locality, so the neighbours
-that cell-based kernels read sit close in memory. Geometry, face orientation and boundary patches
-are unchanged; only the ordering differs. Arrays are permuted in place: the extra memory is a few
-index vectors of the mesh's integer type and one buffer the size of the largest connectivity list.
-
-- `method=:rcm`: reverse Cuthill-McKee ordering of the cell graph (bounded index distance between
-  neighbours).
-- `method=:morton`: Z-order curve of the cell centres (compact groups of consecutive cells).
-
-Internal faces follow their lowest-numbered cell, boundary faces their owner cell within each patch,
-and nodes the order in which the cells first reach them. Fields built on the reordered mesh are in
-the new cell order; `output=OpenFOAM()` rewrites `constant/polyMesh` in that order when the files
-there are numbered differently. Meshes from octree or block-structured generators are often ordered
-already; unstructured (e.g. tetrahedral) meshes usually gain most. A mesh is left unchanged unless
-the new order shortens the mean index distance between neighbouring cells by at least 10%, so an
-ordered mesh is read back as it is. Serial meshes only; call before `adapt`.
-"""
-reorder_mesh!(mesh::Union{Mesh2,Mesh3}; method::Symbol=:rcm) = (_reorder_mesh!(mesh, method); mesh)
-
 # reorders in place; returns the cell permutation (perm[new] = old), or nothing when the mesh is
 # already ordered
 function _reorder_mesh!(mesh, method)

@@ -413,10 +413,9 @@ function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     quiet_nonroot!(comm)
     nranks = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
-    nranks == 1 && (_sync_polyMesh_order(mesh); return extract_subdomain(mesh, partition_cells(mesh, 1), 1; comm))
+    nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1; comm)
     prep = _on_all_ranks(comm, "partitioning") do
         rank == 0 || return nothing
-        _sync_polyMesh_order(mesh)
         parts = partition_cells(mesh, nranks; cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
         parts, _PartIndex(mesh, parts)
     end
@@ -493,7 +492,6 @@ another format or rank count is refused at load with the call that fixes it.
 """
 function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=(), key=nothing)
     mkpath(dir)
-    _sync_polyMesh_order(mesh)
     source = _mesh_fingerprint(mesh)
     for (r, dm) ∈ enumerate(decompose(mesh, nparts; periodic_patches))
         _write_xdm(joinpath(dir, "rank_$(r-1).xdm"), getfield(dm, :mesh), dm; source, key)

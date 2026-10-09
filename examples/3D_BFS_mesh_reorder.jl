@@ -1,8 +1,8 @@
 using XCALibre
 # using CUDA # uncomment to run on an NVIDIA GPU
 
-# The mesh readers reorder cells, faces and nodes so neighbouring cells sit close in memory
-# (reorder=true by default). This example times the same run on the mesh in file order and reordered.
+# reorder_mesh! renumbers cells, faces and nodes so neighbouring cells sit close in memory.
+# This example times the same run on the mesh in file order and reordered.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh_file = joinpath(grids_dir, "bfs_unv_tet_10mm.unv")
@@ -59,8 +59,8 @@ function run_case(mesh, backend, workgroup; iterations=100)
     timed_run(iterations)
 end
 
-file_order = UNV3D_mesh(mesh_file, scale=0.001, reorder=false)
-reordered = UNV3D_mesh(mesh_file, scale=0.001) # same as reorder_mesh!(file_order)
+file_order = UNV3D_mesh(mesh_file, scale=0.001)
+reordered = reorder_mesh!(UNV3D_mesh(mesh_file, scale=0.001))
 
 t_file = run_case(file_order, backend, workgroup)
 t_reordered = run_case(reordered, backend, workgroup)

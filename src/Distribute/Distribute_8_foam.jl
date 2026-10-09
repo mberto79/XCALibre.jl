@@ -38,8 +38,7 @@ function distribute(case::FOAMCase{TI,TF}; comm=MPI.COMM_WORLD) where {TI,TF}
     poly = joinpath(case.dir, "processor$rank", "constant", "polyMesh")
     mesh, orig = _on_all_ranks(comm, "reading $(case.dir)") do
         mesh = redirect_stdout(devnull) do
-            # processor faces pair with the neighbour rank by position: keep the file order
-            FOAM3D_mesh(poly; scale=case.scale, integer_type=TI, float_type=Float64, reorder=false)
+            FOAM3D_mesh(poly; scale=case.scale, integer_type=TI, float_type=Float64)
         end
         addr = joinpath(poly, "cellProcAddressing")
         orig = isfile(addr) ? redirect_stdout(() -> read_neighbour(addr, GlobalInt, Float64), devnull) : nothing

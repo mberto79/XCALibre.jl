@@ -64,7 +64,7 @@ solvers = (
         convergence = 1e-7,
         relax       = 0.8,
         rtol = 0.1,
-        precision = MixedPrecision() # Float32; FullPrecision(), MixedPrecision(Float16), MixedPrecision(BFloat16)
+        precision = MixedF32() # FullPrecision(), MixedF16(), MixedBF16()
     ),
     p = SolverSetup(
         # float_type = Float32,
@@ -75,7 +75,7 @@ solvers = (
         relax       = 0.2,
         rtol = 0.01,
         itmax = 1000,
-        precision = MixedPrecision() # Float32; FullPrecision(), MixedPrecision(Float16), MixedPrecision(BFloat16)
+        precision = MixedF32() # FullPrecision(), MixedF16(), MixedBF16()
     )
 )
 

@@ -1,10 +1,10 @@
-# NEW SECTION: MixedPrecision on distributed meshes
+# NEW SECTION: mixed precision on distributed meshes
 
-# PETSc loads one scalar type per process: a T PETSc library solves A·d = b - Ax for the correction
+# PETSc loads one scalar type per process: a Float32 PETSc library solves A·d = b - Ax for the correction
 # while fields stay in the mesh's float type. r and d are PETSc's b and x for that solve.
 struct MixedPETScSolver{S,V,R,C} <: AbstractDistributedSolver
     petsc::S
-    nzval::V          # T copy of A; owned rows are written
+    nzval::V          # Float32 copy of A; owned rows are written
     dinv::R           # Jacobi scratch written by the shared residual kernel (PETSc owns the PC)
     r::R
     d::R
@@ -15,9 +15,11 @@ end
 _distributed_solver(::FullPrecision, eqn, dmesh, setup, config; kwargs...) =
     PETScSolver(eqn, dmesh, setup; kwargs...)
 
-function _distributed_solver(::MixedPrecision{T}, eqn, dmesh, setup, config; kwargs...) where T
-    T ∈ (Float32, Float64) || throw(ArgumentError("MixedPrecision($T) on a distributed mesh: PETSc " *
-        "has no $T build; use MixedPrecision(Float32) with a single-precision PETSc"))
+_distributed_solver(p::Solve.AbstractMixedPrecision, eqn, dmesh, setup, config; kwargs...) =
+    throw(ArgumentError("$p on a distributed mesh: PETSc has no $(Solve._storage_type(p)) build; use MixedF32()"))
+
+function _distributed_solver(::MixedF32, eqn, dmesh, setup, config; kwargs...)
+    T = Float32
     (; backend) = config.hardware
     n = getfield(dmesh, :partition).n_owned
     nzval = similar(_nzval(_A(eqn)), T)

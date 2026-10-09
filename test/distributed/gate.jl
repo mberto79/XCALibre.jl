@@ -8,7 +8,7 @@ mpiexec_available() && run_mpi_tests(
      "test_laplace.jl", "test_psimple.jl", "test_wall_distance.jl",
      "test_transpose_stress.jl"]; ranks=[2, 3])
 
-# MixedPrecision(Float32): PETSc_jll's Float32 library solves corrections for Float64 fields
+# MixedF32(): PETSc_jll's Float32 library solves corrections for Float64 fields
 mpiexec_available() && run_mpi_tests(["test_mixed_precision.jl"]; ranks=[2])
 
 # every failure path errors on all ranks; the rank count does not change which collective is reached

@@ -68,7 +68,7 @@ This function is used to provide solver settings that will be used internally in
 - `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9). Also applies to PETSc solves.
 - `rtol`: set relative tolerance for the solver (defaults to 1e-1). Also applies to PETSc solves.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
-- `precision`: precision of the linear solve, `FullPrecision()` (default) or `MixedPrecision(T)` with `T` one of `Float32` (`MixedPrecision()`), `Float16`, `BFloat16`. See [`MixedPrecision`](@ref).
+- `precision`: precision of the linear solve, `FullPrecision()` (default), [`MixedF32`](@ref)`()`, [`MixedF16`](@ref)`()` or [`MixedBF16`](@ref)`()`.
 """
 SolverSetup(;
         float_type=Float64,
@@ -96,18 +96,18 @@ SolverSetup(;
     end
 
 _check_precision(::FullPrecision, solver, preconditioner) = nothing
-_check_precision(::MixedPrecision, solver, preconditioner) =
+_check_precision(::AbstractMixedPrecision, solver, preconditioner) =
     solver isa Union{Cg,Cgs,Bicgstab,Gmres} ||
-        throw(ArgumentError("MixedPrecision supports Cg, Cgs, Bicgstab and Gmres only"))
+        throw(ArgumentError("mixed precision supports Cg, Cgs, Bicgstab and Gmres only"))
 
 # equation workspace honouring the setup's precision
 _workspace(setup::SolverSetup, eqn, dir...) = _workspace(setup.precision, setup, eqn, _b(eqn, dir...))
 _workspace(::FullPrecision, setup, eqn, b) = _workspace(setup.solver, b, _index_type(_A(eqn)))
-# serial meshes only: distributed MixedPrecision solves go through PETSc and its preconditioners
-function _workspace(::MixedPrecision{T}, setup, eqn, b) where T
+# serial meshes only: distributed mixed-precision solves go through PETSc and its preconditioners
+function _workspace(precision::AbstractMixedPrecision, setup, eqn, b)
     setup.preconditioner isa Jacobi ||
-        throw(ArgumentError("MixedPrecision on serial meshes supports the Jacobi preconditioner only"))
-    MixedWorkspace(T, setup.solver, _A(eqn), b)
+        throw(ArgumentError("mixed precision on serial meshes supports the Jacobi preconditioner only"))
+    MixedWorkspace(precision, setup.solver, _A(eqn), b)
 end
 
 struct AdaptiveTimeStepping{F<:AbstractFloat}
@@ -300,10 +300,10 @@ function solve_equation!(
     return resx, resy, resz
 end
 
-function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
-    phiEqn.solver isa MixedWorkspace && return _mixed_solve_system!(phiEqn, setup, result, component, config)
-    setup.precision isa MixedPrecision &&
-        throw(ArgumentError("MixedPrecision is not yet supported by this solver or equation"))
+solve_system!(phiEqn::ModelEquation, setup, result, component, config) =
+    _solve_system!(setup.precision, phiEqn, setup, result, component, config)
+
+function _solve_system!(::FullPrecision, phiEqn, setup, result, component, config)
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
@@ -346,7 +346,7 @@ function solve_system!(phiEqn::ModelEquation, setup, result, component, config)
     return res
 end
 
-function _mixed_solve_system!(phiEqn, setup, result, component, config)
+function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, component, config)
     (; values) = result
     A = _A(phiEqn)
     b = _b(phiEqn, component)

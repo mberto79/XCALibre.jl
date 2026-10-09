@@ -184,8 +184,8 @@ function _release!(s)
     foreach(_destroy!, (s.ksp, s.A, s.x, s.b))
 end
 
-# float_type/nzval: a MixedPrecision solve selects the PETSc library by its own T and assembles
-# from a T copy of the matrix values; fields stay in the mesh's float type
+# float_type/nzval: a MixedF32 solve selects the Float32 PETSc library and assembles
+# from a Float32 copy of the matrix values; fields stay in the mesh's float type
 function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         comm=getfield(dmesh, :comm), petsc_options="", label="", float_type=_get_float(dmesh),
         nzval=nothing)

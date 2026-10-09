@@ -66,8 +66,8 @@ end
 _m(A::SPARSEGPU) = A.dims[1]
 _n(A::SPARSEGPU) = A.dims[2]
 
-# cuSPARSE has no BFloat16 SpMV, which keeps the generic KernelAbstractions operator
-XCALibre.Solve._lowprecision_operator(A::SPARSEGPU, nzval::CuVector{T}) where T<:Union{Float16,Float32} =
+# cuSPARSE SpMV for MixedF32; the half-width precisions build their own operator
+XCALibre.Solve._lowprecision_operator(A::SPARSEGPU, nzval::CuVector{T}) where T<:Float32 =
     SPARSEGPU{T,eltype(A.rowPtr)}(A.rowPtr, A.colVal, nzval, A.dims)
 
 _amg_setup_backend(::BACKEND) = CPU()

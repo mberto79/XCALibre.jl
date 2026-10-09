@@ -3,7 +3,7 @@ using Accessors
 using LinearAlgebra
 const Krylov = XCALibre.Solve.Krylov
 
-# Repeated MixedPrecision solves are iterative refinement: each corrects the full-precision residual,
+# Repeated mixed-precision solves are iterative refinement: each corrects the full-precision residual,
 # so the iterate must reach the Float64 solution although every Krylov solve runs in low precision.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
@@ -41,22 +41,20 @@ end
 
 mp_reference = mp_solve_T(FullPrecision(), 1; rtol=1e-12)
 
-@testset "MixedPrecision($TL) refines to the Float64 solution" for TL ∈ (BFloat16, Float16, Float32)
-    # BFloat16's 8-bit mantissa contracts the error ~0.8x per solve (Float16 ~0.4x), hence many solves
-    x = mp_solve_T(MixedPrecision(TL), 160)
+@testset "$p refines to the Float64 solution" for (p, nsolves) ∈ ((MixedBF16(), 20), (MixedF16(), 40), (MixedF32(), 20))
+    x = mp_solve_T(p, nsolves)
     @test norm(x - mp_reference)/norm(mp_reference) < 1e-8
 end
 
-@testset "MixedPrecision setup checks" begin
-    @test_throws ArgumentError mp_solve_T(MixedPrecision(), 1; preconditioner=DILU())
-    @test MixedPrecision() isa MixedPrecision{Float32}
+@testset "mixed-precision setup checks" begin
+    @test_throws ArgumentError mp_solve_T(MixedF32(), 1; preconditioner=DILU())
     @test SolverSetup(solver=Cg(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0).precision isa FullPrecision
     @test_throws ArgumentError SolverSetup(
-        solver=AMG(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, precision=MixedPrecision())
+        solver=AMG(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, precision=MixedBF16())
 end
 
 @testset "half-precision XVector dot accumulates in Float32" begin
     n = 100_000
-    x = XCALibre.Multithread.XVector(ones(BFloat16, n))
+    x = XCALibre.Multithread.XVector(ones(XCALibre.Solve.BFloat16, n))
     @test Float64(Krylov.kdot(n, x, x)) ≈ n rtol=1e-2
 end

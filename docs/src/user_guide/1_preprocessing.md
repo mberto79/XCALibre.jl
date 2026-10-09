@@ -34,6 +34,16 @@ These conversion functions will read mesh information and generate a mesh object
 Mesh3
 ```
 
+### Mesh reordering
+
+Every kernel that loops over cells reads the values of each cell's neighbours, so its speed depends on how close those neighbours sit in memory. Mesh generators often number cells in an order that scatters neighbours across the whole mesh (unstructured tetrahedral meshes in particular), which leaves CPU caches and GPU memory transactions mostly unused. The mesh readers therefore reorder the cells, faces and nodes of every mesh they load (`reorder=true` by default); the geometry and boundary patches are unchanged. A mesh that is already well ordered is left as it is. Pass `reorder=false` to keep the numbering of the mesh files, or call `reorder_mesh!` on a mesh built in another way:
+
+```@docs; canonical=false
+reorder_mesh!
+```
+
+Results are written in the order of the mesh used in the simulation. With `output=OpenFOAM()`, an existing `constant/polyMesh` that numbers the cells differently is rewritten in that order (zone files in it, which list cells by number, are then reported as no longer valid).
+
 
 
 ### Mesh limitations and requirements

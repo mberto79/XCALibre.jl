@@ -242,6 +242,12 @@ with as many ranks as there are processor directories:
 mesh = distribute(FOAMCase("path/to/case", scale=0.001))
 ```
 
+Processor meshes are read in the order of their files (`reorder=false`), since their processor
+faces pair with the neighbouring rank by position. A mesh passed to `distribute` in any other way is
+partitioned as it is read, reordered by default (see [Mesh reordering](@ref)), so each rank's cells
+keep that order; when the working directory holds a `constant/polyMesh` of the same mesh numbered
+differently, rank 0 rewrites it in the order of the mesh, so decomposed results map onto it.
+
 `decomposePar` writes `cellProcAddressing`, so [`gather`](@ref) returns fields in the undecomposed
 cell order, and results written with `output=OpenFOAM()` from the case directory reconstruct with
 `reconstructPar`. A distributed run with `output=OpenFOAM()` also writes this layout, so its case can

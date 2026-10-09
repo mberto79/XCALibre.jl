@@ -32,6 +32,43 @@ function _polyMesh_mismatch(polyMeshDir, mesh)
     return nothing
 end
 
+# the counts can match while the cells are numbered differently (e.g. after reorder_mesh!):
+# a sample of the internal faces in the files must join neighbouring cells of the mesh
+function _polyMesh_order_mismatch(polyMeshDir, mesh)
+    owner = FoamMesh.read_owner(joinpath(polyMeshDir, "owner"), Int, Float64)
+    neighbour = FoamMesh.read_neighbour(joinpath(polyMeshDir, "neighbour"), Int, Float64)
+    backend = _get_backend(mesh)
+    ranges = get_data(mesh.cell_faces_range, backend)
+    neighbours = get_data(mesh.cell_neighbours, backend)
+    n = length(neighbour)
+    for f ∈ unique(round.(Int, range(1, n, length=min(n, 1000))))
+        o, nb = owner[f], neighbour[f]
+        (o > length(ranges) || nb > length(ranges)) && return true
+        nb ∈ view(neighbours, ranges[o]) || return true
+    end
+    false
+end
+
+# zones list cells, faces or points by number, so a renumbered mesh invalidates them
+function _warn_stale_zones(polyMeshDir)
+    for name ∈ ("cellZones", "faceZones", "pointZones")
+        file = joinpath(polyMeshDir, name)
+        isfile(file) && something(_foam_declared_count(file), 0) > 0 &&
+            @warn "$file refers to the previous numbering of the mesh and is no longer valid."
+    end
+end
+
+# rewrites an existing constant/polyMesh of this mesh whose cells are numbered differently, so
+# results indexed by the mesh as read (e.g. decomposed output) map onto the files
+function _sync_polyMesh_order(mesh::Mesh3; dir="constant/polyMesh")
+    all(name -> isfile(joinpath(dir, name)), ("points", "faces", "owner", "neighbour", "boundary")) || return nothing
+    isnothing(_polyMesh_mismatch(dir, mesh)) && _polyMesh_order_mismatch(dir, mesh) || return nothing
+    @info "Rewriting $dir in the cell order of the reordered mesh."
+    _warn_stale_zones(dir)
+    _write_polyMesh(mesh, dir)
+end
+_sync_polyMesh_order(mesh; dir="constant/polyMesh") = nothing
+
 initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
     # create dummy file to load results in ParaView
     touch("XCALibre.foam")
@@ -40,14 +77,25 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
     mesh_files = ("points", "faces", "owner", "neighbour", "boundary")
     if all(name -> isfile(joinpath(default_dir, name)), mesh_files)
         mismatch = _polyMesh_mismatch(default_dir, mesh)
-        if isnothing(mismatch)
+        if isnothing(mismatch) && !_polyMesh_order_mismatch(default_dir, mesh)
             @info "Preserving existing mesh in constant/polyMesh."
             return FOAMWriter(nothing, nothing)
         end
-        @warn "Existing constant/polyMesh does not match the simulation mesh ($mismatch). Overwriting it."
+        if isnothing(mismatch)
+            @info "constant/polyMesh numbers the cells differently from the simulation mesh (reordered). Overwriting it."
+            _warn_stale_zones(default_dir)
+        else
+            @warn "Existing constant/polyMesh does not match the simulation mesh ($mismatch). Overwriting it."
+        end
     end
 
     @info "Writing mesh to constant/polyMesh..."
+    _write_polyMesh(mesh, default_dir)
+    # return dummy structure for dispatch
+    FOAMWriter(nothing, nothing)
+end
+
+function _write_polyMesh(mesh, default_dir)
     # Create constant directory and mesh files
     polyMeshDir = mkpath(default_dir)
     pointsFile = joinpath(polyMeshDir, "points")
@@ -68,6 +116,10 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
     nfaces = length(faces)
     bfaces = length(mesh.boundary_cellsID)
     ifaces = nfaces - bfaces
+    # internal faces in upper-triangular order, each owned by its lower-numbered cell
+    lower(f) = minmax(faces[f].ownerCells[1], faces[f].ownerCells[2])
+    internal = sort!(collect((bfaces + 1):nfaces), by = lower)
+    flipped(f) = faces[f].ownerCells[1] > faces[f].ownerCells[2]
 
     # write points 
     
@@ -110,9 +162,9 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
         println(io, length(faces))
         println(io, "(")
         # loop over internal faces first
-        for fID ∈ (bfaces + 1):nfaces
+        for fID ∈ internal
             nrange = faces[fID].nodes_range
-            nodesID = @view face_nodes[nrange]
+            nodesID = flipped(fID) ? reverse(view(face_nodes, nrange)) : view(face_nodes, nrange)
             write(io, "$(length(nrange))(")
             for nID ∈ nodesID
                 foam_nID = nID - 1 # FOAM is zero-indexed
@@ -152,8 +204,8 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
         println(io, length(faces))
         println(io, "(")
         # loop over internal faces first
-        for fID ∈ (bfaces + 1):nfaces
-            owner = faces[fID].ownerCells[1] - 1 # OF uses zero index
+        for fID ∈ internal
+            owner = lower(fID)[1] - 1 # OF uses zero index
             write(io, "$owner\n")
         end
 
@@ -182,8 +234,8 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
         println(io, ifaces)
         println(io, "(")
         # loop over internal faces only
-        for fID ∈ (bfaces + 1):nfaces
-            neighbour = faces[fID].ownerCells[2] - 1 # OF uses zero index
+        for fID ∈ internal
+            neighbour = lower(fID)[2] - 1 # OF uses zero index
             write(io, "$neighbour\n")
         end
         println(io, ")")
@@ -222,8 +274,7 @@ initialise_writer(format::OpenFOAM, mesh::Mesh3) = begin
         println(io, ")")
     end
 
-    # return dummy structure for dispatch
-    FOAMWriter(nothing, nothing)
+    nothing
 end
 
 initialise_writer(format::OpenFOAM, mesh) = error("

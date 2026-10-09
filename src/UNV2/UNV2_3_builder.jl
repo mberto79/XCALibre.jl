@@ -1,7 +1,7 @@
 export UNV2D_mesh
 
 """
-    UNV2D_mesh(meshFile; scale=1, integer_type=Int32, float_type=Float64)
+    UNV2D_mesh(meshFile; scale=1, integer_type=Int32, float_type=Float64, reorder=true)
 
 Read and convert 2D UNV mesh file into XCALibre.jl
 
@@ -17,9 +17,12 @@ Read and convert 2D UNV mesh file into XCALibre.jl
 
 - `float_type` - select interger type to use in the mesh (Float32 may be useful on GPU runs) 
 
+- `reorder` - reorder cells, faces and nodes for memory locality with [`reorder_mesh!`](@ref) (default `true`)
+
 """
-function UNV2D_mesh(meshFile; scale=1, integer_type=Int32, float_type=Float64)
-    return _with_index_capacity(() -> _UNV2D_mesh(meshFile, scale, integer_type, float_type), integer_type)
+function UNV2D_mesh(meshFile; scale=1, integer_type=Int32, float_type=Float64, reorder=true)
+    mesh = _with_index_capacity(() -> _UNV2D_mesh(meshFile, scale, integer_type, float_type), integer_type)
+    reorder ? reorder_mesh!(mesh) : mesh
 end
 
 # Type-parameter barrier keeps the build type-stable for non-default integer/float types.

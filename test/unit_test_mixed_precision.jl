@@ -36,8 +36,11 @@ function mp_solve_T(precision, nsolves; rtol=0.1, preconditioner=Jacobi())
     for _ ∈ 1:nsolves
         solve_system!(T_eqn, solvers.T, T, nothing, config)
     end
+    A, b = parent(XCALibre.ModelFramework._A(T_eqn)), XCALibre.ModelFramework._b(T_eqn)
+    last_reduction[] = norm(b - A*T.values)/norm(b) # from x = 0
     copy(T.values)
 end
+const last_reduction = Ref(0.0)
 
 mp_reference = mp_solve_T(FullPrecision(), 1; rtol=1e-12)
 
@@ -53,9 +56,8 @@ end
 
 # a tolerance below what the low precision attains is met by refining the correction within one solve
 @testset "$p meets a tight rtol in one solve" for p ∈ (MixedF32(), MixedF16())
-    full = mp_solve_T(FullPrecision(), 1; rtol=1e-8)
-    x = mp_solve_T(p, 1; rtol=1e-8)
-    @test norm(x - mp_reference) ≤ 5*norm(full - mp_reference)
+    mp_solve_T(p, 1; rtol=1e-8)
+    @test last_reduction[] ≤ 1.1e-8
 end
 
 @testset "mixed-precision setup checks" begin

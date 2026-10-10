@@ -94,7 +94,9 @@ full = run_case(FullPrecision())
 mixed32 = run_case(MixedF32())
 # mixed16 = run_case(MixedF16()) # benefits GPUs; on CPUs Float16 arithmetic is slower than Float64
 
+# residuals stop being recorded once the run converges
 for (name, r) ∈ (("FullPrecision", full), ("MixedF32", mixed32))
+    n = something(findlast(!iszero, r.residuals.p), 0)
     dp = norm(r.p - full.p)/norm(full.p)
-    println("$name: $(round(r.time, digits=2)) s, final p residual $(r.residuals.p[end]), p difference $dp")
+    println("$name: $(round(r.time, digits=2)) s, $n iterations, p residual $(r.residuals.p[n]), p difference $dp")
 end

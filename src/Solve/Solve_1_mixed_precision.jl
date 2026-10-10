@@ -36,7 +36,7 @@ matrix traffic again; the Krylov iterations run in `Float32`. The system is scal
 unit diagonal to fit `Float16`'s range, the diagonal is kept in `Float32` and compensated so the
 rounded matrix keeps the exact row sums of the scaled system, and each correction is applied with a
 minimal-residual step length computed in full precision. A single correction reduces the residual
-by about `1e-2` at most, so tighter `rtol` takes several corrections.
+by about `1e-3` at most, so tighter `rtol` takes several corrections.
 
 Serial meshes and the `Jacobi` preconditioner only: the scaled matrix has a unit diagonal, so
 Jacobi is applied as part of the scaling at no extra cost, while factorisation preconditioners
@@ -51,7 +51,7 @@ _storage_type(::MixedF16) = Float16
 # smallest relative residual reduction one correction solve reaches reliably; tighter rtol takes
 # several corrections (iterative refinement)
 _attainable_rtol(::MixedF32) = 1e-5
-_attainable_rtol(::MixedF16) = 1e-2
+_attainable_rtol(::MixedF16) = 1e-3
 const MAX_REFINEMENTS = 20
 
 # half-width storage needs the compensated, scaled correction; Krylov vectors stay Float32 since
@@ -196,7 +196,11 @@ function mixed_solve!(ws::MixedWorkspace, A, b, values, α, setup, config, mesh)
 end
 
 # solves A·d = b - Ax for d from d = 0 and adds α·d to values unless ‖b - Ax‖ ≤ target (`nothing`
-# skips the norm); returns the Krylov count and ‖b - Ax‖ before the correction
+# skips the norm); returns the Krylov count and ‖b - Ax‖ before the correction. Later corrections
+# reduce only to the target: the outer convergence check reads the post-solve residual, so
+# overshooting rtol would stop a run early
+_correction_rtol(rtol, target, rnorm) = isnothing(target) || iszero(target) ? rtol : max(rtol, target/rnorm)
+
 function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, α, rtol, target, setup, config, mesh)
     (; itmax, atol) = setup
     (; backend, workgroup) = config.hardware
@@ -207,8 +211,8 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, α, rtol
     !isnothing(target) && rnorm ≤ target && return 0, rnorm
     # A is unchanged by later corrections of the same solve
     (isnothing(target) || iszero(target)) && update_preconditioner!(ws.P, mesh, config)
-    krylov_solve!(ws.krylov, ws.opA, ws.r;
-        M=ws.P.P, itmax=itmax, atol=Float32(atol), rtol=Float32(rtol), ldiv=is_ldiv(ws.P), history=false)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; M=ws.P.P, itmax=itmax, atol=Float32(atol),
+        rtol=Float32(_correction_rtol(rtol, target, rnorm)), ldiv=is_ldiv(ws.P), history=false)
     kernel! = _sized(_add_correction!, backend, workgroup, n)
     kernel!(values, ws.krylov.x, eltype(values)(α))
     Krylov.iteration_count(ws.krylov), rnorm
@@ -235,8 +239,8 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, α, rtol
     sr = inv(rnorm)
     kernel! = _sized(_scale_cast!, backend, workgroup, n)
     kernel!(ws.r, ws.rfull, sr)
-    krylov_solve!(ws.krylov, ws.opA, ws.r;
-        M=ws.P, itmax=itmax, atol=T(atol*sr), rtol=T(rtol), ldiv=false, history=false)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; M=ws.P, itmax=itmax, atol=T(atol*sr),
+        rtol=T(_correction_rtol(rtol, target, rnorm)), ldiv=false, history=false)
     d = ws.krylov.x
     ω = _step_length(ws, A, d, hardware)
     kernel! = _sized(_add_scaled_correction!, backend, workgroup, n)

@@ -17,9 +17,9 @@ BCs = assign(region=mesh, (T = [
     Dirichlet(:left_wall, 50.0), Zerogradient(:right_wall), Dirichlet(:bottom_wall, 10.0), Zerogradient(:upper_wall)],))
 schemes = (T = Schemes(laplacian = Linear),)
 
-function mp_solve_T(precision, nsolves; rtol=0.1, preconditioner=Jacobi())
+function mp_solve_T(precision, nsolves; rtol=0.1, preconditioner=Jacobi(), solver=Cg())
     solvers = (T = SolverSetup(
-        solver=Cg(), preconditioner=preconditioner, convergence=1e-8, relax=1.0, rtol=rtol, itmax=1000,
+        solver=solver, preconditioner=preconditioner, convergence=1e-8, relax=1.0, rtol=rtol, itmax=1000,
         precision=precision),)
     config = Configuration(solvers=solvers, schemes=schemes,
         runtime=Runtime(iterations=1, write_interval=-1, time_step=1), hardware=hardware, boundaries=BCs)
@@ -51,6 +51,12 @@ end
 
 @testset "MixedF32() with $(nameof(typeof(P))) refines to the Float64 solution" for P ∈ (NormDiagonal(), DILU())
     x = mp_solve_T(MixedF32(), 20; preconditioner=P)
+    @test norm(x - mp_reference)/norm(mp_reference) < 1e-10
+end
+
+# BiCGStab takes the shadow vector M⁻¹r as in full-precision solves
+@testset "$p with Bicgstab refines to the Float64 solution" for p ∈ (MixedF32(), MixedF16())
+    x = mp_solve_T(p, 20; solver=Bicgstab())
     @test norm(x - mp_reference)/norm(mp_reference) < 1e-10
 end
 

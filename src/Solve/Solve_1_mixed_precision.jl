@@ -60,8 +60,9 @@ _work_type(::MixedF16) = Float32
 
 # low-precision state of a ModelEquation: Krylov workspace, operator sharing A's sparsity and the
 # preconditioner (a Preconditioner for MixedF32, Jacobi's diagonal operator for MixedF16). dinv,
-# rfull, s, dptr and comp are `nothing` for MixedF32; x0 holds Crank-Nicolson's old values.
-struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B,X}
+# rfull, s, dptr and comp are `nothing` for MixedF32; x0 holds Crank-Nicolson's old values, c
+# BiCGStab's shadow vector (`nothing` for other solvers).
+struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B,X,C}
     precision::PR
     krylov::W
     opA::O
@@ -74,6 +75,7 @@ struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B,X}
     dptr::I     # position of each row's diagonal in nzval
     comp::B     # (; diag, ad): compensated Float32 diagonal and S·A·S·d
     x0::X
+    c::C
 end
 
 Krylov.iteration_count(ws::MixedWorkspace) = Krylov.iteration_count(ws.krylov)
@@ -89,7 +91,9 @@ function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, preconditione
     r = _krylov_vector(similar(b, Float32))
     opA = _lowprecision_operator(A, nzval)
     P = Preconditioner{typeof(preconditioner)}(opA)
-    MixedWorkspace(p, _workspace(solver, r), opA, nzval, r, nothing, P, nothing, nothing, nothing, nothing, similar(b))
+    krylov = _workspace(solver, r)
+    MixedWorkspace(p, krylov, opA, nzval, r, nothing, P, nothing, nothing, nothing, nothing, similar(b),
+        _shadow_buffer(krylov, r))
 end
 
 function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, b)
@@ -99,9 +103,19 @@ function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, 
     r = _krylov_vector(similar(b, T))
     dinv = similar(b, T)
     opA = csr_operator(_rowptr(A), _colval(A), nzval, diag, similar(diag, T), Int(_m(A)))
-    MixedWorkspace(p, _workspace(solver, r), opA, nzval, r, dinv,
-        diagonal_operator(dinv), similar(b), similar(b), _diagonal_positions(A), (; diag, ad=similar(b)), similar(b))
+    krylov = _workspace(solver, r)
+    MixedWorkspace(p, krylov, opA, nzval, r, dinv, diagonal_operator(dinv), similar(b), similar(b),
+        _diagonal_positions(A), (; diag, ad=similar(b)), similar(b), _shadow_buffer(krylov, r))
 end
+
+_shadow_buffer(::BicgstabWorkspace, r) = similar(r)
+_shadow_buffer(_, r) = nothing
+
+# as _shadow for full-precision solves: BiCGStab's shadow vector M⁻¹r, r being the initial residual
+# since each correction starts from d = 0
+_mixed_shadow(ws::MixedWorkspace{PR,<:BicgstabWorkspace}, M, ldiv) where PR =
+    (ldiv ? ldiv!(ws.c, M, ws.r) : mul!(ws.c, M, ws.r); (; c=ws.c))
+_mixed_shadow(ws, M, ldiv) = (;)
 
 function _diagonal_positions(A)
     rowptr = _rowptr(A)
@@ -211,8 +225,9 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, α, rtol
     !isnothing(target) && rnorm ≤ target && return 0, rnorm
     # A is unchanged by later corrections of the same solve
     (isnothing(target) || iszero(target)) && update_preconditioner!(ws.P, mesh, config)
-    krylov_solve!(ws.krylov, ws.opA, ws.r; M=ws.P.P, itmax=itmax, atol=Float32(atol),
-        rtol=Float32(_correction_rtol(rtol, target, rnorm)), ldiv=is_ldiv(ws.P), history=false)
+    ldiv = is_ldiv(ws.P)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws, ws.P.P, ldiv)..., M=ws.P.P, itmax=itmax,
+        atol=Float32(atol), rtol=Float32(_correction_rtol(rtol, target, rnorm)), ldiv=ldiv, history=false)
     kernel! = _sized(_add_correction!, backend, workgroup, n)
     kernel!(values, ws.krylov.x, eltype(values)(α))
     Krylov.iteration_count(ws.krylov), rnorm
@@ -239,8 +254,8 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, α, rtol
     sr = inv(rnorm)
     kernel! = _sized(_scale_cast!, backend, workgroup, n)
     kernel!(ws.r, ws.rfull, sr)
-    krylov_solve!(ws.krylov, ws.opA, ws.r; M=ws.P, itmax=itmax, atol=T(atol*sr),
-        rtol=T(_correction_rtol(rtol, target, rnorm)), ldiv=false, history=false)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws, ws.P, false)..., M=ws.P, itmax=itmax,
+        atol=T(atol*sr), rtol=T(_correction_rtol(rtol, target, rnorm)), ldiv=false, history=false)
     d = ws.krylov.x
     ω = _step_length(ws, A, d, hardware)
     kernel! = _sized(_add_scaled_correction!, backend, workgroup, n)

@@ -95,8 +95,9 @@ _acc_type(::Type{Float16}) = Float32
 
 function Krylov.kdot(n::Integer, x::XVector{T}, y::XVector{T}) where T<:AbstractFloat
     xd, yd = x.data, y.data
-    TA = _acc_type(T)
-    acc = _reduce_chunks(n, TA) do r
+    acc = _reduce_chunks(n, _acc_type(T)) do r
+        # derived from xd, not captured: a captured type is a DataType field on Julia 1.10
+        TA = _acc_type(eltype(xd))
         s = zero(TA)
         @inbounds @simd for i ∈ r
             s += TA(xd[i])*TA(yd[i])

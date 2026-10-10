@@ -259,6 +259,13 @@ LES{Smagorinsky}(; C=0.15) # default value provided by default
 LES{Smagorinsky}(C=0.1) # user selected value
 ```
 
+WALE model: the Wall-Adapting Local Eddy-viscosity model (Nicoud & Ducros, 1999), with the standard model constant passed by default. Unlike the Smagorinsky model, the eddy viscosity vanishes in pure shear and scales correctly near walls without the need for damping functions. Boundary conditions for `nut` must be provided, generally zero gradient conditions work well.
+```julia
+LES{WALE}() # default constructor will use value below
+LES{WALE}(; C=0.325) # default value provided by default
+LES{WALE}(C=0.5) # user selected value
+```
+
 For example, an incompressible LES simulation with the `Smagorinsky` model can be specified as
 ```julia
 Physics(

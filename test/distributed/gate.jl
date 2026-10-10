@@ -11,6 +11,9 @@ mpiexec_available() && run_mpi_tests(
 # MixedF32(): PETSc_jll's Float32 library solves corrections for Float64 fields
 mpiexec_available() && run_mpi_tests(["test_mixed_precision.jl"]; ranks=[2])
 
+# WALE LES: algebraic nut from gradU must match serial on owned and ghost cells
+mpiexec_available() && run_mpi_tests(["test_les_wale.jl"]; ranks=[2])
+
 # every failure path errors on all ranks; the rank count does not change which collective is reached
 mpiexec_available() && run_mpi_tests(["test_failure.jl"]; ranks=[2])
 

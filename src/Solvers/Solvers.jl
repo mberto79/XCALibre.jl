@@ -19,6 +19,8 @@ using XCALibre.Multithread
 using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
+import XCALibre.Fields: field_values, transpose_values
+import XCALibre.Calculate: _kernel_values
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve

@@ -139,9 +139,10 @@ function turbulence!(
 
         num = SdSd^1.5
         den = SS^2.5 + SdSd^1.25
-        nut[i] = Δ[i]*num/den # Δ is (Cw*Δ)^2
+        nut[i] = ifelse(den > 0, Δ[i]*num/den, zero(num)) # Δ is (Cw*Δ)^2; den=0 where gradU=0
     end
 
+    sync!(nut, mesh, config) # ghost nut must match the owning rank before face interpolation
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)
     correct_eddy_viscosity!(nutf, boundaries.nut, model, config, les.wall_scratch)

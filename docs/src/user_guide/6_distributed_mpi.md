@@ -733,7 +733,7 @@ Distributed today:
 
 - Steady and transient incompressible flow through the SIMPLE and PISO families.
 - The Laplace (conduction) solver, and `potential_flow!` for initialising a velocity field.
-- `Laminar`, `KOmega` and `KOmegaSST` turbulence, including wall distance.
+- `Laminar`, `KOmega` and `KOmegaSST` turbulence, including wall distance, and the `WALE` LES model.
 - CPU and GPU backends, periodic patches, and writing results in OpenFOAM's decomposed layout so
   that the usual tools can reconstruct them.
 
@@ -742,7 +742,7 @@ wrong answer: without a distributed linear-solve seam each rank would solve only
 
 - Compressible flow (`csimple!`, `cpiso!`), the density-based supersonic solver, multiple reference
   frames, the film model and the multiphase solver.
-- The `KOmegaLKE` transition model and the LES models.
+- The `KOmegaLKE` transition model and the LES models other than `WALE`.
 - Float32 with `BoomerAMG`, because the stock PETSc libraries include hypre at Float64 only.
 - GPU runs without a CUDA-enabled PETSc build (see [Setting up MPI and PETSc](@ref)).
 - AMD GPUs, because PETSc.jl cannot yet hand PETSc's HIP vectors back as device arrays.

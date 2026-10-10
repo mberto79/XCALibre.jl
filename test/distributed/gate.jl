@@ -8,6 +8,9 @@ mpiexec_available() && run_mpi_tests(
      "test_laplace.jl", "test_psimple.jl", "test_wall_distance.jl",
      "test_transpose_stress.jl", "test_reorder.jl"]; ranks=[2, 3])
 
+# WALE LES: algebraic nut from gradU must match serial on owned and ghost cells
+mpiexec_available() && run_mpi_tests(["test_les_wale.jl"]; ranks=[2])
+
 # every failure path errors on all ranks; the rank count does not change which collective is reached
 mpiexec_available() && run_mpi_tests(["test_failure.jl"]; ranks=[2])
 

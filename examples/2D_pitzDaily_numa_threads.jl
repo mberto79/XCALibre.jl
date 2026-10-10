@@ -15,7 +15,7 @@ mesh = FOAM3D_mesh(mesh_file)
 
 # Step 2. Select backend and setup hardware
 backend = CPU(static=true); workgroup = AutoTune()  # chunk c of every loop runs on thread c
-activate_multithread(backend; first_touch=true)     # equations and fields are placed from now on
+activate_multithread(backend)                       # fields and equations are built with this backend
 mesh = first_touch(mesh)                            # place the mesh itself, before the model
 
 hardware = Hardware(backend=backend, workgroup=workgroup)

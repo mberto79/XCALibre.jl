@@ -13,7 +13,7 @@ export validate_single_precision_mesh
 
 _get_int(mesh) = eltype(mesh.get_int)
 _get_float(mesh) = eltype(mesh.get_float)
-_get_backend(mesh) = get_backend(mesh.cell_faces)
+_get_backend(mesh) = _active_backend(get_backend(mesh.cell_faces))
 
 _index_capacity_error(::Type{TI}, what) where TI = ArgumentError(
     "$what does not fit the mesh integer type $TI; read the mesh with integer_type=Int64")

@@ -75,13 +75,9 @@ end
 @testset "First touch ($(Threads.nthreads()) threads)" begin
     MT = XCALibre.Multithread
     n = 200_003
+    activate_multithread(XCALibre.CPU(static=true))
     a = rand(n)
-    @test MT.first_touch_copy(a) == a && MT.first_touch_copy(a) !== a
-    # entries cut by per-row ranges; 0:0 empty ranges fall back to the plain cut
-    ranges = [3i-2:3i for i ∈ 1:n]
-    v = rand(Int32, 3n)
-    @test MT.first_touch_copy(v, ranges) == v
-    @test MT.first_touch_copy(v, [i == 2 ? (0:0) : r for (i, r) ∈ enumerate(ranges)]) == v
+    @test first_touch(a) == a && first_touch(a) !== a
     A = SparseXCSR(MT.SparseMatricesCSR.sparsecsr([1:n; 1:n-1], [1:n; 2:n], rand(2n - 1), n, n))
     B = first_touch(A)
     @test typeof(B) == typeof(A)
@@ -91,13 +87,11 @@ end
     m = first_touch(mesh)
     @test typeof(m) == typeof(mesh)
     @test all(getfield(m, f) == getfield(mesh, f) for f ∈ fieldnames(typeof(mesh)))
-    # construction sites copy only when enabled; activate_multithread resets the switch
-    activate_multithread(XCALibre.CPU(static=true); first_touch=true)
-    @test MT.first_touch_enabled() == (Threads.nthreads() > 1)
-    @test MT.first_touch_zeros(XCALibre.CPU(), Float64, n) == zeros(n)
+    # the backend given to activate_multithread builds the fields; a leaked static one breaks nested kernels
+    @test XCALibre._get_backend(mesh) === XCALibre.CPU(static=true)
     @test ScalarField(mesh).values == zeros(length(mesh.cells))
-    activate_multithread(XCALibre.CPU(static=true))
-    @test !MT.first_touch_enabled()
+    activate_multithread(XCALibre.CPU())
+    @test XCALibre._get_backend(mesh) === XCALibre.CPU()
 end
 
 # xcal_foreach on CPU(static=true) runs the solver's fixed chunks: same result as CPU(), and every

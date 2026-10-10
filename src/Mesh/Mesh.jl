@@ -6,7 +6,7 @@ using Setfield
 using Adapt
 using KernelAbstractions
 using GPUArrays
-using XCALibre.Multithread: FirstTouch, first_touch_copy
+using XCALibre.Multithread: _active_backend
 # using CUDA, AMDGPU
 
 include("Mesh_0_types.jl")

@@ -23,11 +23,13 @@ function transpose_stress!(source, mueff, gradU, U_BCs, config; cell_mueff=nothi
     sync!(VectorField(t.yx, t.yy, t.yz, mesh), mesh, config)
     sync!(VectorField(t.zx, t.zy, t.zz, mesh), mesh, config)
     _sync_cell_viscosity!(cell_mueff, mesh, config)
-    isnothing(cell_mueff) && return div!(source, mueff, Dev2(T(gradU)), U_BCs, config)
-    div!(source, mueff, Dev2(T(gradU)), (), config; Γc=cell_mueff) # internal faces
+    tensor = Dev2(transpose_values(t))
+    isnothing(cell_mueff) && return div!(source, mueff, tensor, U_BCs, config)
+    div!(source, mueff, tensor, (), config; Γc=_kernel_values(cell_mueff)) # internal faces
     (; backend, workgroup) = config.hardware
+    sourcev, mueffv, gradUv, Uv = field_values(source), _kernel_values(mueff), field_values(t), field_values(gradU.field)
     for BC ∈ U_BCs
-        _transpose_stress_boundary!(source, mueff, gradU, BC, mesh, backend, workgroup)
+        _transpose_stress_boundary!(sourcev, mueffv, gradUv, Uv, BC, mesh, backend, workgroup)
     end
     nothing
 end
@@ -35,14 +37,14 @@ end
 # Boundary faces: owner-cell gradient with its normal derivative replaced by the boundary
 # condition's: (U_b - U_c)/delta (fixed value), 0 (zero gradient), -(U_c·n)n/delta (slip,
 # symmetry). Empty faces carry no flux; other conditions keep the owner-cell gradient.
-_transpose_stress_boundary!(source, mueff, gradU, ::Empty, mesh, backend, workgroup) = nothing
+_transpose_stress_boundary!(source, mueff, gradU, U, ::Empty, mesh, backend, workgroup) = nothing
 
-function _transpose_stress_boundary!(source, mueff, gradU, BC, mesh, backend, workgroup)
+function _transpose_stress_boundary!(source, mueff, gradU, U, BC, mesh, backend, workgroup)
     (; IDs_range) = BC
     isempty(IDs_range) && return nothing
     (; cells, faces) = mesh
     kernel! = _sized(_transpose_stress_boundary_kernel!, backend, workgroup, length(IDs_range))
-    kernel!(source, mueff, gradU, gradU.field, BC, IDs_range, cells, faces)
+    kernel!(source, mueff, gradU, U, BC, IDs_range, cells, faces)
     KernelAbstractions.synchronize(backend)
 end
 
@@ -69,9 +71,9 @@ end
     Mb = _patch_gradient(Mc, _boundary_sngrad(BC, U[cID], delta, normal), normal)
     Tb = Mb' - TF(2)/3*tr(Mb)*I
     flux = mueff[fID]*(Tb*normal)*(area/cells.volume[cID])
-    Atomix.@atomic source.x.values[cID] += flux[1]
-    Atomix.@atomic source.y.values[cID] += flux[2]
-    Atomix.@atomic source.z.values[cID] += flux[3]
+    Atomix.@atomic source.x[cID] += flux[1]
+    Atomix.@atomic source.y[cID] += flux[2]
+    Atomix.@atomic source.z[cID] += flux[3]
 end
 
 # Cell μ_eff = ρ(ν + ν_t), evaluated on access. `rho === nothing` gives the kinematic ν_eff of
@@ -88,7 +90,7 @@ Adapt.@adapt_structure CellViscosity
 @inline _add_nut(nut, i, nu) = nu + nut[i]
 @inline _times_rho(::Nothing, i, nueff) = nueff
 @inline _times_rho(rho, i, nueff) = rho[i]*nueff
-Base.getindex(c::CellViscosity, i::Integer) = _times_rho(c.rho, i, _add_nut(c.nut, i, c.nu[i]))
+@inline Base.getindex(c::CellViscosity, i::Integer) = _times_rho(c.rho, i, _add_nut(c.nut, i, c.nu[i]))
 
 _cell_nut(turbulence) = hasproperty(turbulence, :nut) ? turbulence.nut : nothing
 
@@ -98,6 +100,7 @@ _sync_cell_viscosity!(c::CellViscosity, mesh, config) = begin
     _sync_cell!(c.rho, mesh, config); _sync_cell!(c.nu, mesh, config); _sync_cell!(c.nut, mesh, config)
 end
 _sync_cell_viscosity!(c, mesh, config) = nothing
+_kernel_values(c::CellViscosity) = CellViscosity(_kernel_values(c.rho), _kernel_values(c.nu), _kernel_values(c.nut))
 
 """
     cell_nueff(nu, turbulence)

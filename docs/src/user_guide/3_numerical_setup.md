@@ -196,7 +196,7 @@ solvers = (
 )
 ```
 
-```@docs
+```@docs; canonical=false
 FullPrecision
 MixedF32
 MixedF16

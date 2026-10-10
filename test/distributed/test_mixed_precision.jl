@@ -36,5 +36,5 @@ rank == 0 && println("MIXED Float32 n=$(MPI.Comm_size(comm)) vs serial mixed: du
     @test duy < 5e-5
     @test dp < 5e-5
     @test_throws ArgumentError incompressible_case(dm, bfs_bcs; iterations=1,
-        precision=MixedBF16()) |> c -> run!(c...)
+        precision=MixedF16()) |> c -> run!(c...)
 end

@@ -5,7 +5,6 @@
 struct MixedPETScSolver{S,V,R,C} <: AbstractDistributedSolver
     petsc::S
     nzval::V          # Float32 copy of A; owned rows are written
-    dinv::R           # Jacobi scratch written by the shared residual kernel (PETSc owns the PC)
     r::R
     d::R
     n_owned::Int
@@ -26,7 +25,7 @@ function _distributed_solver(::MixedF32, eqn, dmesh, setup, config; kwargs...)
     copyto!(nzval, _nzval(_A(eqn)))
     petsc = PETScSolver(eqn, dmesh, setup; float_type=T, nzval, kwargs...)
     zeros_T() = KernelAbstractions.zeros(backend, T, n)
-    MixedPETScSolver(petsc, nzval, zeros_T(), zeros_T(), zeros_T(), n, (; hardware=config.hardware))
+    MixedPETScSolver(petsc, nzval, zeros_T(), zeros_T(), n, (; hardware=config.hardware))
 end
 
 # ghosts are refreshed first since r = b - Ax reads them
@@ -37,7 +36,7 @@ function _solve_owned!(deqn::DistributedEqn{E,<:MixedPETScSolver}, result, compo
     sync!(result, get_phi(eqn).mesh, s.config)
     A = _A(eqn)
     kernel! = _sized(Solve._mixed_residual!, backend, workgroup, s.n_owned)
-    kernel!(s.r, s.nzval, s.dinv, _rowptr(A), _colval(A), _nzval(A), values, _b(eqn, component))
+    kernel!(s.r, s.nzval, _rowptr(A), _colval(A), _nzval(A), values, _b(eqn, component))
     fill!(s.d, zero(eltype(s.d)))
     passemble!(s.petsc, s.nzval, s.r)
     psolve!(s.petsc, s.d)

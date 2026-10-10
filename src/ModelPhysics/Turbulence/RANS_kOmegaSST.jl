@@ -163,8 +163,8 @@ function initialise(
 
     # Krylov preconditioner/workspace are serial-only (distributed solves through PETSc PCs)
     if !is_distributed_mesh(mesh)
-        @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-        @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
+        @reset k_eqn.preconditioner = set_preconditioner(solvers.k, k_eqn)
+        @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega, ω_eqn)
         @reset k_eqn.solver = _workspace(solvers.k, k_eqn)
         @reset ω_eqn.solver = _workspace(solvers.omega, ω_eqn)
     end

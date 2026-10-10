@@ -89,7 +89,7 @@ end
 update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} =
 begin
     KernelAbstractions.copyto!(CPU(), P.storage.A.nzval, P.A.nzVal)
-    update_dilu_diagonal!(P, mesh, config)
+    XCALibre.Solve.update_dilu_diagonal!(P, mesh, config)
     nothing
 end
 

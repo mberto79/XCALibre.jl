@@ -68,7 +68,7 @@ This function is used to provide solver settings that will be used internally in
 - `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9). Also applies to PETSc solves.
 - `rtol`: set relative tolerance for the solver (defaults to 1e-1). Also applies to PETSc solves.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
-- `precision`: precision of the linear solve, `FullPrecision()` (default), [`MixedF32`](@ref)`()`, [`MixedF16`](@ref)`()` or [`MixedBF16`](@ref)`()`.
+- `precision`: precision of the linear solve, `FullPrecision()` (default), [`MixedF32`](@ref)`()` or [`MixedF16`](@ref)`()`.
 """
 SolverSetup(;
         float_type=Float64,
@@ -105,10 +105,19 @@ _workspace(setup::SolverSetup, eqn, dir...) = _workspace(setup.precision, setup,
 _workspace(::FullPrecision, setup, eqn, b) = _workspace(setup.solver, b, _index_type(_A(eqn)))
 # serial meshes only: distributed mixed-precision solves go through PETSc and its preconditioners
 function _workspace(precision::AbstractMixedPrecision, setup, eqn, b)
-    setup.preconditioner isa Jacobi ||
-        throw(ArgumentError("mixed precision on serial meshes supports the Jacobi preconditioner only"))
-    MixedWorkspace(precision, setup.solver, _A(eqn), b)
+    precision isa MixedF16 && !(setup.preconditioner isa Jacobi) && throw(ArgumentError(
+        "MixedF16 supports the Jacobi preconditioner only; use MixedF32 for $(nameof(typeof(setup.preconditioner)))"))
+    MixedWorkspace(precision, setup.solver, setup.preconditioner, _A(eqn), b)
 end
+
+# the preconditioner of a SolverSetup: built on the equation's matrix in full precision, inert
+# under mixed precision, whose workspace builds its own
+set_preconditioner(setup::SolverSetup, eqn, args...) = _set_preconditioner(setup.precision, setup, eqn, args...)
+_set_preconditioner(::FullPrecision, setup, eqn, args...) = set_preconditioner(setup.preconditioner, eqn, args...)
+_set_preconditioner(::AbstractMixedPrecision, setup, eqn) =
+    Preconditioner{MixedPrecisionSolve,Nothing,Nothing,Nothing}(nothing, nothing, nothing)
+_set_preconditioner(::AbstractMixedPrecision, setup, eqn, BCs, config) =
+    set_preconditioner(setup.preconditioner, eqn, BCs, config)
 
 struct AdaptiveTimeStepping{F<:AbstractFloat}
     maxCo::F
@@ -353,7 +362,7 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     # Crank-Nicolson's explicit step 2x_new - x_old is x_old + 2d
     α = typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson} ? 2 : 1
-    iterations = _mixed_correction!(phiEqn.solver, A, b, values, α, setup, config.hardware)
+    iterations = _mixed_correction!(phiEqn.solver, A, b, values, α, setup, config, result.mesh)
     iterations == setup.itmax && @warn "Maximum number of iterations reached!"
     return residual(phiEqn, component, config)
 end

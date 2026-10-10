@@ -102,7 +102,7 @@ function initialise(
             Source(Pk)
         ) → eqn
 
-    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k, k_eqn)
     @reset k_eqn.solver = _workspace(solvers.k, k_eqn)
     
     initial_residual = ((:k, 1.0),)

@@ -2,7 +2,6 @@ module Solve
 
 using Adapt
 using Krylov
-using BFloat16s: BFloat16
 using Statistics
 using SparseArrays
 using LinearOperators

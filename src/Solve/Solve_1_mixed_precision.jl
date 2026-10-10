@@ -1,4 +1,4 @@
-export AbstractSolvePrecision, FullPrecision, MixedF32, MixedF16, MixedBF16
+export AbstractSolvePrecision, FullPrecision, MixedF32, MixedF16
 
 abstract type AbstractSolvePrecision end
 abstract type AbstractMixedPrecision <: AbstractSolvePrecision end
@@ -34,25 +34,15 @@ computed in full precision. Serial meshes only.
 """
 struct MixedF16 <: AbstractMixedPrecision end
 
-"""
-    MixedBF16()
-
-As [`MixedF16`](@ref) with the off-diagonal matrix entries stored in `BFloat16`, whose 8-bit
-mantissa rounds them 8 times more coarsely than `Float16`'s 11 bits for the same storage. CPUs
-without native `BFloat16` convert in software.
-"""
-struct MixedBF16 <: AbstractMixedPrecision end
-
 _storage_type(::MixedF32) = Float32
 _storage_type(::MixedF16) = Float16
-_storage_type(::MixedBF16) = BFloat16
 
 # half-width storage needs the compensated, scaled correction; Krylov vectors stay Float32 since
 # half-precision CG loses the sign of pᵀAp on the smooth modes of pressure matrices
-const CompensatedPrecision = Union{MixedF16,MixedBF16}
-_work_type(::CompensatedPrecision) = Float32
+_work_type(::MixedF16) = Float32
 
-# low-precision state of a ModelEquation: Krylov workspace, operator sharing A's sparsity, Jacobi.
+# low-precision state of a ModelEquation: Krylov workspace, operator sharing A's sparsity and the
+# preconditioner (a Preconditioner for MixedF32, Jacobi's diagonal operator for MixedF16). dinv,
 # rfull, s, dptr and comp are `nothing` for MixedF32.
 struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B}
     precision::PR
@@ -70,13 +60,21 @@ end
 
 Krylov.iteration_count(ws::MixedWorkspace) = Krylov.iteration_count(ws.krylov)
 
-function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, A, b)
-    nzval, r, dinv = _mixed_storage(Float32, A, b)
-    MixedWorkspace(p, _workspace(solver, r), _lowprecision_operator(A, nzval), nzval, r, dinv,
-        diagonal_operator(dinv), nothing, nothing, nothing, nothing)
+# a mixed-precision workspace holds its own preconditioner, so the equation keeps an inert one
+struct MixedPrecisionSolve <: PreconditionerType end
+update_preconditioner!(::Preconditioner{MixedPrecisionSolve}, mesh, config) = nothing
+
+# any serial preconditioner, built on the Float32 copy of the matrix and refreshed every solve
+function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, preconditioner::PreconditionerType, A, b)
+    nzval = similar(_nzval(A), Float32)
+    nzval .= _nzval(A)
+    r = _krylov_vector(similar(b, Float32))
+    opA = _lowprecision_operator(A, nzval)
+    P = Preconditioner{typeof(preconditioner)}(opA)
+    MixedWorkspace(p, _workspace(solver, r), opA, nzval, r, nothing, P, nothing, nothing, nothing, nothing)
 end
 
-function MixedWorkspace(p::CompensatedPrecision, solver::AbstractLinearSolver, A, b)
+function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, b)
     T = _work_type(p)
     nzval = similar(_nzval(A), _storage_type(p))
     diag = similar(b, Float32)
@@ -103,7 +101,6 @@ end
     end
 end
 
-_mixed_storage(::Type{T}, A, b) where T = (similar(_nzval(A), T), _krylov_vector(similar(b, T)), similar(b, T))
 
 _lowprecision_operator(A::SparseXCSR{Bi}, nzval) where Bi = begin
     Ap = parent(A)
@@ -162,14 +159,15 @@ end
 # NEW SECTION: correction solve
 
 # solves A·d = b - Ax for d from d = 0 and adds α·d to values; returns the largest Krylov count
-function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, α, setup, hardware)
+function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, α, setup, config, mesh)
     (; itmax, atol, rtol) = setup
-    (; backend, workgroup) = hardware
+    (; backend, workgroup) = config.hardware
     n = length(values)
     kernel! = _sized(_mixed_residual!, backend, workgroup, n)
-    kernel!(ws.r, ws.nzval, ws.dinv, _rowptr(A), _colval(A), _nzval(A), values, b)
+    kernel!(ws.r, ws.nzval, _rowptr(A), _colval(A), _nzval(A), values, b)
+    update_preconditioner!(ws.P, mesh, config)
     krylov_solve!(ws.krylov, ws.opA, ws.r;
-        M=ws.P, itmax=itmax, atol=Float32(atol), rtol=Float32(rtol), ldiv=false, history=false)
+        M=ws.P.P, itmax=itmax, atol=Float32(atol), rtol=Float32(rtol), ldiv=is_ldiv(ws.P), history=false)
     kernel! = _sized(_add_correction!, backend, workgroup, n)
     kernel!(values, ws.krylov.x, eltype(values)(α))
     Krylov.iteration_count(ws.krylov)
@@ -178,8 +176,9 @@ end
 # scaling to unit diagonal fits Float16's range; half-width rounding perturbs A by more than the
 # smallest eigenvalues of a pressure matrix, so the diagonal is compensated to keep A's action on
 # constant fields, and the minimal-residual step keeps the full-precision residual from growing
-function _mixed_correction!(ws::MixedWorkspace{<:CompensatedPrecision}, A, b, values, α, setup, hardware)
+function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, α, setup, config, mesh)
     (; itmax, atol, rtol) = setup
+    hardware = config.hardware
     (; backend, workgroup) = hardware
     rowptr, colval, nzval = _rowptr(A), _colval(A), _nzval(A)
     T = _work_type(ws.precision)
@@ -214,12 +213,12 @@ function _step_length(ws, A, d, hardware)
     iszero(den) ? zero(den) : dot(ws.rfull, ad)/den
 end
 
-_mixed_correction!(ws, A, b, values, α, setup, hardware) =
+_mixed_correction!(ws, A, b, values, α, setup, config, mesh) =
     throw(ArgumentError("mixed precision is not yet supported by this solver or equation"))
 
-# casts A and its Jacobi inverse diagonal while forming r = b - Ax in full precision
+# casts A while forming r = b - Ax in full precision
 @kernel function _mixed_residual!(
-    r, nzval_lo, dinv, @Const(rowptr), @Const(colval), @Const(nzval), @Const(x), @Const(b))
+    r, nzval_lo, @Const(rowptr), @Const(colval), @Const(nzval), @Const(x), @Const(b))
     i = @index(Global)
     Ax = zero(eltype(nzval))
     @inbounds begin
@@ -227,7 +226,6 @@ _mixed_correction!(ws, A, b, values, α, setup, hardware) =
             a = nzval[nzi]
             c = colval[nzi]
             nzval_lo[nzi] = convert(eltype(nzval_lo), a)
-            c == i && (dinv[i] = convert(eltype(dinv), inv(abs(a))))
             Ax += a*x[c]
         end
         r[i] = b[i] - Ax

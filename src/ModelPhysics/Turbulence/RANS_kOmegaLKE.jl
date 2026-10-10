@@ -214,9 +214,9 @@ function initialise(
     
     # Set up preconditioners
 
-    @reset kl_eqn.preconditioner = set_preconditioner(solvers.kl.preconditioner, kl_eqn)
-    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-    @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
+    @reset kl_eqn.preconditioner = set_preconditioner(solvers.kl, kl_eqn)
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k, k_eqn)
+    @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega, ω_eqn)
     
     # preallocating solvers
 

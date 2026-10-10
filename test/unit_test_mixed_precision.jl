@@ -41,20 +41,26 @@ end
 
 mp_reference = mp_solve_T(FullPrecision(), 1; rtol=1e-12)
 
-@testset "$p refines to the Float64 solution" for (p, nsolves) ∈ ((MixedBF16(), 20), (MixedF16(), 40), (MixedF32(), 20))
+@testset "$p refines to the Float64 solution" for (p, nsolves) ∈ ((MixedF16(), 40), (MixedF32(), 20))
     x = mp_solve_T(p, nsolves)
     @test norm(x - mp_reference)/norm(mp_reference) < 1e-8
 end
 
+@testset "MixedF32() with $(nameof(typeof(P))) refines to the Float64 solution" for P ∈ (NormDiagonal(), DILU())
+    x = mp_solve_T(MixedF32(), 20; preconditioner=P)
+    @test norm(x - mp_reference)/norm(mp_reference) < 1e-8
+end
+
 @testset "mixed-precision setup checks" begin
-    @test_throws ArgumentError mp_solve_T(MixedF32(), 1; preconditioner=DILU())
+    @test_throws ArgumentError mp_solve_T(MixedF16(), 1; preconditioner=DILU())
     @test SolverSetup(solver=Cg(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0).precision isa FullPrecision
     @test_throws ArgumentError SolverSetup(
-        solver=AMG(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, precision=MixedBF16())
+        solver=AMG(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, precision=MixedF16())
 end
 
 @testset "half-precision XVector dot accumulates in Float32" begin
-    n = 100_000
-    x = XCALibre.Multithread.XVector(ones(XCALibre.Solve.BFloat16, n))
+    # beyond the 2048 at which a Float16 sum stalls, below Float16's largest value
+    n = 50_000
+    x = XCALibre.Multithread.XVector(ones(Float16, n))
     @test Float64(Krylov.kdot(n, x, x)) ≈ n rtol=1e-2
 end

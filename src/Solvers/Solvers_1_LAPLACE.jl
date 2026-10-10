@@ -79,7 +79,7 @@ function setup_laplace_solver(
     # Krylov preconditioner/workspace are serial-only (distributed uses PETSc PCs)
     if !is_distributed_mesh(mesh)
         @info "Initialising preconditioners..."
-        @reset T_eqn.preconditioner = set_preconditioner(solvers.preconditioner, T_eqn)
+        @reset T_eqn.preconditioner = set_preconditioner(solvers, T_eqn)
 
         @info "Pre-allocating solvers..."
         @reset T_eqn.solver = _workspace(solvers, T_eqn)

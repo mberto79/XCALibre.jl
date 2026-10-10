@@ -91,7 +91,7 @@ end
 
 # half-precision sums stagnate after a few hundred terms, so they accumulate in Float32
 _acc_type(::Type{T}) where T = T
-_acc_type(::Type{<:Union{Float16,BFloat16}}) = Float32
+_acc_type(::Type{Float16}) = Float32
 
 function Krylov.kdot(n::Integer, x::XVector{T}, y::XVector{T}) where T<:AbstractFloat
     xd, yd = x.data, y.data

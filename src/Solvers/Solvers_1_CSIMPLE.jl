@@ -101,8 +101,8 @@ function setup_compressible_solvers(
 
     @info "Initialising preconditioners..."
 
-    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
+    @reset U_eqn.preconditioner = set_preconditioner(solvers.U, U_eqn)
+    @reset p_eqn.preconditioner = set_preconditioner(solvers.p, p_eqn)
 
     @info "Pre-allocating solvers..."
      

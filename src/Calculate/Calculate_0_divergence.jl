@@ -192,15 +192,20 @@ function div!(phi::VectorField, Γf, tensor, BCs, config; Γc=nothing)
     (; cells, cell_faces, cell_nsign, faces) = mesh
     (; backend, workgroup) = config.hardware
 
+    phiv, Γfv = field_values(phi), _kernel_values(Γf)
     kernel! = _sized(_div_tensor_cells!, backend, workgroup, length(cells))
-    kernel!(phi, Γf, Γc, tensor, cells, cell_faces, cell_nsign, faces)
+    kernel!(phiv, Γfv, Γc, tensor, cells, cell_faces, cell_nsign, faces)
     KernelAbstractions.synchronize(backend)
 
     for BC ∈ BCs
-        _div_tensor_boundary!(phi, Γf, tensor, BC, cells, faces, backend, workgroup)
+        _div_tensor_boundary!(phiv, Γfv, tensor, BC, cells, faces, backend, workgroup)
     end
     nothing
 end
+
+# kernel arguments are copied per thread: pass field storage, not the field and its mesh
+_kernel_values(f::Union{ConstantScalar,ScalarField,FaceScalarField,VectorField,TensorField}) = field_values(f)
+_kernel_values(f) = f
 
 # each cell sums the fluxes through its internal faces
 # Γ times the face tensor: face coefficient times interpolated tensor, or the interpolated
@@ -251,7 +256,7 @@ end
     fID = IDs_range[i]
     cID = faces.ownerCells[fID][1]
     flux = Γf[fID]*(tensor[cID]*faces.normal[fID])*(faces.area[fID]/cells.volume[cID])
-    Atomix.@atomic phi.x.values[cID] += flux[1]
-    Atomix.@atomic phi.y.values[cID] += flux[2]
-    Atomix.@atomic phi.z.values[cID] += flux[3]
+    Atomix.@atomic phi.x[cID] += flux[1]
+    Atomix.@atomic phi.y[cID] += flux[2]
+    Atomix.@atomic phi.z[cID] += flux[3]
 end

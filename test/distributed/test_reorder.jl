@@ -28,7 +28,7 @@ else
 end
 Treordered, Tfile = MPI.bcast(ref, comm; root=0)
 
-dm = distribute(() -> reorder_mesh!(trig_mesh(); polymesh=nothing); comm)
+dm = distribute(() -> reorder_mesh!(trig_mesh()); comm)
 Tloc = solve_T(dm)
 n = dm.partition.n_owned
 orig = dm.orig_cells

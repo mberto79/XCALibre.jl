@@ -67,23 +67,25 @@ end
     @test XCALibre.Mesh._reorder_mesh!(reordered, :rcm) === nothing
 end
 
-@testset "reorder_mesh! rewrites the stored mesh" begin
+@testset "the stored mesh follows a reordered mesh" begin
     mesh = UNV3D_mesh(joinpath(grids_dir, "bfs_unv_tet_15mm.unv"); scale=0.001)
     mktempdir() do dir
         cd(dir) do
             IOFormats = XCALibre.IOFormats
             IOFormats.initialise_writer(OpenFOAM(), mesh)
             @test !IOFormats._polyMesh_order_mismatch("constant/polyMesh", mesh)
-            # the files are rewritten in the new order, faces owned by their lower-numbered cell
+            # reorder_mesh! leaves the files alone; the writer replaces them before writing
             reordered = reorder_mesh!(deepcopy(mesh))
+            @test IOFormats._polyMesh_order_mismatch("constant/polyMesh", reordered)
+            IOFormats.initialise_writer(OpenFOAM(), reordered)
             back = FOAM3D_mesh("constant/polyMesh")
             @test back.cell_volume ≈ reordered.cell_volume
             @test consistent_connectivity(back)
             @test !IOFormats._polyMesh_order_mismatch("constant/polyMesh", reordered)
-            # polymesh=nothing leaves them as they are; the writer then replaces them before writing
-            again = reorder_mesh!(deepcopy(mesh); method=:morton, polymesh=nothing)
+            # partitioning rewrites them too, since decomposed output indexes the partitioned mesh
+            again = reorder_mesh!(deepcopy(mesh); method=:morton)
             @test IOFormats._polyMesh_order_mismatch("constant/polyMesh", again)
-            IOFormats.initialise_writer(OpenFOAM(), again)
+            partition_mesh(again, 2; dir="parts")
             @test FOAM3D_mesh("constant/polyMesh").cell_volume ≈ again.cell_volume
         end
     end

@@ -58,8 +58,8 @@ function _warn_stale_zones(polyMeshDir)
     end
 end
 
-# rewrites an existing constant/polyMesh of this mesh whose cells are numbered differently, so
-# results indexed by the mesh as read (e.g. decomposed output) map onto the files
+# the distributed writer only writes processor dirs whose cellProcAddressing indexes the partitioned
+# mesh, so the case polyMesh must be rewritten in that mesh's order when it is partitioned
 function _sync_polyMesh_order(mesh::Mesh3; dir="constant/polyMesh")
     all(name -> isfile(joinpath(dir, name)), ("points", "faces", "owner", "neighbour", "boundary")) || return nothing
     isnothing(_polyMesh_mismatch(dir, mesh)) && _polyMesh_order_mismatch(dir, mesh) || return nothing

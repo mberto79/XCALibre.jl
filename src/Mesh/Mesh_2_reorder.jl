@@ -1,3 +1,41 @@
+export reorder_mesh!
+
+"""
+    reorder_mesh!(mesh::Union{Mesh2,Mesh3}; method=:rcm) -> mesh
+
+Reorder the cells, faces and nodes of a host `mesh` in place so that neighbouring cells sit close in
+memory. Cell loops read the values of each cell's neighbours, so meshes whose generator numbers cells
+without regard to adjacency (typical of unstructured tetrahedral meshes) run faster once reordered.
+Geometry, face orientation and boundary patches are unchanged; only the numbering differs. The extra
+memory is a few index vectors of the mesh's integer type and one buffer the size of the largest
+connectivity list.
+
+- `method=:rcm`: reverse Cuthill-McKee ordering of the cell graph (bounded index distance between
+  neighbours).
+- `method=:morton`: Z-order curve of the cell centres (compact groups of consecutive cells).
+
+Internal faces follow their lowest-numbered cell, boundary faces their owner cell within each patch,
+and nodes the order in which the cells first reach them. The mesh is left unchanged unless the new
+order shortens the mean index distance between neighbouring cells by at least 10%.
+
+Only the mesh in memory changes; mesh files are not touched. Fields built on the reordered mesh, and
+results written from them, are in the new order: VTK output carries the mesh in every file, and
+OpenFOAM output replaces a `constant/polyMesh` numbered differently before writing any field (in a
+distributed run, `distribute` and `partition_mesh` do this when they partition the mesh). Serial
+meshes only; call before `adapt`, and before `distribute` or `partition_mesh` to reorder a mesh for a
+distributed run.
+
+# Example
+
+```julia
+mesh = reorder_mesh!(UNV3D_mesh("mesh.unv", scale=0.001))
+```
+"""
+function reorder_mesh!(mesh::Union{Mesh2,Mesh3}; method::Symbol=:rcm)
+    _reorder_mesh!(mesh, method)
+    mesh
+end
+
 # reorders in place; returns the cell permutation (perm[new] = old), or nothing when the mesh is
 # already ordered
 function _reorder_mesh!(mesh, method)

@@ -34,6 +34,18 @@ These conversion functions will read mesh information and generate a mesh object
 Mesh3
 ```
 
+### Mesh reordering
+
+Every kernel that loops over cells reads the values of each cell's neighbours, so its speed depends on how close those neighbours sit in memory. Some mesh generators number cells in an order that scatters neighbours across the whole mesh (unstructured tetrahedral meshes in particular), which leaves CPU caches and GPU memory transactions mostly unused. `reorder_mesh!` renumbers the cells, faces and nodes of a loaded mesh so that neighbours sit close together; the geometry and boundary patches are unchanged, and a mesh that is already well ordered is left as it is. Meshes are read in the numbering of their files; reordering is applied only when requested:
+
+```julia
+mesh = reorder_mesh!(UNV3D_mesh(mesh_file, scale=0.001))
+```
+
+```@docs
+reorder_mesh!
+```
+
 
 
 ### Mesh limitations and requirements

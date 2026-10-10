@@ -175,3 +175,29 @@ solvers = (
 ```@meta
 DocTestSetup = nothing
 ```
+### Mixed-precision linear solves
+
+Most of the time spent in a Krylov solve goes into reading the matrix and vectors from memory, so storing them with fewer bytes per value makes each iteration faster. The `precision` keyword of `SolverSetup` selects how each linear system is solved:
+
+- `FullPrecision()` (default): the system is solved in the mesh's float type.
+- `MixedF32()`: the full-precision residual `r = b - Ax` is formed, the correction `A d = r` is solved with the matrix, vectors and preconditioner in `Float32`, and `x + d` is formed in full precision. Fields and residuals keep full accuracy. Works on CPUs and GPUs with any serial preconditioner, and on distributed meshes through PETSc's `Float32` library.
+- `MixedF16()`: as `MixedF32()` with the off-diagonal matrix entries stored in `Float16` (the Krylov vectors stay in `Float32`). Serial meshes and the `Jacobi` preconditioner only.
+
+A single low-precision solve can reduce the residual only so far (about `1e-5` with `Float32`, `1e-3` with `Float16`). When `rtol` asks for more, the correction is repeated within the same solve until the full-precision residual meets `rtol`, so tight tolerances, as used in transient runs, are honoured; loose tolerances, as typical in steady runs, take a single correction and no extra work.
+
+When it helps: solves limited by memory bandwidth, i.e. large meshes, and in particular GPUs, whose `Float64` throughput is often a small fraction of their `Float32` throughput. `MixedF16()` benefits only hardware with native `Float16` arithmetic (GPUs); on CPUs it is slower than `MixedF32()`. When it does not: small meshes that fit in cache, solves dominated by the preconditioner setup, and very ill-conditioned systems whose corrections need many refinements. Meshes whose neighbouring cells sit far apart in memory gain less, since reading scattered values costs the same whatever their size; reordering the mesh with [`reorder_mesh!`](@ref) addresses that.
+
+```julia
+solvers = (
+    U = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=0.7,
+        rtol=1e-3, precision=MixedF32()),
+    p = SolverSetup(solver=Cg(), preconditioner=Jacobi(), convergence=1e-7, relax=0.3,
+        rtol=1e-3, precision=MixedF32())
+)
+```
+
+```@docs; canonical=false
+FullPrecision
+MixedF32
+MixedF16
+```

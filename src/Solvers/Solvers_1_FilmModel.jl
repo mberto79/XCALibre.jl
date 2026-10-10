@@ -72,13 +72,13 @@ function setup_FilmModel_Solver(solver_variant, model, config;
 
     @info "Initialising preconditioners"
 
-    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset h_eqn.preconditioner = set_preconditioner(solvers.h.preconditioner, h_eqn)
+    @reset U_eqn.preconditioner = set_preconditioner(solvers.U, U_eqn)
+    @reset h_eqn.preconditioner = set_preconditioner(solvers.h, h_eqn)
 
     @info "Pre-allocating solvers"
 
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
-    @reset h_eqn.solver = _workspace(solvers.h.solver, _b(h_eqn), _index_type(_A(h_eqn)))
+    @reset U_eqn.solver = _workspace(solvers.U, U_eqn, XDir())
+    @reset h_eqn.solver = _workspace(solvers.h, h_eqn)
 
     @info "Initialising turbulence model"
     #p_eqn = (Time{schemes.h.time}(rho_l,h)==Source(Sm)) → ScalarEquation(h, boundaries.h)

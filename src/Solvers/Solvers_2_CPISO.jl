@@ -103,13 +103,13 @@ function setup_unsteady_compressible_solvers(
 
     @info "Initialising preconditioners..."
 
-    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
+    @reset U_eqn.preconditioner = set_preconditioner(solvers.U, U_eqn)
+    @reset p_eqn.preconditioner = set_preconditioner(solvers.p, p_eqn)
 
     @info "Pre-allocating solvers..."
 
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
+    @reset U_eqn.solver = _workspace(solvers.U, U_eqn, XDir())
+    @reset p_eqn.solver = _workspace(solvers.p, p_eqn)
 
     @info "Initialising energy model..."
     energyModel = initialise(model.energy, model, mdotf, rho, p_eqn, config)

@@ -76,8 +76,8 @@ function wall_distance!(method::Poisson, model, walls, config)
 
     # Krylov preconditioner/workspace are serial-only (distributed solves through PETSc PCs)
     if !is_distributed_mesh(mesh)
-        @reset phi_eqn.preconditioner = set_preconditioner(solvers.y.preconditioner, phi_eqn)
-        @reset phi_eqn.solver = _workspace(solvers.y.solver, _b(phi_eqn), _index_type(_A(phi_eqn)))
+        @reset phi_eqn.preconditioner = set_preconditioner(solvers.y, phi_eqn)
+        @reset phi_eqn.solver = _workspace(solvers.y, phi_eqn)
     end
     distributed = is_distributed_mesh(mesh)
     phi_deqn = wrap_eqn(phi_eqn, mesh, solvers.y, config; label="y")

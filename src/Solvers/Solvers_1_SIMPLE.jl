@@ -91,12 +91,12 @@ function setup_incompressible_solvers(
     # mesh is concrete here so the branch is resolved at compile time (zero serial cost).
     if !is_distributed_mesh(mesh)
         @info "Initialising preconditioners..."
-        @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-        @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
+        @reset U_eqn.preconditioner = set_preconditioner(solvers.U, U_eqn)
+        @reset p_eqn.preconditioner = set_preconditioner(solvers.p, p_eqn)
 
         @info "Pre-allocating solvers..."
-        @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
-        @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
+        @reset U_eqn.solver = _workspace(solvers.U, U_eqn, XDir())
+        @reset p_eqn.solver = _workspace(solvers.p, p_eqn)
     end
 
     @info "Initialising turbulence model..."

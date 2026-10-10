@@ -129,8 +129,8 @@ function initialise(
         Source(S_he) - Source(divK) - Source(dKdt) + Source(Phi)
     ) → eqn
 
-    @reset energy_eqn.preconditioner = set_preconditioner(solvers.he.preconditioner, energy_eqn)
-    @reset energy_eqn.solver = _workspace(solvers.he.solver, _b(energy_eqn), _index_type(_A(energy_eqn)))
+    @reset energy_eqn.preconditioner = set_preconditioner(solvers.he, energy_eqn)
+    @reset energy_eqn.solver = _workspace(solvers.he, energy_eqn)
 
     init_residual = (:he, 1.0)
     state = ModelState(init_residual, false)

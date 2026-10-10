@@ -14,28 +14,45 @@ struct FullPrecision <: AbstractSolvePrecision end
     MixedF32()
 
 `SolverSetup` precision that solves each linear system for its correction in `Float32`. The
-residual `r = b - Ax` and the update `x += d` are formed in the mesh's float type, so the outer
-(e.g. SIMPLE) iteration keeps full accuracy while the Krylov iterations, matrix and preconditioner
-use `Float32` storage. Supported with the Krylov solvers (`Cg`, `Cgs`, `Bicgstab`, `Gmres`); serial
-meshes use the `Jacobi` preconditioner. On distributed meshes PETSc solves the correction with its
-`Float32` library (PETSc_jll loads it beside the `Float64` one), so PETSc preconditioners (e.g.
-`GAMG`) are available too. `MixedF32` gives the best accuracy per unit of speed-up.
+residual `r = b - Ax` and the update `x += d` are formed in the mesh's float type, so the solution
+keeps full accuracy while the Krylov iterations, matrix and preconditioner use `Float32` storage,
+which halves the memory traffic of each iteration. A single `Float32` solve cannot reduce the
+residual by much more than `1e-5`; when `rtol` asks for more, the correction is repeated
+(iterative refinement) until the full-precision residual meets `rtol`, so tight tolerances, e.g.
+in transient runs, are met as in full precision.
+
+Supported with the Krylov solvers (`Cg`, `Cgs`, `Bicgstab`, `Gmres`) and every serial
+preconditioner, which is built on the `Float32` matrix. On distributed meshes PETSc solves the
+correction with its `Float32` library (PETSc_jll loads it beside the `Float64` one), so PETSc
+preconditioners (e.g. `GAMG`) are available too.
 """
 struct MixedF32 <: AbstractMixedPrecision end
 
 """
     MixedF16()
 
-As [`MixedF32`](@ref) with the off-diagonal matrix entries stored in `Float16`; the Krylov
-iterations run in `Float32`. The system is scaled symmetrically to unit diagonal to fit `Float16`'s
-range, the diagonal is kept in `Float32` and compensated so the rounded matrix keeps the exact row
-sums of the scaled system, and each correction is applied with a minimal-residual step length
-computed in full precision. Serial meshes only.
+As [`MixedF32`](@ref) with the off-diagonal matrix entries stored in `Float16`, which halves the
+matrix traffic again; the Krylov iterations run in `Float32`. The system is scaled symmetrically to
+unit diagonal to fit `Float16`'s range, the diagonal is kept in `Float32` and compensated so the
+rounded matrix keeps the exact row sums of the scaled system, and each correction is applied with a
+minimal-residual step length computed in full precision. A single correction reduces the residual
+by about `1e-2` at most, so tighter `rtol` takes several corrections.
+
+Serial meshes and the `Jacobi` preconditioner only: the scaled matrix has a unit diagonal, so
+Jacobi is applied as part of the scaling at no extra cost, while factorisation preconditioners
+would need their own higher-precision copy of the matrix, removing the saving. Useful on GPUs;
+CPUs without native `Float16` arithmetic run it slower than `MixedF32`.
 """
 struct MixedF16 <: AbstractMixedPrecision end
 
 _storage_type(::MixedF32) = Float32
 _storage_type(::MixedF16) = Float16
+
+# smallest relative residual reduction one correction solve reaches reliably; tighter rtol takes
+# several corrections (iterative refinement)
+_attainable_rtol(::MixedF32) = 1e-5
+_attainable_rtol(::MixedF16) = 1e-2
+const MAX_REFINEMENTS = 20
 
 # half-width storage needs the compensated, scaled correction; Krylov vectors stay Float32 since
 # half-precision CG loses the sign of pᵀAp on the smooth modes of pressure matrices
@@ -43,8 +60,8 @@ _work_type(::MixedF16) = Float32
 
 # low-precision state of a ModelEquation: Krylov workspace, operator sharing A's sparsity and the
 # preconditioner (a Preconditioner for MixedF32, Jacobi's diagonal operator for MixedF16). dinv,
-# rfull, s, dptr and comp are `nothing` for MixedF32.
-struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B}
+# rfull, s, dptr and comp are `nothing` for MixedF32; x0 holds Crank-Nicolson's old values.
+struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B,X}
     precision::PR
     krylov::W
     opA::O
@@ -56,6 +73,7 @@ struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B}
     s::F        # D^-1/2
     dptr::I     # position of each row's diagonal in nzval
     comp::B     # (; diag, ad): compensated Float32 diagonal and S·A·S·d
+    x0::X
 end
 
 Krylov.iteration_count(ws::MixedWorkspace) = Krylov.iteration_count(ws.krylov)
@@ -71,7 +89,7 @@ function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, preconditione
     r = _krylov_vector(similar(b, Float32))
     opA = _lowprecision_operator(A, nzval)
     P = Preconditioner{typeof(preconditioner)}(opA)
-    MixedWorkspace(p, _workspace(solver, r), opA, nzval, r, nothing, P, nothing, nothing, nothing, nothing)
+    MixedWorkspace(p, _workspace(solver, r), opA, nzval, r, nothing, P, nothing, nothing, nothing, nothing, similar(b))
 end
 
 function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, b)
@@ -82,7 +100,7 @@ function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, 
     dinv = similar(b, T)
     opA = csr_operator(_rowptr(A), _colval(A), nzval, diag, similar(diag, T), Int(_m(A)))
     MixedWorkspace(p, _workspace(solver, r), opA, nzval, r, dinv,
-        diagonal_operator(dinv), similar(b), similar(b), _diagonal_positions(A), (; diag, ad=similar(b)))
+        diagonal_operator(dinv), similar(b), similar(b), _diagonal_positions(A), (; diag, ad=similar(b)), similar(b))
 end
 
 function _diagonal_positions(A)
@@ -158,26 +176,49 @@ end
 
 # NEW SECTION: correction solve
 
-# solves A·d = b - Ax for d from d = 0 and adds α·d to values; returns the largest Krylov count
-function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, α, setup, config, mesh)
-    (; itmax, atol, rtol) = setup
+# x += α·d per correction until ‖b - Ax‖ ≤ max(atol, rtol·‖b - Ax₀‖); a single correction unless rtol
+# is below what the low precision attains; returns the total Krylov iteration count
+function mixed_solve!(ws::MixedWorkspace, A, b, values, α, setup, config, mesh)
+    (; atol, rtol) = setup
+    inner_rtol = max(rtol, _attainable_rtol(ws.precision))
+    inner_rtol == rtol && return first(_mixed_correction!(ws, A, b, values, α, inner_rtol, nothing, setup, config, mesh))
+    # Crank-Nicolson's step 2x - x₀ needs x₀ once the corrections have converged
+    α == 1 || copyto!(ws.x0, values)
+    iterations, rnorm = _mixed_correction!(ws, A, b, values, 1, inner_rtol, 0.0, setup, config, mesh)
+    target = max(atol, rtol*rnorm)
+    for _ ∈ 2:MAX_REFINEMENTS
+        its, rnorm = _mixed_correction!(ws, A, b, values, 1, inner_rtol, target, setup, config, mesh)
+        iterations += its
+        rnorm ≤ target && break
+    end
+    α == 1 || (values .= 2 .* values .- ws.x0)
+    iterations
+end
+
+# solves A·d = b - Ax for d from d = 0 and adds α·d to values unless ‖b - Ax‖ ≤ target (`nothing`
+# skips the norm); returns the Krylov count and ‖b - Ax‖ before the correction
+function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, α, rtol, target, setup, config, mesh)
+    (; itmax, atol) = setup
     (; backend, workgroup) = config.hardware
     n = length(values)
     kernel! = _sized(_mixed_residual!, backend, workgroup, n)
     kernel!(ws.r, ws.nzval, _rowptr(A), _colval(A), _nzval(A), values, b)
-    update_preconditioner!(ws.P, mesh, config)
+    rnorm = isnothing(target) ? 0.0 : Float64(norm(ws.r))
+    !isnothing(target) && rnorm ≤ target && return 0, rnorm
+    # A is unchanged by later corrections of the same solve
+    (isnothing(target) || iszero(target)) && update_preconditioner!(ws.P, mesh, config)
     krylov_solve!(ws.krylov, ws.opA, ws.r;
         M=ws.P.P, itmax=itmax, atol=Float32(atol), rtol=Float32(rtol), ldiv=is_ldiv(ws.P), history=false)
     kernel! = _sized(_add_correction!, backend, workgroup, n)
     kernel!(values, ws.krylov.x, eltype(values)(α))
-    Krylov.iteration_count(ws.krylov)
+    Krylov.iteration_count(ws.krylov), rnorm
 end
 
 # scaling to unit diagonal fits Float16's range; half-width rounding perturbs A by more than the
 # smallest eigenvalues of a pressure matrix, so the diagonal is compensated to keep A's action on
 # constant fields, and the minimal-residual step keeps the full-precision residual from growing
-function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, α, setup, config, mesh)
-    (; itmax, atol, rtol) = setup
+function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, α, rtol, target, setup, config, mesh)
+    (; itmax, atol) = setup
     hardware = config.hardware
     (; backend, workgroup) = hardware
     rowptr, colval, nzval = _rowptr(A), _colval(A), _nzval(A)
@@ -190,7 +231,7 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, α, setu
     kernel!(ws.rfull, ws.nzval, ws.comp.diag, ws.dinv, rowptr, colval, nzval, values, b, ws.s)
     # unit 2-norm: Krylov's dot products return T and n·max² overflows Float16
     rnorm = norm(ws.rfull)
-    iszero(rnorm) && return 0
+    (iszero(rnorm) || rnorm ≤ something(target, 0.0)) && return 0, rnorm
     sr = inv(rnorm)
     kernel! = _sized(_scale_cast!, backend, workgroup, n)
     kernel!(ws.r, ws.rfull, sr)
@@ -200,7 +241,7 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, α, setu
     ω = _step_length(ws, A, d, hardware)
     kernel! = _sized(_add_scaled_correction!, backend, workgroup, n)
     kernel!(values, d, ws.s, F(α)*ω)
-    Krylov.iteration_count(ws.krylov)
+    Krylov.iteration_count(ws.krylov), rnorm
 end
 
 # ω minimising ‖S·(b - Ax) - ω·S·A·S·d‖₂
@@ -213,7 +254,7 @@ function _step_length(ws, A, d, hardware)
     iszero(den) ? zero(den) : dot(ws.rfull, ad)/den
 end
 
-_mixed_correction!(ws, A, b, values, α, setup, config, mesh) =
+mixed_solve!(ws, A, b, values, α, setup, config, mesh) =
     throw(ArgumentError("mixed precision is not yet supported by this solver or equation"))
 
 # casts A while forming r = b - Ax in full precision

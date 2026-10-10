@@ -43,12 +43,19 @@ mp_reference = mp_solve_T(FullPrecision(), 1; rtol=1e-12)
 
 @testset "$p refines to the Float64 solution" for (p, nsolves) ∈ ((MixedF16(), 40), (MixedF32(), 20))
     x = mp_solve_T(p, nsolves)
-    @test norm(x - mp_reference)/norm(mp_reference) < 1e-8
+    @test norm(x - mp_reference)/norm(mp_reference) < 1e-10
 end
 
 @testset "MixedF32() with $(nameof(typeof(P))) refines to the Float64 solution" for P ∈ (NormDiagonal(), DILU())
     x = mp_solve_T(MixedF32(), 20; preconditioner=P)
-    @test norm(x - mp_reference)/norm(mp_reference) < 1e-8
+    @test norm(x - mp_reference)/norm(mp_reference) < 1e-10
+end
+
+# a tolerance below what the low precision attains is met by refining the correction within one solve
+@testset "$p meets a tight rtol in one solve" for p ∈ (MixedF32(), MixedF16())
+    full = mp_solve_T(FullPrecision(), 1; rtol=1e-8)
+    x = mp_solve_T(p, 1; rtol=1e-8)
+    @test norm(x - mp_reference) ≤ 5*norm(full - mp_reference)
 end
 
 @testset "mixed-precision setup checks" begin

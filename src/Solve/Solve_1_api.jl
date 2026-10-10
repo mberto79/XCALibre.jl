@@ -362,8 +362,8 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     # Crank-Nicolson's explicit step 2x_new - x_old is x_old + 2d
     α = typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson} ? 2 : 1
-    iterations = _mixed_correction!(phiEqn.solver, A, b, values, α, setup, config, result.mesh)
-    iterations == setup.itmax && @warn "Maximum number of iterations reached!"
+    iterations = mixed_solve!(phiEqn.solver, A, b, values, α, setup, config, result.mesh)
+    iterations ≥ setup.itmax && @warn "Maximum number of iterations reached!"
     return residual(phiEqn, component, config)
 end
 

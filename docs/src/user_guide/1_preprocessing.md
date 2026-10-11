@@ -102,7 +102,7 @@ mesh = first_touch(mesh)                        # place the mesh itself
 mesh_dev = mesh
 ```
 
-Results are unchanged; only where the memory lives changes. On a 2 x 48-core AMD EPYC node (16 NUMA domains) this cut a 10M-cell steady RANS run on 96 threads by 31%; on a single-socket machine it makes no difference. Do not combine it with `numactl --interleave`, which overrides first-touch placement.
+Results are unchanged; only where the memory lives changes. On a two-socket node with 16 NUMA domains this cut a 10M-cell steady RANS run on 96 threads by 31%; on a single-socket machine it makes no difference. Do not combine it with `numactl --interleave`, which overrides first-touch placement.
 
 ### GPU backends 
 

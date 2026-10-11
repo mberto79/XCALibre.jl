@@ -110,7 +110,7 @@ function initialise(
         ) → eqn
 
     @reset k_eqn.preconditioner = set_preconditioner(
-        solvers.k.preconditioner, k_eqn, k.BCs, config)
+        solvers.k, k_eqn, k.BCs, config)
 
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
     

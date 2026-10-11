@@ -50,8 +50,8 @@ function potential_flow!(
     distributed = is_distributed_mesh(mesh)
     if !distributed
         @reset Phi_eqn.preconditioner = set_preconditioner(
-            solvers.p.preconditioner, Phi_eqn)
-        @reset Phi_eqn.solver = _workspace(solvers.p.solver, _b(Phi_eqn), _index_type(_A(Phi_eqn)))
+            solvers.p, Phi_eqn)
+        @reset Phi_eqn.solver = _workspace(solvers.p, Phi_eqn)
     end
     Phi_deqn = wrap_eqn(Phi_eqn, mesh, solvers.p, config; petsc_options, label="Phi")
     Phi_eqn = unwrap_eqn(Phi_deqn)

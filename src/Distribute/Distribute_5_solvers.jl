@@ -37,7 +37,8 @@ Solve.unwrap_eqn(deqn::DistributedEqn) = deqn.eqn
 
 function Solve.wrap_eqn(eqn, dmesh::DistributedMesh, setup, config;
         petsc_options="", label="")
-    DistributedEqn(eqn, PETScSolver(eqn, dmesh, setup; petsc_options, label), getfield(dmesh, :partition))
+    solver = _distributed_solver(setup.precision, eqn, dmesh, setup, config; petsc_options, label)
+    DistributedEqn(eqn, solver, getfield(dmesh, :partition))
 end
 
 function Solve.solve_equation!(

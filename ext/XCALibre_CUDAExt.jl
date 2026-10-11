@@ -66,6 +66,10 @@ end
 _m(A::SPARSEGPU) = A.dims[1]
 _n(A::SPARSEGPU) = A.dims[2]
 
+# cuSPARSE SpMV for MixedF32; the half-width precisions build their own operator
+XCALibre.Solve._lowprecision_operator(A::SPARSEGPU, nzval::CuVector{T}) where T<:Float32 =
+    SPARSEGPU{T,eltype(A.rowPtr)}(A.rowPtr, A.colVal, nzval, A.dims)
+
 _amg_setup_backend(::BACKEND) = CPU()
 
 function _amg_setup_matrix(A::SPARSEGPU, ::CPU)
@@ -98,7 +102,7 @@ end
 update_preconditioner!(P::Preconditioner{DILU,M,PT,S},  mesh, config) where {M<:SPARSEGPU,PT,S} =
 begin
     KernelAbstractions.copyto!(CPU(), P.storage.A.nzval, P.A.nzVal)
-    update_dilu_diagonal!(P, mesh, config)
+    XCALibre.Solve.update_dilu_diagonal!(P, mesh, config)
     nothing
 end
 

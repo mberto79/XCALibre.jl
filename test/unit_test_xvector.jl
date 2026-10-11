@@ -61,6 +61,15 @@ end
         sols[i] = Krylov.solution(ws)
     end
     @test sols[1] == sols[2] && isapprox(A*sols[1], b; rtol=1e-8)
+    # chunk c runs on Base's static thread c, so loops reuse the pages first touch placed
+    k = Threads.threadpoolsize()
+    owner, static = zeros(Int, k), zeros(Int, k)
+    XCALibre.Multithread._each_chunk_task(c -> (owner[c] = Threads.threadid()), k)
+    Threads.@threads :static for c ∈ 1:k
+        static[c] = Threads.threadid()
+    end
+    @test owner == static
+    @test_throws Exception XCALibre.Multithread._each_chunk_task(c -> c == k && error("chunk"), k)
 end
 
 @testset "AutoTune empty range" begin

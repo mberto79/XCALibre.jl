@@ -20,28 +20,52 @@ KernelAbstractions.get_backend(::XVector) = CPU()
     (c - 1)*d + min(c - 1, r) + 1 : c*d + min(c, r)
 end
 
-# below this many elements touched, one fork/join (5-10 µs) costs more than the loop saves
+# below this many elements touched, one fork/join costs more than the loop saves
 const _MIN_THREADED_WORK = 1 << 16
 
-# :static pins chunk c to thread c for cache reuse only; Base refuses it nested or concurrent
+# nested regions cannot pin chunks to threads, so they run dynamically
 _in_threaded_region() = ccall(:jl_in_threaded_region, Cint, ()) != 0
 
-# Base's own check can still race a concurrent :static loop; its error comes before any chunk runs
+# chunk c on thread c as Base's :static, but spawned as a tree: a task hands the upper half of its chunks
+# to the thread of that half's first chunk, so no thread spawns more than log2(k) tasks
 function _each_chunk_task(g::G, k) where G
-    if !_in_threaded_region()
+    if !_in_threaded_region() && k == Threads.threadpoolsize()
+        off = Threads.threadpoolsize(:interactive)
+        ccall(:jl_enter_threaded_region, Cvoid, ())
         try
-            Threads.@threads :static for c ∈ 1:k
-                g(c)
-            end
-            return nothing
-        catch e
-            e isa ErrorException && occursin(":static", e.msg) || rethrow()
+            Threads.threadid() == off + 1 ? _run_chunks(g, 1, k, off) : wait(_sticky(() -> _run_chunks(g, 1, k, off), off + 1))
+        finally
+            ccall(:jl_exit_threaded_region, Cvoid, ())
         end
+        return nothing
     end
     Threads.@threads :dynamic for c ∈ 1:k
         g(c)
     end
     nothing
+end
+
+function _run_chunks(g::G, lo, hi, off) where G
+    tasks = Task[]
+    while hi > lo
+        mid = (lo + hi + 1) >> 1
+        push!(tasks, let mid = mid, hi = hi
+            _sticky(() -> _run_chunks(g, mid, hi, off), off + mid)
+        end)
+        hi = mid - 1
+    end
+    try
+        g(lo)
+    finally
+        foreach(wait, tasks)
+    end
+end
+
+_sticky(f, tid) = begin
+    t = Task(f)
+    t.sticky = true
+    ccall(:jl_set_task_tid, Cint, (Any, Cint), t, tid - 1)
+    schedule(t)
 end
 
 @inline function _foreach_chunk(f, n, work=n)

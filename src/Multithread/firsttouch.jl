@@ -1,11 +1,10 @@
 export FirstTouch, first_touch
 
 # NEW SECTION: NUMA placement by parallel first touch
-# Linux places a page in the NUMA domain of the thread that first writes it; KernelAbstractions'
-# zeros/copyto! on CPU(static=true) write chunk c from thread c, as the solver's loops read it.
+# a page lands in the NUMA domain of the thread that first writes it; KernelAbstractions'
+# zeros/copyto! on CPU(static=true) write chunk c from thread c, as the solver's loops read it
 
-# backend that CPU arrays are built with; set by activate_multithread
-const CPU_BACKEND = Ref(CPU())
+const CPU_BACKEND = Ref(CPU())  # backend CPU arrays are built with; set by activate_multithread
 _active_backend(backend) = backend
 _active_backend(::CPU) = CPU_BACKEND[]
 

@@ -103,7 +103,10 @@ end
 # _build_A(backend::CPU, i, j, v, n) = sparsecsr(i, j, v, n, n)
 # _build_opA(A::SparseMatricesCSR.SparseMatrixCSR) = LinearOperator(A)
 
-_build_A(backend::CPU, i, j, v, n) = _first_touch_if_enabled(SparseXCSR(sparsecsr(i, j, v, n, n)))
+_build_A(backend::CPU, i, j, v, n) = begin
+    A = SparseXCSR(sparsecsr(i, j, v, n, n))
+    backend.static ? first_touch(A) : A
+end
 _build_opA(A::SparseXCSR) = A
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
@@ -152,9 +155,9 @@ ScalarEquation(phi::ScalarField, BCs) = begin
 
        _build_opA(A),
 
-        first_touch_zeros(backend, Tf, nCells),
-        first_touch_zeros(backend, Tf, nCells),
-        first_touch_zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
         diag_nz,
         face_nz
         )
@@ -194,11 +197,11 @@ VectorEquation(psi::VectorField, BCs) = begin
 
         _build_opA(A),
 
-        first_touch_zeros(backend, Tf, nCells),
-        first_touch_zeros(backend, Tf, nCells),
-        first_touch_zeros(backend, Tf, nCells),
-        first_touch_zeros(backend, Tf, nCells),
-        first_touch_zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
+        KernelAbstractions.zeros(backend, Tf, nCells),
         diag_nz,
         face_nz
         )
@@ -240,16 +243,13 @@ function nz_index_maps(mesh, A, backend)
     rowptr = _rowptr(A) |> Array
     colval = _colval(A) |> Array
     (; cells, cell_neighbours) = mesh
-    diag_nz = zeros(TI, length(cells))
-    face_nz = zeros(TI, length(cell_neighbours))
+    diag_nz = KernelAbstractions.zeros(_active_backend(CPU()), TI, length(cells))
+    face_nz = KernelAbstractions.zeros(_active_backend(CPU()), TI, length(cell_neighbours))
     for cID ∈ eachindex(cells)
         diag_nz[cID] = spindex(rowptr, colval, cID, cID)
         for fi ∈ cells[cID].faces_range
             face_nz[fi] = spindex(rowptr, colval, cID, cell_neighbours[fi])
         end
-    end
-    if backend isa CPU && first_touch_enabled()
-        diag_nz, face_nz = first_touch_copy(diag_nz), first_touch_copy(face_nz, mesh.cell_faces_range)
     end
     (adapt(backend, diag_nz), adapt(backend, face_nz))
 end

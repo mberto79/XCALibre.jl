@@ -421,8 +421,8 @@ mpiexecjl -n 4 julia --project=<env> your_case.jl
 `mpiexecjl` lives in `~/.julia/bin`, so add that directory to your `PATH`. You can set threads per
 rank with Julia's usual `-t` flag, but one thread per rank is the right default. The CPU kernel
 backend is already serial, so extra threads add overhead rather than saving time. Call
-`activate_multithread(backend)` in the script. Despite its name, it pins BLAS to a single thread,
-which stops each rank from taking every core. On a machine with hyperthreading, bind one rank per
+`activate_multithread(backend)` in the script. It sets the CPU backend fields are built with and pins
+BLAS to a single thread, which stops each rank from taking every core. On a machine with hyperthreading, bind one rank per
 physical core, for example `mpiexecjl -n 4 --bind-to core --map-by core julia ...`.
 
 ## PETSc solvers in a single process

@@ -78,30 +78,31 @@ Selecting a given backend is straight-forward. The examples below show how to as
 
 ### CPU backend
 
-Selecting the CPU backend is straight-forward. See the example below. Notice that `CPU()` is a backend type provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) which we re-export for convenience.
+Selecting the CPU backend is straight-forward. See the example below. Notice that `CPU()` is a backend type provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) which we re-export for convenience. Call [`activate_multithread`](@ref) with the backend before building the model: fields and equations are allocated with the backend it is given.
 
 CPU Example 
 ```julia
 mesh = # call function to load mesh e.g. UNV2_mesh, UNV3_mesh or FOAM3D_mesh
 backend = CPU()
+activate_multithread(backend)
 mesh_dev = mesh # dummy reference to emphasise the mesh in on our chosen dev (or backend)
 ```
 
 #### Multi-socket CPUs: NUMA placement
 
-On nodes with several NUMA domains (e.g. two-socket servers), memory is fastest when each thread works on data held in its own domain. Linux places a page in the domain of the thread that first writes it, but the mesh and the sparse matrices are built on a single thread, so without further steps all threads read them from one domain. To place each thread's cells, faces and matrix rows next to it, pin the threads, use a static backend, enable first touch and pass the mesh through [`first_touch`](@ref) before building the model:
+On nodes with several NUMA domains (e.g. two-socket servers), memory is fastest when each thread works on data held in its own domain. Linux places a page in the domain of the thread that first writes it, but the mesh and the sparse matrices are built on a single thread, so without further steps all threads read them from one domain. Following the [KernelAbstractions.jl advice](https://juliagpu.github.io/KernelAbstractions.jl/stable/examples/numa_aware/), pin the threads and pass a static backend to `activate_multithread`: fields, equations and matrices are then allocated with it, so each thread first writes the chunk it later works on. Pass the mesh through [`first_touch`](@ref) before building the model to place it the same way:
 
 ```julia
 using ThreadPinning
 pinthreads(:cores)                              # threads must stay on their cores
 mesh = # call function to load mesh e.g. UNV3_mesh or FOAM3D_mesh
 backend = CPU(static=true)                      # chunk c of every loop runs on thread c
-activate_multithread(backend; first_touch=true) # equations and fields built from now on are placed
+activate_multithread(backend)                   # fields and equations are built with this backend
 mesh = first_touch(mesh)                        # place the mesh itself
 mesh_dev = mesh
 ```
 
-Results are unchanged; only where the memory lives changes. On a 2 x 48-core AMD EPYC node (16 NUMA domains) this cut a 10M-cell steady RANS run on 96 threads by 31%; on a single-socket machine it makes no difference. Do not combine it with `numactl --interleave`, which overrides first-touch placement.
+Results are unchanged; only where the memory lives changes. On a two-socket node with 16 NUMA domains this cut a 10M-cell steady RANS run on 96 threads by 31%; on a single-socket machine it makes no difference. Do not combine it with `numactl --interleave`, which overrides first-touch placement.
 
 ### GPU backends 
 

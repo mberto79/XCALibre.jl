@@ -78,12 +78,13 @@ Selecting a given backend is straight-forward. The examples below show how to as
 
 ### CPU backend
 
-Selecting the CPU backend is straight-forward. See the example below. Notice that `CPU()` is a backend type provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) which we re-export for convenience.
+Selecting the CPU backend is straight-forward. See the example below. Notice that `CPU()` is a backend type provided by [KernelAbstractions.jl](https://juliagpu.github.io/KernelAbstractions.jl/stable/) which we re-export for convenience. Call [`activate_multithread`](@ref) with the backend before building the model: fields and equations are allocated with the backend it is given.
 
 CPU Example 
 ```julia
 mesh = # call function to load mesh e.g. UNV2_mesh, UNV3_mesh or FOAM3D_mesh
 backend = CPU()
+activate_multithread(backend)
 mesh_dev = mesh # dummy reference to emphasise the mesh in on our chosen dev (or backend)
 ```
 

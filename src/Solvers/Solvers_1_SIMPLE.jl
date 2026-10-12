@@ -108,6 +108,8 @@ function setup_incompressible_solvers(
     U_eqn = wrap_eqn(U_eqn, mesh, solvers.U, config; petsc_options, label="U")
     p_eqn = wrap_eqn(p_eqn, mesh, solvers.p, config; petsc_options, label="p")
 
+    # only SIMPLE takes `consistent`; PISO shares this setup and has no such keyword
+    consistent_kwarg = solver_variant === SIMPLE ? (; consistent) : (;)
     residuals  = solver_variant(
         model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
         output=output,
@@ -116,7 +118,7 @@ function setup_incompressible_solvers(
         inner_loops=inner_loops, progress=progress,
         restart=restart,
         transpose_stress=transpose_stress,
-        consistent=consistent)
+        consistent_kwarg...)
 
     return residuals
 end # end function

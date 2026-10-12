@@ -60,7 +60,7 @@ end
         c = vw_case(TF, γ, μ)
         @test eltype(c.work.values) === TF
         Φ = μ*γ^2*sum(c.V)
-        @test sum(c.dissipation.values .* c.V) ≈ Φ rtol=1e-5
+        @test sum(c.dissipation.values .* c.V) ≈ Φ rtol=rtol
         @test abs(sum(c.work.values .* c.V)) < tol*Φ
 
         # moving top wall: the work equals the shear work of that wall

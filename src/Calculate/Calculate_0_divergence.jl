@@ -260,3 +260,16 @@ end
     Atomix.@atomic phi.y[cID] += flux[2]
     Atomix.@atomic phi.z[cID] += flux[3]
 end
+
+# Boundary-face velocity gradient shared by the momentum transpose stress and the enthalpy viscous work.
+# face-normal gradient of U, or nothing to keep the owner-cell normal derivative
+@inline _boundary_sngrad(BC::Union{Wall,Dirichlet}, Uc, delta) =
+    (SVector{3}(BC.value[1], BC.value[2], BC.value[3]) - Uc)/delta
+@inline _boundary_sngrad(::Union{Zerogradient,Extrapolated}, Uc, delta) = zero(Uc)
+# mirror condition: face value U_c - (U_c·n)n, normal gradient -(U_c·n)n/delta
+@inline _boundary_sngrad(::Union{Slip,Symmetry}, Uc, delta, normal) = -(Uc⋅normal)*normal/delta
+@inline _boundary_sngrad(BC, Uc, delta, normal) = _boundary_sngrad(BC, Uc, delta)
+@inline _boundary_sngrad(BC, Uc, delta) = nothing
+
+@inline _patch_gradient(Mc, ::Nothing, normal) = Mc
+@inline _patch_gradient(Mc, sngrad, normal) = Mc + (sngrad - Mc*normal)*normal'

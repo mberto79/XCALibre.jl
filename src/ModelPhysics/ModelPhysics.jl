@@ -20,7 +20,7 @@ using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
 using XCALibre.Calculate
-import XCALibre.Calculate: _face_flux_tensor, _cell_coefficient
+import XCALibre.Calculate: _face_flux_tensor, _cell_coefficient, _boundary_sngrad, _patch_gradient
 using XCALibre.Simulate
 
 include("0_type_definition.jl")

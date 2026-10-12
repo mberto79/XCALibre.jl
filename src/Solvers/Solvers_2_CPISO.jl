@@ -202,7 +202,7 @@ function CPISO(
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
-    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
+    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, time, config);
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
@@ -240,7 +240,7 @@ function CPISO(
 
         # Energy after correctors so dp/dt = (p_corrected - prevP)/dt ≠ 0
         energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
-        thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
+        thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, time, config);
 
         # Pressure correction setup (outside corrector loop)
         inverse_diagonal!(rD, U_eqn, config)

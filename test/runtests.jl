@@ -110,6 +110,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_transpose_stress.jl")
     end
 
+    @testset "Face compressibility at the solver time" begin
+        include("unit_test_thermo_psi_time.jl")
+    end
+
     @testset "setFields Function Unit Test" begin
         include("unit_test_setFields.jl")
     end

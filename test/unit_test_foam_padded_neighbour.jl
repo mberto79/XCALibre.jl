@@ -30,7 +30,7 @@ let src = pkgdir(XCALibre, "test", "grids", "OF_cavity_hex", "polyMesh")
     function padded_copy(write_neighbour)
         dir = mktempdir()
         for name in ("points", "faces", "owner", "boundary")
-            cp(joinpath(src, name), joinpath(dir, name))
+            Base.cp(joinpath(src, name), joinpath(dir, name)) # qualified: keeps Main.cp free (Julia 1.10)
         end
         open(write_neighbour, joinpath(dir, "neighbour"), "w")
         return dir

@@ -40,7 +40,7 @@ function _polyMesh_order_mismatch(polyMeshDir, mesh)
     backend = _get_backend(mesh)
     ranges = get_data(mesh.cell_faces_range, backend)
     neighbours = get_data(mesh.cell_neighbours, backend)
-    n = length(neighbour)
+    n = count(>(0), neighbour) # padded boundary entries (-1 in the file) are not internal faces
     for f ∈ unique(round.(Int, range(1, n, length=min(n, 1000))))
         o, nb = owner[f], neighbour[f]
         (o > length(ranges) || nb > length(ranges)) && return true

@@ -1,8 +1,6 @@
-# The face mass flux of the compressible steady solver must be the flux the pressure equation
-# balances. Otherwise mass and total enthalpy are not conserved where the pressure varies.
-
-# Inviscid Mach 2 flow over a 15° compression corner with adiabatic slip walls: the total
-# temperature is uniform, and the oblique shock gives T2/T1 = 1.270 and p2/p1 = 2.196.
+# The compressible face mass flux must be the flux the pressure equation balances. Inviscid Mach 2
+# flow over a 15° compression corner with adiabatic slip walls: the total temperature is uniform,
+# and the oblique shock gives T2/T1 = 1.270 and p2/p1 = 2.196.
 function compression_corner_conservation()
     mesh = UNV2D_mesh(
         pkgdir(XCALibre, "examples/0_GRIDS/compression_corner_2d_32_64_SF4.unv"), scale=0.001)
@@ -60,7 +58,7 @@ dT0, T_ratio, p_ratio = compression_corner_conservation()
 @test isapprox(p_ratio, 2.196, rtol=5e-3)
 
 # Uniform Mach 0.84 stream through an empty box, an exact steady solution, must stay uniform.
-function uniform_stream_box(; iterations=300)
+function mass_flux_uniform_box(; iterations=300)
     mesh = UNV3D_mesh(pkgdir(XCALibre, "examples/0_GRIDS/3d_box_1000x1000x1000mm_5.unv"), scale=0.001)
     gamma, cp, Pr = 1.4, 1005.0, 0.72
     R = cp*(1 - 1/gamma)
@@ -107,6 +105,6 @@ function uniform_stream_box(; iterations=300)
     return dU, dp
 end
 
-dU, dp = uniform_stream_box()
+dU, dp = mass_flux_uniform_box()
 @test dU < 1e-8
 @test dp < 1e-8

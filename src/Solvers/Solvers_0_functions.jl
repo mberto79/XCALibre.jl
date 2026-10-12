@@ -400,8 +400,6 @@ function check_distributed_support(solver::Symbol, model)
     """)
 end
 
-## PRESSURE-CONVECTION FLUX (COMPRESSIBLE)
-
 # Adds pconv_f p_f to mdotf with the face pressure of the scheme that discretises
 # Divergence(pconv, p) in the pressure matrix, so mdotf is the flux the pressure equation balances.
 # Boundary faces take the boundary pressure pf, as the matrix does.

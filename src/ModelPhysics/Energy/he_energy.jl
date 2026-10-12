@@ -241,7 +241,7 @@ function thermo_Psi!(
 end
 
 function thermo_Psi!(
-    model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, config
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, time, config
     ) where {T,F<:AbstractCompressible,SO,M,Tu,E<:SensibleEnthalpy,D,BI}
     (; coeffs, hef, he) = model.energy
     interpolate!(hef, he, config)
@@ -306,7 +306,7 @@ end
 
 
 function thermo_Psi!(
-    model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, config
+    model::Physics{T,F,SO,M,Tu,E,D,BI}, Psif::FaceScalarField, time, config
     ) where {T,F<:AbstractCompressible,SO,M,Tu,E<:InternalEnergy,D,BI}
     (; coeffs, hef, he) = model.energy
     interpolate!(hef, he, config)

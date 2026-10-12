@@ -118,6 +118,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_thermo_psi_time.jl")
     end
 
+    @testset "Viscous work of the enthalpy equation" begin
+        include("unit_test_viscous_work.jl")
+    end
+
     @testset "setFields Function Unit Test" begin
         include("unit_test_setFields.jl")
     end

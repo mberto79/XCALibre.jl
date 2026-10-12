@@ -14,12 +14,13 @@ using XCALibre.Multithread
 using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
-import XCALibre.Fields: field_values # not exported: kernel-argument helper
+import XCALibre.Fields: field_values, VectorValues # not exported: kernel-argument helpers
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
 using XCALibre.Calculate
+import XCALibre.Calculate: _face_flux_tensor, _cell_coefficient
 using XCALibre.Simulate
 
 include("0_type_definition.jl")

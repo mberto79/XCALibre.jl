@@ -117,7 +117,7 @@ function initialise(
     keff = FaceScalarField(mesh)
     divK = ScalarField(mesh)
     dKdt = ScalarField(mesh)
-    Phi = ScalarField(mesh)  # viscous dissipation source τeff:∇U
+    Phi = ScalarField(mesh)  # viscous heating: ∇·(τeff·U) for h, τeff:∇U for e
 
     temperature_to_energy!(model, T, he)
 
@@ -189,6 +189,9 @@ function energy!(
     # Enthalpy: solves h_s, needs +div(rho U K)+d(rho K)/dt and dp/dt source.
     # Internal energy: solves e, has NO kinetic-energy terms; pressure work is -p*div(U).
     if model.energy isa SensibleEnthalpy
+        # the viscous work multiplies the stress by the current U: take both from the same field
+        grad!(gradU, Uf, U, boundaries.U, time, config)
+        limit_gradient!(schemes.U.limiter, gradU, U, config)
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
         @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
@@ -205,7 +208,12 @@ function energy!(
         @. S_he.values = -S_he.values
     end
 
-    viscous_dissipation!(Phi, mueff_cell.values, gradU, boundaries.U, config)
+    # h + K form: viscous work ∇·(τ·U); the e form takes the dissipation τ:∇U
+    if model.energy isa SensibleEnthalpy
+        viscous_work!(Phi, mueff, mueff_cell, Uf, gradU, boundaries.U, config)
+    else
+        viscous_dissipation!(Phi, mueff_cell.values, gradU, boundaries.U, config)
+    end
 
     # Set up and solve energy equation
     discretise!(energy_eqn, he, config)
@@ -397,6 +405,69 @@ end
     Phi[i] = mueff[i] * (2.0 * diag_terms_sq + cross_terms_sq - (2.0/3.0) * divU^2)
 end
 
+
+# Viscous work ∇·(τ·U) with τ = μ_eff (∇U + (∇U)ᵀ - ⅔ (∇·U) I), as the sum of face fluxes
+# (τ_f·U_f)·S_f. Internal faces interpolate the cell product μ_eff τ (see `div!`); boundary
+# faces use the owner-cell stress, and slip, symmetry and empty faces do no work.
+function viscous_work!(Phi::ScalarField, mueff, mueff_cell, Uf, gradU, U_BCs, config)
+    (; backend, workgroup) = config.hardware
+    mesh = Phi.mesh
+    (; cells, cell_faces, cell_nsign, faces) = mesh
+    Phiv, Ufv, G = Phi.values, _face_vector_values(Uf), field_values(gradU.result)
+    kernel! = _sized(_viscous_work_cells!, backend, workgroup, length(cells))
+    kernel!(Phiv, mueff_cell.values, G, Ufv, cells, cell_faces, cell_nsign, faces)
+    KernelAbstractions.synchronize(backend)
+    for BC ∈ U_BCs
+        _viscous_work_boundary!(Phiv, mueff.values, G, Ufv, BC, cells, faces, backend, workgroup)
+    end
+    nothing
+end
+
+_face_vector_values(Uf::FaceVectorField) = VectorValues(Uf.x.values, Uf.y.values, Uf.z.values)
+
+# stress per unit viscosity, τ/μ_eff, from the velocity gradient G[i,j] = ∂U_i/∂x_j
+@inline _stress(G, ::Type{TF}) where TF = G + G' - (TF(2)/3)*tr(G)*I
+
+@kernel inbounds=true function _viscous_work_cells!(
+    Phi, mueff, gradU, Uf, cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, cell_nsign, faces
+    ) where {TF,SV,UR}
+    i = @index(Global)
+    volume, faces_range = cells.volume[i], cells.faces_range[i]
+    Ti = _stress(gradU[i], TF)
+    μi = _cell_coefficient(mueff, i, TF)
+    work = zero(TF)
+    for fi ∈ faces_range
+        fID = cell_faces[fi]
+        nsign = cell_nsign[fi]
+        ownerCells, area, normal, weight = faces.ownerCells[fID], faces.area[fID], faces.normal[fID], faces.weight[fID]
+        owner = ownerCells[1] == i
+        wi = owner ? weight : one(TF) - weight
+        nID = owner ? ownerCells[2] : ownerCells[1]
+        τf = _face_flux_tensor(nothing, mueff, fID, wi, μi, Ti, nID, _stress(gradU[nID], TF))
+        work += (Uf[fID]⋅(τf*normal))*(area*nsign)
+    end
+    Phi[i] = work/volume
+end
+
+_viscous_work_boundary!(Phi, mueff, gradU, Uf, ::Union{Slip,Symmetry,Empty}, cells, faces, backend, workgroup) =
+    nothing
+
+function _viscous_work_boundary!(Phi, mueff, gradU, Uf, BC, cells, faces, backend, workgroup)
+    (; IDs_range) = BC
+    isempty(IDs_range) && return nothing
+    kernel! = _sized(_viscous_work_boundary_kernel!, backend, workgroup, length(IDs_range))
+    kernel!(Phi, mueff, gradU, Uf, IDs_range, cells, faces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel inbounds=true function _viscous_work_boundary_kernel!(Phi, mueff, gradU, Uf, IDs_range, cells, faces)
+    i = @index(Global)
+    fID = IDs_range[i]
+    cID = faces.ownerCells[fID][1]
+    area = faces.area[fID]
+    τb = mueff[fID]*_stress(gradU[cID], typeof(area))
+    Atomix.@atomic Phi[cID] += (Uf[fID]⋅(τb*faces.normal[fID]))*(area/cells.volume[cID])
+end
 
 function _compute_pdivU!(S::ScalarField, p, gradU, config)
     (; hardware) = config

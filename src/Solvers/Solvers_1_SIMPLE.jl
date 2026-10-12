@@ -31,7 +31,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, transpose_stress=true, consistent=false, linearupwind=false
+    petsc_options="", restart=nothing, transpose_stress=true, consistent=false
     )
     check_distributed_support(:SIMPLE, model)
 
@@ -44,8 +44,7 @@ function simple!(
         petsc_options=petsc_options,
         restart=restart,
         transpose_stress=transpose_stress,
-        consistent=consistent,
-        linearupwind=linearupwind
+        consistent=consistent
         )
 
     return residuals
@@ -55,7 +54,7 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, transpose_stress=true, consistent=false, linearupwind=false
+    petsc_options="", restart=nothing, transpose_stress=true, consistent=false
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -75,11 +74,13 @@ function setup_incompressible_solvers(
     divHv = ScalarField(mesh)
     divτT = VectorField(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
+    gradU = Grad{schemes.U.gradient}(U) # also feeds the LinearUpwind face reconstruction
+
     @info "Defining models..."
 
     U_eqn = (
         Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U)
+        + Divergence{schemes.U.divergence}(mdotf, U, gradU.result)
         - Laplacian{schemes.U.laplacian}(nueff, U)
         ==
         - Source(∇p.result)
@@ -112,15 +113,14 @@ function setup_incompressible_solvers(
     # only SIMPLE takes `consistent`; PISO shares this setup and has no such keyword
     consistent_kwarg = solver_variant === SIMPLE ? (; consistent) : (;)
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; gradU=gradU,
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         restart=restart,
         transpose_stress=transpose_stress,
-        consistent_kwarg...,
-        linearupwind=linearupwind)
+        consistent_kwarg...)
 
     return residuals
 end # end function
@@ -128,12 +128,9 @@ end # end function
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing,
-    transpose_stress=true, consistent=false, linearupwind=false
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
+    transpose_stress=true, consistent=false
     )
-
-    if linearupwind
-        @info "linearupwind=true: U convection uses Upwind + deferred gradient correction."
-    end
 
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
@@ -168,7 +165,6 @@ function SIMPLE(
     @info "Allocating working memory..."
 
     # Define aux fields
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT, U, Uf)
 
@@ -220,9 +216,7 @@ function SIMPLE(
         transpose_stress && transpose_stress!(
             divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
 
-        rx, ry, rz = solve_equation!(
-            U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config;
-            gradU = linearupwind ? gradU : nothing, mdotf = mdotf)
+        rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config; halo=false)
@@ -287,11 +281,6 @@ function SIMPLE(
         correct_velocity!(U, Hv, ∇p, rDt, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config)
-        if linearupwind
-            # OpenFOAM pairs linearUpwindV with a *limited* gradient (cellLimited
-            # Gauss linear 1); the raw gradient alone diverges (confirmed by ablation).
-            limit_gradient!(CellBased(), gradU, U, config)
-        end
         update_nueff!(nueff, nu, model.turbulence, config)
 
         R_ux[iteration] = rx

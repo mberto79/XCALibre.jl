@@ -144,7 +144,7 @@ function initialise(
     
     k_eqn = (
             Time{schemes.k.time}(rho, k)
-            + Divergence{schemes.k.divergence}(mdotf, k) 
+            + Divergence{schemes.k.divergence}(mdotf, k, ∇k.result)
             - Laplacian{schemes.k.laplacian}(mueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺rho*omega
             ==
@@ -153,7 +153,7 @@ function initialise(
     
     ω_eqn = (
             Time{schemes.omega.time}(rho, omega)
-            + Divergence{schemes.omega.divergence}(mdotf, omega) 
+            + Divergence{schemes.omega.divergence}(mdotf, omega, ∇ω.result)
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
             + Si(dkdomegadx, omega)

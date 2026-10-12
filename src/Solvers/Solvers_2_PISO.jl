@@ -46,6 +46,7 @@ end
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true, restart=nothing,
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true
     )
     
@@ -80,7 +81,6 @@ function PISO(
     @info "Allocating working memory..."
 
     # Define aux fields
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)

@@ -69,11 +69,13 @@ function setup_incompressible_solvers_MRF(
     omegaU = VectorField(mesh)
     divτT = VectorField(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
+    gradU = Grad{schemes.U.gradient}(U) # also feeds the LinearUpwind face reconstruction
+
     @info "Defining models..."
 
     U_eqn = (
         Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
+        + Divergence{schemes.U.divergence}(mdotf, U, gradU.result) 
         - Laplacian{schemes.U.laplacian}(nueff, U) 
         == 
         - Source(∇p.result)
@@ -99,7 +101,7 @@ function setup_incompressible_solvers_MRF(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; gradU=gradU, 
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -113,6 +115,7 @@ end # end function
 function SIMPLE_MRF(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true
     )
     
@@ -140,7 +143,6 @@ function SIMPLE_MRF(
     @info "Allocating working memory..."
 
     # Define aux fields 
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT, U, Uf)
 

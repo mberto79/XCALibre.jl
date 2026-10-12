@@ -9,10 +9,15 @@ _kernel_field(f::FaceScalarField, m=()) = FaceScalarField(f.values, m)
 _kernel_field(f::VectorField, m=()) = VectorField(_kernel_field(f.x), _kernel_field(f.y), _kernel_field(f.z), m)
 _kernel_field(f::FaceVectorField, m=()) =
     FaceVectorField(_kernel_field(f.x), _kernel_field(f.y), _kernel_field(f.z), m)
+_kernel_field(t::TensorField, m=()) = TensorField(
+    _kernel_field(t.xx), _kernel_field(t.xy), _kernel_field(t.xz),
+    _kernel_field(t.yx), _kernel_field(t.yy), _kernel_field(t.yz),
+    _kernel_field(t.zx), _kernel_field(t.zy), _kernel_field(t.zz), m)
 
 _kernel_model(model, mesh) = begin
     m = (; face_gDiff=mesh.face_gDiff)
-    terms = map(t -> Operator(_kernel_field(t.flux), _kernel_field(t.phi, m), t.sign, t.type), model.terms)
+    terms = map(t -> Operator(
+        _kernel_field(t.flux), _kernel_field(t.phi, m), t.sign, t.type, _kernel_field(t.grad)), model.terms)
     sources = map(s -> Src(_kernel_field(s.field), s.sign), model.sources)
     terms, sources
 end
@@ -62,6 +67,7 @@ end
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
+        bf = zero(SVector{3,F})
         for fi in faces_range
             # Retrieve indices for discretisation
             fID = cell_faces[fi]
@@ -74,7 +80,7 @@ end
             ac, an = _scheme!(terms, nzval0, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval0[nIndex] = an
-
+            bf += _scheme_face_source!(terms, zero(SVector{3,F}), cells, faces, i, nID, ns, fID)
         end
 
         
@@ -85,9 +91,9 @@ end
 
         # Call sources generated function
         bx2, by2, bz2 = _sources!(sources, volume, i)
-        bx[i] = bx1 + bx2
-        by[i] = by1 + by2
-        bz[i] = bz1 + bz2 
+        bx[i] = bx1 + bx2 + bf[1]
+        by[i] = by1 + by2 + bf[2]
+        bz[i] = bz1 + bz2 + bf[3]
     end
 end
 
@@ -146,6 +152,7 @@ end
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
+        bf = zero(F)
         for fi in faces_range
             # Retrieve indices for discretisation
             fID = cell_faces[fi]
@@ -157,6 +164,7 @@ end
             ac, an = _scheme!(terms, nzval, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval[nIndex] = an
+            bf += _scheme_face_source!(terms, zero(F), cells, faces, i, nID, ns, fID)
         end
         
         # Call scheme source generated function
@@ -165,7 +173,7 @@ end
 
         # Call sources generated function
         b2 = _sources!(sources, volume, i)
-        b[i] = b2 + b1
+        b[i] = b2 + b1 + bf
     end
 end
 
@@ -196,6 +204,18 @@ return_quote(x, t) = :(nothing)
         AN = z
         $(out.args...)
         return AC, AN
+    end
+end
+
+# Face source generated function definition (z sets the type: scalar or SVector{3})
+@generated function _scheme_face_source!(
+    terms::TERMS, z::Z, cells, faces, cID, nID, ns, fID) where {TERMS,Z}
+    calls = [:(B += $Z(scheme_face_source!(terms[$t], z, cells, faces, cID, nID, ns, fID)))
+        for t in 1:fieldcount(TERMS)]
+    quote
+        B = z
+        $(calls...)
+        return B
     end
 end
 

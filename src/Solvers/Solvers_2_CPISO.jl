@@ -68,11 +68,13 @@ function setup_unsteady_compressible_solvers(
     psi = ScalarField(mesh)
 
 
+    gradU = Grad{schemes.U.gradient}(U) # also feeds the LinearUpwind face reconstruction
+
     @info "Defining models..."
 
     U_eqn = (
         Time{schemes.U.time}(rho, U)
-        + Divergence{schemes.U.divergence}(mdotf, U)
+        + Divergence{schemes.U.divergence}(mdotf, U, gradU.result)
         - Laplacian{schemes.U.laplacian}(mueff, U)
         ==
         - Source(∇p.result)
@@ -118,7 +120,7 @@ function setup_unsteady_compressible_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
+        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; gradU=gradU,
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
@@ -131,6 +133,7 @@ end # end function
 function CPISO(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true)
 
     # Extract model variables and configuration
@@ -168,7 +171,6 @@ function CPISO(
     @info "Allocating working memory..."
 
     # Define aux fields
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)

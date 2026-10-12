@@ -1,4 +1,4 @@
-export scheme!, scheme_source!
+export scheme!, scheme_source!, scheme_face_source!
 
 #= NOTE:
 In source scheme the following indices are used and should be used with care:
@@ -165,6 +165,72 @@ end
 @inline scheme_source!(
     term::Operator{F,P,I,Divergence{LUST}}, cells, cID, cIndex, prev, runtime, rho_prev) where {F,P,I} = begin
     0.0, 0.0
+end
+
+# LinearUpwind, LimitedLinearUpwind: upwind matrix, face reconstruction as an explicit source
+const SecondOrderUpwind = Union{LinearUpwind,LimitedLinearUpwind}
+
+@inline _upwind(term::Operator) = Operator(term.flux, term.phi, term.sign, Divergence{Upwind}())
+
+Divergence{S}(flux, phi, grad) where S<:SecondOrderUpwind = Operator(
+    flux, phi, 1, Divergence{S}(), _kernel_field(grad))
+
+Divergence{S}(flux, phi) where S<:SecondOrderUpwind = begin
+    @warn "Divergence{$S} built without a gradient: this term reduces to Upwind" maxlog=1
+    Operator(flux, phi, 1, Divergence{S}())
+end
+
+@inline scheme!(
+    term::Operator{F,P,I,Divergence{S}},
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+    ) where {F,P,I,S<:SecondOrderUpwind} = scheme!(
+        _upwind(term), nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
+
+@inline scheme_source!(
+    term::Operator{F,P,I,Divergence{S}}, cells, cID, cIndex, prev, runtime, rho_prev
+    ) where {F,P,I,S<:SecondOrderUpwind} = begin
+    0.0, 0.0
+end
+
+# explicit contribution of an internal face (fID) of cell cID to the right-hand side
+@inline scheme_face_source!(term, z, cells, faces, cID, nID, ns, fID) = z
+
+@inline scheme_face_source!(
+    term::Operator{F,P,I,Divergence{S},Nothing}, z, cells, faces, cID, nID, ns, fID
+    ) where {F,P,I,S<:SecondOrderUpwind} = z
+
+@inline function scheme_face_source!(
+    term::Operator{F,P,I,Divergence{LinearUpwind}}, z, cells, faces, cID, nID, ns, fID
+    ) where {F,P,I}
+    flux = term.sign*term.flux[fID]*ns
+    uID = flux > zero(flux) ? cID : nID
+    d = faces.centre[fID] - cells.centre[uID]
+    return -flux*_reconstruct(term.grad[uID], d)
+end
+
+@inline function scheme_face_source!(
+    term::Operator{F,P,I,Divergence{LimitedLinearUpwind}}, z, cells, faces, cID, nID, ns, fID
+    ) where {F,P,I}
+    flux = term.sign*term.flux[fID]*ns
+    uID, dID = flux > zero(flux) ? (cID, nID) : (nID, cID)
+    xU = cells.centre[uID]
+    grad = term.grad[uID]
+    δ = _reconstruct(grad, faces.centre[fID] - xU)
+    g = _reconstruct(grad, cells.centre[dID] - xU)
+    Δ = term.phi[dID] - term.phi[uID]
+    return -flux*_limit_tvd.(δ, g, Δ)
+end
+
+@inline _reconstruct(grad::SVector, d) = grad⋅d
+@inline _reconstruct(grad::SMatrix, d) = grad*d
+
+# keep the correction within the TVD region, 0 ≤ δ/Δ ≤ min(r, 1), r = 2g/Δ - 1, so that the
+# face value lies between the upwind and downwind values and local extrema fall back to upwind
+@inline function _limit_tvd(δ, g, Δ)
+    z = zero(δ)
+    iszero(Δ) && return z
+    r = 2*g/Δ - one(δ)
+    r > z ? Δ*clamp(δ/Δ, z, min(r, one(δ))) : z
 end
 
 # BoundedUpwind

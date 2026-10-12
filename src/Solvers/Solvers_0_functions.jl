@@ -402,10 +402,9 @@ end
 
 ## PRESSURE-CONVECTION FLUX (COMPRESSIBLE)
 
-# Adds pconv_f p_f to mdotf, with the face pressure of the scheme that discretises
-# Divergence(pconv, p) in the pressure matrix, so that mdotf is the flux the pressure equation
-# balances (as OpenFOAM's phi = phiHbyA + pEqn.flux()). Boundary faces take the boundary pressure
-# pf, as the matrix does. BoundedUpwind has no face flux of its own and uses the upwind value.
+# Adds pconv_f p_f to mdotf with the face pressure of the scheme that discretises
+# Divergence(pconv, p) in the pressure matrix, so mdotf is the flux the pressure equation balances.
+# Boundary faces take the boundary pressure pf, as the matrix does.
 function add_pressure_convection_flux!(mdotf, pconv, p, pf, scheme::AbstractScheme, config)
     (; backend, workgroup) = config.hardware
     (; faces, boundary_cellsID) = p.mesh

@@ -24,9 +24,13 @@ end
 
 function assign_faces!(foamdata, face_nodes, face_nodes_range, face_neighbours, face_owners, TI)
     foamdata.n_faces = n_faces = length(face_owners)
-    foamdata.n_ifaces = n_ifaces = length(face_neighbours)
+    # some mesh generators pad the neighbour list with -1 (0 after the shift) for boundary faces
+    n_ifaces = something(findfirst(<(one(TI)), face_neighbours), length(face_neighbours) + 1) - 1
+    all(<(one(TI)), @view face_neighbours[(n_ifaces + 1):end]) || throw(ArgumentError(
+        "the neighbour list mixes padded (negative) and valid entries after the internal faces"))
+    foamdata.n_ifaces = n_ifaces
     foamdata.n_bfaces = n_faces - n_ifaces
-    foamdata.n_cells = max(maximum(face_owners), maximum(face_neighbours))
+    foamdata.n_cells = max(maximum(face_owners), maximum(face_neighbours; init=zero(TI)))
 
     foamdata.face_nodes = face_nodes
     foamdata.face_nodes_range = face_nodes_range
@@ -182,6 +186,16 @@ end
     return v, pos
 end
 
+# as _next_uint, but keeps a leading minus sign (the neighbour list may hold -1)
+@inline function _next_int(bytes::Vector{UInt8}, pos::Int, len::Int)
+    while pos <= len && (bytes[pos] < 0x30 || bytes[pos] > 0x39) && bytes[pos] != UInt8('-')
+        pos += 1
+    end
+    neg = pos <= len && bytes[pos] == UInt8('-')
+    v, pos = _next_uint(bytes, pos + neg, len)
+    return neg ? -v : v, pos
+end
+
 # skip n newlines in bytes, return pos just after the nth newline
 @inline function _skip_lines(bytes::AbstractVector{UInt8}, n::Int, len::Int)
     pos = 1
@@ -294,7 +308,7 @@ function read_neighbour(file_path, TI, TF)
     pos = _skip_lines(bytes, startLine, len)
 
     for i ∈ 1:nfaces
-        v, pos = _next_uint(bytes, pos, len)
+        v, pos = _next_int(bytes, pos, len)
         face_neighbour_cell[i] = TI(v) + one(TI) # +1 shift
     end
     return face_neighbour_cell

@@ -199,7 +199,7 @@ function CSIMPLE(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
-    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, config);
+    thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, time, config);
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
@@ -237,7 +237,7 @@ function CSIMPLE(
         # Solve energy equation and update thermo properties
         energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
         thermo_Psi!(model, Psi)
-        thermo_Psi!(model, Psif, config)
+        thermo_Psi!(model, Psif, time, config)
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)

@@ -31,7 +31,7 @@ supported; any other solver or model errors rather than solving each rank's bloc
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
 - `progress` show a progress bar with the iteration and residuals (default = `true`). Use `progress=false` for large-scale runs that are not on a local PC, e.g. cluster batch jobs. Distributed runs never show it
 - `transpose_stress` include the explicit part of the viscous stress, ∇·(μ_eff dev2((∇U)ᵀ)), in the momentum equation of the incompressible, compressible and multiphase solvers (default = `true`). It is zero for a constant viscosity in incompressible flow and needed wherever the effective viscosity varies, e.g. with a turbulence model; `false` drops it
-- `consistent` steady compressible and weakly compressible solvers only: use the consistent (SIMPLEC) pressure–velocity coupling, which keeps steady transonic runs stable for common relaxation factors; see `csimple!` (default = `false`)
+- `consistent` steady solvers (`simple!` and `csimple!`) only: use the consistent (SIMPLEC) pressure–velocity coupling, which needs little or no pressure under-relaxation and keeps steady transonic runs stable for common relaxation factors; see `simple!` and `csimple!` (default = `false`)
 - `restart` resume an incompressible run on a distributed mesh from results it wrote with `output=OpenFOAM()`: the iteration (steady) or time (transient) of a written time directory, or that directory's name. The resumed run continues from that point up to `iterations` and retraces the uninterrupted run (default = `nothing`)
 
 # Output
@@ -148,7 +148,7 @@ run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
     petsc_options="", restart=nothing,
-    transpose_stress=true
+    transpose_stress=true, consistent=false
     ) where{T<:Steady,F<:Incompressible,M,Tu,E,D,BI} =
 begin
     residuals=nothing
@@ -160,7 +160,8 @@ begin
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
         restart=restart,
-        transpose_stress=transpose_stress
+        transpose_stress=transpose_stress,
+        consistent=consistent
     )
 
     return residuals

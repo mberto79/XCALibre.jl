@@ -93,6 +93,74 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
+# CONSISTENT (SIMPLEC) COUPLING, shared by simple! and csimple!
+
+# rDt = V/(a_P + Σ a_N), the inverse row sum of the relaxed momentum matrix; unlike rD = V/a_P it
+# does not shrink with the velocity relaxation factor. Rows whose sum is not clearly positive keep
+# rD. Ghost rows are stale until the halo exchange.
+function consistent_inverse_diagonal!(rDt, rD, eqn, config; halo=true)
+    (; backend, workgroup) = config.hardware
+    nzval, colval, rowptr = get_sparse_fields(eqn.equation.A)
+    ndrange = length(rDt)
+    kernel! = _sized(_consistent_inverse_diagonal!, backend, workgroup, ndrange)
+    kernel!(rDt, rD, nzval, rowptr, eqn.equation.diag_nz)
+    halo && sync!(rDt, rDt.mesh, config) # self-syncing seam (no-op serial)
+end
+
+@kernel function _consistent_inverse_diagonal!(rDt, rD, nzval, rowptr, diag_nz)
+    i = @index(Global)
+    @uniform cells = rDt.mesh.cells
+    @inbounds begin
+        rowsum = zero(eltype(nzval))
+        for k ∈ rowptr[i]:(rowptr[i+1] - 1)
+            rowsum += nzval[k]
+        end
+        aP = nzval[diag_nz[i]]
+        rDt[i] = rowsum > aP/1000 ? cells[i].volume/rowsum : rD[i]
+    end
+end
+
+# Face part of the consistent correction, ρ_f (rDt - rD)_f (p_N - p_P) gDiff_f, with the face
+# coefficient of the pressure Laplacian; boundary faces use the owner cell and the boundary
+# pressure in pf. rhof = nothing for incompressible (volumetric) fluxes.
+function consistent_flux!(mdotf, rhof, rDt, rD, p, pf, config)
+    (; backend, workgroup) = config.hardware
+    ndrange = length(mdotf)
+    kernel! = _sized(_consistent_flux!, backend, workgroup, ndrange)
+    kernel!(mdotf, rhof, rDt, rD, p, pf)
+end
+
+@kernel function _consistent_flux!(mdotf, rhof, rDt, rD, p, pf)
+    fID = @index(Global)
+    @uniform begin
+        (; faces, boundary_cellsID, face_gDiff) = p.mesh
+        n_bfaces = length(boundary_cellsID)
+    end
+    @inbounds begin
+        (; ownerCells, weight) = faces[fID]
+        rho = _face_rho(rhof, fID, weight)
+        if fID <= n_bfaces
+            c = boundary_cellsID[fID]
+            mdotf[fID] += rho*(rDt[c] - rD[c])*(pf[fID] - p[c])*face_gDiff[fID]
+        else
+            c1, c2 = ownerCells
+            drD = weight*(rDt[c1] - rD[c1]) + (one(weight) - weight)*(rDt[c2] - rD[c2])
+            mdotf[fID] += rho*drD*(p[c2] - p[c1])*face_gDiff[fID]
+        end
+    end
+end
+
+@inline _face_rho(rhof, fID, w) = rhof[fID]
+@inline _face_rho(::Nothing, fID, w) = one(w)
+
+# Cell part of the consistent correction, H/a_P + (rDt - rD) ∇p, so that U = Hv - rDt ∇p.
+function consistent_H!(Hv, rDt, rD, ∇p, config)
+    gradp = ∇p.result
+    xcal_foreach(rD, config) do i
+        Hv[i] = Hv[i] + (rDt[i] - rD[i])*gradp[i]
+    end
+end
+
 # halo=false leaves ghosts stale for a caller that exchanges rD together with Hv
 function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}
     (; hardware) = config

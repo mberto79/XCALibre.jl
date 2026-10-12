@@ -3,7 +3,7 @@ export simple!
 """
     simple!(model_in, config;
         output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-        transpose_stress=true)
+        transpose_stress=true, consistent=false)
 
 Incompressible variant of the SIMPLE algorithm to solving coupled momentum and mass conservation equations.
 
@@ -16,6 +16,7 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
 - `transpose_stress` include the explicit viscous stress ∇·(ν_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
+- `consistent` use the consistent (SIMPLEC) pressure–velocity coupling (default = `false`). The pressure equation and the velocity and face-flux corrections then use rDt = V/(a_P + Σ a_N), the inverse row sum of the under-relaxed momentum matrix, instead of rD = V/a_P, with the terms (rDt - rD)∇p added to the predicted velocity and face fluxes. rDt does not shrink with the velocity relaxation factor, so the pressure correction is not over-damped and pressure needs little or no under-relaxation; the converged solution is unchanged. Rows with Σ_N a_N + a_P ≤ 10⁻³ a_P keep rD
 
 # Output
 
@@ -30,7 +31,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 function simple!(
     model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, transpose_stress=true
+    petsc_options="", restart=nothing, transpose_stress=true, consistent=false
     )
     check_distributed_support(:SIMPLE, model)
 
@@ -42,7 +43,8 @@ function simple!(
         inner_loops=inner_loops, progress=progress,
         petsc_options=petsc_options,
         restart=restart,
-        transpose_stress=transpose_stress
+        transpose_stress=transpose_stress,
+        consistent=consistent
         )
 
     return residuals
@@ -52,7 +54,7 @@ end
 function setup_incompressible_solvers(
     solver_variant, model, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    petsc_options="", restart=nothing, transpose_stress=true
+    petsc_options="", restart=nothing, transpose_stress=true, consistent=false
     )
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -113,7 +115,8 @@ function setup_incompressible_solvers(
         ncorrectors=ncorrectors,
         inner_loops=inner_loops, progress=progress,
         restart=restart,
-        transpose_stress=transpose_stress)
+        transpose_stress=transpose_stress,
+        consistent=consistent)
 
     return residuals
 end # end function
@@ -121,7 +124,7 @@ end # end function
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing,
-    transpose_stress=true
+    transpose_stress=true, consistent=false
     )
     
     # Extract model variables and configuration
@@ -164,6 +167,7 @@ function SIMPLE(
     n_cells = length(mesh.cells)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rDt = consistent ? ScalarField(mesh) : rD # consistent coupling coefficient (aliases rD if off)
     nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
     # Pre-allocate auxiliary variables
@@ -214,8 +218,9 @@ function SIMPLE(
         remove_pressure_source!(U_eqn, ∇p, config)
         H!(Hv, U, U_eqn, config; halo=false)
         sync!((rD, Hv), mesh, config) # one exchange for both (no-op serial)
-        interpolate!(rDf, rD, config)
-        correct_interpolation_periodic(rDf, rD, boundaries.U, config)
+        consistent && consistent_inverse_diagonal!(rDt, rD, U_eqn, config)
+        interpolate!(rDf, rDt, config)
+        correct_interpolation_periodic(rDf, rDt, boundaries.U, config)
 
         # Interpolate faces
         interpolate!(Uf, Hv, config) # Careful: reusing Uf for interpolation
@@ -226,6 +231,12 @@ function SIMPLE(
 
         # new approach
         flux!(mdotf, Uf, config)
+        if consistent # face and cell parts, after the fluxes were built from H/a_P
+            interpolate!(pf, p, config)
+            correct_boundaries!(pf, p, boundaries.p, time, config)
+            consistent_flux!(mdotf, nothing, rDt, rD, p, pf, config)
+            consistent_H!(Hv, rDt, rD, ∇p, config)
+        end
         div!(divHv, mdotf, config)
 
         # Pressure calculations
@@ -260,7 +271,7 @@ function SIMPLE(
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        correct_velocity!(U, Hv, ∇p, rD, config)
+        correct_velocity!(U, Hv, ∇p, rDt, config)
 
         turbulence!(turbulenceModel, model, S, prev, time, config)
         update_nueff!(nueff, nu, model.turbulence, config)

@@ -110,8 +110,8 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_transpose_stress.jl")
     end
 
-    @testset "Consistent compressible coupling" begin
-        include("unit_test_csimple_consistent.jl")
+    @testset "Consistent (SIMPLEC) coupling" begin
+        include("unit_test_consistent_coupling.jl")
     end
 
     @testset "setFields Function Unit Test" begin

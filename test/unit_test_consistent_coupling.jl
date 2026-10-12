@@ -55,3 +55,22 @@ dU, dp = uniform_stream_box(true)
 
 dU, dp = uniform_stream_box(false) # round-off grows by about 1.5 per iteration
 @test max(dU, dp) > 1e-6
+
+import Accessors
+
+# Incompressible laminar backward-facing step: the consistent coupling converges without pressure
+# under-relaxation to the solution of the default coupling (relaxation 0.8, 0.2).
+include(joinpath(@__DIR__, "distributed", "psimple_case.jl"))
+
+function bfs_simple(consistent, p_relax, iterations)
+    model, config = incompressible_case(bfs_mesh(), bfs_bcs; iterations=iterations)
+    p_solver = Accessors.setproperties(config.solvers.p, relax=p_relax)
+    config = Accessors.@set config.solvers = (U=config.solvers.U, p=p_solver)
+    simple!(model, config; consistent=consistent, progress=false)
+    return Array(model.momentum.U.x.values), Array(model.momentum.p.values)
+end
+
+Ux_ref, p_ref = bfs_simple(false, 0.2, 1500)
+Ux, p = bfs_simple(true, 1.0, 800)
+@test maximum(abs.(Ux .- Ux_ref)) < 1e-5
+@test maximum(abs.(p .- p_ref)) < 1e-5

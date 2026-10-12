@@ -19,6 +19,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_mesh_conversion.jl")
     end
 
+    @testset "Padded neighbour list" begin
+        include("unit_test_foam_padded_neighbour.jl")
+    end
+
     @testset "Mesh reordering" begin
         include("unit_test_mesh_reorder.jl")
     end
@@ -108,6 +112,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Explicit viscous stress" begin
         include("unit_test_transpose_stress.jl")
+    end
+
+    @testset "Face compressibility at the solver time" begin
+        include("unit_test_thermo_psi_time.jl")
     end
 
     @testset "Viscous work of the enthalpy equation" begin

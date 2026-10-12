@@ -44,7 +44,7 @@ end
     nutf = FaceScalarField(mesh)
     k = ScalarField(mesh)
     kf = FaceScalarField(mesh)
-    coeffs = les.args
+    coeffs = map(ScalarFloat(mesh), les.args)
     KEquation(nut, nutf, k, kf, coeffs)
 end
 
@@ -102,8 +102,8 @@ function initialise(
             Source(Pk)
         ) → eqn
 
-    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k, k_eqn)
+    @reset k_eqn.solver = _workspace(solvers.k, k_eqn)
     
     initial_residual = ((:k, 1.0),)
     return KEquationModel(
@@ -162,7 +162,7 @@ function turbulence!(
         mueffk[i] = rhof[i]*(nuf[i] + nutf[i])
     end
 
-    twoThirds = 2/3
+    twoThirds = ScalarFloat(mesh)(2/3)
     wk = _setup(backend, workgroup, length(Pk))[2]
     AK.foreachindex(Pk, min_elems=wk, block_size=wk) do i 
         Pk[i] = 2*nut[i]*rho[i]*(gradU[i]⋅Dev(S)[i])
@@ -178,7 +178,7 @@ function turbulence!(
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
-    bound!(k, config)
+    bound!(k, prev, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     wk = _setup(backend, workgroup, length(nut))[2]

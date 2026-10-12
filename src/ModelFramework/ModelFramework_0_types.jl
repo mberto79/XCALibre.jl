@@ -103,7 +103,10 @@ end
 # _build_A(backend::CPU, i, j, v, n) = sparsecsr(i, j, v, n, n)
 # _build_opA(A::SparseMatricesCSR.SparseMatrixCSR) = LinearOperator(A)
 
-_build_A(backend::CPU, i, j, v, n) = SparseXCSR(sparsecsr(i, j, v, n, n))
+_build_A(backend::CPU, i, j, v, n) = begin
+    A = SparseXCSR(sparsecsr(i, j, v, n, n))
+    backend.static ? first_touch(A) : A
+end
 _build_opA(A::SparseXCSR) = A
 
 ## ORIGINAL STRUCTURE PARAMETERISED FOR GPU
@@ -240,8 +243,8 @@ function nz_index_maps(mesh, A, backend)
     rowptr = _rowptr(A) |> Array
     colval = _colval(A) |> Array
     (; cells, cell_neighbours) = mesh
-    diag_nz = zeros(TI, length(cells))
-    face_nz = zeros(TI, length(cell_neighbours))
+    diag_nz = KernelAbstractions.zeros(_active_backend(CPU()), TI, length(cells))
+    face_nz = KernelAbstractions.zeros(_active_backend(CPU()), TI, length(cell_neighbours))
     for cID ∈ eachindex(cells)
         diag_nz[cID] = spindex(rowptr, colval, cID, cID)
         for fi ∈ cells[cID].faces_range

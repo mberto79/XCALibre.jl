@@ -19,6 +19,8 @@ using XCALibre.Multithread
 using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
+import XCALibre.Fields: field_values, transpose_values
+import XCALibre.Calculate: _kernel_values
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
@@ -35,6 +37,7 @@ import XCALibre.ModelPhysics as ModelPhysics
 _progress_bar(iterations, show::Bool) = show ? Progress(iterations; dt=1.0, showspeed=true) : nothing
 
 include("Solvers_0_functions.jl")
+include("Solvers_0_viscous_stress.jl")
 include("Solvers_1_SIMPLE-MRF.jl")
 include("Solvers_1_SIMPLE.jl")
 include("Solvers_1_LAPLACE.jl")

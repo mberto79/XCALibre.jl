@@ -58,6 +58,7 @@ The list of turbulence models available is expected to expand. The following tur
   
 * Large Eddy Simulation (LES with implicit filtering)
   * Smagorinsky - classic eddy-viscosity sub-grid scale Smagorinsky model
+  * WALE - Wall-Adapting Local Eddy-viscosity sub-grid scale model
 
 ### Boundary conditions 
 * User defined functions

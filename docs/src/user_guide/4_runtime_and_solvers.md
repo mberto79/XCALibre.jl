@@ -30,7 +30,7 @@ initialise!
 
 A uniform initial guess leaves a velocity field that does not satisfy continuity, which the first few solver iterations must work off before making physical progress. For external and internal flows around bodies, a potential-flow field is a much better starting point: it already satisfies continuity and carries the shape of the geometry.
 
-`potential_flow!` solves a velocity-potential equation on the current mesh and projects the velocity field onto the resulting divergence-free field. Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
+`potential_flow!` solves a velocity-potential equation on the current mesh and sets the velocity to the resulting divergence-free field. By default it starts from rest: the internal velocity is set to zero first, so the flow is driven by the velocity boundary conditions alone (pass `from_rest=false` to project the current field instead). Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
 
 ```@docs; canonical=false
 potential_flow!
@@ -132,6 +132,12 @@ residuals = run!(model, config; progress=false)
 ```
 
 We recommend `progress=false` for large-scale runs that are not on a local PC, such as batch jobs on a cluster, where the progress bar only fills the job's log. The residual history returned by `run!` is the same either way.
+
+The momentum equation of every flow solver carries the full viscous stress, ∇·τ with τ = μ_eff (∇U + (∇U)ᵀ - ⅔ (∇·U) I). The part ∇·(μ_eff ∇U) is discretised implicitly as a Laplacian, and the rest, ∇·(μ_eff dev2((∇U)ᵀ)) with dev2(A) = A - ⅔ tr(A) I, is added as an explicit source evaluated from the current velocity gradient. For a constant viscosity in incompressible flow this source is zero, since ∇·(∇U)ᵀ = ∇(∇·U); it matters wherever the effective viscosity varies, as it does with any turbulence model. Pass `transpose_stress=false` to leave it out, e.g. to compare with results obtained before it was included:
+
+```julia
+residuals = run!(model, config; transpose_stress=false)
+```
 
 ## Restarting simulations
 ---

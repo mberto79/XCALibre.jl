@@ -4,6 +4,9 @@ using SparseArrays
 using SparseMatricesCSR
 using StaticArrays 
 using Statistics
+using Random
+using Interpolations: linear_interpolation
+using FFTW
 using Test
 
 workgroupsize(mesh) = length(mesh.cells) ÷ Threads.nthreads()
@@ -14,6 +17,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Mesh conversion" begin
         include("test_mesh_conversion.jl")
+    end
+
+    @testset "Mesh reordering" begin
+        include("unit_test_mesh_reorder.jl")
     end
 
     @testset "Face orientation" begin
@@ -70,6 +77,14 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_neumann_sign.jl")
     end
 
+    @testset "BiCGStab shadow vector" begin
+        include("unit_test_bicgstab_shadow.jl")
+    end
+
+    @testset "Mixed-precision linear solves" begin
+        include("unit_test_mixed_precision.jl")
+    end
+
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
     end
@@ -77,6 +92,22 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     @testset "Wall Production Density Unit Test" begin
         include("unit_test_wall_production_density.jl")
         include("unit_test_wall_function_averaging.jl")
+    end
+
+    @testset "Parallel cell updates Unit Test" begin
+        include("unit_test_parallel_cell_updates.jl")
+    end
+  
+    @testset "KOmegaLKE Diffusion Unit Test" begin
+        include("unit_test_lke_diffusion.jl")
+    end
+  
+    @testset "KOmegaLKE Production Unit Test" begin
+        include("unit_test_lke_production.jl")
+    end
+
+    @testset "Explicit viscous stress" begin
+        include("unit_test_transpose_stress.jl")
     end
 
     @testset "setFields Function Unit Test" begin
@@ -89,6 +120,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Fluid Properties Unit Test" begin
         include("unit_test_fluidProperties.jl")
+    end
+
+    @testset "Turbulence Float Types Unit Test" begin
+        include("unit_test_turbulence_float_types.jl")
     end
 
     @testset "Laplace Functionality Test" begin
@@ -140,6 +175,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
             "3d_incompressible_laminar_cascade_periodic.jl",
             "2d_incompressible_pitzdaily_KEquation.jl",
             "2d_incompressible_pitzdaily_Smagorinsky.jl",
+            "3d_incompressible_isotropic_turbulence_WALE.jl",
             "2d_taylor_couette_laminar.jl"
         ]
 

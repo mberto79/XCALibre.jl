@@ -61,6 +61,15 @@ end
         sols[i] = Krylov.solution(ws)
     end
     @test sols[1] == sols[2] && isapprox(A*sols[1], b; rtol=1e-8)
+    # chunk c runs on Base's static thread c, so loops reuse the pages first touch placed
+    k = Threads.threadpoolsize()
+    owner, static = zeros(Int, k), zeros(Int, k)
+    XCALibre.Multithread._each_chunk_task(c -> (owner[c] = Threads.threadid()), k)
+    Threads.@threads :static for c ∈ 1:k
+        static[c] = Threads.threadid()
+    end
+    @test owner == static
+    @test_throws Exception XCALibre.Multithread._each_chunk_task(c -> c == k && error("chunk"), k)
 end
 
 @testset "AutoTune empty range" begin
@@ -69,4 +78,53 @@ end
     hits = Int[]
     XCALibre.Multithread._xcal_foreach(i -> push!(hits, i), Int[], backend, AutoTune())
     @test isempty(hits)
+end
+
+# first touch changes where pages live, never values: every copy must equal its source
+@testset "First touch ($(Threads.nthreads()) threads)" begin
+    MT = XCALibre.Multithread
+    n = 200_003
+    activate_multithread(XCALibre.CPU(static=true))
+    a = rand(n)
+    @test first_touch(a) == a && first_touch(a) !== a
+    A = SparseXCSR(MT.SparseMatricesCSR.sparsecsr([1:n; 1:n-1], [1:n; 2:n], rand(2n - 1), n, n))
+    B = first_touch(A)
+    @test typeof(B) == typeof(A)
+    @test all(getfield(parent(B), f) == getfield(parent(A), f) for f ∈ fieldnames(typeof(parent(A))))
+    @test B*a == A*a
+    mesh = FOAM3D_mesh(joinpath(pkgdir(XCALibre), "test", "grids", "OF_cavity_hex", "polyMesh"), scale=0.001)
+    m = first_touch(mesh)
+    @test typeof(m) == typeof(mesh)
+    @test all(getfield(m, f) == getfield(mesh, f) for f ∈ fieldnames(typeof(mesh)))
+    # the backend given to activate_multithread builds the fields; a leaked static one breaks nested kernels
+    @test XCALibre._get_backend(mesh) === XCALibre.CPU(static=true)
+    @test ScalarField(mesh).values == zeros(length(mesh.cells))
+    activate_multithread(XCALibre.CPU())
+    @test XCALibre._get_backend(mesh) === XCALibre.CPU()
+end
+
+# xcal_foreach on CPU(static=true) runs the solver's fixed chunks: same result as CPU(), and every
+# chunk on one thread, so field loops touch the pages first touch placed for that thread
+@testset "Static xcal_foreach ($(Threads.nthreads()) threads)" begin
+    MT = XCALibre.Multithread
+    config(backend) = (; hardware=Hardware(backend=backend, workgroup=AutoTune()))
+    for n ∈ (1_000, 300_001)
+        x = rand(n)
+        ys, yd = zeros(n), zeros(n)
+        xcal_foreach(ys, config(XCALibre.CPU(static=true))) do i
+            ys[i] = 2x[i] + i
+        end
+        xcal_foreach(yd, config(XCALibre.CPU())) do i
+            yd[i] = 2x[i] + i
+        end
+        @test ys == yd == 2 .* x .+ (1:n)
+    end
+    n, k = 300_001, Threads.nthreads()
+    tid = zeros(Int, n)
+    xcal_foreach(tid, config(XCALibre.CPU(static=true))) do i
+        tid[i] = Threads.threadid()
+    end
+    owners = [unique(tid[MT._chunk(n, k, c)]) for c ∈ 1:k]
+    @test all(length(o) == 1 for o ∈ owners)
+    @test length(unique(first.(owners))) == k
 end

@@ -67,8 +67,8 @@ config = Configuration(
 initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, 0.0)
 
-# Project the initial guess onto a divergence-free potential-flow field.
-# The potential boundary conditions are inferred from those assigned to p.
+# Start from a divergence-free potential-flow field (from rest by default; from_rest=false
+# projects the initial guess). The potential boundary conditions are inferred from those of p.
 result = potential_flow!(model, config; ncorrectors=5)
 println("potential flow residual: ", result.residual)
 

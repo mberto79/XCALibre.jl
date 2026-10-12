@@ -1,5 +1,7 @@
 # TO DO: These functions needs to be organised in a more sensible manner
-function bound!(field, config)
+bound!(field, config) = bound!(field, similar(field.values), config)
+
+function bound!(field, work, config)
     # Extract hardware configuration
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -7,33 +9,38 @@ function bound!(field, config)
     (; values, mesh) = field
     (; cells, cell_neighbours) = mesh
 
+    # Jacobi update: every cell reads its neighbours from the unbounded copy in `work`,
+    # so the result does not depend on the order in which cells are bounded.
+    copyto!(work, values)
+
     # set up and launch kernel
     ndrange = length(values)
     kernel! = _sized(_bound!, backend, workgroup, ndrange)
-    kernel!(values, cells, cell_neighbours)
+    kernel!(values, work, cells, cell_neighbours)
     # KernelAbstractions.synchronize(backend)
 end
 
-@kernel function _bound!(values, cells, cell_neighbours)
+@kernel function _bound!(values, unbounded, cells, cell_neighbours)
     i = @index(Global)
 
-    sum_flux = 0.0
+    sum_flux = zero(eltype(values))
     sum_area = 0
-    average = 0.0
+    average = zero(eltype(values))
     @uniform mzero = eps(eltype(values)) # machine zero
 
     @inbounds begin
         for fi ∈ cells[i].faces_range
             cID = cell_neighbours[fi]
-            sum_flux += max(values[cID], mzero) # bounded sum
+            sum_flux += max(unbounded[cID], mzero) # bounded sum
             sum_area += 1
         end
         average = sum_flux/sum_area
 
+        vi = unbounded[i]
         values[i] = max(
             max(
-                values[i],
-                average*signbit(values[i])
+                vi,
+                average*signbit(vi)
             ),
             mzero
         )
@@ -47,9 +54,9 @@ end
 
 ω_vis(nu, y, beta1) = 6*nu/(beta1*y^2)
 
-ω_log(k, y, cmu, kappa) = sqrt(k)/(cmu^0.25*kappa*y)
+ω_log(k, y, cmu::T, kappa) where T = sqrt(k)/(cmu^T(0.25)*kappa*y)
 
-y_plus(k, nu, y, cmu) = cmu^0.25*y*sqrt(k)/nu
+y_plus(k, nu, y, cmu::T) where T = cmu^T(0.25)*y*sqrt(k)/nu
 
 sngrad(Ui, Uw, delta, normal) = begin
     Udiff = (Ui - Uw)
@@ -61,7 +68,7 @@ end
 mag(vector) = sqrt(vector[1]^2 + vector[2]^2 + vector[3]^2) 
 
 nut_wall(nu, yplus, kappa, E::T) where T = begin
-    max(nu*(yplus*kappa/log(max(E*yplus, 1.0 + 1e-4)) - 1.0), zero(T))
+    max(nu*(yplus*kappa/log(max(E*yplus, T(1.0 + 1e-4))) - one(T)), zero(T))
 end
 
 # A wall cell can own several faces of one patch and faces on several patches. Summing
@@ -183,9 +190,10 @@ end
     face = faces[fID]
     nuc = nu[cID]
     (; delta, normal)= face
-    uStar = cmu^0.25*sqrt(k[cID])
-    dUdy = uStar/(kappa*delta)
-    yplus = y_plus(k[cID], nuc, delta, cmu)
+    y = wall_normal_distance(face) # wall distance; delta (floored) stays in the face snGrad
+    uStar = cmu^eltype(sums)(0.25)*sqrt(k[cID])
+    dUdy = uStar/(kappa*y)
+    yplus = y_plus(k[cID], nuc, y, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
     Uw = Uf[fID]
     mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
@@ -253,15 +261,14 @@ end
     cID = boundary_cellsID[fID]
     face = faces[fID]
     # nuf = nu[fID]
-    (; delta)= face
-    # yplus = y_plus(k[cID], nuf, delta, cmu)
+    y = wall_normal_distance(face)
     nuc = nu[cID]
-    yplus = y_plus(k[cID], nuc, delta, cmu)
+    yplus = y_plus(k[cID], nuc, y, cmu)
     nutw = nut_wall(nuc, yplus, kappa, E)
     if yplus > yPlusLam
         values[fID] = nutw
     else
-        values[fID] = 0.0
+        values[fID] = zero(eltype(values))
     end
 end
 
@@ -295,7 +302,8 @@ end
 
     cID = boundary_cellsID[fID]
     face = faces[fID]
-    (; delta, normal) = face
+    (; normal) = face
+    delta = wall_normal_distance(face) # wall distance of the cell centre
     nuc = nu[cID]
 
     # Tangential velocity magnitude at cell centre (wall velocity = 0)
@@ -417,7 +425,7 @@ end
     @inbounds begin
         cID = boundary_cellsID[fID]
         face = faces[fID]
-        y = face.delta
+        y = wall_normal_distance(face)
         ωvis = ω_vis(nu[cID], y, beta1)
         ωlog = ω_log(k[cID], y, cmu, kappa)
         yplus = y_plus(k[cID], nu[cID], y, cmu) 

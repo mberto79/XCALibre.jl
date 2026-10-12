@@ -121,10 +121,10 @@ function initialise(
 
     # Krylov preconditioner/workspace are serial-only (distributed solves through PETSc PCs)
     if !is_distributed_mesh(mesh)
-        @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
+        @reset k_eqn.preconditioner = set_preconditioner(solvers.k, k_eqn)
         @reset ω_eqn.preconditioner = k_eqn.preconditioner
-        @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
-        @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn), _index_type(_A(ω_eqn)))
+        @reset k_eqn.solver = _workspace(solvers.k, k_eqn)
+        @reset ω_eqn.solver = _workspace(solvers.omega, ω_eqn)
     end
 
     # wrap transported-scalar eqns for the distributed solve seam (identity serial). This is
@@ -196,7 +196,7 @@ function turbulence!(
     xcal_foreach(Pkv, config) do i
         @inbounds begin
             gradi = gradUv[i]
-            Sij = 0.5*(gradi + gradi')
+            Sij = (gradi + gradi')/2
             GbyNu = 2*sum(Sij .* Sij)
             rhoi = rhov[i]
             omegai = omegav[i]
@@ -230,7 +230,7 @@ function turbulence!(
     ω_res = solve_system!(ω_deqn, solvers.omega, omega, nothing, config)
 
     # constrain_boundary!(omega, boundaries.omega, model, config) # active with WFs only
-    bound!(omega, config)
+    bound!(omega, prev, config)
     # explicit_relaxation!(omega, prev, solvers.omega.relax, config)
 
     # Solve k equation
@@ -241,7 +241,7 @@ function turbulence!(
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     distributed || update_preconditioner!(k_eqn.preconditioner, mesh, config)
     k_res = solve_system!(k_deqn, solvers.k, k, nothing, config)
-    bound!(k, config)
+    bound!(k, prev, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     kv = k.values # nutv and omegav are bound above; rebinding a captured name boxes it

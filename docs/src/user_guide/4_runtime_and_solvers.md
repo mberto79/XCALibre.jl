@@ -139,6 +139,14 @@ The momentum equation of every flow solver carries the full viscous stress, ∇�
 residuals = run!(model, config; transpose_stress=false)
 ```
 
+The steady compressible solver (`csimple!`, used by `run!` for `Steady()` models with `Compressible` or `WeaklyCompressible` fluids) offers a consistent (SIMPLEC) pressure–velocity coupling. By default, the pressure equation and the velocity correction use rD = V/a_P, the inverse diagonal coefficient of the under-relaxed momentum matrix. Because a_P grows as the velocity relaxation factor α_U decreases, rD scales roughly with α_U, which weakens the pressure Laplacian ∇·(ρ rD ∇p) relative to the compressibility term ∇·(ψ ((H/a_P)·S) p) of a `Compressible` fluid. In transonic flow this can amplify round-off from one iteration to the next until the run diverges, even for a uniform free stream. With `consistent=true` the Laplacian and the velocity and face-flux corrections use rDt = V/(a_P + Σ a_N), the inverse row sum of the momentum matrix, which does not shrink with α_U; the extra terms (rDt - rD)∇p are added to the predicted velocity and face fluxes so that the converged solution is the same. We recommend it for steady transonic runs:
+
+```julia
+residuals = run!(model, config; consistent=true)
+```
+
+It is off by default, which leaves earlier results unchanged. The transient compressible solver does not take this option.
+
 ## Restarting simulations
 ---
 

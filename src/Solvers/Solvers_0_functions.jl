@@ -399,3 +399,34 @@ function check_distributed_support(solver::Symbol, model)
     Run this case on a single process, or see the distributed section of the documentation.
     """)
 end
+
+## PRESSURE-CONVECTION FLUX (COMPRESSIBLE)
+
+# Adds pconv_f p_f to mdotf, with the face pressure of the scheme that discretises
+# Divergence(pconv, p) in the pressure matrix, so that mdotf is the flux the pressure equation
+# balances (as OpenFOAM's phi = phiHbyA + pEqn.flux()). Boundary faces take the boundary pressure
+# pf, as the matrix does. BoundedUpwind has no face flux of its own and uses the upwind value.
+function add_pressure_convection_flux!(mdotf, pconv, p, pf, scheme::AbstractScheme, config)
+    (; backend, workgroup) = config.hardware
+    (; faces, boundary_cellsID) = p.mesh
+    n_bfaces = length(boundary_cellsID)
+    @views @. mdotf.values[1:n_bfaces] += pconv.values[1:n_bfaces]*pf.values[1:n_bfaces]
+    kernel! = _sized(_add_pressure_convection_flux!, backend, workgroup, length(faces) - n_bfaces)
+    kernel!(mdotf, pconv, p, faces, scheme, n_bfaces)
+end
+
+@kernel function _add_pressure_convection_flux!(mdotf, pconv, p, faces, scheme, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    @inbounds begin
+        cID1, cID2 = faces.ownerCells[fID]
+        F = pconv[fID]
+        mdotf[fID] += F*_pconv_face_value(scheme, F, p[cID1], p[cID2], faces.weight[fID])
+    end
+end
+
+@inline _pconv_face_value(::Linear, F, p1, p2, w) = w*p1 + (one(w) - w)*p2
+@inline _pconv_face_value(::Union{Upwind,BoundedUpwind}, F, p1, p2, w) = F >= zero(F) ? p1 : p2
+@inline _pconv_face_value(::LUST, F, p1, p2, w) =
+    typeof(w)(0.75)*_pconv_face_value(Linear(), F, p1, p2, w) +
+    typeof(w)(0.25)*_pconv_face_value(Upwind(), F, p1, p2, w)

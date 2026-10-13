@@ -93,11 +93,8 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
-# CONSISTENT (SIMPLEC) COUPLING, shared by simple! and csimple!
-
-# rDt = V/(a_P + Σ a_N), the inverse row sum of the relaxed momentum matrix; unlike rD = V/a_P it
-# does not shrink with the velocity relaxation factor. Rows whose sum is not clearly positive keep
-# rD. Ghost rows are stale until the halo exchange.
+# SIMPLEC (simple!, csimple!): rDt = V/(a_P + Σ a_N) does not shrink with the velocity relaxation
+# like rD = V/a_P; rows whose sum is not clearly positive keep rD; ghosts stale until the exchange
 function consistent_inverse_diagonal!(rDt, rD, eqn, config; halo=true)
     (; backend, workgroup) = config.hardware
     nzval, colval, rowptr = get_sparse_fields(eqn.equation.A)

@@ -1,9 +1,6 @@
-# Uniform Mach 0.84 stream through an empty box (exact steady solution) at relaxation (0.6, 0.3):
-# both couplings hold it on the shipped 5x5x5 box; on a 20x10x10 box the default coupling amplifies
-# round-off until the run diverges, while the consistent coupling holds it.
-
-# Write a uniform nx×ny×nz hexahedral box [0, lx]×[0, ly]×[0, lz] in the format read by
-# `FOAM3D_mesh`, with patches inlet/outlet (x = 0, lx), bottom/top (y) and front/back (z).
+# Uniform Mach 0.84 stream (exact steady solution) at relaxation (0.6, 0.3): both couplings hold it
+# on the shipped 5x5x5 box; on a 20x10x10 box written in the `FOAM3D_mesh` format (patches inlet,
+# outlet, bottom, top, front, back) the default coupling diverges and the consistent one holds it.
 function write_hex_box(dir; n=(20, 10, 10), l=(2.0, 1.0, 1.0))
     nx, ny, nz = n
     point(i, j, k) = i + (nx + 1)*(j + (ny + 1)*k) # 0-based

@@ -495,22 +495,3 @@ end
     divU = G[1,1] + G[2,2] + G[3,3]
     S[i] = p[i] * divU
 end
-
-function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
-    mesh = phif.mesh
-    nbfaces = length(mesh.boundary_cellsID)
-    internal_faces_count = length(mesh.faces) - nbfaces
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    kernel! = _sized(interpolate_upwind_Scalar!, backend, workgroup, internal_faces_count)
-    kernel!(phif.values, phi.values, mdotf.values, mesh.faces, nbfaces)
-end
-
-@kernel function interpolate_upwind_Scalar!(fvals, vals, flux, faces, nbfaces)
-    t = @index(Global)
-    i = t + nbfaces
-    @inbounds begin
-        (; ownerCells) = faces[i]
-        fvals[i] = flux[i] >= 0.0 ? vals[ownerCells[1]] : vals[ownerCells[2]]
-    end
-end

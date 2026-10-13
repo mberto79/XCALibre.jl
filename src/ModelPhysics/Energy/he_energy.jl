@@ -65,9 +65,10 @@ end
 Adapt.@adapt_structure InternalEnergy
 
 # Unified equation model container
-struct EnergyEquationModel{E1,State}
+struct EnergyEquationModel{E1,State,CG}
     energy_eqn::E1
     state::State
+    convection_gradient::CG # gradient of he for second-order convection schemes (or nothing)
 end
 Adapt.@adapt_structure EnergyEquationModel
 
@@ -123,9 +124,11 @@ function initialise(
     energy_to_temperature!(model, he, divK) # divK as scratch, set in energy! before use
     divK.values == T.values || temperature_to_energy!(model, T, he)
 
+    cg = convection_gradient(schemes.he.divergence, he, schemes.he.gradient)
+
     energy_eqn = (
         Time{schemes.he.time}(rho, he)
-        + Divergence{schemes.he.divergence}(mdotf, he)
+        + Divergence{schemes.he.divergence}(mdotf, he, convection_grad_field(cg))
         - Laplacian{schemes.he.laplacian}(keff, he)
         ==
         Source(S_he) - Source(divK) - Source(dKdt) + Source(Phi)
@@ -136,7 +139,7 @@ function initialise(
 
     init_residual = (:he, 1.0)
     state = ModelState(init_residual, false)
-    return EnergyEquationModel(energy_eqn, state)
+    return EnergyEquationModel(energy_eqn, state, cg)
 end
 
 """
@@ -168,7 +171,7 @@ function energy!(
     (; rho, nu, Pr) = model.fluid
     (; U, p, Uf) = model.momentum
     (; he, hef, T, K, Kf, prevP, prevRhoK, S_he, mueff_cell) = model.energy
-    (; energy_eqn, state) = energy
+    (; energy_eqn, state, convection_gradient) = energy
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; backend) = hardware
 
@@ -218,6 +221,8 @@ function energy!(
     end
 
     # Set up and solve energy equation
+    update_convection_gradient!(
+        convection_gradient, he, boundaries.he, schemes.he.limiter, time, config)
     discretise!(energy_eqn, he, config)
     apply_boundary_conditions!(energy_eqn, boundaries.he, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, he.values, solvers.he.relax, nothing, config)

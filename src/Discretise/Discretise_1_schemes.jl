@@ -1,4 +1,4 @@
-export scheme!, scheme_source!, scheme_face_source!
+export scheme!, scheme_source!, scheme_face_source!, is_second_order
 
 #= NOTE:
 In source scheme the following indices are used and should be used with care:
@@ -169,6 +169,10 @@ end
 
 # LinearUpwind, LimitedLinearUpwind: upwind matrix, face reconstruction as an explicit source
 const SecondOrderUpwind = Union{LinearUpwind,LimitedLinearUpwind}
+
+# true for schemes whose face values need the gradient of the transported field
+is_second_order(::Type) = false
+is_second_order(::Type{<:SecondOrderUpwind}) = true
 
 @inline _upwind(term::Operator) = Operator(term.flux, term.phi, term.sign, Divergence{Upwind}())
 

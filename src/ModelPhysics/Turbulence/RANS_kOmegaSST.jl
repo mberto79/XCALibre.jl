@@ -236,6 +236,12 @@ function turbulence!(
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
+    # second-order convection schemes reconstruct faces with the limited gradient (the
+    # cross-diffusion term above uses the plain one)
+    is_second_order(config.schemes.k.divergence) &&
+        limit_gradient!(config.schemes.k.limiter, ∇k, k, config)
+    is_second_order(config.schemes.omega.divergence) &&
+        limit_gradient!(config.schemes.omega.limiter, ∇ω, omega, config)
 
     @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, scalar(1e-10))
 

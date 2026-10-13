@@ -6,9 +6,15 @@ on:
       - main  # update to match your development branch (master, main, etc.)
     tags: '*'
   pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
+    if: github.event.action != 'closed'
     permissions:
       actions: write
       contents: write

@@ -197,8 +197,10 @@ function energy!(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
         @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+        # K takes the face interpolation of the he convection term (term 2), so h + K is convected
+        # by one discrete operator; boundary faces keep K of the boundary velocity
         @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
-        interpolate_upwind!(Kf, K, mdotf, config)
+        interpolate!(Kf, K, mdotf, energy_eqn.model.terms[2].type, config)
         @. Kf.values *= mdotf.values
         div!(divK, Kf, config)
         @. dKdt.values = (rho.values*K.values - prevRhoK)/dt

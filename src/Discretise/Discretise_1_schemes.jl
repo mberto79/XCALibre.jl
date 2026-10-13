@@ -186,6 +186,20 @@ end
     0.0, 0.0
 end
 
+# Face value of a divergence scheme for an explicitly convected field: flux*value is the face flux the
+# scheme's coefficients give (w: owner weight). BoundedUpwind interpolates as Upwind; its extra
+# -phi_P*sum(flux) part is a diagonal term, not a face value.
+@inline convected_face_value(::Divergence{Linear}, phiP, phiN, w, flux) = w*phiP + (one(w) - w)*phiN
+
+@inline convected_face_value(::Divergence{<:Union{Upwind,BoundedUpwind}}, phiP, phiN, w, flux) =
+    flux >= zero(flux) ? phiP : phiN
+
+@inline function convected_face_value(::Divergence{LUST}, phiP, phiN, w, flux)
+    phiUpwind = flux >= zero(flux) ? phiP : phiN
+    three_quarters = typeof(w)(0.75)
+    quarter = typeof(w)(0.25)
+    three_quarters*(w*phiP + (one(w) - w)*phiN) + quarter*phiUpwind
+end
 
 # IMPLICIT SOURCE
 @inline function scheme!(

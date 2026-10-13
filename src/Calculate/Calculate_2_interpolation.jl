@@ -235,6 +235,31 @@ end
 end
 
 
+## CONVECTED SCALAR INTERPOLATION
+
+"""
+    interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, scheme::Divergence, config)
+
+Internal face values of `phi` convected by the face flux `mdotf` with the face interpolation of the
+divergence scheme `scheme`, e.g. `Divergence{LUST}()`, so that `mdotf*phif` is the face flux the
+implicit operator `Divergence{LUST}(mdotf, phi)` assembles. `Upwind` and `BoundedUpwind` take the
+upwind cell value, `Linear` the linear interpolation, and `LUST` 75% linear and 25% upwind.
+Boundary face values are left unchanged.
+"""
+function interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, scheme::Divergence, config)
+    (; faces, boundary_cellsID) = phif.mesh
+    (; backend, workgroup) = config.hardware
+    nbfaces = length(boundary_cellsID)
+    kernel! = _sized(_interpolate_convected!, backend, workgroup, length(faces) - nbfaces)
+    kernel!(phif.values, phi.values, mdotf.values, scheme, faces, nbfaces)
+end
+
+@kernel inbounds=true function _interpolate_convected!(fvals, vals, mdotf, scheme, faces, nbfaces)
+    i = @index(Global) + nbfaces
+    weight, ownerCells = faces.weight[i], faces.ownerCells[i]
+    fvals[i] = convected_face_value(scheme, vals[ownerCells[1]], vals[ownerCells[2]], weight, mdotf[i])
+end
+
 ## UPWIND VECTOR INTERPOLATION
 
 function interpolate_upwind!(phif::FaceVectorField, phi::VectorField, mdotf, config)

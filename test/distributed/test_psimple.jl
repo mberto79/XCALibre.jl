@@ -59,12 +59,16 @@ function continuation_case(build_mesh, bcs, n)
     nown = dm.partition.n_owned
     rel(a, b) = maximum(abs.(a .- b); init=0.0)/max(maximum(abs.(a); init=0.0), eps())
     owned(model) = (model.momentum.U.x.values[1:nown], model.momentum.p.values[1:nown])
-    d = max(maximum(rel.(owned(model1), owned(model2))), rel(r1.p[n+1:2n], r2.p))
-    dmax = MPI.Allreduce(d, max, comm)
+    dfield = MPI.Allreduce(maximum(rel.(owned(model1), owned(model2))), max, comm)
+    dres = MPI.Allreduce(rel(r1.p[n+1:2n], r2.p), max, comm)
+    # threaded atomic boundary sums vary in order, so identical runs differ by ~1e-14 in the fields
+    # but up to ~1.1e-7 in the p residual, which sits near atol (1e-10..7e-10; 2-3 ranks, 4-8
+    # threads): fields stay strict, residuals get 100x that spread
     @testset "psimple continuation (rank $rank)" begin
-        @test dmax <= 1e-10
+        @test dfield <= 1e-10
+        @test dres <= 1e-5
     end
-    rank == 0 && println("PSIMPLE continuation n=$(MPI.Comm_size(comm)) max rel diff = $dmax")
+    rank == 0 && println("PSIMPLE continuation n=$(MPI.Comm_size(comm)) rel diff fields = $dfield residuals = $dres")
 end
 
 continuation_case(bfs_mesh, bfs_bcs, 50)

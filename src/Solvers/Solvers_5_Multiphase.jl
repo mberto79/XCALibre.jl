@@ -291,6 +291,7 @@ function MULTIPHASE(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    continue_flux!(mdotf, model.momentum, mesh, nothing)
     @. rhoPhi.values = mdotf.values * rhof.values
     transpose_stress && prime_face_nut!(model, boundaries, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
@@ -451,6 +452,7 @@ function MULTIPHASE(
         end
     end
 
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, alpha=R_alpha)
 end
 

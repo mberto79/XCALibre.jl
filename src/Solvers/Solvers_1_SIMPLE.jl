@@ -320,6 +320,10 @@ end
 # trading the exact face gradient for a bounded explicit source.
 const MIN_PROJECTED_DELTA_RATIO = 0.05
 
+# Number of corrected pressure solves for `ncorrectors` non-orthogonal correctors: none when the
+# correction is off, otherwise ncorrectors + 1, each with the explicit non-orthogonal source.
+nonorthogonal_solves(ncorrectors) = ncorrectors > 0 ? ncorrectors + 1 : 0
+
 @inline store_face_correction!(::Nothing, fID, value) = nothing
 
 @inline function store_face_correction!(correction, fID, value)

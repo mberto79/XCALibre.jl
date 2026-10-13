@@ -268,16 +268,15 @@ function CSIMPLE(
         rp = 0.0
         @. prev = p.values
         @. p_boundary_reference = p.values
-        if typeof(model.fluid) <: Compressible
-            rp = solve_equation!(
-                p_eqn, p, boundaries.p, solvers.p, config; 
-                ref=nothing)
-        elseif typeof(model.fluid) <: WeaklyCompressible
+        if ncorrectors == 0
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
         end
 
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
+        # Non-orthogonal correction: every pressure solve carries the explicit non-orthogonal
+        # source (ncorrectors + 1 solves, as OpenFOAM's correctNonOrthogonal loop). A first solve
+        # without it is inconsistent with the converged state, so the last solve would start from a
+        # finite residual and leave a continuity error ~ rtol*|source| in the corrected flux.
+        for i ∈ 1:nonorthogonal_solves(ncorrectors)
             grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
             @. p_boundary_reference = p.values

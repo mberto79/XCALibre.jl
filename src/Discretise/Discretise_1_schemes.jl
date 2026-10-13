@@ -173,7 +173,7 @@ const SecondOrderUpwind = Union{LinearUpwind,LimitedLinearUpwind}
 @inline _upwind(term::Operator) = Operator(term.flux, term.phi, term.sign, Divergence{Upwind}())
 
 Divergence{S}(flux, phi, grad) where S<:SecondOrderUpwind = Operator(
-    flux, phi, 1, Divergence{S}(), _kernel_field(grad))
+    flux, phi, 1, Divergence{S}(), grad)
 
 Divergence{S}(flux, phi) where S<:SecondOrderUpwind = begin
     @warn "Divergence{$S} built without a gradient: this term reduces to Upwind" maxlog=1
@@ -192,15 +192,13 @@ end
     0.0, 0.0
 end
 
-# explicit contribution of an internal face (fID) of cell cID to the right-hand side
-@inline scheme_face_source!(term, z, cells, faces, cID, nID, ns, fID) = z
-
-@inline scheme_face_source!(
-    term::Operator{F,P,I,Divergence{S},Nothing}, z, cells, faces, cID, nID, ns, fID
-    ) where {F,P,I,S<:SecondOrderUpwind} = z
+# explicit contribution of an internal face (fID) of cell cID to the right-hand side; only operators
+# for which `has_face_source` holds are visited, all others compile to the original code
+has_face_source(::Type{<:Operator}) = false
+has_face_source(::Type{<:Operator{F,P,I,Divergence{S},G}}) where {F,P,I,S<:SecondOrderUpwind,G<:AbstractField} = true
 
 @inline function scheme_face_source!(
-    term::Operator{F,P,I,Divergence{LinearUpwind}}, z, cells, faces, cID, nID, ns, fID
+    term::Operator{F,P,I,Divergence{LinearUpwind}}, cells, faces, cID, nID, ns, fID
     ) where {F,P,I}
     flux = term.sign*term.flux[fID]*ns
     uID = flux > zero(flux) ? cID : nID
@@ -209,7 +207,7 @@ end
 end
 
 @inline function scheme_face_source!(
-    term::Operator{F,P,I,Divergence{LimitedLinearUpwind}}, z, cells, faces, cID, nID, ns, fID
+    term::Operator{F,P,I,Divergence{LimitedLinearUpwind}}, cells, faces, cID, nID, ns, fID
     ) where {F,P,I}
     flux = term.sign*term.flux[fID]*ns
     uID, dID = flux > zero(flux) ? (cID, nID) : (nID, cID)

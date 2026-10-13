@@ -43,6 +43,7 @@ function discretise!(
 
     _pattern_extended(nzval0, mesh) && fill_nzval!(nzval0, config)
 
+    _sync_gradients!(model.terms, mesh, config)
     terms, sources = _kernel_model(model, mesh)
     (; cells, faces, cell_faces, cell_neighbours, cell_nsign) = mesh
     ndrange = length(cells)
@@ -67,7 +68,7 @@ end
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
-        bf = zero(SVector{3,F})
+        bf = _face_source_init(terms, zero(SVector{3,F}))
         for fi in faces_range
             # Retrieve indices for discretisation
             fID = cell_faces[fi]
@@ -80,7 +81,7 @@ end
             ac, an = _scheme!(terms, nzval0, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval0[nIndex] = an
-            bf += _scheme_face_source!(terms, zero(SVector{3,F}), cells, faces, i, nID, ns, fID)
+            bf = _scheme_face_source!(terms, bf, cells, faces, i, nID, ns, fID)
         end
 
         
@@ -91,9 +92,9 @@ end
 
         # Call sources generated function
         bx2, by2, bz2 = _sources!(sources, volume, i)
-        bx[i] = bx1 + bx2 + bf[1]
-        by[i] = by1 + by2 + bf[2]
-        bz[i] = bz1 + bz2 + bf[3]
+        bx[i] = _add_face_source(bx1 + bx2, bf, 1)
+        by[i] = _add_face_source(by1 + by2, bf, 2)
+        bz[i] = _add_face_source(bz1 + bz2, bf, 3)
     end
 end
 
@@ -117,6 +118,7 @@ function discretise!(
 
     _pattern_extended(nzval, mesh) && fill_nzval!(nzval, config)
 
+    _sync_gradients!(model.terms, mesh, config)
     terms, sources = _kernel_model(model, mesh)
     (; cells, faces, cell_faces, cell_neighbours, cell_nsign) = mesh
     ndrange = length(cells)
@@ -152,7 +154,7 @@ end
 
         # For loop over workitem cell faces
         ac_sum = zero(F)
-        bf = zero(F)
+        bf = _face_source_init(terms, zero(F))
         for fi in faces_range
             # Retrieve indices for discretisation
             fID = cell_faces[fi]
@@ -164,7 +166,7 @@ end
             ac, an = _scheme!(terms, nzval, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
             ac_sum += ac
             nzval[nIndex] = an
-            bf += _scheme_face_source!(terms, zero(F), cells, faces, i, nID, ns, fID)
+            bf = _scheme_face_source!(terms, bf, cells, faces, i, nID, ns, fID)
         end
         
         # Call scheme source generated function
@@ -173,7 +175,7 @@ end
 
         # Call sources generated function
         b2 = _sources!(sources, volume, i)
-        b[i] = b2 + b1 + bf
+        b[i] = _add_face_source(b2 + b1, bf, 1)
     end
 end
 
@@ -207,16 +209,36 @@ return_quote(x, t) = :(nothing)
     end
 end
 
-# Face source generated function definition (z sets the type: scalar or SVector{3})
+# Face source: `bf` accumulates the explicit face contributions of the operators with `has_face_source`
+# (SVector{3} for vector, scalar otherwise); it is `nothing` when no operator has one, so equations
+# without second-order schemes carry no extra work.
+@generated function _face_source_init(terms::TERMS, z) where {TERMS}
+    any(t -> has_face_source(fieldtype(TERMS, t)), 1:fieldcount(TERMS)) ? :(z) : :(nothing)
+end
+
 @generated function _scheme_face_source!(
-    terms::TERMS, z::Z, cells, faces, cID, nID, ns, fID) where {TERMS,Z}
-    calls = [:(B += $Z(scheme_face_source!(terms[$t], z, cells, faces, cID, nID, ns, fID)))
-        for t in 1:fieldcount(TERMS)]
+    terms::TERMS, bf, cells, faces, cID, nID, ns, fID) where {TERMS}
+    idx = [t for t in 1:fieldcount(TERMS) if has_face_source(fieldtype(TERMS, t))]
+    isempty(idx) && return :(bf)
+    calls = [:(bf += scheme_face_source!(terms[$t], cells, faces, cID, nID, ns, fID)) for t in idx]
     quote
-        B = z
         $(calls...)
-        return B
+        return bf
     end
+end
+
+@inline _add_face_source(b, ::Nothing, k) = b
+@inline _add_face_source(b, bf::AbstractVector, k) = b + bf[k]
+@inline _add_face_source(b, bf::Number, k) = b + bf
+
+# Ghost gradients are not consistent on other ranks; distributed meshes extend this hook
+sync_gradient!(grad, mesh, config) = nothing
+
+@generated function _sync_gradients!(terms::TERMS, mesh, config) where {TERMS}
+    idx = [t for t in 1:fieldcount(TERMS) if has_face_source(fieldtype(TERMS, t))]
+    isempty(idx) && return :(nothing)
+    calls = [:(sync_gradient!(terms[$t].grad, mesh, config)) for t in idx]
+    :($(calls...); nothing)
 end
 
 # Scheme source generated function definition

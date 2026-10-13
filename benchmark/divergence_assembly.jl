@@ -1,9 +1,6 @@
-# Assembly benchmark of the convection term: time, allocations and compile time per divergence scheme.
-#
-#   julia --project=<tree> [-t N] benchmark/divergence_assembly.jl [mesh.unv] [reps]
-#
-# Run it on two checkouts (baseline and branch) and compare the tables. Schemes that the checkout
-# does not define are skipped. Timings are the minimum of `reps` warmed calls of `discretise!`.
+# Assembly benchmark of the convection term (minimum of `reps` warmed `discretise!` calls per scheme).
+# Usage: julia --project=<tree> [-t N] benchmark/divergence_assembly.jl [mesh.unv] [reps]
+# Run on a baseline and a branch checkout and compare; schemes a checkout lacks are skipped.
 using XCALibre, Statistics, Printf
 import KernelAbstractions as KA
 const USE_CUDA = get(ENV, "BENCH_CUDA", "0") == "1" # needs CUDA in the environment

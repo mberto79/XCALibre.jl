@@ -1,9 +1,8 @@
 using XCALibre
 # using CUDA # uncomment to run on an NVIDIA GPU
 
-# Laminar backward-facing step with second-order upwind convection for U. `LinearUpwind`
-# reconstructs face values from the upwind-cell gradient (here limited with `CellBased`);
-# `LimitedLinearUpwind` also bounds them between neighbouring cell values.
+# Laminar backward-facing step with second-order upwind convection for U: `LinearUpwind` uses the
+# upwind-cell gradient (limited with `CellBased`); `LimitedLinearUpwind` also bounds the face value.
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh_file = joinpath(grids_dir, "backwardFacingStep_10mm.unv")
 mesh = UNV2D_mesh(mesh_file, scale=0.001)

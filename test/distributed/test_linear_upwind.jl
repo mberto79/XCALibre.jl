@@ -1,7 +1,6 @@
-# Deferred-correction source of LinearUpwind / LimitedLinearUpwind on a distributed mesh vs the
-# undivided mesh, per rank under mpiexec. ∇U comes from grad! of a non-linear field, so the
-# gradient of a ghost cell (partial face list) is wrong until discretise! exchanges it: the
-# source of cells next to a processor face only matches the serial one if that exchange is done.
+# LinearUpwind / LimitedLinearUpwind source per rank vs the undivided mesh. Ghost-cell gradients of a
+# non-linear field are wrong until discretise! exchanges them, so cells next to a processor face
+# match the serial source only if that exchange is done.
 using XCALibre, PETSc, MPI, Test
 
 MPI.Init()

@@ -359,4 +359,34 @@ end
         @test maximum(T) > 1.2*T_inf # shock formed
         @test minimum(T) > 0.99*T_inf
     end
+    @testset "cpiso! transient with energy" begin
+        mesh = adapt(backend, UNV2D_mesh(
+            joinpath(grids_dir, "compression_corner_2d_32_64_SF4.unv"), scale=0.001))
+        gamma, cp = 1.4, 1005.0
+        R = cp*(1 - 1/gamma)
+        T_inf, p_inf = 1000.0, 100000.0
+        U_inf = 2*sqrt(gamma*R*T_inf)
+        model = Physics(time=Transient(),
+            fluid=Fluid{Compressible}(nu=0.0, cp=cp, gamma=gamma, Pr=0.7),
+            turbulence=RANS{Laminar}(), energy=Energy{SensibleEnthalpy}(Tref=0.0), domain=mesh)
+        BCs = assign(region=mesh, (
+            U = [Dirichlet(:inlet, [U_inf, 0.0, 0.0]), Zerogradient(:outlet), Zerogradient(:top),
+                Slip(:wall)],
+            p = [Dirichlet(:inlet, p_inf), Zerogradient(:outlet), Zerogradient(:top),
+                Zerogradient(:wall)],
+            he = [FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=0.0)), Zerogradient(:outlet),
+                Zerogradient(:top), Zerogradient(:wall)],
+        ))
+        sch(S) = Schemes(time=Euler, divergence=S, limiter=CellBased())
+        schemes = (U=sch(LinearUpwind), p=Schemes(time=Euler, divergence=Upwind),
+            he=sch(LimitedLinearUpwind))
+        solvers = (U=solver(1.0), p=solver(1.0; limit=(0.2*p_inf, 10*p_inf)),
+            he=solver(1.0; limit=(200.0, 4000.0)))
+        config = Configuration(solvers=solvers, schemes=schemes, boundaries=BCs, hardware=hw,
+            runtime=Runtime(iterations=30, write_interval=-1, time_step=1e-7))
+        initialise!(model.momentum.U, [U_inf, 0.0, 0.0]); initialise!(model.momentum.p, p_inf)
+        initialise!(model.energy.T, T_inf)
+        run!(model, config, progress=false)
+        @test all(isfinite, model.energy.T.values)
+    end
 end

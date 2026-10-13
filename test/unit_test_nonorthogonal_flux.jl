@@ -1,7 +1,5 @@
-# With non-orthogonal correctors, the converged face mass flux must satisfy continuity to the
-# linear-solver tolerance of a converged state (an initial residual that tends to zero), not to
-# rtol times the non-orthogonal source. Every pressure solve must carry the explicit correction:
-# an uncorrected first solve displaces p each iteration and leaves a continuity error ~ rtol.
+# With non-orthogonal correctors the converged face mass flux must balance to round-off, not to
+# rtol times the non-orthogonal source (an uncorrected first pressure solve leaves that error).
 # Inviscid Mach 2 flow over a 15° compression corner (non-orthogonal cells along the ramp).
 function nonorthogonal_corner_continuity(; ncorrectors=1, iterations=1000)
     mesh = UNV2D_mesh(

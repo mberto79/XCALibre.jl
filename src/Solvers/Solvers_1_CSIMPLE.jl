@@ -272,10 +272,9 @@ function CSIMPLE(
             rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
         end
 
-        # Non-orthogonal correction: every pressure solve carries the explicit non-orthogonal
-        # source (ncorrectors + 1 solves, as OpenFOAM's correctNonOrthogonal loop). A first solve
-        # without it is inconsistent with the converged state, so the last solve would start from a
-        # finite residual and leave a continuity error ~ rtol*|source| in the corrected flux.
+        # Every pressure solve carries the explicit non-orthogonal source (ncorrectors + 1 solves);
+        # an uncorrected first solve would displace the converged p and leave a continuity error
+        # ~ rtol*|source| in the corrected flux.
         for i ∈ 1:nonorthogonal_solves(ncorrectors)
             grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)

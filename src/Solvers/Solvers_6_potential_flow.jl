@@ -72,14 +72,18 @@ function potential_flow!(
     @. previous = Phi.values
     nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
-    residual = solve_equation!(
-        Phi_deqn, Phi, potential_BCs, solvers.p, potential_config;
-        ref=reference, time=time_value,
-    )
+    residual = zero(TF)
+    if ncorrectors == 0
+        residual = solve_equation!(
+            Phi_deqn, Phi, potential_BCs, solvers.p, potential_config;
+            ref=reference, time=time_value,
+        )
+    end
 
     gradPhi = Grad{schemes.p.gradient}(Phi)
     Phi_face = FaceScalarField(mesh)
-    for _ in 1:ncorrectors
+    # Every potential solve carries the explicit non-orthogonal source (ncorrectors + 1 solves)
+    for _ in 1:nonorthogonal_solves(ncorrectors)
         grad!(gradPhi, Phi_face, Phi, potential_BCs, time_value, potential_config)
         limit_gradient!(schemes.p.limiter, gradPhi, Phi, potential_config)
         # The flux correction reads the owner value this assembly was built from.

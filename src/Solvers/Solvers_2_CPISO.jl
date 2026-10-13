@@ -280,10 +280,13 @@ function CPISO(
             # Pressure calculations
             @. prev = p.values
             @. p_boundary_reference = p.values
-            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+            if ncorrectors == 0
+                rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+            end
 
-            # non-orthogonal correction
-            for j ∈ 1:ncorrectors
+            # Non-orthogonal correction: every pressure solve carries the explicit
+            # non-orthogonal source (see CSIMPLE)
+            for j ∈ 1:nonorthogonal_solves(ncorrectors)
                 grad!(∇p, pf, p, boundaries.p, time, config)
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
                 @. p_boundary_reference = p.values

@@ -270,3 +270,93 @@ end
     term = Divergence{LinearUpwind}(uniform_flux(mesh), phi, VectorField(mesh))
     @test XCALibre.Discretise.has_face_source(typeof(term))
 end
+
+# The solvers pass the gradients: short runs through every cascade must stay finite
+@testset "Solvers pass the gradient to second-order schemes" begin
+    mesh_file = joinpath(grids_dir, "backwardFacingStep_10mm.unv")
+    bfs_mesh() = adapt(backend, UNV2D_mesh(mesh_file, scale=0.001))
+    solver(relax; limit=nothing) = SolverSetup(
+        solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-8, relax=relax, rtol=1e-2, limit=limit)
+    hw = Hardware(backend=backend, workgroup=1024)
+
+    @testset "simple! with k-omega transport" begin
+        mesh = bfs_mesh()
+        model = Physics(time=Steady(), fluid=Fluid{Incompressible}(nu=1e-3),
+            turbulence=RANS{KOmega}(), energy=Energy{Isothermal}(), domain=mesh)
+        BCs = assign(region=mesh, (
+            U = [Dirichlet(:inlet, [1.5, 0.0, 0.0]), Extrapolated(:outlet),
+                Wall(:wall, [0.0, 0.0, 0.0]), Symmetry(:top)],
+            p = [Extrapolated(:inlet), Dirichlet(:outlet, 0.0), Wall(:wall), Symmetry(:top)],
+            k = [Dirichlet(:inlet, 0.01), Extrapolated(:outlet), KWallFunction(:wall), Symmetry(:top)],
+            omega = [Dirichlet(:inlet, 10.0), Extrapolated(:outlet), OmegaWallFunction(:wall),
+                Symmetry(:top)],
+            nut = [Dirichlet(:inlet, 1e-3), Extrapolated(:outlet), NutWallFunction(:wall),
+                Symmetry(:top)],
+        ))
+        sch(S) = Schemes(divergence=S, limiter=CellBased())
+        schemes = (U=sch(LinearUpwind), p=Schemes(), k=sch(LimitedLinearUpwind),
+            omega=sch(LinearUpwind))
+        solvers = (U=solver(0.7), p=solver(0.3), k=solver(0.6), omega=solver(0.6))
+        config = Configuration(solvers=solvers, schemes=schemes, boundaries=BCs, hardware=hw,
+            runtime=Runtime(iterations=60, write_interval=-1, time_step=1))
+        initialise!(model.momentum.U, [1.5, 0.0, 0.0]); initialise!(model.momentum.p, 0.0)
+        initialise!(model.turbulence.k, 0.01); initialise!(model.turbulence.omega, 10.0)
+        initialise!(model.turbulence.nut, 1e-3)
+        res = run!(model, config, progress=false)
+        @test all(isfinite, model.momentum.U.x.values)
+        @test all(isfinite, model.turbulence.k.values)
+        @test res.Ux[end] < res.Ux[1]
+    end
+
+    @testset "piso! transient" begin
+        mesh = bfs_mesh()
+        model = Physics(time=Transient(), fluid=Fluid{Incompressible}(nu=1e-3),
+            turbulence=RANS{Laminar}(), energy=Energy{Isothermal}(), domain=mesh)
+        BCs = assign(region=mesh, (
+            U = [Dirichlet(:inlet, [1.5, 0.0, 0.0]), Extrapolated(:outlet),
+                Wall(:wall, [0.0, 0.0, 0.0]), Symmetry(:top)],
+            p = [Extrapolated(:inlet), Dirichlet(:outlet, 0.0), Wall(:wall), Symmetry(:top)],
+        ))
+        schemes = (U=Schemes(time=Euler, divergence=LinearUpwind, limiter=CellBased()),
+            p=Schemes(time=Euler))
+        solvers = (U=solver(1.0), p=solver(1.0))
+        config = Configuration(solvers=solvers, schemes=schemes, boundaries=BCs, hardware=hw,
+            runtime=Runtime(iterations=20, write_interval=-1, time_step=0.005))
+        initialise!(model.momentum.U, [1.5, 0.0, 0.0]); initialise!(model.momentum.p, 0.0)
+        run!(model, config, progress=false)
+        @test all(isfinite, model.momentum.U.x.values)
+    end
+
+    @testset "csimple! with energy" begin
+        mesh = adapt(backend, UNV2D_mesh(
+            joinpath(grids_dir, "compression_corner_2d_32_64_SF4.unv"), scale=0.001))
+        gamma, cp = 1.4, 1005.0
+        R = cp*(1 - 1/gamma)
+        T_inf, p_inf = 1000.0, 100000.0
+        U_inf = 2*sqrt(gamma*R*T_inf)
+        model = Physics(time=Steady(),
+            fluid=Fluid{Compressible}(nu=0.0, cp=cp, gamma=gamma, Pr=0.7),
+            turbulence=RANS{Laminar}(), energy=Energy{SensibleEnthalpy}(Tref=0.0), domain=mesh)
+        BCs = assign(region=mesh, (
+            U = [Dirichlet(:inlet, [U_inf, 0.0, 0.0]), Zerogradient(:outlet), Zerogradient(:top),
+                Slip(:wall)],
+            p = [Dirichlet(:inlet, p_inf), Zerogradient(:outlet), Zerogradient(:top),
+                Zerogradient(:wall)],
+            he = [FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=0.0)), Zerogradient(:outlet),
+                Zerogradient(:top), Zerogradient(:wall)],
+        ))
+        sch(S) = Schemes(divergence=S, limiter=CellBased())
+        schemes = (U=sch(LinearUpwind), p=Schemes(divergence=Upwind), he=sch(LimitedLinearUpwind))
+        solvers = (U=solver(0.7), p=solver(0.3; limit=(0.5*p_inf, 5*p_inf)),
+            he=solver(0.3; limit=(800.0, 3000.0)))
+        config = Configuration(solvers=solvers, schemes=schemes, boundaries=BCs, hardware=hw,
+            runtime=Runtime(iterations=300, write_interval=-1, time_step=1))
+        initialise!(model.momentum.U, [U_inf, 0.0, 0.0]); initialise!(model.momentum.p, p_inf)
+        initialise!(model.energy.T, T_inf)
+        run!(model, config, progress=false, consistent=true)
+        T = model.energy.T.values
+        @test all(isfinite, T)
+        @test maximum(T) > 1.2*T_inf # shock formed
+        @test minimum(T) > 0.99*T_inf
+    end
+end

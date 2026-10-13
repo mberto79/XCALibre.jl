@@ -211,19 +211,21 @@ function SIMPLE_MRF(
         # Pressure calculations
         @. prev = p.values
         @. p_boundary_reference = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        if ncorrectors == 0
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        end
 
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
+        # Every pressure solve carries the explicit non-orthogonal source (see CSIMPLE)
+        for i ∈ 1:nonorthogonal_solves(ncorrectors)
             grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
             @. p_boundary_reference = p.values
             discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            # setReference!(p_eqn, pref, 1, config)
+            setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(
                 p_eqn, ∇p, rDf, config; correction=nonorthogonal_flux)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
         end
 

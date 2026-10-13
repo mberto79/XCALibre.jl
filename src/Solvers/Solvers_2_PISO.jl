@@ -169,10 +169,13 @@ function PISO(
                 prev[i] = p[i]
             end
             @. p_boundary_reference = p.values
-            rp = solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+            if ncorrectors == 0
+                rp = solve_equation!(
+                    p_deqn, p, boundaries.p, solvers.p, config; ref=pref, time=time)
+            end
 
-            # nonorthogonal correction (experimental)
-            for j ∈ 1:ncorrectors
+            # Every pressure solve carries the explicit non-orthogonal source (see CSIMPLE)
+            for j ∈ 1:nonorthogonal_solves(ncorrectors)
                 grad!(∇p, pf, p, boundaries.p, time, config)
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
                 @. p_boundary_reference = p.values

@@ -119,7 +119,9 @@ function initialise(
     dKdt = ScalarField(mesh)
     Phi = ScalarField(mesh)  # viscous heating: ∇·(τeff·U) for h, τeff:∇U for e
 
-    temperature_to_energy!(model, T, he)
+    # keep he when it already yields T (a continued run); rebuild it from a changed T
+    energy_to_temperature!(model, he, divK) # divK as scratch, set in energy! before use
+    divK.values == T.values || temperature_to_energy!(model, T, he)
 
     energy_eqn = (
         Time{schemes.he.time}(rho, he)

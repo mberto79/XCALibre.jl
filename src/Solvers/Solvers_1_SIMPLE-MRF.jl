@@ -165,6 +165,7 @@ function SIMPLE_MRF(
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    continue_flux!(mdotf, model.momentum, mesh, nothing)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
     grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first iteration
@@ -294,6 +295,7 @@ function SIMPLE_MRF(
 
     end # end for loop
     
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 

@@ -142,7 +142,7 @@ residuals = run!(model, config; transpose_stress=false)
 ## Restarting simulations
 ---
 
-It should be noted that when running a simulation with `run!`, the solution fields in the `Physics` model are mutated. Thus, running the simulation from the previous solution is simply a matter of reissuing the `run!` function. At present, this has the side effect of overwriting any existing solution files (`.vtk` or `.vtu`). Users must be aware of this behaviour.
+It should be noted that when running a simulation with `run!`, the solution fields in the `Physics` model are mutated. Thus, running the simulation from the previous solution is simply a matter of reissuing the `run!` function. The continued run also picks up the face mass flux of the last iteration, so a run split into several `run!` calls (for example, to monitor forces every few hundred iterations) retraces the uninterrupted run. Re-initialising the fields with `initialise!` between calls starts afresh. At present, this has the side effect of overwriting any existing solution files (`.vtk` or `.vtu`). Users must be aware of this behaviour.
 
 In some cases, it may be desirable to solve a problem with a steady solver and use the solution to run transient simulations. This is possible using the `change` function.
 

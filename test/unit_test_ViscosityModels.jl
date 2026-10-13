@@ -83,14 +83,16 @@ initialise!(model.energy.T, 300.0)
 initialise!(model.fluid.rho, 1.0)
 
 update_viscosity!(model.fluid, model.energy, config)
-print(model.fluid.nu.nu.values)  # Debugging output
 
 expected_nu = mu_ref * (300.0 / T_ref)^(3/2) * (T_ref + S) / (300.0 + S) / 1.0
-@test model.fluid.nu.nu.values[0] ≈ expected_nu
+@test model.fluid.nu.values[1] ≈ expected_nu
 
 initialise!(model.energy.T, 150.0)
 update_viscosity!(model.fluid, model.energy, config)
-print(model.fluid.nu.nu.values)  # Debugging output
 
 expected_nu = mu_ref * (150.0 / T_ref)^(3/2) * (T_ref + S) / (150.0 + S) / 1.0
-@test model.fluid.nu.nu.values[0] ≈ expected_nu
+@test model.fluid.nu.values[1] ≈ expected_nu
+
+# Viscosity{ConstantViscosity} input must dispatch (was a MethodError)
+nu_c, nuf_c, visc_c = XCALibre.ModelPhysics.initialise_viscosity(Viscosity{ConstantViscosity}(nu=1e-3), mesh_dev)
+@test nu_c.values == 1e-3 && nuf_c.values == 1e-3 && visc_c isa ConstantViscosity

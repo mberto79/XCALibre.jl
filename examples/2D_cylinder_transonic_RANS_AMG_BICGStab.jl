@@ -144,5 +144,4 @@ initialise!(model.turbulence.k, k_inlet)
 initialise!(model.turbulence.omega, ω_inlet)
 initialise!(model.turbulence.nut, νt_inlet)
 
-# consistent=true: SIMPLEC coupling, needed for stable steady transonic runs at these relaxation factors
-residuals = run!(model, config, output=VTK(), inner_loops=2, consistent=true)
+residuals = run!(model, config, output=VTK(), inner_loops=2)

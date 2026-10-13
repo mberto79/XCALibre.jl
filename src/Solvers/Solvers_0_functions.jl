@@ -427,6 +427,30 @@ restart_fields!(mesh, model, restart, config) =
 restart_flux!(mesh, mdotf, ::Nothing, config) = nothing
 restart_flux!(mesh, mdotf, restart, config) = restart_fields!(mesh, nothing, restart, config)
 
+# NEW SECTION: run continuation
+# A continued run! starts from the conservative face flux of the previous run when U and p are
+# untouched since; otherwise (first run, initialise!, failed run) the flux stays rebuilt from U.
+continue_flux!(mdotf, momentum, mesh, ::Nothing) = nothing
+continue_flux!(mdotf, momentum, mesh, restart) = nothing # results read from file take precedence
+function continue_flux!(mdotf, momentum::ModelPhysics.regular, mesh, ::Nothing)
+    (; U, p, Umdot, pmdot) = momentum
+    fresh = U.x.values == Umdot.x.values && U.y.values == Umdot.y.values &&
+        U.z.values == Umdot.z.values && p.values == pmdot.values &&
+        all(isfinite, momentum.mdotf.values)
+    global_any(!fresh, mesh) && return nothing # all ranks rebuild if any rank cannot reuse
+    copyto!(mdotf.values, momentum.mdotf.values)
+    nothing
+end
+
+store_flux!(momentum, mdotf) = nothing
+function store_flux!(momentum::ModelPhysics.regular, mdotf)
+    (; U, p, Umdot, pmdot) = momentum
+    copyto!(momentum.mdotf.values, mdotf.values)
+    copyto!(Umdot.x.values, U.x.values); copyto!(Umdot.y.values, U.y.values)
+    copyto!(Umdot.z.values, U.z.values); copyto!(pmdot.values, p.values)
+    nothing
+end
+
 # NEW SECTION: distributed support
 # Opt-in: a combination without a distributed solve seam would silently solve per-rank blocks.
 distributed_ready(::Any) = false
@@ -467,3 +491,31 @@ function check_distributed_support(solver::Symbol, model)
     Run this case on a single process, or see the distributed section of the documentation.
     """)
 end
+
+# Adds pconv_f p_f to mdotf with the face pressure of the scheme that discretises
+# Divergence(pconv, p) in the pressure matrix, so mdotf is the flux the pressure equation balances.
+# Boundary faces take the boundary pressure pf, as the matrix does.
+function add_pressure_convection_flux!(mdotf, pconv, p, pf, scheme::AbstractScheme, config)
+    (; backend, workgroup) = config.hardware
+    (; faces, boundary_cellsID) = p.mesh
+    n_bfaces = length(boundary_cellsID)
+    @views @. mdotf.values[1:n_bfaces] += pconv.values[1:n_bfaces]*pf.values[1:n_bfaces]
+    kernel! = _sized(_add_pressure_convection_flux!, backend, workgroup, length(faces) - n_bfaces)
+    kernel!(mdotf, pconv, p, faces, scheme, n_bfaces)
+end
+
+@kernel function _add_pressure_convection_flux!(mdotf, pconv, p, faces, scheme, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    @inbounds begin
+        cID1, cID2 = faces.ownerCells[fID]
+        F = pconv[fID]
+        mdotf[fID] += F*_pconv_face_value(scheme, F, p[cID1], p[cID2], faces.weight[fID])
+    end
+end
+
+@inline _pconv_face_value(::Linear, F, p1, p2, w) = w*p1 + (one(w) - w)*p2
+@inline _pconv_face_value(::Union{Upwind,BoundedUpwind}, F, p1, p2, w) = F >= zero(F) ? p1 : p2
+@inline _pconv_face_value(::LUST, F, p1, p2, w) =
+    typeof(w)(0.75)*_pconv_face_value(Linear(), F, p1, p2, w) +
+    typeof(w)(0.25)*_pconv_face_value(Upwind(), F, p1, p2, w)

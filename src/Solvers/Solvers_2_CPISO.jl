@@ -206,6 +206,7 @@ function CPISO(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
+    continue_flux!(mdotf, model.momentum, mesh, nothing)
 
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -305,7 +306,7 @@ function CPISO(
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             if typeof(model.fluid) <: Compressible
-                @. mdotf.values += pconv.values*pf.values
+                add_pressure_convection_flux!(mdotf, pconv, p, pf, schemes.p.divergence(), config)
             end
             correct_mass_flux!(
                 mdotf, p_eqn, config;
@@ -369,5 +370,6 @@ function CPISO(
 
     end # end for loop
 
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end

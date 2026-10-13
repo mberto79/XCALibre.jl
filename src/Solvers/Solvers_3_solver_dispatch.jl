@@ -22,6 +22,10 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 On a distributed mesh only the incompressible SIMPLE and PISO solvers and the Laplace solver are
 supported; any other solver or model errors rather than solving each rank's block on its own.
 
+Calling `run!` again on the same model continues from its current fields, including the face mass
+flux of the last iteration, and retraces the uninterrupted run. Re-initialising the fields (e.g.
+with `initialise!`) between calls starts afresh.
+
 # Input arguments
 - `model` reference to a `Physics` model defined by the user.
 - `config` Configuration structure defined by the user with solvers, schemes, runtime and hardware structures configuration details.

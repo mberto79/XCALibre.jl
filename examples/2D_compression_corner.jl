@@ -114,5 +114,4 @@ initialise!(model.momentum.U, velocity)
 initialise!(model.momentum.p, pressure)
 initialise!(model.energy.T, temp)
 
-# consistent=true: SIMPLEC coupling, recommended for steady compressible runs
-residuals = run!(model, config, output=VTK(), consistent=true)
+residuals = run!(model, config, output=VTK())

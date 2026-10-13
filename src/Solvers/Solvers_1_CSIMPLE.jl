@@ -18,7 +18,7 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
 - `transpose_stress` include the explicit viscous stress ∇·(μ_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
-- `consistent` use the consistent (SIMPLEC) pressure–velocity coupling (default = `false`). The pressure equation and the velocity and face-flux corrections then use rDt = V/(a_P + Σ a_N), the inverse row sum of the under-relaxed momentum matrix (a_N ≤ 0 are its off-diagonal coefficients), instead of rD = V/a_P. Unlike rD, rDt does not shrink with the velocity relaxation factor, so the pressure Laplacian keeps its weight against the compressibility term ∇·(ψ_f ((H/a_P)·S) p) of `Compressible` fluids; this keeps steady transonic runs stable for velocity and pressure relaxation pairs such as (0.6, 0.3) that otherwise amplify round-off until the run diverges. The converged solution is unchanged; only the path to it differs. Rows with Σ_N a_N + a_P ≤ 10⁻³ a_P keep rD
+- `consistent` use the consistent (SIMPLEC) pressure–velocity coupling (default = `false`). The pressure equation and the velocity and face-flux corrections then use rDt = V/(a_P + Σ a_N), the inverse row sum of the under-relaxed momentum matrix (a_N ≤ 0 are its off-diagonal coefficients), instead of rD = V/a_P. Unlike rD, rDt does not shrink with the velocity relaxation factor, so the pressure Laplacian keeps its weight against the compressibility term ∇·(ψ_f ((H/a_P)·S) p) of `Compressible` fluids, which can keep steady transonic runs stable where the default coupling amplifies round-off until the run diverges. The converged solution is unchanged; only the path to it differs. Rows with Σ_N a_N + a_P ≤ 10⁻³ a_P keep rD
 
 # Output
 
@@ -203,6 +203,7 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
+    continue_flux!(mdotf, model.momentum, mesh, nothing)
     update_viscosity!(model.fluid, model.energy, config)
     transpose_stress && prime_face_nut!(model, boundaries, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
@@ -313,7 +314,7 @@ function CSIMPLE(
         grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
         if typeof(model.fluid) <: Compressible
-            @. mdotf.values += pconv.values*(pf.values)
+            add_pressure_convection_flux!(mdotf, pconv, p, pf, schemes.p.divergence(), config)
         end
         correct_mass_flux!(
             mdotf, p_eqn, config;
@@ -396,5 +397,6 @@ function CSIMPLE(
 
     end # end for loop
 
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, e=R_e)
 end

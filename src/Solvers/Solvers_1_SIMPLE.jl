@@ -190,6 +190,7 @@ function SIMPLE(
     interpolate!(Uf, U, config)
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    continue_flux!(mdotf, model.momentum, mesh, restart)
     restart_flux!(mesh, mdotf, restart, config)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
@@ -323,6 +324,7 @@ function SIMPLE(
 
     end # end for loop
 
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 
@@ -396,9 +398,12 @@ function correct_mass_flux!(
     n_bfaces = length(boundary_cellsID)
     n_ifaces = n_faces - n_bfaces
 
-    ndrange = n_ifaces # length(n_ifaces) was a BUG! should be n_ifaces only!!!!
+    # The face flux of the Laplacian term only: in the compressible solvers the matrix also
+    # holds the pressure-convection coefficients, which the solvers add to mdotf themselves
+    pterm = p_eqn.model.terms[laplacian_term_index(p_eqn.model.terms)]
+    ndrange = n_ifaces
     kernel! = _sized(_correct_mass_flux!, backend, workgroup, ndrange)
-    kernel!(mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
+    kernel!(mdotf, p, pterm.flux, pterm.sign, p.mesh.face_gDiff, faces, n_bfaces)
 
     correct_nonorthogonal_mass_flux!(mdotf, nonorthogonal, config)
 
@@ -429,23 +434,15 @@ end
     @inbounds mdotf[fID] -= correction[fID]
 end
 
-@kernel function _correct_mass_flux!(
-    mdotf, p, nzval, colval, rowptr, faces, cells, n_bfaces)
+@kernel function _correct_mass_flux!(mdotf, p, rhorDf, psign, face_gDiff, faces, n_bfaces)
     i = @index(Global)
     fID = i + n_bfaces
 
-    @inbounds begin 
-        face = faces[fID]
-        (; area, normal, ownerCells, delta) = face 
-        cID1 = ownerCells[1]
-        cID2 = ownerCells[2]
-        p1 = p[cID1]
-        p2 = p[cID2]
-        # aN from min-owner canonical row: on partitioned meshes owner1 may be a ghost
-        # whose CSR row is garbage; coeff symmetric so serial value unchanged
-        zID = spindex(rowptr, colval, min(cID1, cID2), max(cID1, cID2))
-        aN = nzval[zID]
-        mdotf[fID] += aN*(p2 - p1) # positive because pressure eqn has negative sign
+    @inbounds begin
+        cID1, cID2 = faces.ownerCells[fID]
+        # Laplacian face coefficient, as assembled by the Laplacian{Linear} scheme
+        aN = psign*rhorDf[fID]*face_gDiff[fID]
+        mdotf[fID] += aN*(p[cID2] - p[cID1]) # positive because pressure eqn has negative sign
     end
 end
 

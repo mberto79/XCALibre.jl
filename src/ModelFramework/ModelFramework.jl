@@ -14,6 +14,7 @@ import KrylovPreconditioners as KP
 using KernelAbstractions
 
 using XCALibre.Multithread
+using XCALibre.Multithread: first_touch, _active_backend
 using XCALibre.Mesh
 using XCALibre.Mesh: _check_index_capacity
 using XCALibre.Fields

@@ -59,11 +59,14 @@ end
 """
     activate_multithread(backend::CPU; nthreads=1)
 
-Set the number of OpenBLAS threads.
+Set the CPU backend that fields, equations and preconditioners are built with, and the number of
+OpenBLAS threads.
 
 # Input arguments
 
-- `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`
+- `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`. With
+  `CPU(static=true)` and pinned threads, arrays are allocated by parallel first touch, so each
+  thread's chunk sits in its NUMA domain; pass the mesh, built before, through [`first_touch`](@ref).
 - `nthreads` is the number of BLAS threads (default: 1)
 
 !!! note
@@ -71,7 +74,10 @@ Set the number of OpenBLAS threads.
     needs no threads of its own. Julia picks its OpenBLAS thread count from the machine rather
     than from `-t`, and a second thread pool competes with Julia's for the same cores.
 """
-activate_multithread(backend::CPU; nthreads=1) = BLAS.set_num_threads(nthreads)
+activate_multithread(backend::CPU; nthreads=1) = begin
+    CPU_BACKEND[] = backend
+    BLAS.set_num_threads(nthreads)
+end
 
 
 # Extend multiplications methods in LinearAlgebra and Base

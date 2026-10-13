@@ -110,7 +110,7 @@ function initialise(
         ) → eqn
 
     @reset k_eqn.preconditioner = set_preconditioner(
-        solvers.k.preconditioner, k_eqn, k.BCs, config)
+        solvers.k, k_eqn, k.BCs, config)
 
     @reset k_eqn.solver = solvers.k.solver(_A(k_eqn), _b(k_eqn))
     
@@ -213,7 +213,7 @@ function turbulence!(
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
-    bound!(k, config)
+    bound!(k, prev, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
     AK.foreachindex(U, min_elems=workgroup, block_size=workgroup) do i 

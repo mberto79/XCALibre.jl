@@ -30,7 +30,7 @@ initialise!
 
 A uniform initial guess leaves a velocity field that does not satisfy continuity, which the first few solver iterations must work off before making physical progress. For external and internal flows around bodies, a potential-flow field is a much better starting point: it already satisfies continuity and carries the shape of the geometry.
 
-`potential_flow!` solves a velocity-potential equation on the current mesh and projects the velocity field onto the resulting divergence-free field. Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
+`potential_flow!` solves a velocity-potential equation on the current mesh and sets the velocity to the resulting divergence-free field. By default it starts from rest: the internal velocity is set to zero first, so the flow is driven by the velocity boundary conditions alone (pass `from_rest=false` to project the current field instead). Boundary conditions for the potential are inferred from those already assigned to pressure, so no extra setup is needed.
 
 ```@docs; canonical=false
 potential_flow!
@@ -133,10 +133,24 @@ residuals = run!(model, config; progress=false)
 
 We recommend `progress=false` for large-scale runs that are not on a local PC, such as batch jobs on a cluster, where the progress bar only fills the job's log. The residual history returned by `run!` is the same either way.
 
+The momentum equation of every flow solver carries the full viscous stress, ∇·τ with τ = μ_eff (∇U + (∇U)ᵀ - ⅔ (∇·U) I). The part ∇·(μ_eff ∇U) is discretised implicitly as a Laplacian, and the rest, ∇·(μ_eff dev2((∇U)ᵀ)) with dev2(A) = A - ⅔ tr(A) I, is added as an explicit source evaluated from the current velocity gradient. For a constant viscosity in incompressible flow this source is zero, since ∇·(∇U)ᵀ = ∇(∇·U); it matters wherever the effective viscosity varies, as it does with any turbulence model. Pass `transpose_stress=false` to leave it out, e.g. to compare with results obtained before it was included:
+
+```julia
+residuals = run!(model, config; transpose_stress=false)
+```
+
+The steady solvers (`simple!` for `Incompressible` fluids and `csimple!` for `Compressible` and `WeaklyCompressible` fluids, used by `run!` for `Steady()` models) offer a consistent (SIMPLEC) pressure–velocity coupling. By default, the pressure equation and the velocity correction use rD = V/a_P, the inverse diagonal coefficient of the under-relaxed momentum matrix. Because a_P grows as the velocity relaxation factor α_U decreases, rD scales roughly with α_U, so the pressure correction is over-damped and has to be compensated by pressure under-relaxation. With `consistent=true` the pressure Laplacian and the velocity and face-flux corrections use rDt = V/(a_P + Σ a_N), the inverse row sum of the momentum matrix, which does not shrink with α_U; the extra terms (rDt - rD)∇p are added to the predicted velocity and face fluxes, so the converged solution is the same. Incompressible runs then need little or no pressure under-relaxation. In compressible flow the weak Laplacian of the default coupling also loses weight against the compressibility term ∇·(ψ ((H/a_P)·S) p) of a `Compressible` fluid; in transonic flow this can amplify round-off from one iteration to the next until the run diverges, even for a uniform free stream on some meshes. The consistent coupling keeps the Laplacian's weight and is worth trying when a steady transonic run diverges. The option works on distributed meshes with `simple!`:
+
+```julia
+residuals = run!(model, config; consistent=true)
+```
+
+It is off by default, which leaves earlier results unchanged. The transient solvers do not take this option.
+
 ## Restarting simulations
 ---
 
-It should be noted that when running a simulation with `run!`, the solution fields in the `Physics` model are mutated. Thus, running the simulation from the previous solution is simply a matter of reissuing the `run!` function. At present, this has the side effect of overwriting any existing solution files (`.vtk` or `.vtu`). Users must be aware of this behaviour.
+It should be noted that when running a simulation with `run!`, the solution fields in the `Physics` model are mutated. Thus, running the simulation from the previous solution is simply a matter of reissuing the `run!` function. The continued run also picks up the face mass flux of the last iteration, so a run split into several `run!` calls (for example, to monitor forces every few hundred iterations) retraces the uninterrupted run. Re-initialising the fields with `initialise!` between calls starts afresh. At present, this has the side effect of overwriting any existing solution files (`.vtk` or `.vtu`). Users must be aware of this behaviour.
 
 In some cases, it may be desirable to solve a problem with a steady solver and use the solution to run transient simulations. This is possible using the `change` function.
 

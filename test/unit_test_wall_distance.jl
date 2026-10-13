@@ -1,6 +1,7 @@
 using XCALibre
 using KernelAbstractions
 using Test
+using LinearAlgebra
 
 function test_normal_distance_clamp(backend)
     mesh_cpu = UNV2D_mesh(joinpath(pkgdir(XCALibre, "examples/0_GRIDS"), "laplace_unit_3by3.unv"))
@@ -120,6 +121,72 @@ y = Array(model.turbulence.y.values)
 @test minimum(y) >= 0.0
 @test maximum(y) <= 0.51
 @test maximum(y) > 0.1
+
+# exact distance by brute force over the wall faces (reference for MeshWave)
+function exact_wall_distance(mesh, walls)
+    boundaries = get_boundaries(mesh.boundaries)
+    fIDs = reduce(vcat, [collect(b.IDs_range) for b ∈ boundaries if b.name ∈ walls])
+    [minimum(norm(c - XCALibre.Calculate.closest_point_face(c, mesh.face_centre[f],
+        view(mesh.face_nodes, mesh.face_nodes_range[f]), mesh.node_coords)) for f ∈ fIDs)
+        for c ∈ mesh.cell_centre]
+end
+
+function wall_distance_y(mesh, walls; method=MeshWave(), config=nothing)
+    model = Physics(
+        time = Steady(),
+        fluid = Fluid{Incompressible}(nu=1.0),
+        turbulence = RANS{KOmegaSST}(walls=walls, wall_distance=method),
+        energy = Energy{Isothermal}(),
+        domain = mesh,
+    )
+    config = something(config, Configuration(schemes=(;), solvers=(;),
+        runtime=Runtime(iterations=1, write_interval=-1, time_step=1),
+        hardware=Hardware(backend=CPU(), workgroup=1024), boundaries=(;)))
+    wall_distance!(model, walls, config; method=model.wall_info.method)
+    model
+end
+
+@testset "wall distance method selection" begin
+    @test RANS{KOmegaSST}(walls=(:wall,)).args.wall_distance isa MeshWave
+    @test RANS{KOmegaLKE}(Tu=0.01, walls=(:wall,), wall_distance=Poisson()).args.wall_distance isa Poisson
+    @test Poisson().iterations == 1000
+    @test Poisson(iterations=50).iterations == 50
+    @test model.wall_info.method isa MeshWave
+    @test model.wall_info.walls == (:bottom_wall, :upper_wall)
+end
+
+@testset "MeshWave wall distance" begin
+    # channel between two plane walls: y = min(y_c, 1 - y_c)
+    channel = wall_distance_y(mesh, (:bottom_wall, :upper_wall))
+    yc = [c[2] for c ∈ mesh.cell_centre]
+    @test Array(channel.turbulence.y.values) ≈ min.(yc, 1 .- yc) atol=1e-14
+
+    # step with a convex corner: exact in every cell
+    bfs = UNV2D_mesh(joinpath(grids_dir, "backwardFacingStep_10mm.unv"), scale=0.001)
+    ybfs = Array(wall_distance_y(bfs, (:wall,)).turbulence.y.values)
+    @test ybfs ≈ exact_wall_distance(bfs, (:wall,)) rtol=1e-12
+
+    # unstructured triangles: close to exact, never below it by more than round-off
+    tri = UNV2D_mesh(joinpath(grids_dir, "trig40.unv"), scale=0.001)
+    ytri = Array(wall_distance_y(tri, (:bottom,)).turbulence.y.values)
+    yexact = exact_wall_distance(tri, (:bottom,))
+    @test all(ytri .>= yexact .* (1 - 1e-12))
+    @test sum(ytri ./ yexact .- 1)/length(yexact) < 0.01
+
+    # Float32 mesh
+    bfs32 = UNV2D_mesh(joinpath(grids_dir, "backwardFacingStep_10mm.unv"), scale=0.001, float_type=Float32)
+    y32 = Array(wall_distance_y(bfs32, (:wall,)).turbulence.y.values)
+    @test eltype(y32) == Float32
+    @test y32 ≈ ybfs rtol=1e-5
+
+end
+
+@testset "Poisson wall distance (method)" begin
+    poisson = wall_distance_y(mesh_dev, (:bottom_wall, :upper_wall); method=Poisson(), config=config)
+    yp = Array(poisson.turbulence.y.values)
+    @test all(isfinite, yp)
+    @test maximum(yp) <= 0.51
+end
 
 @testset "normal_distance clamp CPU" begin
     test_normal_distance_clamp(CPU())

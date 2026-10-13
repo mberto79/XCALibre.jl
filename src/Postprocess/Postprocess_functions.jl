@@ -101,11 +101,10 @@ end
     @inbounds begin
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
-        (; area, normal, delta, e) = faces[fID]
+        (; area, normal, delta) = faces[fID]
         Udiff = U[cID] - Uw
         Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
-        dperp = delta*(e⋅normal) # wall-normal distance (projection of cell-to-face vector)
-        snGrad = Up/dperp
+        snGrad = Up/delta # boundary delta is the wall-normal distance
         coeff = rho[cID]*area*(nu[cID] + nut[fID]) # nut is wall-face value νtf (wall funcs)
         fx[i] = snGrad[1]*coeff
         fy[i] = snGrad[2]*coeff

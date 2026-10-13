@@ -93,6 +93,71 @@ volumes(mesh) = [mesh.cells[i].volume for i ∈ eachindex(mesh.cells)]
 
 # INVERSE DIAGONAL CALCULATION
 
+# SIMPLEC (simple!, csimple!): rDt = V/(a_P + Σ a_N) does not shrink with the velocity relaxation
+# like rD = V/a_P; rows whose sum is not clearly positive keep rD; ghosts stale until the exchange
+function consistent_inverse_diagonal!(rDt, rD, eqn, config; halo=true)
+    (; backend, workgroup) = config.hardware
+    nzval, colval, rowptr = get_sparse_fields(eqn.equation.A)
+    ndrange = length(rDt)
+    kernel! = _sized(_consistent_inverse_diagonal!, backend, workgroup, ndrange)
+    kernel!(rDt, rD, nzval, rowptr, eqn.equation.diag_nz)
+    halo && sync!(rDt, rDt.mesh, config) # self-syncing seam (no-op serial)
+end
+
+@kernel function _consistent_inverse_diagonal!(rDt, rD, nzval, rowptr, diag_nz)
+    i = @index(Global)
+    @uniform cells = rDt.mesh.cells
+    @inbounds begin
+        rowsum = zero(eltype(nzval))
+        for k ∈ rowptr[i]:(rowptr[i+1] - 1)
+            rowsum += nzval[k]
+        end
+        aP = nzval[diag_nz[i]]
+        rDt[i] = rowsum > aP/1000 ? cells[i].volume/rowsum : rD[i]
+    end
+end
+
+# Face part of the consistent correction, ρ_f (rDt - rD)_f (p_N - p_P) gDiff_f, with the face
+# coefficient of the pressure Laplacian; boundary faces use the owner cell and the boundary
+# pressure in pf. rhof = nothing for incompressible (volumetric) fluxes.
+function consistent_flux!(mdotf, rhof, rDt, rD, p, pf, config)
+    (; backend, workgroup) = config.hardware
+    ndrange = length(mdotf)
+    kernel! = _sized(_consistent_flux!, backend, workgroup, ndrange)
+    kernel!(mdotf, rhof, rDt, rD, p, pf)
+end
+
+@kernel function _consistent_flux!(mdotf, rhof, rDt, rD, p, pf)
+    fID = @index(Global)
+    @uniform begin
+        (; faces, boundary_cellsID, face_gDiff) = p.mesh
+        n_bfaces = length(boundary_cellsID)
+    end
+    @inbounds begin
+        (; ownerCells, weight) = faces[fID]
+        rho = _face_rho(rhof, fID, weight)
+        if fID <= n_bfaces
+            c = boundary_cellsID[fID]
+            mdotf[fID] += rho*(rDt[c] - rD[c])*(pf[fID] - p[c])*face_gDiff[fID]
+        else
+            c1, c2 = ownerCells
+            drD = weight*(rDt[c1] - rD[c1]) + (one(weight) - weight)*(rDt[c2] - rD[c2])
+            mdotf[fID] += rho*drD*(p[c2] - p[c1])*face_gDiff[fID]
+        end
+    end
+end
+
+@inline _face_rho(rhof, fID, w) = rhof[fID]
+@inline _face_rho(::Nothing, fID, w) = one(w)
+
+# Cell part of the consistent correction, H/a_P + (rDt - rD) ∇p, so that U = Hv - rDt ∇p.
+function consistent_H!(Hv, rDt, rD, ∇p, config)
+    gradp = ∇p.result
+    xcal_foreach(rD, config) do i
+        Hv[i] = Hv[i] + (rDt[i] - rD[i])*gradp[i]
+    end
+end
+
 # halo=false leaves ghosts stale for a caller that exchanges rD together with Hv
 function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}
     (; hardware) = config
@@ -359,6 +424,30 @@ restart_fields!(mesh, model, restart, config) =
 restart_flux!(mesh, mdotf, ::Nothing, config) = nothing
 restart_flux!(mesh, mdotf, restart, config) = restart_fields!(mesh, nothing, restart, config)
 
+# NEW SECTION: run continuation
+# A continued run! starts from the conservative face flux of the previous run when U and p are
+# untouched since; otherwise (first run, initialise!, failed run) the flux stays rebuilt from U.
+continue_flux!(mdotf, momentum, mesh, ::Nothing) = nothing
+continue_flux!(mdotf, momentum, mesh, restart) = nothing # results read from file take precedence
+function continue_flux!(mdotf, momentum::ModelPhysics.regular, mesh, ::Nothing)
+    (; U, p, Umdot, pmdot) = momentum
+    fresh = U.x.values == Umdot.x.values && U.y.values == Umdot.y.values &&
+        U.z.values == Umdot.z.values && p.values == pmdot.values &&
+        all(isfinite, momentum.mdotf.values)
+    global_any(!fresh, mesh) && return nothing # all ranks rebuild if any rank cannot reuse
+    copyto!(mdotf.values, momentum.mdotf.values)
+    nothing
+end
+
+store_flux!(momentum, mdotf) = nothing
+function store_flux!(momentum::ModelPhysics.regular, mdotf)
+    (; U, p, Umdot, pmdot) = momentum
+    copyto!(momentum.mdotf.values, mdotf.values)
+    copyto!(Umdot.x.values, U.x.values); copyto!(Umdot.y.values, U.y.values)
+    copyto!(Umdot.z.values, U.z.values); copyto!(pmdot.values, p.values)
+    nothing
+end
+
 # NEW SECTION: distributed support
 # Opt-in: a combination without a distributed solve seam would silently solve per-rank blocks.
 distributed_ready(::Any) = false
@@ -370,6 +459,7 @@ distributed_ready(::Conduction) = true
 distributed_ready(::Laminar) = true
 distributed_ready(::KOmega) = true
 distributed_ready(::KOmegaSST) = true
+distributed_ready(::WALE) = true
 
 const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow)
 
@@ -392,9 +482,37 @@ function check_distributed_support(solver::Symbol, model)
 
     Distributed runs currently support the SIMPLE, PISO and Laplace solvers and `potential_flow!`,
     with an Incompressible fluid or Uniform solid, Isothermal or Conduction energy, and Laminar,
-    KOmega or KOmegaSST turbulence. Everything else still needs its distributed linear-solve seam:
+    KOmega, KOmegaSST or WALE turbulence. Everything else still needs its distributed linear-solve seam:
     without one each rank solves its own block and the result is wrong without any error.
 
     Run this case on a single process, or see the distributed section of the documentation.
     """)
 end
+
+# Adds pconv_f p_f to mdotf with the face pressure of the scheme that discretises
+# Divergence(pconv, p) in the pressure matrix, so mdotf is the flux the pressure equation balances.
+# Boundary faces take the boundary pressure pf, as the matrix does.
+function add_pressure_convection_flux!(mdotf, pconv, p, pf, scheme::AbstractScheme, config)
+    (; backend, workgroup) = config.hardware
+    (; faces, boundary_cellsID) = p.mesh
+    n_bfaces = length(boundary_cellsID)
+    @views @. mdotf.values[1:n_bfaces] += pconv.values[1:n_bfaces]*pf.values[1:n_bfaces]
+    kernel! = _sized(_add_pressure_convection_flux!, backend, workgroup, length(faces) - n_bfaces)
+    kernel!(mdotf, pconv, p, faces, scheme, n_bfaces)
+end
+
+@kernel function _add_pressure_convection_flux!(mdotf, pconv, p, faces, scheme, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    @inbounds begin
+        cID1, cID2 = faces.ownerCells[fID]
+        F = pconv[fID]
+        mdotf[fID] += F*_pconv_face_value(scheme, F, p[cID1], p[cID2], faces.weight[fID])
+    end
+end
+
+@inline _pconv_face_value(::Linear, F, p1, p2, w) = w*p1 + (one(w) - w)*p2
+@inline _pconv_face_value(::Union{Upwind,BoundedUpwind}, F, p1, p2, w) = F >= zero(F) ? p1 : p2
+@inline _pconv_face_value(::LUST, F, p1, p2, w) =
+    typeof(w)(0.75)*_pconv_face_value(Linear(), F, p1, p2, w) +
+    typeof(w)(0.25)*_pconv_face_value(Upwind(), F, p1, p2, w)

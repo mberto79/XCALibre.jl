@@ -407,15 +407,22 @@ Online mesh distribution: rank 0 partitions `mesh` (Metis k-way) and scatters on
 periodic boundaries: matched owner cells are contracted in the partition graph so each
 periodic pair lands on one rank, and `construct_periodic` on the `DistributedMesh` then
 works per rank exactly as in serial.
+
+A `constant/polyMesh` in the working directory holding `mesh` numbered differently (e.g. after
+[`reorder_mesh!`](@ref)) is rewritten in the order of `mesh`, so decomposed output maps onto it.
 """
 function distribute(mesh; comm=MPI.COMM_WORLD, periodic_patches=())
     MPI.Initialized() || MPI.Init()
     quiet_nonroot!(comm)
     nranks = MPI.Comm_size(comm)
     rank = MPI.Comm_rank(comm)
-    nranks == 1 && return extract_subdomain(mesh, partition_cells(mesh, 1), 1; comm)
+    if nranks == 1
+        _sync_polyMesh_order(mesh)
+        return extract_subdomain(mesh, partition_cells(mesh, 1), 1; comm)
+    end
     prep = _on_all_ranks(comm, "partitioning") do
         rank == 0 || return nothing
+        _sync_polyMesh_order(mesh)
         parts = partition_cells(mesh, nranks; cell_pairs=periodic_cell_pairs(mesh, periodic_patches))
         parts, _PartIndex(mesh, parts)
     end
@@ -488,10 +495,12 @@ end
 Offline decomposition: partition `mesh` into `nparts` rank-local meshes and write one
 `rank_<r>.xdm` per rank into `dir`, recording `key` for `distribute(reader; dir, key)`. Load with `distribute(dir; comm)` under `mpiexec -n nparts`. Each
 file is binary with a header ([`mesh_info`](@ref)) naming its format, kind and rank count; a part of
-another format or rank count is refused at load with the call that fixes it.
+another format or rank count is refused at load with the call that fixes it. A `constant/polyMesh`
+in the working directory is brought to the order of `mesh` as in [`distribute`](@ref).
 """
 function partition_mesh(mesh, nparts::Integer; dir, periodic_patches=(), key=nothing)
     mkpath(dir)
+    _sync_polyMesh_order(mesh)
     source = _mesh_fingerprint(mesh)
     for (r, dm) ∈ enumerate(decompose(mesh, nparts; periodic_patches))
         _write_xdm(joinpath(dir, "rank_$(r-1).xdm"), getfield(dm, :mesh), dm; source, key)

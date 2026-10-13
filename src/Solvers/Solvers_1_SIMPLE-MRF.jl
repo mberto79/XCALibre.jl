@@ -14,6 +14,7 @@ Incompressible variant of the SIMPLE algorithm to solving coupled momentum and m
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `transpose_stress` include the explicit viscous stress ∇·(ν_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
 
 # Output
 
@@ -27,7 +28,8 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function simple_MRF!(
     model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     )
     check_distributed_support(:SIMPLE_MRF, model)
 
@@ -36,7 +38,8 @@ function simple_MRF!(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress
     )
 
     return residuals
@@ -44,7 +47,8 @@ end
 
 function setup_incompressible_solvers_MRF(
     solver_variant, model, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -63,6 +67,7 @@ function setup_incompressible_solvers_MRF(
     nueff = FaceScalarField(mesh)
     divHv = ScalarField(mesh)
     omegaU = VectorField(mesh)
+    divτT = VectorField(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
     @info "Defining models..."
 
@@ -73,6 +78,7 @@ function setup_incompressible_solvers_MRF(
         == 
         - Source(∇p.result)
         - Source(omegaU)
+        + Source(divτT)
     ) → VectorEquation(U, boundaries.U)
 
     p_eqn = (
@@ -81,13 +87,13 @@ function setup_incompressible_solvers_MRF(
 
     @info "Initialising preconditioners..."
 
-    @reset U_eqn.preconditioner = set_preconditioner(solvers.U.preconditioner, U_eqn)
-    @reset p_eqn.preconditioner = set_preconditioner(solvers.p.preconditioner, p_eqn)
+    @reset U_eqn.preconditioner = set_preconditioner(solvers.U, U_eqn)
+    @reset p_eqn.preconditioner = set_preconditioner(solvers.p, p_eqn)
 
     @info "Pre-allocating solvers..."
 
-    @reset U_eqn.solver = _workspace(solvers.U.solver, _b(U_eqn, XDir()), _index_type(_A(U_eqn)))
-    @reset p_eqn.solver = _workspace(solvers.p.solver, _b(p_eqn), _index_type(_A(p_eqn)))
+    @reset U_eqn.solver = _workspace(solvers.U, U_eqn, XDir())
+    @reset p_eqn.solver = _workspace(solvers.p, p_eqn)
 
     @info "Initialising turbulence model..."
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
@@ -97,7 +103,8 @@ function setup_incompressible_solvers_MRF(
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress)
+        inner_loops=inner_loops, progress=progress,
+        transpose_stress=transpose_stress)
 
     return residuals
 end # end function
@@ -105,7 +112,8 @@ end # end function
 
 function SIMPLE_MRF(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    transpose_stress=true
     )
     
     # Extract model variables and configuration
@@ -123,6 +131,7 @@ function SIMPLE_MRF(
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     omegaU = get_source(U_eqn, 2)
+    divτT = get_source(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
     divHv = get_source(p_eqn, 1)
 
@@ -156,10 +165,15 @@ function SIMPLE_MRF(
     interpolate!(Uf, U, config)   
     correct_boundaries!(Uf, U, boundaries.U, time, config)
     flux!(mdotf, Uf, config)
+    continue_flux!(mdotf, model.momentum, mesh, nothing)
     grad!(∇p, pf, p, boundaries.p, time, config)
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config) # for the stress term of the first iteration
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
 
+    transpose_stress && prime_face_nut!(model, boundaries, config)
     update_nueff!(nueff, nu, model.turbulence, config)
+    nueffc = cell_nueff(nu, model.turbulence) # cell ν_eff for the transpose stress
 
     @info "Starting SIMPLE_MRF loops..."
 
@@ -174,6 +188,8 @@ function SIMPLE_MRF(
 
         # Updates the OmegaU source term (function is defined below)
         update_mrf_sources!(omegaU, U, refFrames, config)
+        transpose_stress && transpose_stress!(
+            divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         
@@ -195,19 +211,21 @@ function SIMPLE_MRF(
         # Pressure calculations
         @. prev = p.values
         @. p_boundary_reference = p.values
-        rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        if ncorrectors == 0
+            rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=pref)
+        end
 
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
+        # Every pressure solve carries the explicit non-orthogonal source (see CSIMPLE)
+        for i ∈ 1:nonorthogonal_solves(ncorrectors)
             grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
             @. p_boundary_reference = p.values
             discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            # setReference!(p_eqn, pref, 1, config)
+            setReference!(p_eqn, pref, 1, config)
             nonorthogonal_face_correction(
                 p_eqn, ∇p, rDf, config; correction=nonorthogonal_flux)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_eqn, solvers.p, p, nothing, config)
         end
 
@@ -279,6 +297,7 @@ function SIMPLE_MRF(
 
     end # end for loop
     
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end
 

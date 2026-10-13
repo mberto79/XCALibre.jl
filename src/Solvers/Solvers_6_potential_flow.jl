@@ -7,17 +7,22 @@ _potential_boundary(bc::PeriodicParent, value) = bc
 _potential_boundary(bc, value) = Zerogradient(bc.ID, value, bc.IDs_range)
 
 """
-    potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="")
+    potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="", from_rest=true)
 
-Project the current velocity field onto a divergence-free potential-flow field.
-Velocity boundary conditions supply the initial face flux. Velocity-potential
+Set the velocity to a divergence-free potential-flow field. With `from_rest=true` (default) the
+internal velocity is first set to zero, so the face flux to be corrected comes from the velocity
+boundary conditions only; with `from_rest=false` the current velocity field is projected. A
+nonzero initial field that is not a discrete gradient (a uniform field on a non-orthogonal mesh,
+for instance) keeps a solenoidal part after the projection, which shows up as spurious
+circulation, notably in enclosed or near-stagnant regions. Velocity-potential
 boundary conditions are inferred from pressure: fixed pressure becomes fixed
 zero potential, periodic patches remain periodic, and other patches use zero
 normal gradient.
 
 The corrected face-volume flux is returned with the linear-solver residual.
 """
-function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="")
+function potential_flow!(
+    model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="", from_rest=true)
     ncorrectors >= 0 || throw(ArgumentError("ncorrectors must be non-negative"))
 
     mesh = model.domain
@@ -45,12 +50,15 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, pet
     distributed = is_distributed_mesh(mesh)
     if !distributed
         @reset Phi_eqn.preconditioner = set_preconditioner(
-            solvers.p.preconditioner, Phi_eqn)
-        @reset Phi_eqn.solver = _workspace(solvers.p.solver, _b(Phi_eqn), _index_type(_A(Phi_eqn)))
+            solvers.p, Phi_eqn)
+        @reset Phi_eqn.solver = _workspace(solvers.p, Phi_eqn)
     end
     Phi_deqn = wrap_eqn(Phi_eqn, mesh, solvers.p, config; petsc_options, label="Phi")
     Phi_eqn = unwrap_eqn(Phi_deqn)
 
+    if from_rest # the initial flux comes from the boundary conditions only
+        fill!(U.x.values, zero(TF)); fill!(U.y.values, zero(TF)); fill!(U.z.values, zero(TF))
+    end
     # nothing has run before this call, so a distributed U still has unset ghosts
     sync!(U, mesh, potential_config)
     interpolate!(Uf, U, potential_config)
@@ -64,14 +72,18 @@ function potential_flow!(model, config; ncorrectors=0, pref=nothing, time=0, pet
     @. previous = Phi.values
     nonorthogonal_flux = ncorrectors > 0 ? FaceScalarField(mesh) : nothing
 
-    residual = solve_equation!(
-        Phi_deqn, Phi, potential_BCs, solvers.p, potential_config;
-        ref=reference, time=time_value,
-    )
+    residual = zero(TF)
+    if ncorrectors == 0
+        residual = solve_equation!(
+            Phi_deqn, Phi, potential_BCs, solvers.p, potential_config;
+            ref=reference, time=time_value,
+        )
+    end
 
     gradPhi = Grad{schemes.p.gradient}(Phi)
     Phi_face = FaceScalarField(mesh)
-    for _ in 1:ncorrectors
+    # Every potential solve carries the explicit non-orthogonal source (ncorrectors + 1 solves)
+    for _ in 1:nonorthogonal_solves(ncorrectors)
         grad!(gradPhi, Phi_face, Phi, potential_BCs, time_value, potential_config)
         limit_gradient!(schemes.p.limiter, gradPhi, Phi, potential_config)
         # The flux correction reads the owner value this assembly was built from.

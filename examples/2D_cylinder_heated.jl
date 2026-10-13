@@ -36,6 +36,7 @@ model = Physics(
     time = Steady(),
     fluid = Fluid{WeaklyCompressible}(
         nu = Viscosity{SutherlandViscosity}(mu_ref=mu_ref, T_ref=T_ref, S=S),
+        cp = cp,
         gamma = gamma,
         Pr = Pr
         ),

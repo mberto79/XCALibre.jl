@@ -40,5 +40,5 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         with:
-          # Julia 1.12+ coverage instrumentation slows the solver loops ~90x (1.10: ~6x)
-          coverage: ${{ matrix.version == '1.10' }}
+          # Coverage instrumentation slows the solver loops (~6x on 1.10, ~90x on 1.12+), so it stays off
+          coverage: false

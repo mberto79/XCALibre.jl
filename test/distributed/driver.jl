@@ -10,12 +10,15 @@ catch err
     false
 end
 
-function run_mpi_tests(files; ranks=[1, 2], timeout=1200)
+const _PRECOMPILED = Ref(false)
+
+function run_mpi_tests(files; ranks=[1, 2], timeout=600)
     dir = @__DIR__
     project = dirname(Base.active_project())
     julia = Base.julia_cmd()
     # precompile serially first: parallel first-use of the same cache races
-    run(`$julia --project=$project --startup-file=no -e "using XCALibre, MPI, PETSc, Test"`)
+    _PRECOMPILED[] || run(`$julia --project=$project --startup-file=no -e "using XCALibre, MPI, PETSc, Test"`)
+    _PRECOMPILED[] = true
     # the outer set keeps a failing (file, n) from aborting the rest: a top-level for-testset
     # throws at the end of the iteration that fails
     @testset "distributed suite" begin

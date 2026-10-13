@@ -190,3 +190,83 @@ end
     @test change < 1e-6
     @test bounded < 1e-6
 end
+
+@testset "Every boundary condition reuses the Upwind coefficients" begin
+    mesh = quad
+    mdotf = uniform_flux(mesh)
+    ncells = length(mesh.cells)
+    sets = (
+        scalar = (
+            [Dirichlet(:inlet, 1.0), Dirichlet(:bottom, 0.5), Zerogradient(:outlet), Zerogradient(:top)],
+            [Neumann(:inlet, 0.1), Extrapolated(:bottom), Robin(:outlet; a=1.0, b=0.5, value=0.2),
+                Wall(:top, 0.0)],
+            [Slip(:inlet), Symmetry(:bottom), Outlet(:outlet), Symmetry(:top)],
+        ),
+        vector = (
+            [Dirichlet(:inlet, [1.0, 0.0, 0.0]), Wall(:bottom, [0.0, 0.0, 0.0]), Zerogradient(:outlet),
+                Symmetry(:top)],
+            [Slip(:inlet), Symmetry(:bottom), Outlet(:outlet), Symmetry(:top)],
+        ),
+    )
+    assemble(scheme, bcs, vector) = begin
+        BCs = assign(region=mesh, (phi = bcs,)).phi
+        if vector
+            phi = VectorField(mesh)
+            phi.x.values .= 0.3 .+ 0.001 .* (1:ncells); phi.y.values .= 0.1 .* sin.(1:ncells)
+            eqn = (Divergence{scheme}(mdotf, phi, TensorField(mesh)) == Source(VectorField(mesh))
+                ) → VectorEquation(phi, BCs)
+            discretise!(eqn, phi, config)
+            update_equation!(eqn, config)
+            apply_boundary_conditions!(eqn, BCs, XDir(), 0.0, config)
+            b = eqn.equation.bx
+        else
+            phi = ScalarField(mesh)
+            phi.values .= 0.3 .+ 0.001 .* (1:ncells)
+            eqn = (Divergence{scheme}(mdotf, phi, VectorField(mesh)) == Source(ScalarField(mesh))
+                ) → ScalarEquation(phi, BCs)
+            discretise!(eqn, phi, config)
+            apply_boundary_conditions!(eqn, BCs, nothing, 0.0, config)
+            b = eqn.equation.b
+        end
+        copy(get_sparse_fields(eqn.equation.A)[1]), copy(b)
+    end
+    for (kind, groups) ∈ pairs(sets), bcs ∈ groups, scheme ∈ (LinearUpwind, LimitedLinearUpwind)
+        @test assemble(scheme, bcs, kind == :vector) == assemble(Upwind, bcs, kind == :vector)
+    end
+end
+
+@testset "Mesh float and index types are preserved" begin
+    for (TF, TI) ∈ ((Float32, Int32), (Float64, Int64))
+        m = adapt(backend, UNV2D_mesh(
+            joinpath(grids_dir, "trig40.unv"), float_type=TF, integer_type=TI))
+        fl = FaceVectorField(m); fl.x.values .= TF(1); fl.y.values .= TF(0.6)
+        flux = FaceScalarField(m)
+        flux!(flux, fl, config)
+        phi = ScalarField(m)
+        phi.values .= [TF(2) + TF(1e-3)*c[1] for c ∈ m.cells.centre]
+        g = Grad{Gauss}(phi)
+        grad!(g, FaceScalarField(m), phi, assign(region=m, (phi = [
+            Dirichlet(:inlet, 1.0), Dirichlet(:bottom, 0.0), Zerogradient(:outlet),
+            Zerogradient(:top)],)).phi, 0.0, config)
+        for scheme ∈ (LinearUpwind, LimitedLinearUpwind)
+            eqn = (Divergence{scheme}(flux, phi, g.result) == Source(ScalarField(m))
+                ) → ScalarEquation(phi, ())
+            discretise!(eqn, phi, config)
+            @test eltype(eqn.equation.b) == TF
+            @test eltype(get_sparse_fields(eqn.equation.A)[1]) == TF
+            @test all(isfinite, eqn.equation.b)
+        end
+    end
+end
+
+@testset "Operators without a second-order scheme carry no face source" begin
+    mesh = quad
+    phi = ScalarField(mesh)
+    for scheme ∈ (Upwind, Linear, LUST, BoundedUpwind)
+        term = Divergence{scheme}(uniform_flux(mesh), phi)
+        @test !XCALibre.Discretise.has_face_source(typeof(term))
+        @test XCALibre.Discretise._face_source_init((term,), 0.0) === nothing
+    end
+    term = Divergence{LinearUpwind}(uniform_flux(mesh), phi, VectorField(mesh))
+    @test XCALibre.Discretise.has_face_source(typeof(term))
+end

@@ -306,7 +306,7 @@ function CPISO(
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
             if typeof(model.fluid) <: Compressible
-                @. mdotf.values += pconv.values*pf.values
+                add_pressure_convection_flux!(mdotf, pconv, p, pf, schemes.p.divergence(), config)
             end
             correct_mass_flux!(
                 mdotf, p_eqn, config;

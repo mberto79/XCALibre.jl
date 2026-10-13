@@ -126,6 +126,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_run_continuation.jl")
     end
 
+    @testset "Compressible mass flux conservation" begin
+        include("unit_test_compressible_mass_flux.jl")
+    end
+
     @testset "setFields Function Unit Test" begin
         include("unit_test_setFields.jl")
     end

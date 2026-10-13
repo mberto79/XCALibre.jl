@@ -359,6 +359,30 @@ restart_fields!(mesh, model, restart, config) =
 restart_flux!(mesh, mdotf, ::Nothing, config) = nothing
 restart_flux!(mesh, mdotf, restart, config) = restart_fields!(mesh, nothing, restart, config)
 
+# NEW SECTION: run continuation
+# A continued run! starts from the conservative face flux of the previous run when U and p are
+# untouched since; otherwise (first run, initialise!, failed run) the flux stays rebuilt from U.
+continue_flux!(mdotf, momentum, mesh, ::Nothing) = nothing
+continue_flux!(mdotf, momentum, mesh, restart) = nothing # results read from file take precedence
+function continue_flux!(mdotf, momentum::ModelPhysics.regular, mesh, ::Nothing)
+    (; U, p, Umdot, pmdot) = momentum
+    fresh = U.x.values == Umdot.x.values && U.y.values == Umdot.y.values &&
+        U.z.values == Umdot.z.values && p.values == pmdot.values &&
+        all(isfinite, momentum.mdotf.values)
+    global_any(!fresh, mesh) && return nothing # all ranks rebuild if any rank cannot reuse
+    copyto!(mdotf.values, momentum.mdotf.values)
+    nothing
+end
+
+store_flux!(momentum, mdotf) = nothing
+function store_flux!(momentum::ModelPhysics.regular, mdotf)
+    (; U, p, Umdot, pmdot) = momentum
+    copyto!(momentum.mdotf.values, mdotf.values)
+    copyto!(Umdot.x.values, U.x.values); copyto!(Umdot.y.values, U.y.values)
+    copyto!(Umdot.z.values, U.z.values); copyto!(pmdot.values, p.values)
+    nothing
+end
+
 # NEW SECTION: distributed support
 # Opt-in: a combination without a distributed solve seam would silently solve per-rank blocks.
 distributed_ready(::Any) = false

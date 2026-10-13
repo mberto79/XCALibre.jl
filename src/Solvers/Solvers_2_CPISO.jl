@@ -206,6 +206,7 @@ function CPISO(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
+    continue_flux!(mdotf, model.momentum, mesh, nothing)
 
     limit_gradient!(schemes.p.limiter, ∇p, p, config)
 
@@ -369,5 +370,6 @@ function CPISO(
 
     end # end for loop
 
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
 end

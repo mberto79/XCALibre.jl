@@ -46,3 +46,25 @@ end
 
 run_case("psimple BFS", bfs_mesh, bfs_bcs, 300)
 run_case("psimple cavity", cavity_mesh, cavity_bcs, 300; pref=0.0)
+
+# a continued run! (two calls on the same model) retraces the uninterrupted run on every rank
+function continuation_case(build_mesh, bcs, n)
+    gmesh = rank == 0 ? build_mesh() : nothing
+    dm = distribute(gmesh; comm=comm)
+    model1, config1 = incompressible_case(dm, bcs; iterations=2n)
+    r1 = run!(model1, config1)
+    model2, config2 = incompressible_case(dm, bcs; iterations=n)
+    run!(model2, config2)
+    r2 = run!(model2, config2)
+    nown = dm.partition.n_owned
+    rel(a, b) = maximum(abs.(a .- b); init=0.0)/max(maximum(abs.(a); init=0.0), eps())
+    owned(model) = (model.momentum.U.x.values[1:nown], model.momentum.p.values[1:nown])
+    d = max(maximum(rel.(owned(model1), owned(model2))), rel(r1.p[n+1:2n], r2.p))
+    dmax = MPI.Allreduce(d, max, comm)
+    @testset "psimple continuation (rank $rank)" begin
+        @test dmax <= 1e-10
+    end
+    rank == 0 && println("PSIMPLE continuation n=$(MPI.Comm_size(comm)) max rel diff = $dmax")
+end
+
+continuation_case(bfs_mesh, bfs_bcs, 50)

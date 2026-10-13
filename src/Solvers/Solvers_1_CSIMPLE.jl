@@ -197,6 +197,7 @@ function CSIMPLE(
     @. rho.values = Psi.values * p.values
     @. rhof.values = Psif.values * pf.values
     flux!(mdotf, Uf, rhof, config)
+    continue_flux!(mdotf, model.momentum, mesh, nothing)
     update_viscosity!(model.fluid, model.energy, config)
     transpose_stress && prime_face_nut!(model, boundaries, config)
     update_nueff!(nueff, nuf, model.turbulence, config)
@@ -381,5 +382,6 @@ function CSIMPLE(
 
     end # end for loop
 
+    store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, e=R_e)
 end

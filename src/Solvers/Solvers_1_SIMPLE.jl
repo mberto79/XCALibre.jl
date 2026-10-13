@@ -234,19 +234,21 @@ function SIMPLE(
         xcal_foreach(prev, config) do i
             prev[i] = p_boundary_reference[i] = pv[i]
         end
-        rp = solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref)
+        if ncorrectors == 0
+            rp = solve_equation!(p_deqn, p, boundaries.p, solvers.p, config; ref=pref)
+        end
 
-        # non-orthogonal correction
-        for i ∈ 1:ncorrectors
+        # Every pressure solve carries the explicit non-orthogonal source (see CSIMPLE)
+        for i ∈ 1:nonorthogonal_solves(ncorrectors)
             grad!(∇p, pf, p, boundaries.p, time, config)
             limit_gradient!(schemes.p.limiter, ∇p, p, config)
             @. p_boundary_reference = p.values
             discretise!(p_eqn, p, config)
             apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
-            # setReference!(p_deqn, pref, 1, config)
+            setReference!(p_deqn, pref, 1, config)
             nonorthogonal_face_correction(
                 p_eqn, ∇p, rDf, config; correction=nonorthogonal_flux)
-            # update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
+            distributed || update_preconditioner!(p_eqn.preconditioner, p.mesh, config)
             rp = solve_system!(p_deqn, solvers.p, p, nothing, config)
         end
 
@@ -319,6 +321,10 @@ end
 # and stops complementing the unclamped implicit coefficient in Discretise_1_schemes.jl,
 # trading the exact face gradient for a bounded explicit source.
 const MIN_PROJECTED_DELTA_RATIO = 0.05
+
+# Number of corrected pressure solves for `ncorrectors` non-orthogonal correctors: none when the
+# correction is off, otherwise ncorrectors + 1, each with the explicit non-orthogonal source.
+nonorthogonal_solves(ncorrectors) = ncorrectors > 0 ? ncorrectors + 1 : 0
 
 @inline store_face_correction!(::Nothing, fID, value) = nothing
 

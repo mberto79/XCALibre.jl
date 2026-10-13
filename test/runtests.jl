@@ -130,6 +130,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_compressible_mass_flux.jl")
     end
 
+    @testset "Consistent (SIMPLEC) coupling" begin
+        include("unit_test_consistent_coupling.jl")
+    end
+
     @testset "Non-orthogonal correction flux continuity" begin
         include("unit_test_nonorthogonal_flux.jl")
     end

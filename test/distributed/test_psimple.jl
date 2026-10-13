@@ -9,21 +9,21 @@ rank = MPI.Comm_rank(comm)
 
 include(joinpath(@__DIR__, "psimple_case.jl"))
 
-function serial_reference(gmesh, bcs, iterations, pref)
+function serial_reference(gmesh, bcs, iterations, pref, consistent)
     model, config = incompressible_case(gmesh, bcs; iterations)
-    simple!(model, config; pref=pref)
+    simple!(model, config; pref=pref, consistent=consistent)
     (collect(model.momentum.U.x.values), collect(model.momentum.U.y.values),
      collect(model.momentum.p.values))
 end
 
-function run_case(name, build_mesh, bcs, iterations; pref=nothing)
+function run_case(name, build_mesh, bcs, iterations; pref=nothing, consistent=false)
     gmesh = rank == 0 ? build_mesh() : nothing
-    ref = rank == 0 ? serial_reference(gmesh, bcs, iterations, pref) : nothing
+    ref = rank == 0 ? serial_reference(gmesh, bcs, iterations, pref, consistent) : nothing
     Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
 
     dm = distribute(gmesh; comm=comm)
     model, config = incompressible_case(dm, bcs; iterations)
-    residuals = run!(model, config; pref=pref)
+    residuals = run!(model, config; pref=pref, consistent=consistent)
 
     dux, duy, dp = field_errors(dm, model, Us_x, Us_y, ps)
     n = dm.partition.n_owned
@@ -46,6 +46,8 @@ end
 
 run_case("psimple BFS", bfs_mesh, bfs_bcs, 300)
 run_case("psimple cavity", cavity_mesh, cavity_bcs, 300; pref=0.0)
+# consistent coupling: rDt is exchanged before it is interpolated to the faces
+run_case("psimple BFS consistent", bfs_mesh, bfs_bcs, 300; consistent=true)
 
 # a continued run! (two calls on the same model) retraces the uninterrupted run on every rank
 function continuation_case(build_mesh, bcs, n)

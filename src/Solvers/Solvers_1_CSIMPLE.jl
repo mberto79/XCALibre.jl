@@ -3,7 +3,8 @@ export csimple!
 """
     csimple!(
         model_in, config; 
-        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+        output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+        transpose_stress=true, consistent=false
     )
 
 Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport equation for the energy. 
@@ -17,6 +18,7 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
 - `transpose_stress` include the explicit viscous stress ∇·(μ_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
+- `consistent` use the consistent (SIMPLEC) pressure–velocity coupling (default = `false`). The pressure equation and the velocity and face-flux corrections then use rDt = V/(a_P + Σ a_N), the inverse row sum of the under-relaxed momentum matrix (a_N ≤ 0 are its off-diagonal coefficients), instead of rD = V/a_P. Unlike rD, rDt does not shrink with the velocity relaxation factor, so the pressure Laplacian keeps its weight against the compressibility term ∇·(ψ_f ((H/a_P)·S) p) of `Compressible` fluids, which can keep steady transonic runs stable where the default coupling amplifies round-off until the run diverges. The converged solution is unchanged; only the path to it differs. Rows with Σ_N a_N + a_P ≤ 10⁻³ a_P keep rD
 
 # Output
 
@@ -29,7 +31,8 @@ Compressible variant of the SIMPLE algorithm with a sensible enthalpy transport 
 """
 function csimple!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, transpose_stress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, transpose_stress=true,
+    consistent=false
     )
     check_distributed_support(:CSIMPLE, model)
 
@@ -39,7 +42,8 @@ function csimple!(
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops, progress=progress,
-        transpose_stress=transpose_stress
+        transpose_stress=transpose_stress,
+        consistent=consistent
         )
     return residuals
 end
@@ -48,7 +52,7 @@ end
 function setup_compressible_solvers(
     solver_variant, model, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    transpose_stress=true
+    transpose_stress=true, consistent=false
     ) 
 
     (; solvers, schemes, runtime, hardware, boundaries) = config
@@ -121,7 +125,8 @@ function setup_compressible_solvers(
         pref=pref, 
         ncorrectors=ncorrectors, 
         inner_loops=inner_loops, progress=progress,
-        transpose_stress=transpose_stress)
+        transpose_stress=transpose_stress,
+        consistent=consistent)
 
     return residuals    
 end # end function
@@ -129,7 +134,7 @@ end # end function
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
-    transpose_stress=true
+    transpose_stress=true, consistent=false
     )
     
     # Extract model variables and configuration
@@ -171,6 +176,7 @@ function CSIMPLE(
     nueff = FaceScalarField(mesh)
     Hv = VectorField(mesh)
     rD = ScalarField(mesh)
+    rDt = consistent ? ScalarField(mesh) : rD # consistent coupling coefficient (aliases rD if off)
     Psi = ScalarField(mesh)
     Psif = FaceScalarField(mesh)
 
@@ -236,8 +242,9 @@ function CSIMPLE(
 
         # Pressure correction
         inverse_diagonal!(rD, U_eqn, config)
-        interpolate!(rhorDf, rD, config)
-        correct_interpolation_periodic(rhorDf, rD, boundaries.U, config)
+        consistent && consistent_inverse_diagonal!(rDt, rD, U_eqn, config)
+        interpolate!(rhorDf, rDt, config)
+        correct_interpolation_periodic(rhorDf, rDt, boundaries.U, config)
         @. rhorDf.values *= rhof.values
 
         remove_pressure_source!(U_eqn, ∇p, config)
@@ -256,13 +263,21 @@ function CSIMPLE(
             interpolate!(pf, p, config)
             correct_boundaries!(pf, p, boundaries.p, time, config)
             @. mdotf.values -= mdotf.values*Psif.values*pf.values/rhof.values
+            consistent && consistent_flux!(mdotf, rhof, rDt, rD, p, pf, config)
             div!(divHv, mdotf, config)
 
         elseif typeof(model.fluid) <: WeaklyCompressible
             flux!(mdotf, Uf, config)
             @. mdotf.values *= rhof.values
+            if consistent
+                interpolate!(pf, p, config)
+                correct_boundaries!(pf, p, boundaries.p, time, config)
+                consistent_flux!(mdotf, rhof, rDt, rD, p, pf, config)
+            end
             div!(divHv, mdotf, config)
         end
+        # cell part of the consistent correction, after the face fluxes were built from H/a_P
+        consistent && consistent_H!(Hv, rDt, rD, ∇p, config)
         
         # Pressure calculations
         rp = 0.0
@@ -307,7 +322,7 @@ function CSIMPLE(
         explicit_relaxation!(p, prev, solvers.p.relax, config)
         grad!(∇p, pf, p, boundaries.p, time, config)
         limit_gradient!(schemes.p.limiter, ∇p, p, config)
-        correct_velocity!(U, Hv, ∇p, rD, config)
+        correct_velocity!(U, Hv, ∇p, rDt, config)
         # interpolate!(Uf, U, config) # Careful: reusing Uf for interpolation
         # correct_boundaries!(Uf, U, boundaries.U, time, config)
         

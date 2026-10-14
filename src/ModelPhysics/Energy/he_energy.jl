@@ -200,8 +200,10 @@ function energy!(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
         @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+        # K takes the face interpolation of the he convection term (term 2), so h + K is convected
+        # by one discrete operator; boundary faces keep K of the boundary velocity
         @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
-        interpolate_upwind!(Kf, K, mdotf, config)
+        interpolate!(Kf, K, mdotf, energy_eqn.model.terms[2].type, config)
         @. Kf.values *= mdotf.values
         div!(divK, Kf, config)
         @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
@@ -497,23 +499,4 @@ end
     G = gradU[i]
     divU = G[1,1] + G[2,2] + G[3,3]
     S[i] = p[i] * divU
-end
-
-function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
-    mesh = phif.mesh
-    nbfaces = length(mesh.boundary_cellsID)
-    internal_faces_count = length(mesh.faces) - nbfaces
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    kernel! = _sized(interpolate_upwind_Scalar!, backend, workgroup, internal_faces_count)
-    kernel!(phif.values, phi.values, mdotf.values, mesh.faces, nbfaces)
-end
-
-@kernel function interpolate_upwind_Scalar!(fvals, vals, flux, faces, nbfaces)
-    t = @index(Global)
-    i = t + nbfaces
-    @inbounds begin
-        (; ownerCells) = faces[i]
-        fvals[i] = flux[i] >= 0.0 ? vals[ownerCells[1]] : vals[ownerCells[2]]
-    end
 end

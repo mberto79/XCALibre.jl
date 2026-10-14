@@ -5,6 +5,8 @@ export grad_old!
 
 # Define Gradient type and functionality
 
+const LSQSchemes = Union{LeastSquares,WeightedLeastSquares}
+
 struct Grad{S<:AbstractScheme,F,R,I,M} <: AbstractField
     field::F
     result::R
@@ -21,6 +23,11 @@ function Adapt.adapt_structure(to, itp::Grad{S}) where {S}
     Grad{S,F,R,I,M}(field, result, correctors, correct, mesh)
 end
 
+# `correctors` holds the mesh-only data a scheme needs: nothing for Gauss and Midpoint, the
+# inverse normal matrices for the least-squares schemes (built in Calculate_1_least_squares.jl)
+_grad_correctors(::Type{S}, mesh) where S = one(_get_int(mesh))
+_grad_correctors(::Type{S}, mesh) where S<:LSQSchemes = _lsq_geometry(S, mesh)
+
 # Grad outer constructor for scalar field definition
 Grad{S}(phi::ScalarField) where S= begin
     # Retrieve mesh and define grad as vector field
@@ -30,11 +37,12 @@ Grad{S}(phi::ScalarField) where S= begin
     # Retrieve user-selected types
     F = typeof(phi)
     R = typeof(grad)
-    I = _get_int(mesh)
+    correctors = _grad_correctors(S, mesh)
+    I = typeof(correctors)
     M = typeof(mesh)
 
     # Construct Grad
-    Grad{S,F,R,I,M}(phi, grad, one(I), false, mesh)
+    Grad{S,F,R,I,M}(phi, grad, correctors, false, mesh)
 end
 
 # Grad outer constructor for vector field definition
@@ -46,11 +54,12 @@ Grad{S}(psi::VectorField) where S = begin
     # Retrieve user-selected types
     F = typeof(psi)
     R = typeof(tgrad)
-    I = _get_int(mesh)
+    correctors = _grad_correctors(S, mesh)
+    I = typeof(correctors)
     M = typeof(mesh)
 
     # Construct Grad
-    Grad{S,F,R,I,M}(psi, tgrad, one(I), false, mesh)
+    Grad{S,F,R,I,M}(psi, tgrad, correctors, false, mesh)
 end
 
 # Grad outer constructor for face scalar field definition
@@ -62,11 +71,12 @@ Grad{S}(phi::FaceScalarField) where S= begin
     # Retrieve user-selected types
     F = typeof(phi)
     R = typeof(grad)
-    I = _get_int(mesh)
+    correctors = _grad_correctors(S, mesh)
+    I = typeof(correctors)
     M = typeof(mesh)
 
     # Construct Grad
-    Grad{S,F,R,I,M}(phi, grad, one(I), false, mesh)
+    Grad{S,F,R,I,M}(phi, grad, correctors, false, mesh)
 end
 
 Base.getindex(grad::Grad{S,F,R,I,M}, i::Integer) where {S,F,R<:VectorField,I,M} = begin
@@ -99,6 +109,7 @@ Base.getindex(t::T{Grad{S,F,R,I,M}}, i::Integer) where {S,F,R<:AbstractTensorFie
 end
 
 # GRADIENT CALCULATION FUNCTIONS
+
 
 ## Gauss (uncorrected) gradient calculation
 
@@ -283,4 +294,22 @@ end
 
 function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, time, config) where {F,R<:TensorField,I,M}
     green_gauss!(grad, psif, config)
+end
+
+## Least-squares gradients (LeastSquares, WeightedLeastSquares). See Calculate_1_least_squares.jl
+
+function grad!(grad::Grad{S,F,R,I,M}, phif, phi, BCs, time, config) where {S<:LSQSchemes,F,R,I,M}
+    interpolate!(phif, phi, config)
+    correct_boundaries!(phif, phi, BCs, time, config)
+    _lsq_empty_faces!(phif, phi, BCs, config)
+    least_squares!(grad, phif, phi, config)
+end
+
+# Without BCs: boundary faces use the values already stored in the face field
+function grad!(grad::Grad{S,F,R,I,M}, phif, phi, time, config) where {S<:LSQSchemes,F,R,I,M}
+    least_squares!(grad, phif, phi, config)
+end
+
+function grad!(grad::Grad{S,F,R,I,M}, phif, config) where {S<:LSQSchemes,F,R,I,M}
+    error("grad!: $S needs the cell field, use grad!(grad, phif, phi, time, config)")
 end

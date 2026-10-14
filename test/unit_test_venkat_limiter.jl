@@ -14,7 +14,7 @@ config = Configuration(
 trig = adapt(backend, UNV2D_mesh(joinpath(grids_dir, "trig40.unv")))
 quad = adapt(backend, UNV2D_mesh(joinpath(grids_dir, "quad40.unv")))
 
-interior_cells(mesh) = setdiff(1:length(mesh.cells), unique(mesh.boundary_cellsID))
+venkat_interior(mesh) = setdiff(1:length(mesh.cells), unique(mesh.boundary_cellsID))
 
 # limiter factor per cell: |limited gradient| / |raw gradient| (cells with zero gradient report 1)
 function limiter_factors(method, mesh, values; TF=Float64)
@@ -76,11 +76,11 @@ wave_values(mesh) = [sin(c[1]/90)*cos(c[2]/130) for c ∈ mesh.cells.centre]
         # uniform quads: every active face has an allowed/extrapolated ratio of at least 2, so the
         # gradient is kept for any K
         for K ∈ (0.0, 5.0)
-            @test all(isapprox.(linear_factors(Venkatakrishnan(K), quad)[interior_cells(quad)], 1; atol=1e-12))
+            @test all(isapprox.(linear_factors(Venkatakrishnan(K), quad)[venkat_interior(quad)], 1; atol=1e-12))
         end
         # triangles: face centres are not halfway to the neighbour, so K = 0 limits a linear field
         # (unlike Barth-Jespersen); ε removes the limiting, monotonically in K
-        interior = interior_cells(trig)
+        interior = venkat_interior(trig)
         @test all(isapprox.(linear_factors(CellBased(), trig)[interior], 1; atol=1e-12))
         mins = [minimum(linear_factors(Venkatakrishnan(K), trig)[interior]) for K ∈ (0.0, 0.01, 0.1, 1.0)]
         @test mins[1] < 0.95

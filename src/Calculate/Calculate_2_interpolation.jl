@@ -244,7 +244,7 @@ Internal face values of `phi` convected by the face flux `mdotf` with the face i
 divergence scheme `scheme`, e.g. `Divergence{LUST}()`, so that `mdotf*phif` is the face flux the
 implicit operator `Divergence{LUST}(mdotf, phi)` assembles. `Upwind` and `BoundedUpwind` take the
 upwind cell value, `Linear` the linear interpolation, and `LUST` 75% linear and 25% upwind.
-Boundary face values are left unchanged.
+Boundary face values are left unchanged. Any other scheme throws an `ArgumentError`.
 """
 function interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, scheme::Divergence, config)
     # Checked on the host: a throw that names the scheme cannot be compiled into a GPU kernel

@@ -35,8 +35,8 @@ Viscosity{ConstantViscosity}(; nu) = begin
     Viscosity{ConstantViscosity,ARG}(coeffs)
 end
 
-# Initialise ConstantViscosity fields on mesh from a ConstantViscosity input
-initialise_viscosity(nu::ConstantViscosity, mesh) = begin
+# Initialise ConstantViscosity fields on mesh from a Viscosity{ConstantViscosity} input
+initialise_viscosity(nu::Viscosity{ConstantViscosity}, mesh) = begin
     backend = _get_backend(mesh)
     float_type = _get_float(mesh)
     n_cells = length(mesh.cells)

@@ -20,7 +20,7 @@ using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
 using XCALibre.Calculate
-import XCALibre.Discretise: SecondOrderUpwind, _limit_tvd # not exported: second-order upwind schemes
+import XCALibre.Discretise: _limit_tvd # not exported: TVD clip of LimitedLinearUpwind
 import XCALibre.Calculate: correct_interpolation!, _face_flux_tensor, _cell_coefficient, _boundary_sngrad, _patch_gradient
 using XCALibre.Simulate
 

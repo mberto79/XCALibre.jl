@@ -197,6 +197,7 @@ const SecondOrderUpwind = Union{LinearUpwind,LimitedLinearUpwind}
 # true for schemes whose face values need the gradient of the transported field
 is_second_order(::Type) = false
 is_second_order(::Type{<:SecondOrderUpwind}) = true
+is_second_order(::Type{LUSTLU}) = true
 
 @inline _upwind(term::Operator) = Operator(term.flux, term.phi, term.sign, Divergence{Upwind}())
 
@@ -220,11 +221,41 @@ end
     0.0, 0.0
 end
 
+# LUSTLU: LUST matrix, 1/4 of the LinearUpwind face reconstruction as an explicit source (see LUSTLU)
+@inline _lust(term::Operator) = Operator(term.flux, term.phi, term.sign, Divergence{LUST}())
+
+Divergence{LUSTLU}(flux, phi, grad) = Operator(flux, phi, 1, Divergence{LUSTLU}(), grad)
+
+Divergence{LUSTLU}(flux, phi) = begin
+    @warn "Divergence{LUSTLU} built without a gradient: this term reduces to LUST" maxlog=1
+    Operator(flux, phi, 1, Divergence{LUSTLU}())
+end
+
+@inline scheme!(
+    term::Operator{F,P,I,Divergence{LUSTLU}},
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+    ) where {F,P,I} = scheme!(
+        _lust(term), nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
+
+@inline scheme_source!(
+    term::Operator{F,P,I,Divergence{LUSTLU}}, cells, cID, cIndex, prev, runtime, rho_prev
+    ) where {F,P,I} = scheme_source!(_lust(term), cells, cID, cIndex, prev, runtime, rho_prev)
+
+@inline function scheme_face_source!(
+    term::Operator{F,P,I,Divergence{LUSTLU}}, cells, faces, cID, nID, ns, fID
+    ) where {F,P,I}
+    flux = term.sign*term.flux[fID]*ns
+    uID = flux > zero(flux) ? cID : nID
+    d = faces.centre[fID] - cells.centre[uID]
+    return -flux*typeof(flux)(0.25)*_reconstruct(term.grad[uID], d)
+end
+
 # explicit contribution of an internal face (fID) of cell cID to the right-hand side; only operators
 # for which `has_face_source` holds are visited, all others compile to the original code
 has_face_source(::Type{<:Operator}) = false
 has_face_source(::Type{<:Operator{F,P,I,Divergence{S},G}}) where {F,P,I,S<:SecondOrderUpwind,G<:AbstractField} = true
 has_face_source(::Type{<:Operator{F,P,I,Divergence{LUSTDC}}}) where {F,P,I} = true
+has_face_source(::Type{<:Operator{F,P,I,Divergence{LUSTLU},G}}) where {F,P,I,G<:AbstractField} = true
 
 @inline function scheme_face_source!(
     term::Operator{F,P,I,Divergence{LinearUpwind}}, cells, faces, cID, nID, ns, fID

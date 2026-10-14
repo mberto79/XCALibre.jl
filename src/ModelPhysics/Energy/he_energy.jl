@@ -125,6 +125,8 @@ function initialise(
     energy_to_temperature!(model, he, divK) # divK as scratch, set in energy! before use
     divK.values == T.values || temperature_to_energy!(model, T, he)
 
+    schemes.he.divergence == LUSTLU && throw(ArgumentError(
+        "LUSTLU is not available for he: use LUST, LinearUpwind or LimitedLinearUpwind"))
     cg = convection_gradient(schemes.he.divergence, he, schemes.he.gradient)
     # the internal-energy equation has no kinetic-energy flux
     cgK = energy isa SensibleEnthalpy ?

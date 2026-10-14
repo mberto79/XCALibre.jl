@@ -2,7 +2,7 @@ export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint, AbstractWallFunction
 export KWallFunction, OmegaWallFunction, NutWallFunction, NutMixingLengthWallFunction
 # export Constant, Linear, Upwind, LUST
-export Linear, Upwind, LUST, LUSTDC, LinearUpwind, LimitedLinearUpwind
+export Linear, Upwind, LUST, LUSTDC, LUSTLU, LinearUpwind, LimitedLinearUpwind
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
 export Gauss, Midpoint
@@ -30,6 +30,23 @@ transient and LES runs. This is not OpenFOAM's `LUST`, which keeps the linear pa
 corrects the remaining quarter explicitly with the upwind-cell gradient, as `LinearUpwind` does.
 """
 struct LUSTDC <: AbstractScheme end
+
+@doc raw"""
+    LUSTLU <: AbstractScheme
+
+`LUST` plus an explicit second-order correction of its upwind share, for transient and LES runs.
+The matrix holds the `LUST` coefficients (75 % linear, 25 % upwind), and the upwind quarter of the
+face value is corrected explicitly with the gradient of the upwind cell, as in `LinearUpwind`:
+
+``\phi_f = \frac{3}{4}\phi_{lin} + \frac{1}{4}\left[\phi_U + (\nabla\phi)_U \cdot (\mathbf{x}_f - \mathbf{x}_U)\right]``.
+
+The face value is second order on any mesh and `LUST`'s first-order dissipation is removed. The
+gradient is supplied through the equation's operator, `Divergence{LUSTLU}(flux, phi, grad)`; the
+solvers pass the gradient of `U` (limited with `Schemes(limiter=...)`). Boundary faces take the
+`LUST` coefficients; periodic patches also get the correction. Without a gradient the scheme
+reduces to `LUST` (as in the film and multiphase solvers). It is not available for `he`.
+"""
+struct LUSTLU <: AbstractScheme end
 
 @doc raw"""
     LinearUpwind <: AbstractScheme

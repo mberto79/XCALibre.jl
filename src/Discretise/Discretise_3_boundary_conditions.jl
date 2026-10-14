@@ -24,6 +24,13 @@ end
         Operator(term.flux, term.phi, term.sign, Divergence{LUST}()),
         colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
 
+# LUSTLU: boundary faces take the LUST coefficients (periodic patches add the correction, periodic.jl)
+@inline (bc::AbstractBoundary)(
+    term::Operator{F,P,I,Divergence{LUSTLU}}, colval, rowptr, nzval, cellID, zcellID,
+    cells, faces, fID, i, component, time
+    ) where {F,P,I} = bc(
+        _lust(term), colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
+
 # KWallFunction
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, colval, rowptr, nzval, cellID, zcellID,

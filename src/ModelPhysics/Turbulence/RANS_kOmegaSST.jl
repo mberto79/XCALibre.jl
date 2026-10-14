@@ -144,7 +144,7 @@ function initialise(
     
     k_eqn = (
             Time{schemes.k.time}(rho, k)
-            + Divergence{schemes.k.divergence}(mdotf, k) 
+            + Divergence{schemes.k.divergence}(mdotf, k, ∇k.result)
             - Laplacian{schemes.k.laplacian}(mueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺rho*omega
             ==
@@ -153,7 +153,7 @@ function initialise(
     
     ω_eqn = (
             Time{schemes.omega.time}(rho, omega)
-            + Divergence{schemes.omega.divergence}(mdotf, omega) 
+            + Divergence{schemes.omega.divergence}(mdotf, omega, ∇ω.result)
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
             + Si(dkdomegadx, omega)
@@ -236,6 +236,12 @@ function turbulence!(
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
+    # second-order convection schemes reconstruct faces with the limited gradient (the
+    # cross-diffusion term above uses the plain one)
+    is_second_order(config.schemes.k.divergence) &&
+        limit_gradient!(config.schemes.k.limiter, ∇k, k, config)
+    is_second_order(config.schemes.omega.divergence) &&
+        limit_gradient!(config.schemes.omega.limiter, ∇ω, omega, config)
 
     @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, scalar(1e-10))
 

@@ -24,6 +24,7 @@ import XCALibre.Calculate: _face_flux_tensor, _cell_coefficient, _boundary_sngra
 using XCALibre.Simulate
 
 include("0_type_definition.jl")
+include("0_convection_gradient.jl")
 include("1_flow_types.jl")
 include("2_multiphase_sources.jl")
 include("2_fluid_models.jl")

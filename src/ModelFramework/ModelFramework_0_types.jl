@@ -15,13 +15,16 @@ abstract type AbstractEquation end
 
 # Base Operator
 
-struct Operator{F,P,S,T} <: AbstractOperator
+# `grad` holds the cell gradient of `phi` for schemes that reconstruct face values (`nothing` otherwise)
+struct Operator{F,P,S,T,G} <: AbstractOperator
     flux::F
     phi::P 
     sign::S
     type::T
+    grad::G
 end
 Adapt.@adapt_structure Operator
+Operator(flux, phi, sign, type) = Operator(flux, phi, sign, type, nothing)
 
 # operators
 
@@ -62,6 +65,9 @@ Laplacian{T}(flux, phi) where T = Operator(
 Divergence{T}(flux, phi) where T = Operator(
     flux, phi, 1, Divergence{T}()
     )
+
+# schemes without a face reconstruction ignore the gradient (see `LinearUpwind`)
+Divergence{T}(flux, phi, grad) where T = Divergence{T}(flux, phi)
 
 Si(flux, phi) = Operator(
     flux, phi, 1, Si()

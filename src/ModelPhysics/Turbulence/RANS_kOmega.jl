@@ -26,12 +26,14 @@ struct KOmega{S1,S2,S3,F3,C} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmega
 
-struct KOmegaModel{T,E1,E2,S1,WS} 
+struct KOmegaModel{T,E1,E2,S1,WS,GK,GO} 
     turbulence::T
     k_eqn::E1 
     ω_eqn::E2
     state::S1
     wall_scratch::WS
+    ∇k::GK # gradients for second-order convection schemes (or nothing)
+    ∇ω::GO
 end
 Adapt.@adapt_structure KOmegaModel
 
@@ -101,9 +103,12 @@ function initialise(
     Pk = ScalarField(mesh)
     Pω = ScalarField(mesh)
     
+    ∇k = convection_gradient(schemes.k.divergence, k, schemes.k.gradient)
+    ∇ω = convection_gradient(schemes.omega.divergence, omega, schemes.omega.gradient)
+
     k_eqn = (
             Time{schemes.k.time}(rho, k)
-            + Divergence{schemes.k.divergence}(mdotf, k) 
+            + Divergence{schemes.k.divergence}(mdotf, k, convection_grad_field(∇k)) 
             - Laplacian{schemes.k.laplacian}(mueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺rho*omega
             ==
@@ -112,7 +117,7 @@ function initialise(
     
     ω_eqn = (
             Time{schemes.omega.time}(rho, omega)
-            + Divergence{schemes.omega.divergence}(mdotf, omega) 
+            + Divergence{schemes.omega.divergence}(mdotf, omega, convection_grad_field(∇ω)) 
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
             ==
@@ -135,7 +140,7 @@ function initialise(
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaModel(
         turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false),
-        wall_scratch(mesh, boundaries, config)
+        wall_scratch(mesh, boundaries, config), ∇k, ∇ω
         ), config
 end
 
@@ -166,7 +171,7 @@ function turbulence!(
     (; rho, rhof, nu, nuf) = model.fluid
     (;k, omega, nut, nutf, coeffs) = rans.turbulence
     (; U, Uf, gradU) = S
-    (;k_eqn, ω_eqn, state, wall_scratch) = rans
+    (;k_eqn, ω_eqn, state, wall_scratch, ∇k, ∇ω) = rans
     (; solvers, runtime, boundaries) = config
 
     # wrapped eqns solve through the seam; raw eqns are assembled/discretised in place
@@ -221,6 +226,7 @@ function turbulence!(
 
     # Solve omega equation
     # prev .= omega.values
+    update_convection_gradient!(∇ω, omega, boundaries.omega, config.schemes.omega.limiter, time, config)
     discretise!(ω_eqn, omega, config)
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
@@ -235,6 +241,7 @@ function turbulence!(
 
     # Solve k equation
     # prev .= k.values
+    update_convection_gradient!(∇k, k, boundaries.k, config.schemes.k.limiter, time, config)
     discretise!(k_eqn, k, config)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)

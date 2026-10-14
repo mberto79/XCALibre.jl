@@ -74,11 +74,13 @@ function setup_incompressible_solvers(
     divHv = ScalarField(mesh)
     divτT = VectorField(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
+    gradU = Grad{schemes.U.gradient}(U) # also feeds the LinearUpwind face reconstruction
+
     @info "Defining models..."
 
     U_eqn = (
         Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U)
+        + Divergence{schemes.U.divergence}(mdotf, U, gradU.result)
         - Laplacian{schemes.U.laplacian}(nueff, U)
         ==
         - Source(∇p.result)
@@ -111,7 +113,7 @@ function setup_incompressible_solvers(
     # only SIMPLE takes `consistent`; PISO shares this setup and has no such keyword
     consistent_kwarg = solver_variant === SIMPLE ? (; consistent) : (;)
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; gradU=gradU,
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
@@ -126,9 +128,10 @@ end # end function
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing,
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true, consistent=false
     )
-    
+
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
@@ -162,7 +165,6 @@ function SIMPLE(
     @info "Allocating working memory..."
 
     # Define aux fields
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT, U, Uf)
 

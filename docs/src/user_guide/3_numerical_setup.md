@@ -45,9 +45,16 @@ print_tree(AbstractScheme) # hide
 | LinearUpwind | 2nd order upwind scheme: upwind matrix coefficients with an explicit (deferred) correction of the face value from the upwind-cell gradient |
 | LimitedLinearUpwind | Bounded version of `LinearUpwind`: the correction is limited per face with the downwind value (TVD bound) |
 
-`Upwind`, `BoundedUpwind`, `LinearUpwind`, `LimitedLinearUpwind` and `LUSTDC` keep the matrix diagonally dominant. `Linear` and `LUST` put central-difference coefficients in the matrix, which loses diagonal dominance where convection dominates and allows oscillations across discontinuities. `LinearUpwind` reconstructs the face value of the upwind cell `U` as ``\phi_f = \phi_U + (\nabla\phi)_U \cdot (\mathbf{x}_f - \mathbf{x}_U)``; the reconstruction is exact for linear fields on any mesh, and the gradient limiter set for the field (`Schemes(limiter=...)`) is applied to the gradient used. A gradient limiter reduces over- and undershoots but does not remove them from a steady solution; `LimitedLinearUpwind` also bounds the face value between the upwind and downwind cell values and falls back to upwind at local extrema. Both schemes use upwind values on boundary faces. The solvers supply the gradient for the momentum equation, for `he`, and for `k` and `omega` of `KOmega` and `KOmegaSST` (for `he` the kinetic energy K = |U|²/2 of the explicit flux ∇·(ṁK) is reconstructed at the faces in the same way, and h and K are limited as one total enthalpy: the `he` limiter acts on ∇(h + K) and ∇K, h takes their difference, and the `LimitedLinearUpwind` clip of h also scales the K correction, so that a uniform h + K stays a discrete solution); for other equations both schemes reduce to `Upwind` with a warning. The gradient of a ghost cell is taken from its owner on distributed meshes. In a user-built equation the gradient field is passed as a third argument, e.g. `Divergence{LinearUpwind}(mdotf, phi, gradphi.result)`.
+`Upwind`, `BoundedUpwind`, `LinearUpwind`, `LimitedLinearUpwind` and `LUSTDC` keep the matrix diagonally dominant. `Linear` and `LUST` put central-difference coefficients in the matrix, which loses diagonal dominance where convection dominates and allows oscillations across discontinuities.
+
+`LinearUpwind` reconstructs the face value of the upwind cell `U` as ``\phi_f = \phi_U + (\nabla\phi)_U \cdot (\mathbf{x}_f - \mathbf{x}_U)``; the reconstruction is exact for linear fields on any mesh, and the gradient limiter set for the field (`Schemes(limiter=...)`) is applied to the gradient used. A gradient limiter reduces over- and undershoots but does not remove them from a steady solution; `LimitedLinearUpwind` also bounds the face value between the upwind and downwind cell values and falls back to upwind at local extrema. Both schemes use upwind values on boundary faces.
+
+The solvers supply the gradient for the momentum equation, for `he`, and for `k` and `omega` of `KOmega` and `KOmegaSST` (for `he` the kinetic energy K = |U|²/2 of the explicit flux ∇·(ṁK) is reconstructed at the faces in the same way, and h and K are limited as one total enthalpy: the `he` limiter acts on ∇(h + K) and ∇K, h takes their difference, and the `LimitedLinearUpwind` clip of h also scales the K correction, so that a uniform h + K stays a discrete solution); for other equations both schemes reduce to `Upwind` with a warning.
+
+The gradient of a ghost cell is taken from its owner on distributed meshes. In a user-built equation the gradient field is passed as a third argument, e.g. `Divergence{LinearUpwind}(mdotf, phi, gradphi.result)`.
 
 `LUSTDC` is `LUST` with the same face values but an upwind matrix: the 75% (`Linear` - `Upwind`) part of the face value is added explicitly from the current field, and boundary faces use the `LUST` boundary coefficients (periodic patches keep its implicit coupling). It needs no gradient. A converged steady solution therefore matches `LUST` up to the momentum diagonal used in the face-flux (Rhie-Chow) interpolation, a difference of the same size as changing the velocity relaxation factor. Use it for steady runs (`simple!`, `csimple!`) that diverge with `LUST` where convection dominates. In transient runs the explicit part lags one time step: results match `LUST` as the time step goes to zero, but the scheme becomes unstable at smaller Courant numbers than `LUST`, so `LUST`, which is unchanged, remains the recommended scheme for transient and LES runs. `LUSTDC` is not OpenFOAM's `LUST`: that scheme keeps the 75% linear part implicit and corrects the remaining upwind quarter explicitly with the upwind-cell gradient, as `LinearUpwind` does, whereas both `LUST` and `LUSTDC` use the plain upwind value for that quarter.
+
 ---
 #### Gradient schemes
 
@@ -68,6 +75,35 @@ print_tree(AbstractScheme) # hide
 `Venkatakrishnan` changes the limiting factor continuously with the field instead of switching it at the bound; with `K = 0` it limits more than `CellBased` and also limits a linear field on distorted cells. Because ε² is compared with squared differences of the field, the effect of `K` depends on the units of the field and the cell size. `CellBased` and `Venkatakrishnan` are constructed without the mesh, e.g. `Schemes(divergence=LinearUpwind, limiter=Venkatakrishnan(5.0))`.
 
 The construction of all gradient limiters currently requires users to pass the mesh object that will be used for the simulations e.g. `MFaceBased(mesh)`. Notice that the mesh object must be moved to the same device where the simulation will be performed. To prevent mistakes and avoid errors, it is recommended to construct the limiters using the simulation `Physics` object directly since it provide a reference to the mesh (domain) e.g. if a `Physics` object named `model` has been created, construct the limiter as `MFaceBased(model.domain)`
+
+---
+#### Density-based (`SupersonicFlow`) solver
+
+The explicit density-based solver (`godunov!`, selected with `Fluid{SupersonicFlow}`) advances the conservative variables ``[\rho, \rho\mathbf{U}, \rho E]`` and does not use the divergence, Laplacian or time schemes above. Its inviscid fluxes are set with three entries of the `schemes` tuple, while the `gradient` of `U`, `p` and `T` is used for the viscous fluxes and for the reconstruction.
+
+| **Entry** | **Options** | **Description** |
+|:-------|:------------|:------------|
+| `flux` | `Rusanov()` | Local Lax-Friedrichs flux, most dissipative and robust (default) |
+| | `HLLC()` | Harten-Lax-van Leer flux with contact restoration, sharper contacts and boundary layers |
+| `reconstruction` | `Upwind()` | 1st order, cell-centred values |
+| | `MUSCL{VanLeer}()` | 2nd order MUSCL, smooth TVD limiter |
+| | `MUSCL{MinMod}()` | 2nd order MUSCL, most diffusive TVD limiter |
+| | `MUSCL{Superbee}()` | 2nd order MUSCL, least diffusive TVD limiter |
+| `time_stepping` | `FEuler()` | Explicit forward Euler, 1st order (default) |
+| | `RK2()` | Explicit 2-stage SSP Runge-Kutta, 2nd order |
+
+`reconstruction` must be given. The time step is fixed with `Runtime(time_step=...)` or, with `adaptive=AdaptiveTimeStepping(maxCo=...)`, set every iteration from the CFL condition (convective plus diffusive wave speeds). Only `rho` takes a `convergence` entry in `solvers`, there are no linear solvers. For example (see `examples/2D_cylinder_supersonic.jl`):
+
+```julia
+schemes = (
+    U              = Schemes(gradient=Gauss),
+    p              = Schemes(gradient=Gauss),
+    T              = Schemes(gradient=Gauss),
+    flux           = HLLC(),
+    reconstruction = MUSCL{VanLeer}(),
+    time_stepping  = RK2(),
+)
+```
 
 ---
 ### Specifying schemes

@@ -369,6 +369,20 @@ function energy_clamp!(
 end
 
 
+# ======================================================================================================
+# !!  DESIGN NOTE: THE CODE BELOW IS A WORKAROUND, AND AN ARGUMENT FOR A NEW INTERNAL API  !!
+#
+# Everything from here to `_kinetic_correction` exists only because the discretisation loop cannot be
+# reached from a model: a model cannot add a deferred correction to a term, and the discretisation
+# cannot hand solver information (mass flux, gradients, limiter state, the face value of another
+# field) to the scheme while it assembles the term. So the kinetic-energy flux ∇·(ṁK) is assembled
+# by hand outside the equation, its gradient and limiter state live in a side struct
+# (`KineticGradient`), the TVD clip of `scheme_face_source!` is duplicated for K, and the scheme
+# is picked by dispatching on its type. Each of these would be a few lines inside the discretisation
+# if schemes could (1) contribute a deferred correction to any term and (2) receive solver state
+# during assembly. Revisit this file when that API is designed: it is a concrete use case for it.
+# ======================================================================================================
+
 # Second-order he (LinearUpwind, LimitedLinearUpwind): K is reconstructed at the faces like h, and both
 # are limited as one total enthalpy H = h + K, so that a uniform H stays a discrete solution.
 struct KineticGradient{G,F,S}

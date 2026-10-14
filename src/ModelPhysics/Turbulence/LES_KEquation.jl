@@ -139,8 +139,7 @@ function turbulence!(
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
-    (; solvers, runtime, hardware, boundaries) = config
-    (; workgroup, backend) = hardware
+    (; solvers, runtime, boundaries) = config
     (; rho, rhof, nu, nuf) = model.fluid
     (; k, kf, nut, nutf, coeffs) = les.turbulence
     (; k_eqn, state) = les
@@ -157,17 +156,24 @@ function turbulence!(
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     
   
-    wk = _setup(backend, workgroup, length(mueffk))[2]
-    AK.foreachindex(mueffk, min_elems=wk, block_size=wk) do i 
-        mueffk[i] = rhof[i]*(nuf[i] + nutf[i])
+    # Bind values, not fields, so the closures carry no mesh (xcal_foreach runs on any backend)
+    rhov, rhofv, nufv, nutfv = field_values(rho), field_values(rhof), field_values(nuf), field_values(nutf)
+    kv, nutv, Δv, gradUv = field_values(k), field_values(nut), field_values(Δ), field_values(gradU.result)
+    mueffkv, Pkv, Dkfv, divUv = field_values(mueffk), field_values(Pk), field_values(Dkf), field_values(divU)
+
+    xcal_foreach(mueffkv, config) do i
+        mueffkv[i] = rhofv[i]*(nufv[i] + nutfv[i])
     end
 
     twoThirds = ScalarFloat(mesh)(2/3)
-    wk = _setup(backend, workgroup, length(Pk))[2]
-    AK.foreachindex(Pk, min_elems=wk, block_size=wk) do i 
-        Pk[i] = 2*nut[i]*rho[i]*(gradU[i]⋅Dev(S)[i])
-        Dkf[i] = coeffs.ce*rho[i]*sqrt(k[i])/(Δ[i])
-        divU[i] = twoThirds*rho[i]*tr(gradU[i])
+    xcal_foreach(Pkv, config) do i
+        gradUi = gradUv[i]
+        Si = (gradUi + gradUi')/2
+        DevSi = Si - eltype(Si)(1/3)*tr(Si)*I # Dev(S)[i]
+        rhoi = rhov[i]
+        Pkv[i] = 2*nutv[i]*rhoi*(gradUi⋅DevSi)
+        Dkfv[i] = coeffs.ce*rhoi*sqrt(kv[i])/Δv[i]
+        divUv[i] = twoThirds*rhoi*tr(gradUi)
     end
     
     # Solve k equation
@@ -181,9 +187,8 @@ function turbulence!(
     bound!(k, prev, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    wk = _setup(backend, workgroup, length(nut))[2]
-    AK.foreachindex(nut, min_elems=wk, block_size=wk) do i 
-        nut[i] = coeffs.ck*Δ[i]*sqrt(k[i])
+    xcal_foreach(nutv, config) do i
+        nutv[i] = coeffs.ck*Δv[i]*sqrt(kv[i])
     end
 
     interpolate!(nutf, nut, config)

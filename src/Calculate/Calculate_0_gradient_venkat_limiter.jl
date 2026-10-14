@@ -1,7 +1,5 @@
-# Cell-based Venkatakrishnan gradient limiter: same neighbourhood bounds as CellBased (Barth-Jespersen), but the
-# per-face ratio is the smooth function of Venkatakrishnan (1995), so the limiter varies continuously with the field.
-# `K` sets ε² = (K h)³, with h the cell length scale (volume^(1/3) in 3D, area^(1/2) on 2D meshes); K = 0 gives
-# the ε-free form of OpenFOAM's cellLimited<Venkatakrishnan>.
+# Same neighbourhood bounds as CellBased (Barth-Jespersen), with the smooth per-face function of Venkatakrishnan
+# (1995) in place of min(1, ratio); ε² = (K h)³, h = volume^(1/3) (area^(1/2) on 2D meshes).
 
 export Venkatakrishnan
 

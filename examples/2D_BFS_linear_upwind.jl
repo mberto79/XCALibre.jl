@@ -44,6 +44,7 @@ BCs = assign(
 
 schemes = (
     U = Schemes(divergence=LinearUpwind, limiter=CellBased()), # or LimitedLinearUpwind
+    # U = Schemes(divergence=LinearUpwind, limiter=Venkatakrishnan(5.0)), # smooth limiter
     p = Schemes()
 )
 

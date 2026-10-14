@@ -346,7 +346,7 @@ end
                 Zerogradient(:top), Zerogradient(:wall)],
         ))
         sch(S) = Schemes(divergence=S, limiter=CellBased())
-        schemes = (U=sch(LinearUpwind), p=Schemes(divergence=Upwind), he=sch(LimitedLinearUpwind))
+        schemes = (U=sch(LinearUpwind), p=Schemes(divergence=Upwind), he=sch(Upwind))
         solvers = (U=solver(0.7), p=solver(0.3; limit=(0.5*p_inf, 5*p_inf)),
             he=solver(0.3; limit=(800.0, 3000.0)))
         config = Configuration(solvers=solvers, schemes=schemes, boundaries=BCs, hardware=hw,
@@ -379,7 +379,7 @@ end
         ))
         sch(S) = Schemes(time=Euler, divergence=S, limiter=CellBased())
         schemes = (U=sch(LinearUpwind), p=Schemes(time=Euler, divergence=Upwind),
-            he=sch(LimitedLinearUpwind))
+            he=sch(Upwind))
         solvers = (U=solver(1.0), p=solver(1.0; limit=(0.2*p_inf, 10*p_inf)),
             he=solver(1.0; limit=(200.0, 4000.0)))
         config = Configuration(solvers=solvers, schemes=schemes, boundaries=BCs, hardware=hw,
@@ -388,5 +388,33 @@ end
         initialise!(model.energy.T, T_inf)
         run!(model, config, progress=false)
         @test all(isfinite, model.energy.T.values)
+    end
+    # second-order he has no kinetic-energy face value: once the kinetic-energy flux takes the he
+    # scheme (energy_kinetic_flux), it must fail loudly instead of mismatching K
+    isdefined(XCALibre.Discretise, :convected_face_value) && @testset "he second order is rejected" begin
+        mesh = adapt(backend, UNV2D_mesh(
+            joinpath(grids_dir, "compression_corner_2d_32_64_SF4.unv"), scale=0.001))
+        cp, T_inf, p_inf = 1005.0, 1000.0, 100000.0
+        U_inf = 2*sqrt(1.4*cp*(1 - 1/1.4)*T_inf)
+        model = Physics(time=Steady(),
+            fluid=Fluid{Compressible}(nu=0.0, cp=cp, gamma=1.4, Pr=0.7),
+            turbulence=RANS{Laminar}(), energy=Energy{SensibleEnthalpy}(Tref=0.0), domain=mesh)
+        BCs = assign(region=mesh, (
+            U = [Dirichlet(:inlet, [U_inf, 0.0, 0.0]), Zerogradient(:outlet), Zerogradient(:top),
+                Slip(:wall)],
+            p = [Dirichlet(:inlet, p_inf), Zerogradient(:outlet), Zerogradient(:top),
+                Zerogradient(:wall)],
+            he = [FixedTemperature(:inlet, T=T_inf, Enthalpy(cp=cp, Tref=0.0)), Zerogradient(:outlet),
+                Zerogradient(:top), Zerogradient(:wall)],
+        ))
+        sch(S) = Schemes(divergence=S, limiter=CellBased())
+        schemes = (U=sch(Upwind), p=Schemes(divergence=Upwind), he=sch(LimitedLinearUpwind))
+        solvers = (U=solver(0.7), p=solver(0.3; limit=(0.5*p_inf, 5*p_inf)),
+            he=solver(0.3; limit=(800.0, 3000.0)))
+        config = Configuration(solvers=solvers, schemes=schemes, boundaries=BCs, hardware=hw,
+            runtime=Runtime(iterations=2, write_interval=-1, time_step=1))
+        initialise!(model.momentum.U, [U_inf, 0.0, 0.0]); initialise!(model.momentum.p, p_inf)
+        initialise!(model.energy.T, T_inf)
+        @test_throws ArgumentError run!(model, config, progress=false, consistent=true)
     end
 end

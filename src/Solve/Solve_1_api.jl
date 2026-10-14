@@ -178,16 +178,20 @@ converged run does not depend on `dt` and the iterations are not a time history.
 - `ramp::Integer`: number of iterations over which the Courant number grows linearly from
   `startCo` to `maxCo` (`0` = no ramp). Useful to start from a uniform field.
 
-The turbulence equations are implicit and use the smallest cell time step of the iteration.
+- `turbulence_dt::Symbol`: the implicit turbulence equations take one time step, the `:min` (default), `:mean` or `:max` of the cell time steps of the iteration.
 """
 struct LocalTimeStepping{F<:AbstractFloat,I<:Integer}
     maxCo::F
     startCo::F
     ramp::I
+    turbulence_dt::Symbol
 end
 Adapt.@adapt_structure LocalTimeStepping
-LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0) =
-    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp))
+function LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
+    turbulence_dt ∈ (:min, :mean, :max) ||
+        throw(ArgumentError("`turbulence_dt` must be :min, :mean or :max, got $turbulence_dt"))
+    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), turbulence_dt)
+end
 
 struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping, LocalTimeStepping}}
     iterations::I

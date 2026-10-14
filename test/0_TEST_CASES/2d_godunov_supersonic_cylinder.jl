@@ -195,7 +195,7 @@ end
             @test length(res[k]) == 40
             @test all(isfinite, res[k])
         end
-        @test maximum(res.rho_rel) ≈ 1
+        @test res.rho_rel[1] > 0 && res.rho[1] > 0
         @test res.forces.cylinder.iteration == [10, 20, 30, 40]
         @test all(f -> all(isfinite, f), res.forces.cylinder.pressure)
     end

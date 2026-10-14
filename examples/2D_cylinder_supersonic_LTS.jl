@@ -1,8 +1,7 @@
 # Steady supersonic flow over a cylinder with the explicit density-based solver:
 # global CFL time step against local (per-cell) time stepping, with and without
 # the multistage Runge-Kutta scheme (inviscid flow, Mach 1.5). Reports the
-# iterations needed to bring the density residual (normalised by its largest
-# value, `rho_rel`) below `drop`. Force histories can be requested with
+# absolute density residual history. Force histories can be requested with
 # run!(...; forces=(patches=[:wall], interval=50)) on no-slip walls.
 using XCALibre
 
@@ -19,7 +18,7 @@ R_gas = cp * (1.0 - 1.0/gamma)
 U_inf = 1.5 * sqrt(gamma * R_gas * T_inf)
 velocity = [U_inf, 0.0, 0.0]
 
-function run_case(time_stepping, adaptive; iterations=3000)
+function run_case(time_stepping, adaptive; iterations=4000)
     model = Physics(
         time = Transient(),
         fluid = Fluid{SupersonicFlow}(nu=nu, cp=cp, gamma=gamma, Pr=Pr),
@@ -35,7 +34,7 @@ function run_case(time_stepping, adaptive; iterations=3000)
              Zerogradient(:top), Zerogradient(:bottom)]))
     schemes = (
         U = Schemes(gradient=Gauss), p = Schemes(gradient=Gauss), T = Schemes(gradient=Gauss),
-        flux = Rusanov(), time_stepping = time_stepping, reconstruction = Upwind())
+        flux = HLLC(), time_stepping = time_stepping, reconstruction = MUSCL{VanLeer}())
     runtime = Runtime(iterations=iterations, write_interval=-1, time_step=1e-7, adaptive=adaptive)
     config = Configuration(solvers=(rho=(convergence=1e-15,),), schemes=schemes,
         runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -45,17 +44,15 @@ function run_case(time_stepping, adaptive; iterations=3000)
     return run!(model, config; progress=false)
 end
 
-drop = 0.1
-first_below(r) = (i = findfirst(<(drop), r); isnothing(i) ? missing : i)
 cases = [
     "global dt, FEuler, CFL 0.5" => (FEuler(), AdaptiveTimeStepping(maxCo=0.5)),
-    "LTS, FEuler, CFL 0.5"       => (FEuler(), LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=300)),
-    "LTS, RK3, CFL 1.0"          => (RK3(),    LocalTimeStepping(maxCo=1.0, startCo=0.1, ramp=300)),
-    "LTS, RK5, CFL 0.7"          => (RK5(),    LocalTimeStepping(maxCo=0.7, startCo=0.1, ramp=300)),
+    "global dt, RK2, CFL 0.5"    => (RK2(),    AdaptiveTimeStepping(maxCo=0.5)),
+    "LTS, RK2, CFL 0.5"          => (RK2(),    LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=200)),
+    "LTS, RK3, CFL 1.0"          => (RK3(),    LocalTimeStepping(maxCo=1.0, startCo=0.1, ramp=200)),
 ]
 for (name, (ts, ad)) in cases
     t = @elapsed res = run_case(ts, ad)
-    println(rpad(name, 30), " iterations to residual drop ", drop, ": ",
-            first_below(res.rho_rel), "   final rho_rel = ", res.rho_rel[end],
+    println(rpad(name, 30), " density residual at iterations 500/1000/2000/4000: ",
+            round.([res.rho[k] for k in (500, 1000, 2000, 4000)], sigdigits=3),
             "   wall time ", round(t, digits=1), " s")
 end

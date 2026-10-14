@@ -769,6 +769,12 @@ end
     end
 end
 
+_time_increment(dt::Number) = dt
+_time_increment(dt::AbstractArray) = minimum(dt)
+
+_reduce_dt(sym::Symbol, dt_cell) = sym === :min ? minimum(dt_cell) :
+    sym === :max ? maximum(dt_cell) : sum(dt_cell) / length(dt_cell)
+
 """Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum."""
 function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration=1)
     TF = eltype(workspace.dt_cell)
@@ -781,7 +787,7 @@ function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:Loca
     (; backend, workgroup) = config.hardware
     kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
     kernel!(dt_cell, rho, U, p, model.domain, model.fluid, cfl, nu_eff)
-    runtime.dt .= minimum(dt_cell)
+    runtime.dt .= _reduce_dt(runtime.adaptive.turbulence_dt, dt_cell)
     return dt_cell
 end
 
@@ -1536,7 +1542,8 @@ function GODUNOV(
 
         # 3. Time step (adaptive CFL or fixed)
         dt = compute_dt!(workspace, model, runtime, config, dim_exp, iteration)
-        time += runtime.dt[1]   # local time stepping: dt is the per-cell array, time follows the minimum
+        dt_time = _time_increment(dt)   # local time stepping: dt is the per-cell array, time follows the minimum
+        time += dt_time
 
         # 4. Advance W^n → W^{n+1} (FEuler: single update; RK2: two-stage SSP)
         step!(time_scheme, workspace, model, boundaries, flux_scheme, recon_scheme,
@@ -1564,7 +1571,7 @@ function GODUNOV(
         update_nu_eff_cell!(workspace.nu_eff, nu_mol, model.turbulence, backend, workgroup, n_cells)
 
         isnothing(bar) || ProgressMeter.next!(bar, showvalues = [
-            (:time, time), (:iter, iteration), (:dt, runtime.dt[1]), (:continuity_error, rho_res),
+            (:time, time), (:iter, iteration), (:dt, dt_time), (:continuity_error, rho_res),
             turbulenceModel.state.residuals...
         ])
 
@@ -1576,7 +1583,13 @@ function GODUNOV(
 
     end # time loop
 
-    rel(R) = R ./ max(maximum(filter(isfinite, R)), floatmin(TF))   # normalised by the largest residual of the run
+    # normalised by the residual at the end of the Courant ramp (first iteration without LTS)
+    iter0 = local_dt ? min(runtime.adaptive.ramp + 1, iterations) : 1
+    function rel(R)
+        i0 = findfirst(x -> isfinite(x) && x > 0, @view R[iter0:end])
+        ref = isnothing(i0) ? one(TF) : R[iter0 + i0 - 1]
+        return R ./ ref
+    end
     base = (rho=R_rho, rhoU=R_rhoU, rhoE=R_rhoE,
             rho_rel=rel(R_rho), rhoU_rel=rel(R_rhoU), rhoE_rel=rel(R_rhoE))
     return isnothing(forces) ? base : merge(base, (forces=force_log,))

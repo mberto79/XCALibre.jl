@@ -76,10 +76,9 @@ end
     TF = typeof(gxx[i])
     zr = zero(TF); o = one(TF)
     G = _lsq_sym(gxx[i], gyy[i], gzz[i], gxy[i], gxz[i], gyz[i])
-    # Remove directions without data (2D meshes) so G stays invertible. A cell whose neighbours are
-    # nearly collinear (a sliver) is invertible but badly conditioned: its gradient is noisy along the
-    # poorly sampled direction. That is a mesh-quality limit and is not regularised, since any shift of
-    # G would also bias the exactness for linear fields on healthy cells.
+    # Remove directions without data (2D meshes) so G stays invertible. Slivers (nearly collinear
+    # neighbours) give a noisy gradient along the poorly sampled direction: not regularised, as a shift
+    # of G would also bias the exactness for linear fields.
     tol = TF(100)*eps(TF)*(G[1,1] + G[2,2] + G[3,3])
     G += SMatrix{3,3,TF,9}(
         G[1,1] <= tol ? o : zr, zr, zr,

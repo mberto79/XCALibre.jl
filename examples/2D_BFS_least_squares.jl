@@ -1,8 +1,7 @@
 using XCALibre
 # using CUDA # uncomment to run on an NVIDIA GPU
 
-# Laminar backward-facing step with least-squares gradients (`LeastSquares`, or
-# `WeightedLeastSquares` with inverse-distance weights), exact for linear fields on skewed meshes.
+# Laminar backward-facing step with least-squares gradients (`LeastSquares`, inverse-distance weighted), exact for linear fields on skewed meshes.
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh_file = joinpath(grids_dir, "backwardFacingStep_10mm.unv")
 mesh = UNV2D_mesh(mesh_file, scale=0.001)

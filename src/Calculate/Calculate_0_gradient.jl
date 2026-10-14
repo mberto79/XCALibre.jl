@@ -5,8 +5,6 @@ export grad_old!
 
 # Define Gradient type and functionality
 
-const LSQSchemes = Union{LeastSquares,WeightedLeastSquares}
-
 struct Grad{S<:AbstractScheme,F,R,I,M} <: AbstractField
     field::F
     result::R
@@ -26,7 +24,7 @@ end
 # `correctors` holds the mesh-only data a scheme needs: nothing for Gauss and Midpoint, the
 # inverse normal matrices for the least-squares schemes (built in Calculate_1_least_squares.jl)
 _grad_correctors(::Type{S}, mesh) where S = one(_get_int(mesh))
-_grad_correctors(::Type{S}, mesh) where S<:LSQSchemes = _lsq_geometry(S, mesh)
+_grad_correctors(::Type{LeastSquares}, mesh) = _lsq_geometry(mesh)
 
 # Grad outer constructor for scalar field definition
 Grad{S}(phi::ScalarField) where S= begin
@@ -296,9 +294,9 @@ function grad!(grad::Grad{Gauss,F,R,I,M}, psif, psi, time, config) where {F,R<:T
     green_gauss!(grad, psif, config)
 end
 
-## Least-squares gradients (LeastSquares, WeightedLeastSquares). See Calculate_1_least_squares.jl
+## Least-squares gradients (LeastSquares). See Calculate_1_least_squares.jl
 
-function grad!(grad::Grad{S,F,R,I,M}, phif, phi, BCs, time, config) where {S<:LSQSchemes,F,R,I,M}
+function grad!(grad::Grad{LeastSquares,F,R,I,M}, phif, phi, BCs, time, config) where {F,R,I,M}
     interpolate!(phif, phi, config)
     correct_boundaries!(phif, phi, BCs, time, config)
     _lsq_empty_faces!(phif, phi, BCs, config)
@@ -306,10 +304,10 @@ function grad!(grad::Grad{S,F,R,I,M}, phif, phi, BCs, time, config) where {S<:LS
 end
 
 # Without BCs: boundary faces use the values already stored in the face field
-function grad!(grad::Grad{S,F,R,I,M}, phif, phi, time, config) where {S<:LSQSchemes,F,R,I,M}
+function grad!(grad::Grad{LeastSquares,F,R,I,M}, phif, phi, time, config) where {F,R,I,M}
     least_squares!(grad, phif, phi, config)
 end
 
-function grad!(grad::Grad{S,F,R,I,M}, phif, config) where {S<:LSQSchemes,F,R,I,M}
-    error("grad!: $S needs the cell field, use grad!(grad, phif, phi, time, config)")
+function grad!(grad::Grad{LeastSquares,F,R,I,M}, phif, config) where {F,R,I,M}
+    error("grad!: LeastSquares needs the cell field, use grad!(grad, phif, phi, time, config)")
 end

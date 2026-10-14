@@ -47,9 +47,7 @@ lin2d_grad(c) = SVector(2.0, -0.7, 0.0)
     @testset "exact on linear fields: $name" for (name, mesh) ∈ meshes
         f, df = name == "tetrahedra (3D)" ? (lin, lin_grad) : (lin2d, lin2d_grad)
         scale = norm(df(nothing))
-        for S ∈ (LeastSquares, WeightedLeastSquares)
-            @test gradient_error(S, mesh, f, df) < 1e-9*scale
-        end
+        @test gradient_error(LeastSquares, mesh, f, df) < 1e-9*scale
         # Green-Gauss with linearly interpolated face values is not exact on skewed meshes
         if name != "stretched hex (pitzDaily)"
             @test gradient_error(Gauss, mesh, f, df) > 1e-3*scale
@@ -68,13 +66,9 @@ lin2d_grad(c) = SVector(2.0, -0.7, 0.0)
         for i ∈ 1:length(mesh.boundary_cellsID)
             v = u(mesh.faces.centre[i]); Uf.x[i] = v[1]; Uf.y[i] = v[2]; Uf.z[i] = v[3]
         end
-        for S ∈ (LeastSquares, WeightedLeastSquares)
-            g = Grad{S}(U)
-            grad!(g, Uf, U, 0.0, config)
-            @test maximum(norm(g.result[i] - A) for i ∈ eachindex(mesh.cells)) < 1e-9
-        end
-        # same result as the scalar gradient of each component
         g = Grad{LeastSquares}(U); grad!(g, Uf, U, 0.0, config)
+        @test maximum(norm(g.result[i] - A) for i ∈ eachindex(mesh.cells)) < 1e-9
+        # same result as the scalar gradient of each component
         s = ScalarField(mesh); sf = FaceScalarField(mesh)
         s.values .= U.x.values; sf.values .= Uf.x.values
         gs = Grad{LeastSquares}(s); grad!(gs, sf, s, 0.0, config)
@@ -120,7 +114,6 @@ lin2d_grad(c) = SVector(2.0, -0.7, 0.0)
         errs = Float64[]
         for mesh in meshes_
             push!(errs, gradient_error(LeastSquares, mesh, fs, gs))
-            @test gradient_error(WeightedLeastSquares, mesh, fs, gs) < 3*errs[end]
             @test errs[end] < 2*gradient_error(Gauss, mesh, fs, gs)
         end
         @test issorted(h, rev=true) && issorted(errs, rev=true)

@@ -9,48 +9,47 @@ struct LSQGeometry{T<:Tuple} # G⁻¹ per cell: xx, yy, zz, xy, xz, yz
 end
 Adapt.@adapt_structure LSQGeometry
 
-@inline _lsq_weight(::LeastSquares, d2::T) where T = one(T)
-@inline _lsq_weight(::WeightedLeastSquares, d2::T) where T = d2 > zero(T) ? inv(d2) : zero(T)
+@inline _lsq_weight(d2::T) where T = d2 > zero(T) ? inv(d2) : zero(T)
 
 @inline _lsq_sym(a, b, c, d, e, f) = SMatrix{3,3}(a,d,e, d,b,f, e,f,c)
 
 # displacement and weight of face `fID` seen from cell `i`; internal faces go to the neighbour
-@inline function _lsq_internal(scheme, cells, cell_neighbours, fi, xP)
+@inline function _lsq_internal(cells, cell_neighbours, fi, xP)
     d = cells.centre[cell_neighbours[fi]] - xP
-    return d, _lsq_weight(scheme, d ⋅ d)
+    return d, _lsq_weight(d ⋅ d)
 end
 
-@inline function _lsq_boundary(scheme, cells, faces, fID, cID)
+@inline function _lsq_boundary(cells, faces, fID, cID)
     d = faces.centre[fID] - cells.centre[cID]
-    return d, _lsq_weight(scheme, d ⋅ d)
+    return d, _lsq_weight(d ⋅ d)
 end
 
 # GEOMETRY ---------------------------------------------------------------------------------
 
-function _lsq_geometry(::Type{S}, mesh) where S<:LSQSchemes
+function _lsq_geometry(mesh)
     TF = eltype(mesh.cells.volume)
     backend = get_backend(mesh.cells.volume)
     n = length(mesh.cells)
     nb = length(mesh.boundary_cellsID)
     G = ntuple(_ -> KernelAbstractions.zeros(backend, TF, n), 6)
     kernel! = _sized(_lsq_geometry_internal!, backend, 256, n)
-    kernel!(S(), G..., mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
+    kernel!(G..., mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
     kernel! = _sized(_lsq_geometry_boundary!, backend, 256, nb)
-    kernel!(S(), G..., mesh.cells, mesh.faces)
+    kernel!(G..., mesh.cells, mesh.faces)
     kernel! = _sized(_lsq_geometry_invert!, backend, 256, n)
     kernel!(G...)
     return LSQGeometry(G)
 end
 
 @kernel inbounds=true function _lsq_geometry_internal!(
-    scheme, gxx, gyy, gzz, gxy, gxz, gyz, cells, cell_faces, cell_neighbours)
+    gxx, gyy, gzz, gxy, gxz, gyz, cells, cell_faces, cell_neighbours)
     i = @index(Global)
     xP = cells.centre[i]
     TF = typeof(cells.volume[i])
     z = zero(TF)
     G = SMatrix{3,3,TF,9}(z,z,z,z,z,z,z,z,z)
     for fi ∈ cells.faces_range[i]
-        d, w = _lsq_internal(scheme, cells, cell_neighbours, fi, xP)
+        d, w = _lsq_internal(cells, cell_neighbours, fi, xP)
         G += w*(d*d')
     end
     gxx[i] = G[1,1]; gyy[i] = G[2,2]; gzz[i] = G[3,3]
@@ -58,10 +57,10 @@ end
 end
 
 @kernel inbounds=true function _lsq_geometry_boundary!(
-    scheme, gxx, gyy, gzz, gxy, gxz, gyz, cells, faces)
+    gxx, gyy, gzz, gxy, gxz, gyz, cells, faces)
     fID = @index(Global)
     cID = faces.ownerCells[fID][1]
-    d, w = _lsq_boundary(scheme, cells, faces, fID, cID)
+    d, w = _lsq_boundary(cells, faces, fID, cID)
     G = w*(d*d')
     Atomix.@atomic gxx[cID] += G[1,1]
     Atomix.@atomic gyy[cID] += G[2,2]
@@ -91,7 +90,7 @@ end
 
 # SCALAR FIELD -> VECTOR GRADIENT ------------------------------------------------------------
 
-function least_squares!(grad::Grad{S,F,R,I,M}, phif, phi, config) where {S<:LSQSchemes,F,R<:VectorField,I<:LSQGeometry,M}
+function least_squares!(grad::Grad{LeastSquares,F,R,I,M}, phif, phi, config) where {F,R<:VectorField,I<:LSQGeometry,M}
     (; backend, workgroup) = config.hardware
     (; x, y, z) = grad.result
     (; mesh) = phi
@@ -99,10 +98,10 @@ function least_squares!(grad::Grad{S,F,R,I,M}, phif, phi, config) where {S<:LSQS
     nbfaces = length(mesh.boundary_cellsID)
 
     kernel! = _sized(_lsq_internal_scalar!, backend, workgroup, n)
-    kernel!(S(), x, y, z, phi, mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
+    kernel!(x, y, z, phi, mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
 
     kernel! = _sized(_lsq_boundary_scalar!, backend, workgroup, nbfaces)
-    kernel!(S(), x, y, z, phif, phi, mesh.cells, mesh.faces)
+    kernel!(x, y, z, phif, phi, mesh.cells, mesh.faces)
 
     kernel! = _sized(_lsq_solve_scalar!, backend, workgroup, n)
     kernel!(x, y, z, grad.correctors.Ginv...)
@@ -111,7 +110,7 @@ function least_squares!(grad::Grad{S,F,R,I,M}, phif, phi, config) where {S<:LSQS
 end
 
 @kernel inbounds=true function _lsq_internal_scalar!(
-    scheme, dx, dy, dz, phi, cells, cell_faces, cell_neighbours)
+    dx, dy, dz, phi, cells, cell_faces, cell_neighbours)
     i = @index(Global)
     xP = cells.centre[i]
     phiP = phi[i]
@@ -119,16 +118,16 @@ end
     b = zero(SVector{3,TF})
     for fi ∈ cells.faces_range[i]
         nID = cell_neighbours[fi]
-        d, w = _lsq_internal(scheme, cells, cell_neighbours, fi, xP)
+        d, w = _lsq_internal(cells, cell_neighbours, fi, xP)
         b += w*(phi[nID] - phiP)*d
     end
     dx.values[i] = b[1]; dy.values[i] = b[2]; dz.values[i] = b[3]
 end
 
-@kernel inbounds=true function _lsq_boundary_scalar!(scheme, dx, dy, dz, phif, phi, cells, faces)
+@kernel inbounds=true function _lsq_boundary_scalar!(dx, dy, dz, phif, phi, cells, faces)
     fID = @index(Global)
     cID = faces.ownerCells[fID][1]
-    d, w = _lsq_boundary(scheme, cells, faces, fID, cID)
+    d, w = _lsq_boundary(cells, faces, fID, cID)
     b = w*(phif[fID] - phi[cID])*d
     Atomix.@atomic dx.values[cID] += b[1]
     Atomix.@atomic dy.values[cID] += b[2]
@@ -144,7 +143,7 @@ end
 
 # VECTOR FIELD -> TENSOR GRADIENT ------------------------------------------------------------
 
-function least_squares!(grad::Grad{S,F,R,I,M}, psif, psi, config) where {S<:LSQSchemes,F,R<:TensorField,I<:LSQGeometry,M}
+function least_squares!(grad::Grad{LeastSquares,F,R,I,M}, psif, psi, config) where {F,R<:TensorField,I<:LSQGeometry,M}
     (; backend, workgroup) = config.hardware
     (; xx, xy, xz, yx, yy, yz, zx, zy, zz) = grad.result
     (; mesh) = psi
@@ -152,10 +151,10 @@ function least_squares!(grad::Grad{S,F,R,I,M}, psif, psi, config) where {S<:LSQS
     nbfaces = length(mesh.boundary_cellsID)
 
     kernel! = _sized(_lsq_internal_vector!, backend, workgroup, n)
-    kernel!(S(), xx, xy, xz, yx, yy, yz, zx, zy, zz, psi, mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
+    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psi, mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
 
     kernel! = _sized(_lsq_boundary_vector!, backend, workgroup, nbfaces)
-    kernel!(S(), xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, mesh.cells, mesh.faces)
+    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, mesh.cells, mesh.faces)
 
     kernel! = _sized(_lsq_solve_vector!, backend, workgroup, n)
     kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, grad.correctors.Ginv...)
@@ -164,7 +163,7 @@ function least_squares!(grad::Grad{S,F,R,I,M}, psif, psi, config) where {S<:LSQS
 end
 
 @kernel inbounds=true function _lsq_internal_vector!(
-    scheme, xx, xy, xz, yx, yy, yz, zx, zy, zz, psi, cells, cell_faces, cell_neighbours)
+    xx, xy, xz, yx, yy, yz, zx, zy, zz, psi, cells, cell_faces, cell_neighbours)
     i = @index(Global)
     xP = cells.centre[i]
     psiP = psi[i]
@@ -173,7 +172,7 @@ end
     b = SMatrix{3,3,TF,9}(z,z,z,z,z,z,z,z,z)
     for fi ∈ cells.faces_range[i]
         nID = cell_neighbours[fi]
-        d, w = _lsq_internal(scheme, cells, cell_neighbours, fi, xP)
+        d, w = _lsq_internal(cells, cell_neighbours, fi, xP)
         b += w*((psi[nID] - psiP)*d')
     end
     xx.values[i] = b[1,1]; xy.values[i] = b[1,2]; xz.values[i] = b[1,3]
@@ -182,10 +181,10 @@ end
 end
 
 @kernel inbounds=true function _lsq_boundary_vector!(
-    scheme, xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, cells, faces)
+    xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, cells, faces)
     fID = @index(Global)
     cID = faces.ownerCells[fID][1]
-    d, w = _lsq_boundary(scheme, cells, faces, fID, cID)
+    d, w = _lsq_boundary(cells, faces, fID, cID)
     b = w*((psif[fID] - psi[cID])*d')
     Atomix.@atomic xx.values[cID] += b[1,1]
     Atomix.@atomic xy.values[cID] += b[1,2]

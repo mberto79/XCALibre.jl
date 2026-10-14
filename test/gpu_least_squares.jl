@@ -1,4 +1,4 @@
-# CPU/GPU equality of the LeastSquares / WeightedLeastSquares gradients (not part of runtests.jl: needs a GPU).
+# CPU/GPU equality of the LeastSquares gradient (not part of runtests.jl: needs a GPU).
 #   julia --project=<env with XCALibre and CUDA> test/gpu_least_squares.jl
 using XCALibre, Test, CUDA, Printf
 using LinearAlgebra
@@ -37,11 +37,11 @@ function gradient(backend, host, scheme, vector)
 end
 
 @testset "CPU/GPU least-squares gradient equality" begin
-    for (mname, host) in meshes, scheme in (LeastSquares, WeightedLeastSquares), vector in (false, true)
-        c = gradient(CPU(), host, scheme, vector)
-        g = gradient(CUDABackend(), host, scheme, vector)
+    for (mname, host) in meshes, vector in (false, true)
+        c = gradient(CPU(), host, LeastSquares, vector)
+        g = gradient(CUDABackend(), host, LeastSquares, vector)
         err = maximum(norm(a .- b)/max(norm(a), eps()) for (a, b) in zip(c, g))
-        @printf("%s %s %s rel. diff %.2e\n", mname, scheme, vector ? "vector" : "scalar", err)
+        @printf("%s %s rel. diff %.2e\n", mname, vector ? "vector" : "scalar", err)
         @test err < 1e-12
     end
 end

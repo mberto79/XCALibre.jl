@@ -142,10 +142,8 @@ end
 
 # ── Gradient schemes (reconstruction, viscous and LES gradients) ────────────
 @testset "Gradient schemes" begin
-    for gradient in [LeastSquares, WeightedLeastSquares]
-        @testset "gradient=$gradient" begin
-            run_godunov_test(HLLC(), MUSCL{VanLeer}(), FEuler(), nothing; gradient)
-        end
+    @testset "gradient=LeastSquares" begin
+        run_godunov_test(HLLC(), MUSCL{VanLeer}(), FEuler(), nothing; gradient=LeastSquares)
     end
 end
 

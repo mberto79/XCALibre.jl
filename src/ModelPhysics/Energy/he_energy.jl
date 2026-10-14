@@ -450,7 +450,7 @@ function kinetic_gradient!(grad::Grad{Midpoint}, phif, phi, config)
     sync!(grad.result, grad.result.mesh, config)
 end
 
-function kinetic_gradient!(grad::Grad{S}, phif, phi, config) where {S<:Union{LeastSquares,WeightedLeastSquares}}
+function kinetic_gradient!(grad::Grad{LeastSquares}, phif, phi, config)
     zero_gradient_faces!(phif, phi, config)
     least_squares!(grad, phif, phi, config)
 end

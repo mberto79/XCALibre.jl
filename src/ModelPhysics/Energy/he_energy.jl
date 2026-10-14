@@ -65,9 +65,10 @@ end
 Adapt.@adapt_structure InternalEnergy
 
 # Unified equation model container
-struct EnergyEquationModel{E1,State}
+struct EnergyEquationModel{E1,State,CG}
     energy_eqn::E1
     state::State
+    convection_gradient::CG # gradient of he for second-order convection schemes (or nothing)
 end
 Adapt.@adapt_structure EnergyEquationModel
 
@@ -123,9 +124,11 @@ function initialise(
     energy_to_temperature!(model, he, divK) # divK as scratch, set in energy! before use
     divK.values == T.values || temperature_to_energy!(model, T, he)
 
+    cg = convection_gradient(schemes.he.divergence, he, schemes.he.gradient)
+
     energy_eqn = (
         Time{schemes.he.time}(rho, he)
-        + Divergence{schemes.he.divergence}(mdotf, he)
+        + Divergence{schemes.he.divergence}(mdotf, he, convection_grad_field(cg))
         - Laplacian{schemes.he.laplacian}(keff, he)
         ==
         Source(S_he) - Source(divK) - Source(dKdt) + Source(Phi)
@@ -136,7 +139,7 @@ function initialise(
 
     init_residual = (:he, 1.0)
     state = ModelState(init_residual, false)
-    return EnergyEquationModel(energy_eqn, state)
+    return EnergyEquationModel(energy_eqn, state, cg)
 end
 
 """
@@ -168,7 +171,7 @@ function energy!(
     (; rho, nu, Pr) = model.fluid
     (; U, p, Uf) = model.momentum
     (; he, hef, T, K, Kf, prevP, prevRhoK, S_he, mueff_cell) = model.energy
-    (; energy_eqn, state) = energy
+    (; energy_eqn, state, convection_gradient) = energy
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; backend) = hardware
 
@@ -197,8 +200,10 @@ function energy!(
         interpolate!(Uf, U, config)
         correct_boundaries!(Uf, U, boundaries.U, time, config)
         @. K.values = 0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
+        # K takes the face interpolation of the he convection term (term 2), so h + K is convected
+        # by one discrete operator; boundary faces keep K of the boundary velocity
         @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
-        interpolate_upwind!(Kf, K, mdotf, config)
+        interpolate!(Kf, K, mdotf, energy_eqn.model.terms[2].type, config)
         @. Kf.values *= mdotf.values
         div!(divK, Kf, config)
         @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
@@ -218,6 +223,8 @@ function energy!(
     end
 
     # Set up and solve energy equation
+    update_convection_gradient!(
+        convection_gradient, he, boundaries.he, schemes.he.limiter, time, config)
     discretise!(energy_eqn, he, config)
     apply_boundary_conditions!(energy_eqn, boundaries.he, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, he.values, solvers.he.relax, nothing, config)
@@ -492,23 +499,4 @@ end
     G = gradU[i]
     divU = G[1,1] + G[2,2] + G[3,3]
     S[i] = p[i] * divU
-end
-
-function interpolate_upwind!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, config)
-    mesh = phif.mesh
-    nbfaces = length(mesh.boundary_cellsID)
-    internal_faces_count = length(mesh.faces) - nbfaces
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-    kernel! = _sized(interpolate_upwind_Scalar!, backend, workgroup, internal_faces_count)
-    kernel!(phif.values, phi.values, mdotf.values, mesh.faces, nbfaces)
-end
-
-@kernel function interpolate_upwind_Scalar!(fvals, vals, flux, faces, nbfaces)
-    t = @index(Global)
-    i = t + nbfaces
-    @inbounds begin
-        (; ownerCells) = faces[i]
-        fvals[i] = flux[i] >= 0.0 ? vals[ownerCells[1]] : vals[ownerCells[2]]
-    end
 end

@@ -39,6 +39,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_physical_boundary_conditions.jl")
     end
 
+    @testset "Second-order upwind divergence schemes" begin
+        include("unit_test_linear_upwind.jl")
+    end
+
     @testset "Potential-flow initialisation" begin
         include("test_potential_flow.jl")
     end
@@ -120,6 +124,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Viscous work of the enthalpy equation" begin
         include("unit_test_viscous_work.jl")
+    end
+
+    @testset "Kinetic-energy flux of the enthalpy equation" begin
+        include("unit_test_kinetic_energy_flux.jl")
     end
 
     @testset "Run continuation" begin

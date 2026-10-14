@@ -9,6 +9,13 @@
     z, z
 end
 
+# second-order upwind: boundary faces take upwind values, so every condition reuses its Upwind method
+@inline (bc::AbstractBoundary)(
+    term::Operator{F,P,I,Divergence{S}}, colval, rowptr, nzval, cellID, zcellID,
+    cells, faces, fID, i, component, time
+    ) where {F,P,I,S<:SecondOrderUpwind} = bc(
+        _upwind(term), colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
+
 # KWallFunction
 @inline (bc::KWallFunction)(
     term::Operator{F,P,I,Laplacian{T}}, colval, rowptr, nzval, cellID, zcellID,

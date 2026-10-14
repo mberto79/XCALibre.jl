@@ -2,7 +2,7 @@ export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint, AbstractWallFunction
 export KWallFunction, OmegaWallFunction, NutWallFunction, NutMixingLengthWallFunction
 # export Constant, Linear, Upwind, LUST
-export Linear, Upwind, LUST
+export Linear, Upwind, LUST, LinearUpwind, LimitedLinearUpwind
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
 export Gauss, Midpoint
@@ -14,6 +14,31 @@ abstract type AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct LUST <: AbstractScheme end
+
+@doc raw"""
+    LinearUpwind <: AbstractScheme
+
+Second-order upwind divergence scheme. The matrix holds the upwind coefficients and the face
+value is corrected explicitly (deferred correction) with the gradient of the upwind cell,
+``\phi_f = \phi_U + (\nabla\phi)_U \cdot (\mathbf{x}_f - \mathbf{x}_U)``. The gradient is
+supplied through the equation's operator, `Divergence{LinearUpwind}(flux, phi, grad)`; the
+solvers pass the gradient of `U` (limited with `Schemes(limiter=...)`). Boundary faces use
+upwind values. Without a gradient the scheme reduces to `Upwind`.
+"""
+struct LinearUpwind <: AbstractScheme end
+
+@doc raw"""
+    LimitedLinearUpwind <: AbstractScheme
+
+Bounded form of `LinearUpwind`. The face correction ``\delta`` is limited per face with the
+downwind value, ``0 \le \delta/\Delta \le \min(r, 1)``, where ``\Delta = \phi_D - \phi_U`` and
+``r = 2 (\nabla\phi)_U \cdot (\mathbf{x}_D - \mathbf{x}_U)/\Delta - 1``. The face value then lies
+between the upwind and downwind values and local extrema are convected with upwind values. Steady
+solutions stay bounded on regular meshes, and over- and undershoots are much reduced on irregular
+ones. The limiter is inactive for linear fields on uniform meshes (``r = 1``) and reduces the
+scheme to first order at extrema and discontinuities.
+"""
+struct LimitedLinearUpwind <: AbstractScheme end
 struct BoundedUpwind <: AbstractScheme end
 struct Gauss <: AbstractScheme end
 struct Midpoint <: AbstractScheme end

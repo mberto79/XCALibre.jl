@@ -25,9 +25,9 @@ the upwind face value. A converged steady solution has the face values of `LUST`
 ``\phi_f = \frac{3}{4}\phi_{lin} + \frac{1}{4}\phi_U``. Boundary faces use the `LUST`
 boundary coefficients (periodic patches keep its implicit coupling). No gradient is needed.
 Intended for steady runs: in transient runs the correction lags one time step, so results
-differ from `LUST` by ``O(\Delta t)`` and the stable time step is smaller. This is not
-OpenFOAM's `LUST`, which keeps the linear part implicit and adds an explicit `linearUpwind`
-correction to the remaining quarter.
+differ from `LUST` by ``O(\Delta t)`` and the stable time step is smaller; use `LUST` for
+transient and LES runs. This is not OpenFOAM's `LUST`, which keeps the linear part implicit and
+corrects the remaining quarter explicitly with the upwind-cell gradient, as `LinearUpwind` does.
 """
 struct LUSTDC <: AbstractScheme end
 

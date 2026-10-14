@@ -2,7 +2,7 @@ export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint, AbstractWallFunction
 export KWallFunction, OmegaWallFunction, NutWallFunction, NutMixingLengthWallFunction
 # export Constant, Linear, Upwind, LUST
-export Linear, Upwind, LUST, LinearUpwind, LimitedLinearUpwind
+export Linear, Upwind, LUST, LUSTDC, LinearUpwind, LimitedLinearUpwind
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
 export Gauss, Midpoint
@@ -14,6 +14,21 @@ abstract type AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct LUST <: AbstractScheme end
+
+@doc raw"""
+    LUSTDC <: AbstractScheme
+
+`LUST` in deferred-correction form. The matrix holds the upwind coefficients, so it stays
+diagonally dominant, and the face correction ``\frac{3}{4}(\phi_{lin} - \phi_U)`` is added
+explicitly from the current field, with ``\phi_{lin}`` the linearly interpolated and ``\phi_U``
+the upwind face value. A converged steady solution is that of `LUST`,
+``\phi_f = \frac{3}{4}\phi_{lin} + \frac{1}{4}\phi_U``; boundary faces use the `LUST`
+boundary coefficients. No gradient is needed. In transient runs the correction lags by one
+momentum assembly (one time step in `piso!`/`cpiso!`), so results differ from `LUST` by
+``O(\Delta t)``. This is not OpenFOAM's `LUST`, which keeps the linear part implicit and adds
+an explicit `linearUpwind` correction to the remaining quarter.
+"""
+struct LUSTDC <: AbstractScheme end
 
 @doc raw"""
     LinearUpwind <: AbstractScheme

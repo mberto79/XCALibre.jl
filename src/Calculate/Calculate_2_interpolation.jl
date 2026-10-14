@@ -243,7 +243,7 @@ end
 Internal face values of `phi` convected by the face flux `mdotf` with the face interpolation of the
 divergence scheme `scheme`, e.g. `Divergence{LUST}()`, so that `mdotf*phif` is the face flux the
 implicit operator `Divergence{LUST}(mdotf, phi)` assembles. `Upwind` and `BoundedUpwind` take the
-upwind cell value, `Linear` the linear interpolation, and `LUST` 75% linear and 25% upwind.
+upwind cell value, `Linear` the linear interpolation, and `LUST` and `LUSTDC` 75% linear and 25% upwind.
 Boundary face values are left unchanged. Any other scheme throws an `ArgumentError`.
 """
 function interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, scheme::Divergence, config)
@@ -251,7 +251,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalar
     hasmethod(convected_face_value, Tuple{typeof(scheme),Float64,Float64,Float64,Float64}) ||
         throw(ArgumentError(
             "the divergence scheme $(only(typeof(scheme).parameters)) is not supported for " *
-            "the kinetic-energy flux of the energy equation: use Upwind, BoundedUpwind, LUST or Linear for he"))
+            "the kinetic-energy flux of the energy equation: use Upwind, BoundedUpwind, LUST, LUSTDC or Linear for he"))
     (; faces, boundary_cellsID) = phif.mesh
     (; backend, workgroup) = config.hardware
     nbfaces = length(boundary_cellsID)

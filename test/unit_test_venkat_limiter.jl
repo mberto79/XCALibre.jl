@@ -62,6 +62,16 @@ wave_values(mesh) = [sin(c[1]/90)*cos(c[2]/130) for c ∈ mesh.cells.centre]
         end
     end
 
+    @testset "no 0/0 for a zero field with a sub-normal gradient (K = 0)" begin
+        # φ = 0 makes the 10 eps(φ) guard sub-normal, so δϕ² underflows to 0 at a local maximum
+        for mesh ∈ (trig, quad)
+            values = [i == 1 ? 1e-170 : 0.0 for i ∈ eachindex(mesh.cells)]
+            psi, lim = limiter_factors(Venkatakrishnan(0.0), mesh, values)
+            @test all(v -> all(isfinite, v), lim)
+            @test all(p -> 0 ≤ p ≤ 1, psi)
+        end
+    end
+
     @testset "linear field" begin
         # uniform quads: every active face has an allowed/extrapolated ratio of at least 2, so the
         # gradient is kept for any K

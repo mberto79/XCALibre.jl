@@ -111,7 +111,9 @@ end
             if abs(δϕ) > ϵ
                 Δ = ifelse(δϕ > zero(δϕ), phiMax - phiP, phiMin - phiP)
                 ΔΔ = Δ*Δ
-                ψ = (ΔΔ + eps2 + two*δϕ*Δ)/(ΔΔ + two*δϕ*δϕ + δϕ*Δ + eps2)
+                # floatmin: with ε = 0 and φ_P = 0 the guard ϵ underflows and δϕ² can be 0 (0/0)
+                den = max(ΔΔ + two*δϕ*δϕ + δϕ*Δ + eps2, floatmin(phiP))
+                ψ = (ΔΔ + eps2 + two*δϕ*Δ)/den
                 limiter = min(limiter, ψ)
             end
         end

@@ -1,8 +1,5 @@
-# Steady supersonic flow over a cylinder with the explicit density-based solver:
-# global CFL time step against local (per-cell) time stepping, with and without
-# the multistage Runge-Kutta scheme (inviscid flow, Mach 1.5). Reports the
-# absolute density residual history. Force histories can be requested with
-# run!(...; forces=(patches=[:wall], interval=50)) on no-slip walls.
+# Steady Mach 1.5 inviscid cylinder, explicit density-based solver: global time step
+# against local (per-cell) time stepping, with RK2 and RK3. Prints the density residual.
 using XCALibre
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")

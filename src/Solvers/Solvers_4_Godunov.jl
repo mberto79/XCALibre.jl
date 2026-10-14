@@ -724,7 +724,7 @@ function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,Nothin
     return TF(runtime.dt[1])
 end
 
-"""Compute the CFL-limited global dt (minimum of the per-cell spectral-radius dt); update `runtime.dt` in place."""
+# Compute the CFL-limited global dt (minimum of the per-cell spectral-radius dt); update `runtime.dt` in place.
 function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, config, dim_exp, iteration=1)
     TF = eltype(workspace.dt_cell)
     (; dt_cell, nu_eff) = workspace
@@ -775,7 +775,7 @@ _time_increment(dt::AbstractArray) = minimum(dt)
 _reduce_dt(sym::Symbol, dt_cell) = sym === :min ? minimum(dt_cell) :
     sym === :max ? maximum(dt_cell) : sum(dt_cell) / length(dt_cell)
 
-"""Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum."""
+# Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum.
 function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration=1)
     TF = eltype(workspace.dt_cell)
     (; maxCo, startCo, ramp) = runtime.adaptive
@@ -1350,7 +1350,7 @@ function step!(
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 end
 
-"""Refresh primitives, face fields, gradients and thermal coefficients after a conserved-variable stage update."""
+# Refresh primitives, face fields, gradients and thermal coefficients after a conserved-variable stage update.
 function refresh_stage!(
     workspace, model, boundaries, recon_scheme, gradU, gradRho, gradP, gradT,
     nueff, mueff, kappa_eff, rhof, mdotf, time, config
@@ -1373,11 +1373,8 @@ function refresh_stage!(
     update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
 end
 
-"""
-Jameson multistage step (`RK3`, `RK4`, `RK5`): W^(k) = W^n - α_k*(dt/V)*R(W^(k-1)).
-R(W^n) must be pre-computed. `dt` is a scalar or the per-cell array of local time stepping.
-Call recover_primitives! after.
-"""
+# Jameson multistage step: W^(k) = W^n - α_k*(dt/V)*R(W^(k-1)); R(W^n) is pre-computed.
+# `dt` is a scalar or the per-cell array of local time stepping. Call recover_primitives! after.
 function step!(
     scheme::RKJST{N}, workspace, model, boundaries, flux_scheme, recon_scheme,
     gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config

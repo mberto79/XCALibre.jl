@@ -1,4 +1,4 @@
-# CPU/GPU equality of the LinearUpwind / LimitedLinearUpwind / LUSTDC assembly (not part of runtests.jl:
+# CPU/GPU equality of the LinearUpwind / LimitedLinearUpwind / LUSTDC / LUSTLU assembly (not part of runtests.jl:
 # needs a GPU). Run with an environment that has XCALibre and CUDA (or AMDGPU, oneAPI):
 #   julia --project=<env> test/gpu_linear_upwind.jl
 using XCALibre, Test, CUDA, Printf
@@ -43,7 +43,7 @@ function assemble(backend, scheme, vector, limiter=CellBased())
 end
 
 @testset "CPU/GPU assembly equality" begin
-    for scheme in (LinearUpwind, LimitedLinearUpwind, LUSTDC), vector in (false, true),
+    for scheme in (LinearUpwind, LimitedLinearUpwind, LUSTDC, LUSTLU), vector in (false, true),
         limiter in (CellBased(), Venkatakrishnan(5.0))
         scheme === LUSTDC && !(limiter isa CellBased) && continue # LUSTDC uses no gradient
         c = assemble(CPU(), scheme, vector, limiter)

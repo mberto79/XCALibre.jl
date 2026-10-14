@@ -1,6 +1,8 @@
 using XCALibre
 using Random
 using Test
+using StaticArrays
+using LinearAlgebra
 
 # Kinetic-energy flux of the sensible-enthalpy equation. The explicit ∇·(ṁ K) term takes the face
 # interpolation of the enthalpy convection scheme, so h + K is convected by one discrete operator.
@@ -46,6 +48,35 @@ ke_grids = pkgdir(XCALibre, "examples/0_GRIDS")
     end
 end
 
+# LinearUpwind and LimitedLinearUpwind reconstruct K from its gradient, as the he scheme does: on uniform
+# quads the face value of a linear K is exact wherever the upwind cell is an interior cell
+@testset "Second-order kinetic-energy face value" begin
+    for TF ∈ (Float64, Float32)
+        mesh = UNV2D_mesh(joinpath(ke_grids, "quad40.unv"), scale=0.001, float_type=TF)
+        (; cells, faces, boundary_cellsID) = mesh
+        config = Configuration(solvers=(;), schemes=(;), boundaries=(;),
+            runtime=Runtime(iterations=1, write_interval=-1, time_step=1),
+            hardware=Hardware(backend=CPU(), workgroup=64))
+        a = SVector{3,TF}(3, -7, 0)
+        K = ScalarField(mesh); K.values .= [a⋅c + TF(2) for c ∈ cells.centre]
+        mdotf = FaceScalarField(mesh); mdotf.values .= randn(Xoshiro(2), TF, length(faces))
+        nbfaces = length(boundary_cellsID)
+        interior = setdiff(eachindex(cells), boundary_cellsID)
+        upwind(f) = mdotf.values[f] > 0 ? faces[f].ownerCells[1] : faces[f].ownerCells[2]
+        inner = filter(f -> upwind(f) ∈ interior, nbfaces+1:length(faces))
+        exact = [a⋅faces[f].centre + TF(2) for f ∈ inner]
+        for (S, lim) ∈ ((LinearUpwind, nothing), (LimitedLinearUpwind, nothing),
+                (LinearUpwind, CellBased()), (Upwind, nothing))
+            Kf = FaceScalarField(mesh); Kf.values .= TF(-1)
+            cgK = XCALibre.ModelPhysics.convection_gradient(S, K, Gauss)
+            XCALibre.ModelPhysics.kinetic_face!(Kf, K, cgK, lim, mdotf, Divergence{S}(), config)
+            @test eltype(Kf.values) === TF
+            @test all(==(TF(-1)), Kf.values[1:nbfaces]) # boundary faces untouched
+            @test isapprox(Kf.values[inner], exact; rtol=sqrt(eps(TF))) == (S !== Upwind)
+        end
+    end
+end
+
 struct NoFaceValueScheme end
 
 # A scheme without a defined face value must fail loudly, never fall back silently.
@@ -71,7 +102,7 @@ end
     Umag = 2*sqrt(gamma*R*temp)
     velocity = [Umag, 0.0, 0.0]
     T0_inf = temp + Umag^2/(2cp)
-    for hes ∈ (LUST, Linear)
+    for hes ∈ (LUST, Linear, LinearUpwind, LimitedLinearUpwind)
         model = Physics(time=Steady(), fluid=Fluid{Compressible}(nu=0.0, cp=cp, gamma=gamma, Pr=0.7),
             turbulence=RANS{Laminar}(), energy=Energy{SensibleEnthalpy}(Tref=0.0), domain=mesh)
         BCs = assign(region=mesh, (
@@ -94,6 +125,7 @@ end
         T0 = @. model.energy.T.values + (U.x.values^2 + U.y.values^2)/(2cp)
         @test last(residuals.p) < 1e-6
         @test maximum(model.energy.T.values) > 1.25temp # the shock is there
-        @test maximum(abs, T0 ./ T0_inf .- 1) < 1e-4 # upwind K with these schemes: 3e-2 to 5e-2
+        # upwind K: 3e-2 to 5e-2. LimitedLinearUpwind clips h and K separately, so the corner cell keeps ~5e-3
+        @test maximum(abs, T0 ./ T0_inf .- 1) < (hes === LimitedLinearUpwind ? 1e-2 : 1e-4)
     end
 end

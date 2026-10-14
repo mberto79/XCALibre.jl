@@ -65,10 +65,11 @@ end
 Adapt.@adapt_structure InternalEnergy
 
 # Unified equation model container
-struct EnergyEquationModel{E1,State,CG}
+struct EnergyEquationModel{E1,State,CG,KG}
     energy_eqn::E1
     state::State
     convection_gradient::CG # gradient of he for second-order convection schemes (or nothing)
+    kinetic_gradient::KG # gradient of K for the same schemes, sensible enthalpy only (or nothing)
 end
 Adapt.@adapt_structure EnergyEquationModel
 
@@ -125,6 +126,9 @@ function initialise(
     divK.values == T.values || temperature_to_energy!(model, T, he)
 
     cg = convection_gradient(schemes.he.divergence, he, schemes.he.gradient)
+    # the internal-energy equation has no kinetic-energy flux
+    cgK = energy isa SensibleEnthalpy ?
+        convection_gradient(schemes.he.divergence, energy.K, schemes.he.gradient) : nothing
 
     energy_eqn = (
         Time{schemes.he.time}(rho, he)
@@ -139,7 +143,7 @@ function initialise(
 
     init_residual = (:he, 1.0)
     state = ModelState(init_residual, false)
-    return EnergyEquationModel(energy_eqn, state, cg)
+    return EnergyEquationModel(energy_eqn, state, cg, cgK)
 end
 
 """
@@ -171,7 +175,7 @@ function energy!(
     (; rho, nu, Pr) = model.fluid
     (; U, p, Uf) = model.momentum
     (; he, hef, T, K, Kf, prevP, prevRhoK, S_he, mueff_cell) = model.energy
-    (; energy_eqn, state, convection_gradient) = energy
+    (; energy_eqn, state, convection_gradient, kinetic_gradient) = energy
     (; solvers, schemes, runtime, hardware, boundaries) = config
     (; backend) = hardware
 
@@ -203,7 +207,7 @@ function energy!(
         # K takes the face interpolation of the he convection term (term 2), so h + K is convected
         # by one discrete operator; boundary faces keep K of the boundary velocity
         @. Kf.values = 0.5*(Uf.x.values^2 + Uf.y.values^2 + Uf.z.values^2)
-        interpolate!(Kf, K, mdotf, energy_eqn.model.terms[2].type, config)
+        kinetic_face!(Kf, K, kinetic_gradient, schemes.he.limiter, mdotf, energy_eqn.model.terms[2].type, config)
         @. Kf.values *= mdotf.values
         div!(divK, Kf, config)
         @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
@@ -363,6 +367,68 @@ function energy_clamp!(
     clamp!(he.values, emin, emax)
 end
 
+
+# Internal-face K of the kinetic-energy flux with the face value of the he convection scheme. The
+# second-order upwind schemes reconstruct K like he: gradient of K (zero-gradient boundary values), the
+# he limiter and, for LimitedLinearUpwind, the same TVD clip, so that h + K = const stays a discrete solution.
+kinetic_face!(Kf, K, cgK, limiter, mdotf, scheme, config) = interpolate!(Kf, K, mdotf, scheme, config)
+
+function kinetic_face!(
+    Kf, K, cgK::ConvectionGradient, limiter, mdotf, scheme::Divergence{<:SecondOrderUpwind}, config)
+    (; faces, boundary_cellsID) = Kf.mesh
+    (; backend, workgroup) = config.hardware
+    nbfaces = length(boundary_cellsID)
+    kinetic_gradient!(cgK.grad, cgK.phif, K, config)
+    limit_gradient!(limiter, cgK.grad, K, config)
+    kernel! = _sized(_kinetic_face!, backend, workgroup, length(faces) - nbfaces)
+    kernel!(Kf, K, cgK.grad.result, mdotf, scheme, nbfaces)
+end
+
+function kinetic_gradient!(grad::Grad{Gauss}, phif, phi, config)
+    zero_gradient_faces!(phif, phi, config)
+    green_gauss!(grad, phif, config)
+    sync!(grad.result, grad.result.mesh, config)
+end
+
+function kinetic_gradient!(grad::Grad{Midpoint}, phif, phi, config)
+    zero_gradient_faces!(phif, phi, config)
+    green_gauss!(grad, phif, config)
+    for _ ∈ 1:2 # as grad! for Midpoint
+        correct_interpolation!(grad, phif, phi, config)
+        green_gauss!(grad, phif, config)
+    end
+    sync!(grad.result, grad.result.mesh, config)
+end
+
+# linear internal face values and the owner-cell value on boundary faces
+function zero_gradient_faces!(phif, phi, config)
+    (; backend, workgroup) = config.hardware
+    interpolate!(phif, phi, config)
+    kernel! = _sized(_zero_gradient_faces!, backend, workgroup, length(phi.mesh.boundary_cellsID))
+    kernel!(phif, phi)
+end
+
+@kernel inbounds=true function _zero_gradient_faces!(phif, phi)
+    i = @index(Global)
+    @uniform boundary_cellsID = phif.mesh.boundary_cellsID
+    phif[i] = phi[boundary_cellsID[i]]
+end
+
+@kernel inbounds=true function _kinetic_face!(Kf, K, gradK, mdotf, scheme, nbfaces)
+    i = @index(Global) + nbfaces
+    @uniform cells = Kf.mesh.cells
+    @uniform faces = Kf.mesh.faces
+    c1, c2 = faces.ownerCells[i]
+    uID, dID = mdotf[i] > zero(mdotf[i]) ? (c1, c2) : (c2, c1)
+    xU = cells.centre[uID]
+    g = gradK[uID]
+    Kf[i] = K[uID] + _kinetic_correction(
+        scheme, g⋅(faces.centre[i] - xU), g⋅(cells.centre[dID] - xU), K[dID] - K[uID])
+end
+
+# the face corrections of the he schemes (scheme_face_source!)
+@inline _kinetic_correction(::Divergence{LinearUpwind}, δ, g, Δ) = δ
+@inline _kinetic_correction(::Divergence{LimitedLinearUpwind}, δ, g, Δ) = _limit_tvd(δ, g, Δ)
 
 function viscous_dissipation!(Phi::ScalarField, mueff_cell, gradU, U_BCs, config)
     (; hardware) = config

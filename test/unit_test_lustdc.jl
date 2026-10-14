@@ -23,7 +23,7 @@ uniform_flux(mesh, u) = begin
 end
 
 # row-wise A*x - b over the assembled sparse matrix
-residual(A, x, b) = begin
+lustdc_residual(A, x, b) = begin
     nzval, colval, rowptr = get_sparse_fields(A)
     [sum(nzval[k]*x[colval[k]] for k ∈ rowptr[i]:rowptr[i+1]-1) - b[i] for i ∈ eachindex(b)]
 end
@@ -73,7 +73,7 @@ vector_sets = (
             phi.values .= 0.3 .+ sin.(3e-3 .* x) .* cos.(2e-3 .* y) .+ 0.01 .* sin.(1:n)
             r = map((LUST, LUSTDC)) do scheme
                 A, b = assemble_scalar(scheme, mesh, mdotf, phi, BCs)
-                residual(A, phi.values, b)
+                lustdc_residual(A, phi.values, b)
             end
             @test maximum(abs, r[2] - r[1]) <= 1e-10*maximum(abs, r[1])
         end
@@ -87,7 +87,7 @@ vector_sets = (
                     A, sys = assemble_vector(scheme, mesh, mdotf, U, BCs)
                     nzval = get_sparse_fields(A)[1]
                     nzval .= sys[k][1]
-                    residual(A, comp, sys[k][2])
+                    lustdc_residual(A, comp, sys[k][2])
                 end
                 @test maximum(abs, rr[2] - rr[1]) <= 1e-10*maximum(abs, rr[1])
             end
@@ -105,7 +105,7 @@ end
     phi.values .= [a⋅c + 2.0 for c ∈ mesh.cells.centre]
     r = map((Linear, Upwind, LUSTDC)) do scheme
         A, b = assemble_scalar(scheme, mesh, mdotf, phi, ())
-        residual(A, phi.values, b)
+        lustdc_residual(A, phi.values, b)
     end
     exact = (u⋅a) .* mesh.cells.volume
     @test r[1][interior] ≈ exact[interior] rtol=1e-10
@@ -187,7 +187,7 @@ end
             A, b = assemble_scalar(scheme, m, flux, phi, BCs)
             @test eltype(b) == TF
             @test eltype(get_sparse_fields(A)[1]) == TF
-            residual(A, phi.values, b)
+            lustdc_residual(A, phi.values, b)
         end
         @test eltype(r[2]) == TF
         @test maximum(abs, r[2] - r[1]) <= 100*eps(TF)*maximum(abs, r[1])

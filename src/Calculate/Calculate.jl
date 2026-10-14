@@ -19,6 +19,7 @@ using XCALibre.Fields
 import XCALibre.Fields: field_values # not exported: kernel-argument helper
 using XCALibre.ModelFramework
 using XCALibre.Discretise
+using XCALibre.Discretise: convected_face_value # not exported: face value of a divergence scheme
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
 using XCALibre.Simulate

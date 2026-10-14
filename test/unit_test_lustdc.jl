@@ -168,6 +168,13 @@ end
     @test term.grad === nothing
     @test XCALibre.Discretise.has_face_source(typeof(term))
     @test !XCALibre.Discretise.is_second_order(LUSTDC)
+    # the film model and the kinetic-energy flux take the LUST face value
+    for scheme ∈ (LUST, LUSTDC)
+        t = Divergence{scheme}(uniform_flux(quad, u), ScalarField(quad))
+        @test XCALibre.Solvers.film_convection_mode(t) == 3
+    end
+    @test XCALibre.Discretise.convected_face_value(Divergence{LUSTDC}(), 1.0, 3.0, 0.5, 1.0) ==
+        XCALibre.Discretise.convected_face_value(Divergence{LUST}(), 1.0, 3.0, 0.5, 1.0)
     for (TF, TI) ∈ ((Float32, Int32), (Float64, Int64))
         m = adapt(backend, UNV2D_mesh(joinpath(grids_dir, "trig40.unv"), float_type=TF, integer_type=TI))
         fl = FaceVectorField(m); fl.x.values .= TF(1); fl.y.values .= TF(0.6)

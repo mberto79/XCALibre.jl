@@ -93,8 +93,9 @@ function run_godunov_test(flux, reconstruction, time_stepping, adaptive)
         T             = Schemes(gradient=Gauss),
         flux          = flux,
         time_stepping = time_stepping,
-        reconstruction = reconstruction
     )
+    # `nothing` leaves `reconstruction` out, which selects the default (Upwind)
+    isnothing(reconstruction) || (schemes = merge(schemes, (; reconstruction)))
 
     config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime,
@@ -126,6 +127,7 @@ end
 # ── Reconstruction schemes ──────────────────────────────────────────────────
 @testset "Reconstruction schemes" begin
     reconstructions = [
+        ("default (omitted)", nothing),
         ("Upwind",          Upwind()),
         ("MUSCL{VanLeer}",  MUSCL{VanLeer}()),
         ("MUSCL{MinMod}",   MUSCL{MinMod}()),

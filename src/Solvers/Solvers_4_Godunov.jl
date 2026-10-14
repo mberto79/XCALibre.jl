@@ -1348,7 +1348,7 @@ function GODUNOV(
 
     flux_scheme  = get(schemes, :flux, Rusanov())
     time_scheme  = get(schemes, :time_stepping, FEuler())
-    recon_scheme = schemes.reconstruction
+    recon_scheme = get(schemes, :reconstruction, Upwind())
 
     (; rhoU, rhoE, res_rho) = workspace
 

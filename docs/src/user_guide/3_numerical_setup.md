@@ -89,7 +89,7 @@ The explicit density-based solver (`godunov!`, selected with `Fluid{SupersonicFl
 | `time_stepping` | `FEuler()` | Explicit forward Euler, 1st order (default) |
 | | `RK2()` | Explicit 2-stage SSP Runge-Kutta, 2nd order |
 
-`reconstruction` must be given. The time step is fixed with `Runtime(time_step=...)` or, with `adaptive=AdaptiveTimeStepping(maxCo=...)`, set every iteration from the CFL condition (convective plus diffusive wave speeds). Only `rho` takes a `convergence` entry in `solvers`, there are no linear solvers. For example (see `examples/2D_cylinder_supersonic.jl`):
+`reconstruction` defaults to `Upwind()`. The time step is fixed with `Runtime(time_step=...)` or, with `adaptive=AdaptiveTimeStepping(maxCo=...)`, set every iteration from the CFL condition (convective plus diffusive wave speeds). Only `rho` takes a `convergence` entry in `solvers`, there are no linear solvers. For example (see `examples/2D_cylinder_supersonic.jl`):
 
 ```julia
 schemes = (

@@ -1,6 +1,8 @@
 using XCALibre
 using Random
 using Test
+using StaticArrays
+using LinearAlgebra
 
 # Kinetic-energy flux of the sensible-enthalpy equation. The explicit ∇·(ṁ K) term takes the face
 # interpolation of the enthalpy convection scheme, so h + K is convected by one discrete operator.
@@ -46,6 +48,56 @@ ke_grids = pkgdir(XCALibre, "examples/0_GRIDS")
     end
 end
 
+# LinearUpwind and LimitedLinearUpwind reconstruct K from its gradient, as the he scheme does h: on uniform
+# quads the face value of a linear K is exact wherever the upwind cell is an interior cell, and with
+# h + K uniform the face values of h (as assembled) and K add up to it, with a gradient limiter too
+@testset "Second-order kinetic-energy face value" begin
+    MP = XCALibre.ModelPhysics
+    for TF ∈ (Float64, Float32)
+        mesh = UNV2D_mesh(joinpath(ke_grids, "quad40.unv"), scale=0.001, float_type=TF)
+        (; cells, faces, boundary_cellsID) = mesh
+        BCs = assign(region=mesh, (he=[Zerogradient(b) for b ∈ (:inlet, :outlet, :bottom, :top)],))
+        config = Configuration(solvers=(;), schemes=(;), boundaries=BCs,
+            runtime=Runtime(iterations=1, write_interval=-1, time_step=1),
+            hardware=Hardware(backend=CPU(), workgroup=64))
+        a = SVector{3,TF}(3, -7, 0)
+        x0 = SVector{3,TF}(0.4, 0.6, 0)
+        mdotf = FaceScalarField(mesh); mdotf.values .= randn(Xoshiro(2), TF, length(faces))
+        nbfaces = length(boundary_cellsID)
+        interior = setdiff(eachindex(cells), boundary_cellsID)
+        upwind(f) = mdotf.values[f] > 0 ? faces[f].ownerCells : reverse(faces[f].ownerCells)
+        inner = filter(f -> first(upwind(f)) ∈ interior, nbfaces+1:length(faces))
+        # h face value of the assembled he term (scheme_face_source!)
+        hface(S, h, gh, f) = begin
+            u, d = upwind(f)
+            δ = gh[u]⋅(faces[f].centre - cells.centre[u])
+            S === LinearUpwind ? h[u] + δ :
+                h[u] + XCALibre.Discretise._limit_tvd(δ, gh[u]⋅(cells.centre[d] - cells.centre[u]), h[d] - h[u])
+        end
+        run(S, lim, Kfun) = begin
+            K = ScalarField(mesh); K.values .= Kfun.(cells.centre)
+            he = ScalarField(mesh); he.values .= TF(5) .- K.values
+            Kf = FaceScalarField(mesh); Kf.values .= TF(-1)
+            cg = MP.convection_gradient(S, he, Gauss)
+            cgK = MP.kinetic_convection_gradient(S, K, Gauss)
+            MP.kinetic_face!(Kf, K, cgK, cg, he, BCs.he, lim, mdotf, Divergence{S}(), zero(TF), config)
+            Kf, he, cg
+        end
+        for S ∈ (LinearUpwind, LimitedLinearUpwind, Upwind)
+            Kf, _, _ = run(S, nothing, c -> a⋅c + TF(2))
+            @test eltype(Kf.values) === TF
+            @test all(==(TF(-1)), Kf.values[1:nbfaces]) # boundary faces untouched
+            exact = [a⋅faces[f].centre + TF(2) for f ∈ inner]
+            @test isapprox(Kf.values[inner], exact; rtol=sqrt(eps(TF))) == (S !== Upwind)
+        end
+        for S ∈ (LinearUpwind, LimitedLinearUpwind), lim ∈ (nothing, CellBased())
+            Kf, he, cg = run(S, lim, c -> TF(2) + TF(100)*sum(abs2, c - x0))
+            H = [hface(S, he.values, cg.grad.result, f) + Kf.values[f] for f ∈ inner]
+            @test maximum(abs, H .- TF(5)) < 100eps(TF)
+        end
+    end
+end
+
 struct NoFaceValueScheme end
 
 # A scheme without a defined face value must fail loudly, never fall back silently.
@@ -71,7 +123,8 @@ end
     Umag = 2*sqrt(gamma*R*temp)
     velocity = [Umag, 0.0, 0.0]
     T0_inf = temp + Umag^2/(2cp)
-    for hes ∈ (LUST, Linear)
+    for (hes, lim) ∈ ((LUST, nothing), (Linear, nothing), (LinearUpwind, nothing), (LimitedLinearUpwind, nothing),
+            (LinearUpwind, CellBased()), (LimitedLinearUpwind, CellBased()))
         model = Physics(time=Steady(), fluid=Fluid{Compressible}(nu=0.0, cp=cp, gamma=gamma, Pr=0.7),
             turbulence=RANS{Laminar}(), energy=Energy{SensibleEnthalpy}(Tref=0.0), domain=mesh)
         BCs = assign(region=mesh, (
@@ -82,7 +135,7 @@ end
         setup(relax; kw...) =
             SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-10, relax=relax, rtol=0.0, atol=1e-2; kw...)
         solvers = (U=setup(0.7), p=setup(0.3; limit=(0.5pressure, 5pressure)), he=setup(0.3; limit=(800.0, 3000.0)))
-        schemes = (U=Schemes(divergence=Upwind), p=Schemes(divergence=Upwind), he=Schemes(divergence=hes))
+        schemes = (U=Schemes(divergence=Upwind), p=Schemes(divergence=Upwind), he=Schemes(divergence=hes, limiter=lim))
         config = Configuration(; solvers, schemes, boundaries=BCs,
             runtime=Runtime(iterations=1000, write_interval=-1, time_step=1),
             hardware=Hardware(backend=CPU(), workgroup=workgroupsize(mesh)))
@@ -94,6 +147,6 @@ end
         T0 = @. model.energy.T.values + (U.x.values^2 + U.y.values^2)/(2cp)
         @test last(residuals.p) < 1e-6
         @test maximum(model.energy.T.values) > 1.25temp # the shock is there
-        @test maximum(abs, T0 ./ T0_inf .- 1) < 1e-4 # upwind K with these schemes: 3e-2 to 5e-2
+        @test maximum(abs, T0 ./ T0_inf .- 1) < 1e-4 # upwind K: 3e-2 to 5e-2; h and K limited apart: 5e-3 to 7e-3
     end
 end

@@ -8,7 +8,7 @@ export is_distributed_mesh
 export is_report_rank
 export global_any
 export solve_equation!
-export AdaptiveTimeStepping
+export AdaptiveTimeStepping, LocalTimeStepping
 
 struct SolverSetup{
     F<:AbstractFloat,
@@ -161,7 +161,35 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
+"""
+    LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0)
+
+Local (per-cell) pseudo-time stepping for the explicit density-based solver
+(`Fluid{SupersonicFlow}`, [`godunov!`](@ref)). Pass it as `adaptive` to `Runtime` to converge
+steady problems faster: every cell advances with its own time step
+`dt_i = CFL / (0.5 Σ_f (|U_i·n_f| + a_i) A_f / V_i + ν_eff Σ_f A_f² / V_i²)`, so the result of a
+converged run does not depend on `dt` and the iterations are not a time history. It combines with
+`FEuler()`, `RK2()` and the multistage schemes `RK3()`, `RK4()`, `RK5()`.
+
+# Input arguments
+
+- `maxCo::AbstractFloat`: Courant number of the cells (final value of the ramp).
+- `startCo::AbstractFloat`: Courant number of the first iteration.
+- `ramp::Integer`: number of iterations over which the Courant number grows linearly from
+  `startCo` to `maxCo` (`0` = no ramp). Useful to start from a uniform field.
+
+The turbulence equations are implicit and use the smallest cell time step of the iteration.
+"""
+struct LocalTimeStepping{F<:AbstractFloat,I<:Integer}
+    maxCo::F
+    startCo::F
+    ramp::I
+end
+Adapt.@adapt_structure LocalTimeStepping
+LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0) =
+    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp))
+
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping, LocalTimeStepping}}
     iterations::I
     dt::V
     write_interval::I

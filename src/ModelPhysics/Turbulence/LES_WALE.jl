@@ -116,8 +116,7 @@ function turbulence!(
 
     mesh = model.domain
 
-    (; boundaries, hardware) = config
-    (; backend, workgroup) = hardware
+    (; boundaries) = config
     (; nut, nutf, coeffs) = les.turbulence
     (; U, Uf, gradU) = S
     (; Δ) = les
@@ -126,20 +125,22 @@ function turbulence!(
     grad!(gradU, Uf, U, boundaries.U, time, config) # update gradient (and S)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
     
-    wk = _setup(backend, workgroup, length(nut))[2] # index 2 to extract the workgroup
-    AK.foreachindex(nut, min_elems=wk, block_size=wk) do i
-        Si = S[i] # 0.5*(gradUi + gradUi')
-        gradUi = gradU[i]
+    # Bind values, not fields, so the closure carries no mesh (xcal_foreach runs on any backend)
+    nutv, Δv, gradUv = field_values(nut), field_values(Δ), field_values(gradU.result)
+    xcal_foreach(nutv, config) do i
+        gradUi = gradUv[i]
+        Tf = eltype(gradUi)
+        Si = (gradUi + gradUi')/2 # S
         SS = Si⋅Si # S:S
 
         # Traceless symmetric part of the squared velocity gradient tensor
         g2 = gradUi*gradUi
-        Sd = 0.5*(g2 + g2') - (1/3)*tr(g2)*I
+        Sd = (g2 + g2')/2 - Tf(1/3)*tr(g2)*I
         SdSd = Sd⋅Sd # Sd:Sd
 
-        num = SdSd^1.5
-        den = SS^2.5 + SdSd^1.25
-        nut[i] = ifelse(den > 0, Δ[i]*num/den, zero(num)) # Δ is (Cw*Δ)^2; den=0 where gradU=0
+        num = SdSd^Tf(1.5)
+        den = SS^Tf(2.5) + SdSd^Tf(1.25)
+        nutv[i] = ifelse(den > 0, Δv[i]*num/den, zero(num)) # Δ is (Cw*Δ)^2; den=0 where gradU=0
     end
 
     sync!(nut, mesh, config) # ghost nut must match the owning rank before face interpolation

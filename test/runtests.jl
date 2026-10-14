@@ -47,6 +47,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_lustdc.jl")
     end
 
+    @testset "LUST with explicit upwind correction (LUSTLU)" begin
+        include("unit_test_lustlu.jl")
+    end
+
     @testset "Venkatakrishnan gradient limiter" begin
         include("unit_test_venkat_limiter.jl")
     end

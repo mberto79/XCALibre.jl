@@ -1,4 +1,4 @@
-# LinearUpwind / LimitedLinearUpwind / LUSTDC source per rank vs the undivided mesh. Ghost-cell gradients of a
+# LinearUpwind / LimitedLinearUpwind / LUSTDC / LUSTLU source per rank vs the undivided mesh. Ghost-cell gradients of a
 # non-linear field are wrong until discretise! exchanges them, so cells next to a processor face
 # match the serial source only if that exchange is done.
 using XCALibre, PETSc, MPI, Test
@@ -33,7 +33,7 @@ function source_case(mesh)
 
     out = []
     # gradient limiters exchange their ghost values: limited gradients must match serial too
-    for limiter ∈ (nothing, Venkatakrishnan(5.0)), scheme ∈ (LinearUpwind, LimitedLinearUpwind, LUSTDC)
+    for limiter ∈ (nothing, Venkatakrishnan(5.0)), scheme ∈ (LinearUpwind, LimitedLinearUpwind, LUSTDC, LUSTLU)
         gradU = Grad{Gauss}(U)
         grad!(gradU, FaceVectorField(mesh), U, BCs.U, 0.0, config)
         limit_gradient!(limiter, gradU, U, config)

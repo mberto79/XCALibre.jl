@@ -165,7 +165,7 @@ AdaptiveTimeStepping(;
     LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0)
 
 Local (per-cell) pseudo-time stepping for the explicit density-based solver
-(`Fluid{SupersonicFlow}`, [`godunov!`](@ref)). Pass it as `adaptive` to `Runtime` to converge
+(`Fluid{SupersonicFlow}`, `godunov!`). Pass it as `adaptive` to `Runtime` to converge
 steady problems faster: every cell advances with its own time step
 `dt_i = CFL / (0.5 Σ_f (|U_i·n_f| + a_i) A_f / V_i + ν_eff Σ_f A_f² / V_i²)`, so the result of a
 converged run does not depend on `dt` and the iterations are not a time history. It combines with

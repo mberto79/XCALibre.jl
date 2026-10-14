@@ -46,6 +46,22 @@ ke_grids = pkgdir(XCALibre, "examples/0_GRIDS")
     end
 end
 
+struct NoFaceValueScheme end
+
+# A scheme without a defined face value must fail loudly, never fall back silently.
+@testset "Unsupported scheme for the kinetic-energy flux" begin
+    mesh = UNV2D_mesh(joinpath(ke_grids, "quad40.unv"), scale=0.001)
+    config = Configuration(solvers=(;), schemes=(;), boundaries=(;),
+        runtime=Runtime(iterations=1, write_interval=-1, time_step=1),
+        hardware=Hardware(backend=CPU(), workgroup=64))
+    phi = ScalarField(mesh); mdotf = FaceScalarField(mesh); phif = FaceScalarField(mesh)
+    err = try; interpolate!(phif, phi, mdotf, Divergence{NoFaceValueScheme}(), config); nothing
+        catch e; e; end
+    @test err isa ArgumentError
+    @test occursin("NoFaceValueScheme", err.msg)
+    @test occursin("kinetic-energy flux", err.msg)
+end
+
 # Steady inviscid adiabatic flow conserves the total temperature T0 = T + |U|²/(2 cp), also through
 # the oblique shock of a Mach 2 compression corner, whatever the enthalpy convection scheme.
 @testset "Total temperature through a compression corner" begin

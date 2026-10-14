@@ -247,6 +247,11 @@ upwind cell value, `Linear` the linear interpolation, and `LUST` 75% linear and 
 Boundary face values are left unchanged.
 """
 function interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalarField, scheme::Divergence, config)
+    # Checked on the host: a throw that names the scheme cannot be compiled into a GPU kernel
+    hasmethod(convected_face_value, Tuple{typeof(scheme),Float64,Float64,Float64,Float64}) ||
+        throw(ArgumentError(
+            "the divergence scheme $(nameof(typeof(scheme)))$(typeof(scheme).parameters) is not supported for " *
+            "the kinetic-energy flux of the energy equation: use Upwind, BoundedUpwind, LUST or Linear for he"))
     (; faces, boundary_cellsID) = phif.mesh
     (; backend, workgroup) = config.hardware
     nbfaces = length(boundary_cellsID)

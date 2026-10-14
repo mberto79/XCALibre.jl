@@ -167,6 +167,30 @@ end
     0.0, 0.0
 end
 
+# LUSTDC: upwind matrix, 3/4 (linear - upwind) face value as an explicit source (see LUSTDC)
+@inline scheme!(
+    term::Operator{F,P,I,Divergence{LUSTDC}},
+    nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime
+    ) where {F,P,I} = scheme!(
+        _upwind(term), nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)
+
+@inline scheme_source!(
+    term::Operator{F,P,I,Divergence{LUSTDC}}, cells, cID, cIndex, prev, runtime, rho_prev
+    ) where {F,P,I} = begin
+    0.0, 0.0
+end
+
+@inline function scheme_face_source!(
+    term::Operator{F,P,I,Divergence{LUSTDC}}, cells, faces, cID, nID, ns, fID
+    ) where {F,P,I}
+    flux = term.sign*term.flux[fID]*ns
+    w = faces.weight[fID]
+    signbit(ns) ? w = one(w) - w : w
+    phiP, phiN = term.phi[cID], term.phi[nID]
+    phiU = flux > zero(flux) ? phiP : phiN
+    return -flux*typeof(w)(0.75)*(w*phiP + (one(w) - w)*phiN - phiU)
+end
+
 # LinearUpwind, LimitedLinearUpwind: upwind matrix, face reconstruction as an explicit source
 const SecondOrderUpwind = Union{LinearUpwind,LimitedLinearUpwind}
 
@@ -200,6 +224,7 @@ end
 # for which `has_face_source` holds are visited, all others compile to the original code
 has_face_source(::Type{<:Operator}) = false
 has_face_source(::Type{<:Operator{F,P,I,Divergence{S},G}}) where {F,P,I,S<:SecondOrderUpwind,G<:AbstractField} = true
+has_face_source(::Type{<:Operator{F,P,I,Divergence{LUSTDC}}}) where {F,P,I} = true
 
 @inline function scheme_face_source!(
     term::Operator{F,P,I,Divergence{LinearUpwind}}, cells, faces, cID, nID, ns, fID
@@ -262,7 +287,7 @@ end
 @inline convected_face_value(::Divergence{<:Union{Upwind,BoundedUpwind}}, phiP, phiN, w, flux) =
     flux >= zero(flux) ? phiP : phiN
 
-@inline function convected_face_value(::Divergence{LUST}, phiP, phiN, w, flux)
+@inline function convected_face_value(::Divergence{<:Union{LUST,LUSTDC}}, phiP, phiN, w, flux)
     phiUpwind = flux >= zero(flux) ? phiP : phiN
     three_quarters = typeof(w)(0.75)
     quarter = typeof(w)(0.25)

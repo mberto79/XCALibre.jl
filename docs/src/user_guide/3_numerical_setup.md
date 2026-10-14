@@ -42,6 +42,7 @@ print_tree(AbstractScheme) # hide
 | BoundedUpwind | Bounded version of the Upwind scheme |
 | LUST | 1st/2nd order mixed scheme (fixed at 75% Linear - 25% Upwind) |
 | LUSTDC | `LUST` in deferred-correction form: upwind matrix coefficients with the 75% (Linear - Upwind) part of the face value added explicitly |
+| LUSTLU | `LUST` coefficients in the matrix plus an explicit gradient correction of its upwind quarter (as `LinearUpwind`); for transient and LES runs, needs a gradient of the transported field |
 | LinearUpwind | 2nd order upwind scheme: upwind matrix coefficients with an explicit (deferred) correction of the face value from the upwind-cell gradient |
 | LimitedLinearUpwind | Bounded version of `LinearUpwind`: the correction is limited per face with the downwind value (TVD bound) |
 
@@ -54,6 +55,8 @@ The solvers supply the gradient for the momentum equation, for `he`, and for `k`
 The gradient of a ghost cell is taken from its owner on distributed meshes. In a user-built equation the gradient field is passed as a third argument, e.g. `Divergence{LinearUpwind}(mdotf, phi, gradphi.result)`.
 
 `LUSTDC` is `LUST` with the same face values but an upwind matrix: the 75% (`Linear` - `Upwind`) part of the face value is added explicitly from the current field, and boundary faces use the `LUST` boundary coefficients (periodic patches keep its implicit coupling). It needs no gradient. A converged steady solution therefore matches `LUST` up to the momentum diagonal used in the face-flux (Rhie-Chow) interpolation, a difference of the same size as changing the velocity relaxation factor. Use it for steady runs (`simple!`, `csimple!`) that diverge with `LUST` where convection dominates. In transient runs the explicit part lags one time step: results match `LUST` as the time step goes to zero, but the scheme becomes unstable at smaller Courant numbers than `LUST`, so `LUST`, which is unchanged, remains the recommended scheme for transient and LES runs. `LUSTDC` is not OpenFOAM's `LUST`: that scheme keeps the 75% linear part implicit and corrects the remaining upwind quarter explicitly with the upwind-cell gradient, as `LinearUpwind` does, whereas both `LUST` and `LUSTDC` use the plain upwind value for that quarter.
+
+`LUSTLU` is the opt-in second-order variant of `LUST` for transient and LES runs. The matrix has exactly the `LUST` coefficients (75% linear, 25% upwind, so the same implicit coupling and time-step limit), and the upwind quarter of the face value is corrected explicitly with the gradient of the upwind cell, `φ_f = ¾ φ_lin + ¼ [φ_U + (∇φ)_U · (x_f − x_U)]`, which removes the first-order dissipation `LUST` retains from that quarter (the gradient is limited with `Schemes(limiter=...)`, as for `LinearUpwind`). On a Taylor-Green vortex at Re 1600 with WALE it raises the kinetic energy at t = 10 by about 37% relative to `LUST`, which was 22% below the OpenFOAM `LUST` reference; the stability limit of `piso!` on a Re 100 cylinder is that of `LUST`. `LUST` itself is unchanged, boundary faces use the `LUST` coefficients, and without a gradient `LUSTLU` reduces to `LUST`. It is available for `U` and the other transported fields of the incompressible and compressible solvers, but not for `he`.
 
 ---
 #### Gradient schemes

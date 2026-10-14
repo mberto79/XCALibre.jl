@@ -1315,7 +1315,7 @@ end
 
 film_convection_mode(term::Operator{F,P,I,Divergence{Linear}}) where {F,P,I} = 1
 film_convection_mode(term::Operator{F,P,I,Divergence{Upwind}}) where {F,P,I} = 2
-film_convection_mode(term::Operator{F,P,I,<:Divergence{<:Union{LUST,LUSTDC}}}) where {F,P,I} = 3
+film_convection_mode(term::Operator{F,P,I,<:Divergence{<:Union{LUST,LUSTDC,LUSTLU}}}) where {F,P,I} = 3
 
 function apply_film_convection_flux!(phif, convection_term, h, config)
     (; mesh) = phif

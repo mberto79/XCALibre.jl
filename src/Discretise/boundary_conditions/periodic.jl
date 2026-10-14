@@ -444,6 +444,34 @@ end
     ac, zero(ac)
 end
 
+# LUSTLU: LUST coefficients plus the explicit correction of the upwind quarter. Both sides take the
+# flux of the parent face, and each adds the correction to its own cell (the kernel writes b only there)
+@inline function (bc::AbstractPeriodic)(
+    term::Operator{F,P,I,Divergence{LUSTLU}}, colval, rowptr, nzval, cellID, zcellID,
+    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+    ) where {F,P,I,TF}
+    ap, bp = bc(_lust(term), colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
+    ap, bp + _periodic_lustlu_source(bc, term, term.grad, cells, faces, cellID, fID, i, component)
+end
+
+_periodic_lustlu_source(bc, term, grad::Nothing, cells::AbstractVector{<:Cell{TF}}, faces, cellID, fID, i, component) where TF = zero(TF)
+
+@inline function _periodic_lustlu_source(
+    bc, term, grad, cells::AbstractVector{<:Cell{TF}}, faces, cellID, fID, i, component) where TF
+    pfID = bc.value.face_map[i] # face on the other side
+    pcellID = faces.ownerCells[pfID][1]
+    isparent = bc isa PeriodicParent
+    fP, cP, fC, cC = isparent ? (fID, cellID, pfID, pcellID) : (pfID, pcellID, fID, cellID)
+    flux = term.sign*term.flux[fP] # out of the parent cell
+    fU, uID = flux > zero(flux) ? (fP, cP) : (fC, cC)
+    δ = _component(_reconstruct(grad[uID], faces.centre[fU] - cells.centre[uID]), component)
+    source = -flux*TF(0.25)*δ # into the parent cell
+    isparent ? source : -source
+end
+
+@inline _component(δ, ::Nothing) = δ
+@inline _component(δ, component) = δ[component.value]
+
 @define_boundary Union{PeriodicParent,Periodic} Si begin
     0.0, 0.0
 end

@@ -1,9 +1,8 @@
 using XCALibre
 # using CUDA # uncomment to run on an NVIDIA GPU
 
-# Laminar flow past a cylinder (Re = 100) with `LUSTLU` convection for U: `LUST` with the upwind
-# share of the face value corrected to second order by the (optionally limited) velocity gradient.
-# For transient and LES runs; steady runs use `LimitedLinearUpwind` or `LUSTDC`.
+# Laminar flow past a cylinder (Re = 100) with `LUSTLU` convection for U: `LUST` with its upwind
+# share corrected to second order by the velocity gradient. For transient and LES runs.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 grid = "cylinder_d10mm_5mm.unv"

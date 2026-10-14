@@ -250,6 +250,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Godunov Solver" begin
         include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder.jl"))
+        include(joinpath(TEST_CASES_DIR, "2d_godunov_supersonic_cylinder_RANS.jl"))
     end
 
     @testset "Multiphase Solver" begin

@@ -92,7 +92,7 @@ struct LeastSquares <: AbstractScheme end
     WeightedLeastSquares <: AbstractScheme
 
 `LeastSquares` with each face weighted by the inverse square of its distance,
-``w_f = 1/|\mathbf{d}_f|^2`` (the weighting of OpenFOAM's `leastSquares`), so near neighbours
+``w_f = 1/|\mathbf{d}_f|^2`` so near neighbours
 dominate on stretched meshes. Exact for linear fields.
 """
 struct WeightedLeastSquares <: AbstractScheme end

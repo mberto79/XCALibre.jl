@@ -1,16 +1,8 @@
 export least_squares!
 
-# Least-squares gradient (LeastSquares and WeightedLeastSquares).
-#
-# For cell P the gradient minimises Σ_f w_f (φ_f - φ_P - ∇φ·d_f)², with d_f the vector from the
-# cell centre to the neighbour centre (internal faces) or to the face centre (boundary faces,
-# value taken from the face field, i.e. the boundary condition). The symmetric normal matrix
-# G = Σ w d dᵀ depends on the mesh only: its inverse is built once, when the `Grad` is created,
-# and kept in `Grad.correctors` (6 arrays, no mesh storage is added). Directions without data
-# (z on 2D meshes) are removed from G, giving ∇φ_z = 0. A gradient evaluation sums
-# b = Σ w Δφ d over the internal faces (cell loop), adds the boundary faces (face loop,
-# atomics, as `green_gauss!` does) and multiplies by G⁻¹. Vector fields give the tensor
-# ∇ψ[a,b] = ∂ψ_a/∂x_b, as in `green_gauss!`.
+# Cell gradient from min Σ_f w_f (φ_f - φ_P - ∇φ·d_f)², d_f from the cell centre to the
+# neighbour centre (internal) or face centre (boundary, face value). The inverse of G = Σ w d dᵀ
+# is built once per Grad and kept in Grad.correctors; vector fields give ∇ψ[a,b] = ∂ψ_a/∂x_b.
 
 # G⁻¹ of every cell, stored as its six independent components (xx, yy, zz, xy, xz, yz)
 struct LSQGeometry{T<:Tuple}

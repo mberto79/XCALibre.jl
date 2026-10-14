@@ -109,18 +109,24 @@ lin2d_grad(c) = SVector(2.0, -0.7, 0.0)
         @test maximum(abs, g.result.z.values) < 1e-9
     end
 
-    @testset "agrees with Gauss on a smooth field, second-order convergence" begin
+    @testset "agrees with Gauss on a smooth field, convergence order" begin
         fs(c) = sin(2c[1]/1000)*cos(1.5c[2]/1000)
         gs(c) = SVector(2/1000*cos(2c[1]/1000)*cos(1.5c[2]/1000),
                        -1.5/1000*sin(2c[1]/1000)*sin(1.5c[2]/1000), 0.0)
+        # three refinement levels of the same domain (218, 3484 and 21098 cells)
+        levels = ("trig.unv", "trig40.unv", "trig100.unv")
+        meshes_ = [UNV2D_mesh(joinpath(grids_dir, name)) for name in levels]
+        h = [sqrt(sum(m.cells.volume)/length(m.cells)) for m in meshes_]
         errs = Float64[]
-        for name ∈ ("trig40.unv", "trig100.unv")
-            mesh = UNV2D_mesh(joinpath(grids_dir, name))
+        for mesh in meshes_
             push!(errs, gradient_error(LeastSquares, mesh, fs, gs))
             @test gradient_error(WeightedLeastSquares, mesh, fs, gs) < 3*errs[end]
             @test errs[end] < 2*gradient_error(Gauss, mesh, fs, gs)
         end
-        @test errs[2] < errs[1]/1.5  # refined mesh (40 -> 100 cells per side) is more accurate
+        @test issorted(h, rev=true) && issorted(errs, rev=true)
+        # the maximum error is dominated by boundary cells: at least first order, second in the interior
+        order = log(errs[1]/errs[3])/log(h[1]/h[3])
+        @test order > 0.8  # measured 0.95; Gauss does not converge on these meshes
     end
 
     @testset "Float32 mesh keeps Float32 results" begin

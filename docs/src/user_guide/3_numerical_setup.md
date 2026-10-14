@@ -57,8 +57,12 @@ print_tree(AbstractScheme) # hide
 
 | **Scheme** | **Description** |
 |:-------|:------------|
+| CellBased | Barth-Jespersen: one factor per cell keeps the face-extrapolated values within the neighbour minimum and maximum; `CellBased(level)` blends it with the unlimited gradient |
+| Venkatakrishnan | Same bounds as `CellBased` with the smooth limiter function of Venkatakrishnan; `Venkatakrishnan(K)` (default `K = 5`) leaves differences below ε² = (K h)³ unlimited, h being the cell length scale |
 | FaceBased | Limit gradient calculation based on face extrapolation |
 | MFaceBased | Limit gradient calculation based on face extrapolation in multiple dimensions |
+
+`Venkatakrishnan` changes the limiting factor continuously with the field instead of switching it at the bound; with `K = 0` it limits more than `CellBased` and also limits a linear field on distorted cells. Because ε² is compared with squared differences of the field, the effect of `K` depends on the units of the field and the cell size. `CellBased` and `Venkatakrishnan` are constructed without the mesh, e.g. `Schemes(divergence=LinearUpwind, limiter=Venkatakrishnan(5.0))`.
 
 The construction of all gradient limiters currently requires users to pass the mesh object that will be used for the simulations e.g. `MFaceBased(mesh)`. Notice that the mesh object must be moved to the same device where the simulation will be performed. To prevent mistakes and avoid errors, it is recommended to construct the limiters using the simulation `Physics` object directly since it provide a reference to the mesh (domain) e.g. if a `Physics` object named `model` has been created, construct the limiter as `MFaceBased(model.domain)`
 

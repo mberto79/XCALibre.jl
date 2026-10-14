@@ -226,3 +226,32 @@ end
     )
     @test_throws "Robin boundary conditions on `p`" run!(make_model(mesh_dev), config)
 end
+
+# ── Characteristic far field (U, p, T all Dirichlet), subsonic free stream ──
+@testset "Characteristic far field" begin
+    vel = [0.6 * a_inf, 0.0, 0.0]
+    model = make_model(mesh_dev)
+    BCs = assign(region=mesh_dev, (
+        U = [Dirichlet(:inlet, vel), Dirichlet(:outlet, vel), Slip(:cylinder),
+             Dirichlet(:top, vel), Dirichlet(:bottom, vel)],
+        p = [Dirichlet(:inlet, p_inf), Dirichlet(:outlet, p_inf), Zerogradient(:cylinder),
+             Dirichlet(:top, p_inf), Dirichlet(:bottom, p_inf)],
+        T = [Dirichlet(:inlet, T_inf), Dirichlet(:outlet, T_inf), Zerogradient(:cylinder),
+             Dirichlet(:top, T_inf), Dirichlet(:bottom, T_inf)],
+        nut = [Extrapolated(:inlet), Extrapolated(:outlet), Zerogradient(:cylinder),
+               Extrapolated(:top), Extrapolated(:bottom)]))
+    schemes = (U=Schemes(gradient=Gauss), p=Schemes(gradient=Gauss), T=Schemes(gradient=Gauss),
+               flux=HLLC(), time_stepping=RK2(), reconstruction=Upwind())
+    runtime = Runtime(iterations=300, write_interval=-1, time_step=1e-7,
+                      adaptive=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=50))
+    config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
+                           hardware=hardware, boundaries=BCs)
+    initialise!(model.momentum.U, vel)
+    initialise!(model.momentum.p, p_inf)
+    initialise!(model.energy.T, T_inf)
+    res = run!(model, config; progress=false)
+    @test all(isfinite, res.rho)
+    @test res.rho[end] < res.rho[1]
+    p = model.momentum.p.values
+    @test 0.2 * p_inf < minimum(p) && maximum(p) < 2.5 * p_inf
+end

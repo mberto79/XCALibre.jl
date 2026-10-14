@@ -4,8 +4,7 @@ export least_squares!
 # neighbour centre (internal) or face centre (boundary, face value). The inverse of G = Σ w d dᵀ
 # is built once per Grad and kept in Grad.correctors; vector fields give ∇ψ[a,b] = ∂ψ_a/∂x_b.
 
-# G⁻¹ of every cell, stored as its six independent components (xx, yy, zz, xy, xz, yz)
-struct LSQGeometry{T<:Tuple}
+struct LSQGeometry{T<:Tuple} # G⁻¹ per cell: xx, yy, zz, xy, xz, yz
     Ginv::T
 end
 Adapt.@adapt_structure LSQGeometry

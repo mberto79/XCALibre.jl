@@ -1180,7 +1180,14 @@ function _setup_godunov(model, config; output=VTK(), progress=true)
     prev      = KernelAbstractions.zeros(backend, TF, n_cells)
 
     @info "Initialising turbulence model..."
-    turbulenceModel, config = initialise(model.turbulence, model, mdotf, nothing, config)
+    # RANS models build their transport equations from a scalar-equation template (peqn.equation); the
+    # density-based solver has no pressure equation, so a Laplacian template over p provides it.
+    rhorDf = FaceScalarField(mesh)
+    initialise!(rhorDf, 1.0)
+    template_eqn = (
+        - Laplacian{schemes.p.laplacian}(rhorDf, p) == - Source(ScalarField(mesh))
+    ) → ScalarEquation(p, boundaries.p)
+    turbulenceModel, config = initialise(model.turbulence, model, mdotf, template_eqn, config)
 
     @info "Initialising density from p and T..."
 

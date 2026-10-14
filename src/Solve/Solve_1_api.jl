@@ -242,7 +242,7 @@ The `Schemes` struct is used at the top-level API to help users define discretis
 - `divergence`: is used to set the divergence scheme (default is `Linear`) 
 - `laplacian`: is used to set the laplacian scheme (default is `Linear`)
 - `gradient`:  is used to set the gradient scheme (default is `Gauss`)
-- `limiter`: is used to specify if gradient limiters should be used, currently supported limiters include `FaceBased` and `MFaceBased` (default is `nothing`)
+- `limiter`: is used to specify if gradient limiters should be used, currently supported limiters include `CellBased`, `Venkatakrishnan`, `FaceBased` and `MFaceBased` (default is `nothing`)
 """
 @kwdef struct Schemes
     time=SteadyState

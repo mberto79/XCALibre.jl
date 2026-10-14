@@ -31,13 +31,15 @@ function source_case(mesh)
     phi.values .= [cos(35x)*sin(55y) for (x, y, _) ∈ centres]
     sync!(U, mesh, config); sync!(phi, mesh, config)
 
-    gradU = Grad{Gauss}(U)
-    grad!(gradU, FaceVectorField(mesh), U, BCs.U, 0.0, config)
-    gradphi = Grad{Gauss}(phi)
-    grad!(gradphi, FaceScalarField(mesh), phi, BCs.phi, 0.0, config)
-
     out = []
-    for scheme ∈ (LinearUpwind, LimitedLinearUpwind)
+    # gradient limiters exchange their ghost values: limited gradients must match serial too
+    for limiter ∈ (nothing, Venkatakrishnan(5.0)), scheme ∈ (LinearUpwind, LimitedLinearUpwind)
+        gradU = Grad{Gauss}(U)
+        grad!(gradU, FaceVectorField(mesh), U, BCs.U, 0.0, config)
+        limit_gradient!(limiter, gradU, U, config)
+        gradphi = Grad{Gauss}(phi)
+        grad!(gradphi, FaceScalarField(mesh), phi, BCs.phi, 0.0, config)
+        limit_gradient!(limiter, gradphi, phi, config)
         ueqn = (Divergence{scheme}(mdotf, U, gradU.result) == Source(VectorField(mesh))
             ) → VectorEquation(U, BCs.U)
         discretise!(ueqn, U, config)

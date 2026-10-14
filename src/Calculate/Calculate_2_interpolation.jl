@@ -250,7 +250,7 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalar
     # Checked on the host: a throw that names the scheme cannot be compiled into a GPU kernel
     hasmethod(convected_face_value, Tuple{typeof(scheme),Float64,Float64,Float64,Float64}) ||
         throw(ArgumentError(
-            "the divergence scheme $(nameof(typeof(scheme)))$(typeof(scheme).parameters) is not supported for " *
+            "the divergence scheme $(only(typeof(scheme).parameters)) is not supported for " *
             "the kinetic-energy flux of the energy equation: use Upwind, BoundedUpwind, LUST or Linear for he"))
     (; faces, boundary_cellsID) = phif.mesh
     (; backend, workgroup) = config.hardware

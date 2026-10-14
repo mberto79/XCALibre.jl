@@ -43,6 +43,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_linear_upwind.jl")
     end
 
+    @testset "Venkatakrishnan gradient limiter" begin
+        include("unit_test_venkat_limiter.jl")
+    end
+
     @testset "Potential-flow initialisation" begin
         include("test_potential_flow.jl")
     end

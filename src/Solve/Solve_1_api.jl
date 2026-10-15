@@ -6,7 +6,7 @@ export wrap_eqn
 export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
-export global_any
+export global_any, global_sum
 export solve_equation!
 export AdaptiveTimeStepping, LocalTimeStepping
 
@@ -628,6 +628,9 @@ wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
 
 # true on every rank if flag is true on any rank: serial identity, Distribute reduces over ranks
 global_any(flag::Bool, mesh) = flag
+
+# sum over ranks of a number or array (e.g. a patch integral): serial identity, Distribute reduces
+global_sum(v, mesh) = v
 
 function make_symmetric!(eqn, config)
     (; hardware) = config

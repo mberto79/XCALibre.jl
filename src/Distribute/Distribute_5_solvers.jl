@@ -203,6 +203,9 @@ Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) =
 Solve.global_any(flag::Bool, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(Int(flag), max, getfield(dm, :comm)) > 0)
 
+Solve.global_sum(v, dm::DistributedMesh) =
+    (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, +, getfield(dm, :comm)))
+
 # global_max seam: Courant dt must be identical on every rank
 Solvers.global_max(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, max, getfield(dm, :comm)))

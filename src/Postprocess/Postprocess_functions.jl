@@ -12,6 +12,9 @@ Calculate the pressure force vector `[Fx, Fy, Fz]` acting on a given patch/bound
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
 - `model` `Physics` object defining the simulation
 - `config` `Configuration` object (provides the hardware backend)
+
+On a distributed mesh the call is collective: every rank must make it, and all ranks return the
+force on the whole patch.
 """
 function pressure_force(patch::Symbol, model, config)
     mesh = model.domain
@@ -36,7 +39,7 @@ function pressure_force(patch::Symbol, model, config)
         _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
-    Fp = TF[sum(fx), sum(fy), sum(fz)]
+    Fp = global_sum(TF[sum(fx), sum(fy), sum(fz)], mesh) # patch faces are split over the ranks
     @info "Pressure force on $patch: ($(Fp[1]), $(Fp[2]), $(Fp[3]))"
     return Fp
 end
@@ -64,6 +67,9 @@ Calculate the viscous force vector `[Fx, Fy, Fz]` acting on a given patch/bounda
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
 - `model` `Physics` object defining the simulation
 - `config` `Configuration` object (provides boundary conditions and hardware backend)
+
+On a distributed mesh the call is collective: every rank must make it, and all ranks return the
+force on the whole patch.
 
 Patches with a `Slip` or `Symmetry` velocity boundary condition exert no shear, so their viscous force is zero.
 """
@@ -96,7 +102,7 @@ function viscous_force(patch::Symbol, model, config)
         _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
-    Fv = TF[sum(fx), sum(fy), sum(fz)]
+    Fv = global_sum(TF[sum(fx), sum(fy), sum(fz)], mesh)
     @info "Viscous force on $patch: ($(Fv[1]), $(Fv[2]), $(Fv[3]))"
     return Fv
 end

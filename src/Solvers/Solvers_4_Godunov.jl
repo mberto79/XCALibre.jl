@@ -630,7 +630,8 @@ end
 # The prescribed (U, p, T) is the free stream. The boundary state is built from the 1D Riemann
 # invariants normal to the face: R+ = un + 2a/(γ-1) from the interior, R- = un_∞ - 2a_∞/(γ-1) from the
 # free stream; entropy and tangential velocity come from the interior on outflow, from the free stream
-# on inflow. Supersonic faces take the interior (outflow) or the free stream (inflow) state. The flux is
+# on inflow. Supersonic faces (free stream or interior) take the interior (outflow) or the free stream
+# (inflow) state. The flux is
 # the exact physical flux of that state, so acoustic waves leave the domain instead of reflecting.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::AbstractDirichlet,
@@ -665,9 +666,9 @@ end
     a_i  = sqrt(gamma * pL / rhoL)
     un_inf = U_inf ⋅ normal
 
-    if un_i >= a_i                          # supersonic outflow
+    if un_inf >= a_inf || un_i >= a_i       # supersonic outflow
         Ub, pb, rhob = UL, pL, rhoL
-    elseif un_i <= -a_i                     # supersonic inflow
+    elseif un_inf <= -a_inf || un_i <= -a_i # supersonic inflow
         Ub, pb, rhob = U_inf, p_inf, rho_inf
     else
         Rp = un_i + 2 * a_i / gm1

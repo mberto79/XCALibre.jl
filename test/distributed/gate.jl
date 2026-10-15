@@ -7,7 +7,7 @@ mpiexec_available() && run_mpi_tests(
     ["test_halo.jl", "test_partition.jl", "test_assembly.jl",
      "test_laplace.jl", "test_psimple.jl", "test_wall_distance.jl",
      "test_transpose_stress.jl", "test_linear_upwind.jl", "test_reorder.jl",
-     "test_least_squares.jl"]; ranks=[2, 3])
+     "test_least_squares.jl", "test_forces.jl"]; ranks=[2, 3])
 
 # MixedF32(): PETSc_jll's Float32 library solves corrections for Float64 fields
 mpiexec_available() && run_mpi_tests(["test_mixed_precision.jl"]; ranks=[2])

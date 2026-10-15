@@ -36,7 +36,7 @@ function pressure_force(patch::Symbol, model, config)
         _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
-    Fp = TF[sum(fx), sum(fy), sum(fz)]
+    Fp = global_sum(TF[sum(fx), sum(fy), sum(fz)], mesh) # patch faces are split over the ranks
     @info "Pressure force on $patch: ($(Fp[1]), $(Fp[2]), $(Fp[3]))"
     return Fp
 end
@@ -90,7 +90,7 @@ function viscous_force(patch::Symbol, model, config)
         _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
-    Fv = TF[sum(fx), sum(fy), sum(fz)]
+    Fv = global_sum(TF[sum(fx), sum(fy), sum(fz)], mesh)
     @info "Viscous force on $patch: ($(Fv[1]), $(Fv[2]), $(Fv[3]))"
     return Fv
 end

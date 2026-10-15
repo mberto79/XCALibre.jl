@@ -235,7 +235,8 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
             println(io, ";")
             println(io, "boundaryField")
             println(io, "{")
-            IOFormats._write_patch_entries(io, IOFormats._field_bcs(BCs, label), boundaries_cpu)
+            fieldBCs = IOFormats._field_bcs(BCs, label, boundaries_cpu)
+            IOFormats._write_patch_entries(io, fieldBCs, boundaries_cpu)
             # ponytail: proc-patch values written as uniform zero; ParaView's decomposed
             # reader ignores them — write real ghost values if OF utilities ever need them
             for pp ∈ dmesh.procs

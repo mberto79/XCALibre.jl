@@ -33,7 +33,6 @@ res = run!(model, config; progress=false, forces)
 n = dm.partition.n_owned
 nloc = n + dm.partition.n_ghost
 orig = dm.orig_cells
-relerr(a, b, ref=b) = maximum(abs.(a .- b); init=0.0) / max(maximum(abs, ref; init=0.0), eps())
 fields_d = map(f -> Array(f.values), godunov_fields(model))
 owned = maximum(relerr(fd[1:n], fs[orig[1:n]], fs) for (fd, fs) ∈ zip(fields_d, fields_s))
 ghost = maximum(relerr(fd[n+1:nloc], fs[orig[n+1:nloc]], fs) for (fd, fs) ∈ zip(fields_d, fields_s))

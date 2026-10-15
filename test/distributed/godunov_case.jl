@@ -108,3 +108,47 @@ function box_case(mesh; iterations=10, write_interval=-1)
     initialise!(model.turbulence.nut, g_k/g_w)
     model, config
 end
+
+# difference relative to the largest value of the whole serial field (or history)
+relerr(a, b, ref=b) = maximum(abs.(a .- b); init=0.0) / max(maximum(abs, ref; init=0.0), eps())
+
+# run `godunov_case(; kw...)` serially on rank 0 (global mesh `gmesh`) and on the distributed
+# mesh `dm`, and test owned/ghost fields, residual and force histories against each other
+function compare_godunov(name, kw, gmesh, dm, comm; tol=get(kw, :sst, false) ? 1e-7 : 1e-9)
+    rank = MPI.Comm_rank(comm)
+    forces = (patches=[:cylinder], interval=5)
+    n = dm.partition.n_owned
+    nloc = n + dm.partition.n_ghost
+    orig = dm.orig_cells
+    ref = if rank == 0
+        ms, cs = godunov_case(gmesh; kw...)
+        rs = run!(ms, cs; progress=false, forces)
+        (map(f -> collect(f.values), godunov_fields(ms)), rs)
+    else
+        nothing
+    end
+    fields_s, res_s = MPI.bcast(ref, comm; root=0)
+
+    model, config = godunov_case(dm; kw...)
+    res = run!(model, config; progress=false, forces)
+    fields_d = map(f -> Array(f.values), godunov_fields(model))
+
+    owned = [relerr(fd[1:n], fs[orig[1:n]], fs) for (fd, fs) ∈ zip(fields_d, fields_s)]
+    ghost = [relerr(fd[n+1:nloc], fs[orig[n+1:nloc]], fs) for (fd, fs) ∈ zip(fields_d, fields_s)]
+    F_s = res_s.forces.cylinder
+    F_d = res.forces.cylinder
+    dF = maximum(relerr(F_d.pressure[i], F_s.pressure[i]) for i ∈ eachindex(F_s.pressure))
+
+    @testset "$name (rank $rank)" begin
+        @test all(isfinite, res.rho)
+        @test maximum(owned) < tol
+        @test maximum(ghost) < tol
+        @test relerr(res.rho, res_s.rho) < tol
+        @test relerr(res.rhoU, res_s.rhoU) < tol
+        @test relerr(res.rhoE, res_s.rhoE) < tol
+        @test F_d.iteration == F_s.iteration
+        @test dF < tol
+    end
+    rank == 0 && println("godunov $name n=$(MPI.Comm_size(comm)): owned=$(maximum(owned)) ",
+        "ghost=$(maximum(ghost)) rho_res=$(relerr(res.rho, res_s.rho)) force=$dF")
+end

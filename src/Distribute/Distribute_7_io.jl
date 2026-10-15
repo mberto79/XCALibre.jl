@@ -235,10 +235,8 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
             println(io, ";")
             println(io, "boundaryField")
             println(io, "{")
-            for BC ∈ getproperty(BCs, Symbol(label))
-                println(io, "\t", boundaries_cpu[BC.ID].name)
-                println(io, IOFormats._foam_boundary_entry(BC))
-            end
+            fieldBCs = IOFormats._field_bcs(BCs, label, boundaries_cpu)
+            IOFormats._write_patch_entries(io, fieldBCs, boundaries_cpu)
             # ponytail: proc-patch values written as uniform zero; ParaView's decomposed
             # reader ignores them — write real ghost values if OF utilities ever need them
             for pp ∈ dmesh.procs

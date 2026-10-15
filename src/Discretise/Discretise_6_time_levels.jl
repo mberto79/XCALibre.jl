@@ -9,9 +9,15 @@ struct CNState{F,A,S,V,C}
     ddt0::A     # ddtⁿ
     source::S   # S = (1 + c)ρxⁿ/Δt + c ddtⁿ, the source per unit volume (a field, read as `prev`)
     factor::V   # [1 + c] on the device
-    clock::C    # time and Δt of the current step and its c (NaN before the first step)
+    clock::C    # host: time and Δt of the current step and its c (NaN before the first step)
 end
 Adapt.@adapt_structure CNState
+
+# host-side record of the current step; kernels receive the operator without it (`_kernel_type`)
+struct HostClock
+    v::Vector{Float64}
+end
+Adapt.adapt_structure(to, c::HostClock) = c
 
 _level_like(phi::ScalarField, mesh) = ScalarField(mesh)
 _level_like(phi::VectorField, mesh) = VectorField(mesh)
@@ -27,9 +33,7 @@ function _cn_operator(ψ, phi)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
     factor = KernelAbstractions.ones(backend, F, 1)
-    clock = KernelAbstractions.zeros(backend, Float64, 3)
-    fill!(clock, NaN)
-    state = CNState(F(ψ), arrays(), arrays(), source, factor, clock)
+    state = CNState(F(ψ), arrays(), arrays(), source, factor, HostClock([NaN, NaN, NaN]))
     Time{CrankNicolson,typeof(state)}(state)
 end
 ModelFramework.time_operator(T::Type{CrankNicolson}, phi) = _cn_operator(crank_nicolson_coefficient(T), phi)
@@ -53,9 +57,9 @@ function time_level!(
     ) where {F,P,I}
     isnothing(time) && throw(ArgumentError("a CrankNicolson Time term needs the time of the step"))
     s = term.type.state
-    clock = Array(s.clock)
+    clock = s.clock.v
     time == clock[1] && return s.source # same step: same old level
-    dt = Float64(Array(config.runtime.dt)[1])
+    dt = Float64(Array(config.runtime.dt)[1]) # once per step
     r = _rho_values(rho_prev)
     if isnan(clock[1]) # first step of the run: backward Euler
         foreach((o, x) -> (@. o = r*x), s.old, _components(prev))
@@ -69,7 +73,7 @@ function time_level!(
         end
         c = Float64(s.ψ)
     end
-    copyto!(s.clock, Float64[time, dt, c])
+    clock .= (time, dt, c)
     fill!(s.factor, 1 + c)
     foreach(_components(s.source), s.old, s.ddt0) do b, o, d
         @. b = (1 + c)*o/dt + c*d

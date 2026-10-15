@@ -127,7 +127,8 @@ function PISO(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     tflux = TimeFlux(U_eqn, mesh, boundaries.U)
-    lagged = LaggedTerms(U_eqn, (mdotf, nueff, gradU.result, eddy_viscosity(model.turbulence)...))
+    lagged = LaggedTerms(U_eqn, (mdotf, nueff, gradU.result, explicit_fields(turbulenceModel, model)...);
+        evaluate=explicit_terms(turbulenceModel, model, S, nueff, nu, time, config))
 
     @info "Starting PISO loops..."
 

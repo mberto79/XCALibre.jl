@@ -128,11 +128,12 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
         model = Physics(time=Transient(), fluid=Fluid{Incompressible}(nu=1e-3),
             turbulence=turbulence, energy=Energy{Isothermal}(), domain=smesh)
         BCs = assign(region=smesh, (U=[px..., py...], p=[px..., py...], nut=[px..., py...],
-            k=[px..., py...]))
+            k=[px..., py...], omega=[px..., py...]))
         schemes = (U=Schemes(time=CrankNicolson), p=Schemes(time=CrankNicolson),
-            k=Schemes(time=CrankNicolson))
+            k=Schemes(time=CrankNicolson), omega=Schemes(time=CrankNicolson))
         config = Configuration(solvers=(U=cn_tight(Bicgstab()), p=cn_tight(Cg()),
-            k=cn_tight(Bicgstab())), schemes=schemes, hardware=cn_hardware, boundaries=BCs,
+            k=cn_tight(Bicgstab()), omega=cn_tight(Bicgstab())), schemes=schemes,
+            hardware=cn_hardware, boundaries=BCs,
             runtime=Runtime(iterations=length(steps), write_interval=-1, time_step=steps[1]),
             postprocess=CNTimeSteps(steps))
         U = model.momentum.U
@@ -140,21 +141,18 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
         initialise!(model.momentum.p, 0.0)
         hasproperty(model.turbulence, :k) &&
             (model.turbulence.k.values .= 1e-2 .* (1 .+ 0.5 .* cos.(2pi .* yc)))
-        # ν_t of the initial field (the first step takes it as its explicit value)
-        start = Configuration(solvers=config.solvers, schemes=config.schemes,
-            hardware=cn_hardware, boundaries=BCs,
-            runtime=Runtime(iterations=1, write_interval=-1, time_step=1e-14))
-        run!(model, start; output=VTK(), progress=false, pref=0.0)
-        run!(model, config; output=VTK(), progress=false, pref=0.0)
+        hasproperty(model.turbulence, :omega) &&
+            (model.turbulence.omega.values .= 5.0 .* (1 .+ 0.3 .* sin.(2pi .* yc)))
+        run!(model, config; output=VTK(), progress=false, pref=0.0) # from nut = 0
         copy(U.x.values)
     end
 
-    @testset "PISO eddy viscosity, $(nameof(typeof(t).parameters[1]))" for t ∈ (
-            LES{Smagorinsky}(C=1.0),)
+    @testset "PISO eddy viscosity, $(nameof(typeof(t).parameters[1]))" for (t, p) ∈ (
+            (LES{Smagorinsky}(C=1.0), 1.9), (LES{KEquation}(), 1.9), (RANS{KOmega}(), 1.8))
         tend = 1.0
-        ref = shear_les(t, 0.025/16, tend)
-        e = [maximum(abs.(shear_les(t, dt, tend) .- ref)) for dt ∈ (0.05, 0.025)]
-        @test cn_order(e) > 1.85
+        ref = shear_les(t, 0.0125/16, tend)
+        e = [maximum(abs.(shear_les(t, dt, tend) .- ref)) for dt ∈ (0.025, 0.0125)]
+        @test cn_order(e) > p
     end
 
     @testset "variable time steps (1:2:3 pattern)" begin

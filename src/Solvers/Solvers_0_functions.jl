@@ -215,8 +215,12 @@ function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config)
     @. flux.values = ifelse(mask, flux.values + rDf.values*mold.values/dt - phi.values, flux.values)
     nothing
 end
-# eddy-viscosity fields of a turbulence model (none for laminar flow)
-eddy_viscosity(turbulence) = hasproperty(turbulence, :nutf) ? (turbulence.nut, turbulence.nutf) : ()
+
+# ν_t and ν_eff of the current fields, for time schemes that extrapolate the explicit terms
+explicit_terms(turbulenceModel, model, S, nueff, nu, time, config) = () -> begin
+    eddy_viscosity!(turbulenceModel, model, S, time, config)
+    update_nueff!(nueff, nu, model.turbulence, config)
+end
 
 # halo=false leaves ghosts stale for a caller that exchanges rD together with Hv
 function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}

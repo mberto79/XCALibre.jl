@@ -41,9 +41,11 @@ function _apply_boundary_conditions!(
     end
 
         ndrange = nbfaces
+        terms = map(t -> Operator(t.flux, t.phi, t.sign, _kernel_type(t.type), t.grad), model.terms)
+        kmodel = Model{TN,SN,typeof(terms),S}(terms, model.sources)
         kernel! = _sized(apply_boundary_conditions_kernel!, backend, workgroup, ndrange)
         kernel!(
-            model, BCs,model.terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
+            kmodel, BCs, terms, faces, cells, boundary_cellsID, colval, rowptr, nzval, b, component, time, ndrange=ndrange
             )
 
 end

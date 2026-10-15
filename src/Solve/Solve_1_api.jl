@@ -161,8 +161,14 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
+# The reduction rule is a singleton type, not a `Symbol`, so that `LocalTimeStepping` is `isbits`
+# and can be passed to GPU kernels.
+struct MinDt end
+struct MeanDt end
+struct MaxDt end
+
 """
-    LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0)
+    LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
 
 Local (per-cell) pseudo-time stepping for the explicit density-based solver
 (`Fluid{SupersonicFlow}`, `godunov!`). Pass it as `adaptive` to `Runtime` to converge
@@ -177,10 +183,9 @@ converged run does not depend on `dt` and the iterations are not a time history.
 - `startCo::AbstractFloat`: Courant number of the first iteration.
 - `ramp::Integer`: number of iterations over which the Courant number grows linearly from
   `startCo` to `maxCo` (`0` = no ramp). Useful to start from a uniform field.
-
 - `turbulence_dt::Symbol`: the implicit turbulence equations take one time step, the `:min` (default), `:mean` or `:max` of the cell time steps of the iteration.
 """
-struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R}
+struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R<:Union{MinDt,MeanDt,MaxDt}}
     maxCo::F
     startCo::F
     ramp::I
@@ -188,11 +193,6 @@ struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R}
 end
 Adapt.@adapt_structure LocalTimeStepping
 
-# The reduction rule is a singleton type, not a `Symbol`, so that `LocalTimeStepping` is `isbits`
-# and can be passed to GPU kernels.
-struct MinDt end
-struct MeanDt end
-struct MaxDt end
 _turbulence_dt_rule(s::Symbol) = s === :min ? MinDt() : s === :mean ? MeanDt() : s === :max ? MaxDt() :
     throw(ArgumentError("`turbulence_dt` must be :min, :mean or :max, got :$s"))
 _turbulence_dt_rule(r::Union{MinDt,MeanDt,MaxDt}) = r

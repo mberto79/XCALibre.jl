@@ -626,13 +626,8 @@ end
                           cID, F_rho, F_rhoU, F_rhoE)
 end
 
-# ── Characteristic far field: U, p and T all Dirichlet ─────────────────────────────
-# The prescribed (U, p, T) is the free stream. The boundary state is built from the 1D Riemann
-# invariants normal to the face: R+ = un + 2a/(γ-1) from the interior, R- = un_∞ - 2a_∞/(γ-1) from the
-# free stream; entropy and tangential velocity come from the interior on outflow, from the free stream
-# on inflow. Supersonic faces (free stream or interior) take the interior (outflow) or the free stream
-# (inflow) state. The flux is
-# the exact physical flux of that state, so acoustic waves leave the domain instead of reflecting.
+# ── Characteristic far field: U, p and T all Dirichlet (free stream) ───────────────
+# Boundary state from the normal Riemann invariants; the exact physical flux of that state is used.
 @inline function _apply_inviscid_bc!(
     flux_scheme, bc_U::AbstractDirichlet,
     bc_p::Union{Dirichlet, DirichletFunction}, bc_T::Union{Dirichlet, FixedTemperature, DirichletFunction},

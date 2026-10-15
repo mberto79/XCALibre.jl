@@ -17,7 +17,8 @@ function bound!(field, work, config)
     ndrange = length(values)
     kernel! = _sized(_bound!, backend, workgroup, ndrange)
     kernel!(values, work, cells, cell_neighbours)
-    # KernelAbstractions.synchronize(backend)
+    # a ghost cell sees only part of its neighbours, so it takes its owner's bounded value
+    sync!(field, mesh, config) # no-op serial
 end
 
 @kernel function _bound!(values, unbounded, cells, cell_neighbours)

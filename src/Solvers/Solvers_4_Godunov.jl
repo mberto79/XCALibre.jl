@@ -838,10 +838,10 @@ _time_increment(dt::Number, mesh) = dt
 _time_increment(dt::AbstractArray, mesh) = global_min(minimum(_owned(dt, mesh)), mesh)
 
 # reduction of the per-cell dt over the owned cells of every rank
-function _reduce_dt(sym::Symbol, dt_cell, mesh)
+_reduce_dt(::MinDt, dt_cell, mesh) = global_min(minimum(_owned(dt_cell, mesh)), mesh)
+_reduce_dt(::MaxDt, dt_cell, mesh) = global_max(maximum(_owned(dt_cell, mesh)), mesh)
+function _reduce_dt(::MeanDt, dt_cell, mesh)
     dt = _owned(dt_cell, mesh)
-    sym === :min && return global_min(minimum(dt), mesh)
-    sym === :max && return global_max(maximum(dt), mesh)
     sums = global_sum([sum(dt), length(dt)], mesh)
     return sums[1] / sums[2]
 end

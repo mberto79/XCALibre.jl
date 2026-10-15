@@ -25,6 +25,7 @@ using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
+using XCALibre.Solve: MinDt, MeanDt, MaxDt
 using XCALibre.Calculate
 using XCALibre.ModelPhysics
 using XCALibre.IOFormats

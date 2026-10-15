@@ -182,6 +182,15 @@ end
         end
     end
 
+    @testset "turbulence_dt option" begin
+        for rule in (:min, :mean, :max)
+            lts = LocalTimeStepping(maxCo=0.5, turbulence_dt=rule)
+            @test isbitstype(typeof(lts))   # needed to pass it to GPU kernels
+            run_godunov_test(HLLC(), Upwind(), FEuler(), lts)
+        end
+        @test_throws ArgumentError LocalTimeStepping(turbulence_dt=:median)
+    end
+
     @testset "residuals and force history" begin
         model = make_model(mesh_dev)
         schemes = (

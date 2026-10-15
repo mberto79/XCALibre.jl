@@ -837,15 +837,11 @@ _owned(v, mesh) = view(v, 1:n_owned_cells(mesh))
 _time_increment(dt::Number, mesh) = dt
 _time_increment(dt::AbstractArray, mesh) = global_min(minimum(_owned(dt, mesh)), mesh)
 
-_reduce_dt(sym::Symbol, dt_cell) = sym === :min ? minimum(dt_cell) :
-    sym === :max ? maximum(dt_cell) : sum(dt_cell) / length(dt_cell)
-
 # reduction of the per-cell dt over the owned cells of every rank
-_reduce_dt_global(sym, dt_cell, mesh) = is_distributed_mesh(mesh) ?
-    _reduce_dt_ranks(sym, _owned(dt_cell, mesh), mesh) : _reduce_dt(sym, dt_cell)
-function _reduce_dt_ranks(sym, dt, mesh)
+function _reduce_dt(sym::Symbol, dt_cell, mesh)
+    dt = _owned(dt_cell, mesh)
     sym === :min && return global_min(minimum(dt), mesh)
-    sym === :max && return -global_min(-maximum(dt), mesh)
+    sym === :max && return global_max(maximum(dt), mesh)
     sums = global_sum([sum(dt), length(dt)], mesh)
     return sums[1] / sums[2]
 end
@@ -862,7 +858,7 @@ function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:Loca
     (; backend, workgroup) = config.hardware
     kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
     kernel!(dt_cell, rho, U, p, model.domain, model.fluid, cfl, nu_eff)
-    runtime.dt .= _reduce_dt_global(runtime.adaptive.turbulence_dt, dt_cell, model.domain)
+    runtime.dt .= _reduce_dt(runtime.adaptive.turbulence_dt, dt_cell, model.domain)
     return dt_cell
 end
 

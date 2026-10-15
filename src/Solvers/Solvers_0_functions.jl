@@ -466,6 +466,7 @@ distributed_ready(::WALE) = true
 distributed_ready(::Val, m) = distributed_ready(m)
 distributed_ready(::Val{:Godunov}, ::SupersonicFlow) = true
 distributed_ready(::Val{:Godunov}, ::SensibleEnthalpy) = true
+distributed_ready(::Val{:Godunov}, ::WALE) = false
 
 const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow, :Godunov)
 
@@ -489,7 +490,7 @@ function check_distributed_support(solver::Symbol, model)
     Distributed runs currently support the SIMPLE, PISO and Laplace solvers and `potential_flow!`,
     with an Incompressible fluid or Uniform solid, Isothermal or Conduction energy, and Laminar,
     KOmega, KOmegaSST or WALE turbulence, and the density-based solver (`godunov!`, a
-    SupersonicFlow fluid) with the same turbulence models. Everything else still needs its distributed linear-solve seam:
+    SupersonicFlow fluid) with Laminar, KOmega or KOmegaSST turbulence. Everything else still needs its distributed linear-solve seam:
     without one each rank solves its own block and the result is wrong without any error.
 
     Run this case on a single process, or see the distributed section of the documentation.

@@ -21,8 +21,8 @@ les_model = Physics(
     energy = Energy{Isothermal}(),
     domain = dm)
 
-# density-based solver: supported with the RANS models, refused with an LES model it has no
-# distributed path for
+# density-based solver: supported with the RANS models, refused with the LES models it has
+# no distributed path for
 godunov_model(turbulence) = Physics(
     time = Transient(),
     fluid = Fluid{SupersonicFlow}(nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7),
@@ -56,6 +56,7 @@ compressible_model = Physics(
     @test_throws ErrorException check(:SIMPLE, les_model)
     @test_throws ErrorException check(:SIMPLE, compressible_model)
     @test_throws ErrorException check(:Godunov, godunov_model(LES{Smagorinsky}()))
+    @test_throws ErrorException check(:Godunov, godunov_model(LES{WALE}()))
     # SensibleEnthalpy holds only T for the density-based solver; the pressure-based ones solve it
     @test_throws ErrorException check(:CSIMPLE, godunov_model(RANS{Laminar}()))
 

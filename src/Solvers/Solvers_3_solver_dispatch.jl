@@ -19,8 +19,9 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 - Steady weakly compressible (SIMPLE algorithm for coupling)
 - Transient weakly compressible (PISO algorithm for coupling)
 
-On a distributed mesh only the incompressible SIMPLE and PISO solvers and the Laplace solver are
-supported; any other solver or model errors rather than solving each rank's block on its own.
+On a distributed mesh only the incompressible SIMPLE and PISO solvers, the Laplace solver and the
+density-based solver (`SupersonicFlow`) are supported; any other solver or model errors rather
+than solving each rank's block on its own.
 
 Calling `run!` again on the same model continues from its current fields, including the face mass
 flux of the last iteration, and retraces the uninterrupted run. Re-initialising the fields (e.g.

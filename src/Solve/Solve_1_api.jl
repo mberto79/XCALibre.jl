@@ -6,7 +6,7 @@ export wrap_eqn
 export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
-export global_any, global_sum
+export global_any, global_sum, global_min, n_owned_cells
 export solve_equation!
 export AdaptiveTimeStepping, LocalTimeStepping
 
@@ -631,6 +631,12 @@ global_any(flag::Bool, mesh) = flag
 
 # sum over ranks of a number or array (e.g. a patch integral): serial identity, Distribute reduces
 global_sum(v, mesh) = v
+
+# minimum over ranks (e.g. a global time step): serial identity, Distribute reduces
+global_min(v, mesh) = v
+
+# cells this rank updates and reduces over (owned cells first, then ghosts on a distributed mesh)
+n_owned_cells(mesh) = length(mesh.cells)
 
 function make_symmetric!(eqn, config)
     (; hardware) = config

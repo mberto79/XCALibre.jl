@@ -461,7 +461,14 @@ distributed_ready(::KOmega) = true
 distributed_ready(::KOmegaSST) = true
 distributed_ready(::WALE) = true
 
-const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow)
+# per-solver readiness: the density-based solver only stores T in its energy model (no
+# equation to distribute), and SupersonicFlow is only ever solved by it
+distributed_ready(::Val, m) = distributed_ready(m)
+distributed_ready(::Val{:Godunov}, ::SupersonicFlow) = true
+distributed_ready(::Val{:Godunov}, ::SensibleEnthalpy) = true
+distributed_ready(::Val{:Godunov}, ::WALE) = false
+
+const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow, :Godunov)
 
 # runtime post-processing has no distributed implementation; Distribute warns once from rank 0
 _warn_skipped_postprocess(mesh, postprocess) = nothing
@@ -474,7 +481,7 @@ function check_distributed_support(solver::Symbol, model)
     solver ∈ DISTRIBUTED_SOLVERS || push!(gaps, "the $(solver) solver")
     for (kind, m) ∈ (("fluid", model.fluid), ("solid", model.solid),
                      ("turbulence", model.turbulence), ("energy", model.energy))
-        distributed_ready(m) || push!(gaps, "the $(nameof(typeof(m))) $(kind) model")
+        distributed_ready(Val(solver), m) || push!(gaps, "the $(nameof(typeof(m))) $(kind) model")
     end
     isempty(gaps) && return nothing
     error("""
@@ -482,7 +489,8 @@ function check_distributed_support(solver::Symbol, model)
 
     Distributed runs currently support the SIMPLE, PISO and Laplace solvers and `potential_flow!`,
     with an Incompressible fluid or Uniform solid, Isothermal or Conduction energy, and Laminar,
-    KOmega, KOmegaSST or WALE turbulence. Everything else still needs its distributed linear-solve seam:
+    KOmega, KOmegaSST or WALE turbulence, and the density-based solver (`godunov!`, a
+    SupersonicFlow fluid) with Laminar, KOmega or KOmegaSST turbulence. Everything else still needs its distributed linear-solve seam:
     without one each rank solves its own block and the result is wrong without any error.
 
     Run this case on a single process, or see the distributed section of the documentation.

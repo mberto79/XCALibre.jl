@@ -772,8 +772,9 @@ end
 _time_increment(dt::Number) = dt
 _time_increment(dt::AbstractArray) = minimum(dt)
 
-_reduce_dt(sym::Symbol, dt_cell) = sym === :min ? minimum(dt_cell) :
-    sym === :max ? maximum(dt_cell) : sum(dt_cell) / length(dt_cell)
+_reduce_dt(::MinDt, dt_cell) = minimum(dt_cell)
+_reduce_dt(::MaxDt, dt_cell) = maximum(dt_cell)
+_reduce_dt(::MeanDt, dt_cell) = sum(dt_cell) / length(dt_cell)
 
 # Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum.
 function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration=1)

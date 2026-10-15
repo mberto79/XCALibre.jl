@@ -180,17 +180,25 @@ converged run does not depend on `dt` and the iterations are not a time history.
 
 - `turbulence_dt::Symbol`: the implicit turbulence equations take one time step, the `:min` (default), `:mean` or `:max` of the cell time steps of the iteration.
 """
-struct LocalTimeStepping{F<:AbstractFloat,I<:Integer}
+struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R}
     maxCo::F
     startCo::F
     ramp::I
-    turbulence_dt::Symbol
+    turbulence_dt::R
 end
 Adapt.@adapt_structure LocalTimeStepping
+
+# The reduction rule is a singleton type, not a `Symbol`, so that `LocalTimeStepping` is `isbits`
+# and can be passed to GPU kernels.
+struct MinDt end
+struct MeanDt end
+struct MaxDt end
+_turbulence_dt_rule(s::Symbol) = s === :min ? MinDt() : s === :mean ? MeanDt() : s === :max ? MaxDt() :
+    throw(ArgumentError("`turbulence_dt` must be :min, :mean or :max, got :$s"))
+_turbulence_dt_rule(r::Union{MinDt,MeanDt,MaxDt}) = r
+
 function LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
-    turbulence_dt ∈ (:min, :mean, :max) ||
-        throw(ArgumentError("`turbulence_dt` must be :min, :mean or :max, got $turbulence_dt"))
-    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), turbulence_dt)
+    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), _turbulence_dt_rule(turbulence_dt))
 end
 
 struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping, LocalTimeStepping}}

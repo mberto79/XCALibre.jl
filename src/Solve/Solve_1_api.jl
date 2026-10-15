@@ -6,7 +6,7 @@ export wrap_eqn
 export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
-export global_any
+export global_any, global_sum
 export solve_equation!
 export AdaptiveTimeStepping, LocalTimeStepping
 
@@ -161,8 +161,14 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
+# The reduction rule is a singleton type, not a `Symbol`, so that `LocalTimeStepping` is `isbits`
+# and can be passed to GPU kernels.
+struct MinDt end
+struct MeanDt end
+struct MaxDt end
+
 """
-    LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0)
+    LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
 
 Local (per-cell) pseudo-time stepping for the explicit density-based solver
 (`Fluid{SupersonicFlow}`, `godunov!`). Pass it as `adaptive` to `Runtime` to converge
@@ -177,20 +183,22 @@ converged run does not depend on `dt` and the iterations are not a time history.
 - `startCo::AbstractFloat`: Courant number of the first iteration.
 - `ramp::Integer`: number of iterations over which the Courant number grows linearly from
   `startCo` to `maxCo` (`0` = no ramp). Useful to start from a uniform field.
-
 - `turbulence_dt::Symbol`: the implicit turbulence equations take one time step, the `:min` (default), `:mean` or `:max` of the cell time steps of the iteration.
 """
-struct LocalTimeStepping{F<:AbstractFloat,I<:Integer}
+struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R<:Union{MinDt,MeanDt,MaxDt}}
     maxCo::F
     startCo::F
     ramp::I
-    turbulence_dt::Symbol
+    turbulence_dt::R
 end
 Adapt.@adapt_structure LocalTimeStepping
+
+_turbulence_dt_rule(s::Symbol) = s === :min ? MinDt() : s === :mean ? MeanDt() : s === :max ? MaxDt() :
+    throw(ArgumentError("`turbulence_dt` must be :min, :mean or :max, got :$s"))
+_turbulence_dt_rule(r::Union{MinDt,MeanDt,MaxDt}) = r
+
 function LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
-    turbulence_dt ∈ (:min, :mean, :max) ||
-        throw(ArgumentError("`turbulence_dt` must be :min, :mean or :max, got $turbulence_dt"))
-    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), turbulence_dt)
+    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), _turbulence_dt_rule(turbulence_dt))
 end
 
 struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping, LocalTimeStepping}}
@@ -620,6 +628,9 @@ wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
 
 # true on every rank if flag is true on any rank: serial identity, Distribute reduces over ranks
 global_any(flag::Bool, mesh) = flag
+
+# sum over ranks of a number or array (e.g. a patch integral): serial identity, Distribute reduces
+global_sum(v, mesh) = v
 
 function make_symmetric!(eqn, config)
     (; hardware) = config

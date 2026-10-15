@@ -378,6 +378,9 @@ no decomposed writer, so a run that asks for VTK output with a positive `write_i
 an error at its first write. Leave `write_interval=-1` when no output is needed.
 Runtime post-processing (`postprocess` in the `Configuration`, such as field averages) is not
 distributed yet: it is skipped on a distributed mesh, with a warning from rank 0.
+The patch force integrals [`pressure_force`](@ref) and [`viscous_force`](@ref) are distributed and
+collective: every rank must call them (after or between `run!` calls), each rank integrates the faces
+of the patch it holds and every rank returns the sum over ranks. Calling them on one rank only hangs.
 
 ## Output, checkpoints and restart
 

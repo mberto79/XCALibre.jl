@@ -237,4 +237,42 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
         e = [maximum(abs.(tgv(dt, tend) .- ref)) for dt ∈ (0.02, 0.01)]
         @test cn_order(e) > 1.6
     end
+
+    # cpiso!: acoustic standing wave in a periodic strip (∂(ψp)/∂t, energy coupling), acoustic
+    # Courant number 0.5; outer loops make the density of the time terms that of the state
+    # equation at the new time level
+    na = 128
+    amesh = cn_strip_mesh(na, 2, 1.0, 2/na)
+    ax = construct_periodic(amesh, CPU(), :left, :right)
+    ay = construct_periodic(amesh, CPU(), :bottom, :top)
+    axc = [c.centre[1] for c ∈ amesh.cells]
+    function acoustic(fluid, energy, dt, tend)
+        model = Physics(time=Transient(), fluid=fluid, turbulence=RANS{Laminar}(),
+            energy=energy, domain=amesh)
+        BCs = assign(region=amesh, (U=[ax..., ay...], p=[ax..., ay...], he=[ax..., ay...]))
+        config = Configuration(solvers=(U=cn_tight(Bicgstab()), p=cn_tight(Bicgstab()),
+            he=cn_tight(Bicgstab())),
+            schemes=(U=Schemes(time=CrankNicolson), p=Schemes(time=CrankNicolson),
+                he=Schemes(time=CrankNicolson)), hardware=cn_hardware, boundaries=BCs,
+            runtime=Runtime(iterations=round(Int, tend/dt), write_interval=-1, time_step=dt))
+        initialise!(model.momentum.U, [0.0, 0.0, 0.0])
+        model.momentum.p.values .= 101325.0 .* (1 .+ 0.01 .* cos.(2pi .* axc))
+        initialise!(model.energy.T, 300.0)
+        run!(model, config; output=VTK(), progress=false, outer_loops=8)
+        (copy(model.momentum.U.x.values), copy(model.momentum.p.values),
+            copy(model.energy.T.values))
+    end
+
+    @testset "cpiso! $(nameof(typeof(f).parameters[1])), $(nameof(typeof(e)))" for (f, e) ∈ (
+            (Fluid{Compressible}(nu=1e-3, cp=1005.0, gamma=1.4, Pr=0.7),
+                Energy{SensibleEnthalpy}(Tref=0.0)),
+            (Fluid{WeaklyCompressible}(nu=1e-3, cp=1005.0, gamma=1.4, Pr=0.7),
+                Energy{InternalEnergy}(Tref=0.0)))
+        dt, tend = 1.1e-5, 64*1.1e-5
+        ref = acoustic(f, e, dt/32, tend)
+        r1, r2 = acoustic(f, e, dt, tend), acoustic(f, e, dt/2, tend)
+        for k ∈ 1:3 # U, p, T
+            @test cn_order([maximum(abs.(r[k] .- ref[k])) for r ∈ (r1, r2)]) > 1.9
+        end
+    end
 end

@@ -1,4 +1,4 @@
-export time_level!
+export time_level!, TimeRate, rate!
 
 # Old time levels of a Crank-Nicolson Time term, ddtⁿ⁺¹ = (1 + c)(ρxⁿ⁺¹ - ρxⁿ)/Δt - c ddtⁿ.
 # The operator advances them itself when the time passed to `discretise!` changes, so the
@@ -79,4 +79,31 @@ function time_level!(
         @. b = (1 + c)*o/dt + c*d
     end
     s.source
+end
+
+"""
+    TimeRate(mesh)
+    rate!(dst, rate, term, q, q0, time)
+
+Rate dq/dt of an explicitly evaluated quantity (such as dp/dt in an energy equation), with the
+scheme of the equation's Time term `term`: (q - qⁿ)/Δt, or under Crank-Nicolson
+(1 + c)(q - qⁿ)/Δt - c (dq/dt)ⁿ, the rate of the step before being kept by `rate`.
+"""
+struct TimeRate{A,C}
+    last::A     # rate of the current step
+    prev::A     # rate of the step before
+    clock::C    # host: time of the current step
+end
+TimeRate(mesh) = TimeRate(ScalarField(mesh).values, ScalarField(mesh).values, HostClock([NaN]))
+
+function rate!(dst, r::TimeRate, term::Operator{F,P,I,<:Time{CrankNicolson,<:CNState}}, q, q0,
+    time) where {F,P,I}
+    _, dt, c = term.type.state.clock.v
+    if time != r.clock.v[1]
+        copyto!(r.prev, r.last)
+        r.clock.v[1] = time
+    end
+    @. dst = (1 + c)*(q - q0)/dt - c*r.prev
+    copyto!(r.last, dst)
+    dst
 end

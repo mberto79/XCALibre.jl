@@ -1,8 +1,8 @@
 export LaggedTerms, extrapolate_lagged!
 
 """
-    LaggedTerms(eqn, fields; evaluate=nothing)
-    extrapolate_lagged!(lagged::LaggedTerms, config)
+    LaggedTerms(eqn, fields; evaluate=nothing, levels=())
+    extrapolate_lagged!(lagged::LaggedTerms, time, config)
 
 Explicitly treated (lagged) fields of a transient solver, such as the convecting face flux, the
 effective viscosity and the velocity gradient, which the solver recomputes later in each step.
@@ -10,14 +10,17 @@ A `lag => field` pair is a lagged copy of a transported field. Called once at th
 step, `extrapolate_lagged!` sets them to the time level the time scheme of `eqn` integrates at:
 Euler keeps their values from the end of the previous step; Crank-Nicolson extrapolates them to
 tⁿ⁺¹ from the two previous steps, with weights from the time-step history, after `evaluate()`
-has set them from the initial state on the first step.
+has set them from the initial state on the first step. `levels` lists `(eqn, field, rho)` of
+equations whose Time term takes its old level at the start of the step, before the solver
+changes `rho` (such as a pressure equation with ψ updated by the energy equation).
 """
-struct LaggedTerms{A,C,H,E,F}
+struct LaggedTerms{A,C,H,E,L,F}
     arrays::A       # value arrays of the lagged fields
     copies::C       # (copy, field) value arrays of the lagged copies
     previous::H     # values at the end of the step before (`nothing`: no extrapolation)
     current::H      # scratch
     evaluate::E
+    levels::L
     dt::Vector{F}   # [Δt of the previous step, steps taken]
 end
 
@@ -32,22 +35,30 @@ _copy_arrays(p::Pair) = tuple(zip(_lagged_arrays(p.first), _lagged_arrays(p.seco
 
 _extrapolates(eqn) = eqn.model.terms[1].type isa Time{CrankNicolson}
 
-function LaggedTerms(eqn, fields; evaluate=nothing)
+function LaggedTerms(eqn, fields; evaluate=nothing, levels=())
     arrays = foldl((a, f) -> (a..., _lagged_arrays(f)...), fields; init=())
     copies = foldl((a, f) -> (a..., _copy_arrays(f)...), fields; init=())
     previous, current = _extrapolates(eqn) ?
         (map(similar, arrays), map(similar, arrays)) : (nothing, nothing)
-    LaggedTerms(arrays, copies, previous, current, evaluate, [NaN, 0.0])
+    LaggedTerms(arrays, copies, previous, current, evaluate, levels, [NaN, 0.0])
 end
 
 _update_copies!(lagged) = foreach(((c, f),) -> copyto!(c, f), lagged.copies)
 
-extrapolate_lagged!(lagged::LaggedTerms{A,C,Nothing}, config) where {A,C} = _update_copies!(lagged)
+_advance_levels!(lagged, time, config) = foreach(lagged.levels) do (eqn, f, rho)
+    time_level!(unwrap_eqn(eqn).model.terms[1], f, rho, time, config)
+end
+
+function extrapolate_lagged!(lagged::LaggedTerms{A,C,Nothing}, time, config) where {A,C}
+    _advance_levels!(lagged, time, config)
+    _update_copies!(lagged)
+end
 
 # xⁿ⁺¹ ≈ xⁿ + (Δtⁿ/Δtⁿ⁻¹)(xⁿ - xⁿ⁻¹); the first step keeps xⁿ
-function extrapolate_lagged!(lagged::LaggedTerms, config)
+function extrapolate_lagged!(lagged::LaggedTerms, time, config)
     dt = Float64(Array(config.runtime.dt)[1])
     (; arrays, previous, current) = lagged
+    _advance_levels!(lagged, time, config)
     lagged.dt[2] == 0 && !isnothing(lagged.evaluate) && lagged.evaluate()
     _update_copies!(lagged)
     foreach(copyto!, current, arrays)

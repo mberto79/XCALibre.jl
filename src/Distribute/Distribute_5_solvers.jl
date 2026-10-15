@@ -206,6 +206,10 @@ Solve.global_any(flag::Bool, dm::DistributedMesh) =
 Solve.global_sum(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, +, getfield(dm, :comm)))
 
+Solve.global_min(v, dm::DistributedMesh) =
+    (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, min, getfield(dm, :comm)))
+Solve.n_owned_cells(dm::DistributedMesh) = getfield(dm, :partition).n_owned
+
 # global_max seam: Courant dt must be identical on every rank
 Solvers.global_max(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, max, getfield(dm, :comm)))

@@ -795,7 +795,7 @@ function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:Adap
     (; backend, workgroup) = config.hardware
     kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
     kernel!(dt_cell, rho, U, p, model.domain, model.fluid, TF(runtime.adaptive.maxCo), nu_eff)
-    dt = minimum(dt_cell)
+    dt = global_min(minimum(_owned(dt_cell, model.domain)), model.domain)
     runtime.dt .= dt
     return dt
 end
@@ -831,11 +831,24 @@ end
     end
 end
 
-_time_increment(dt::Number) = dt
-_time_increment(dt::AbstractArray) = minimum(dt)
+# owned entries of a per-cell array (ghost entries come from partial face lists)
+_owned(v, mesh) = view(v, 1:n_owned_cells(mesh))
+
+_time_increment(dt::Number, mesh) = dt
+_time_increment(dt::AbstractArray, mesh) = global_min(minimum(_owned(dt, mesh)), mesh)
 
 _reduce_dt(sym::Symbol, dt_cell) = sym === :min ? minimum(dt_cell) :
     sym === :max ? maximum(dt_cell) : sum(dt_cell) / length(dt_cell)
+
+# reduction of the per-cell dt over the owned cells of every rank
+_reduce_dt_global(sym, dt_cell, mesh) = is_distributed_mesh(mesh) ?
+    _reduce_dt_ranks(sym, _owned(dt_cell, mesh), mesh) : _reduce_dt(sym, dt_cell)
+function _reduce_dt_ranks(sym, dt, mesh)
+    sym === :min && return global_min(minimum(dt), mesh)
+    sym === :max && return -global_min(-maximum(dt), mesh)
+    sums = global_sum([sum(dt), length(dt)], mesh)
+    return sums[1] / sums[2]
+end
 
 # Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum.
 function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration=1)
@@ -849,7 +862,7 @@ function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:Loca
     (; backend, workgroup) = config.hardware
     kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
     kernel!(dt_cell, rho, U, p, model.domain, model.fluid, cfl, nu_eff)
-    runtime.dt .= _reduce_dt(runtime.adaptive.turbulence_dt, dt_cell)
+    runtime.dt .= _reduce_dt_global(runtime.adaptive.turbulence_dt, dt_cell, model.domain)
     return dt_cell
 end
 
@@ -1219,6 +1232,10 @@ Explicit Godunov-type density-based solver for compressible flows, including sup
 
 `forces=(patches=[:wall], interval=10)` records pressure and viscous force histories in `residuals.forces`.
 
+On a distributed mesh (see `distribute`) each rank advances its own cells; residuals, time steps
+and forces are reduced over all ranks. Write results with `output=OpenFOAM()` (3D meshes) or set
+`write_interval=-1`.
+
 # Output
 
 This function returns a `NamedTuple` for accessing the residuals (e.g. `residuals.rho`) with the following entries:
@@ -1372,9 +1389,17 @@ function recover_primitives!(workspace, model, config)
     (; backend, workgroup) = hardware
     n_cells = length(model.domain.cells)
 
+    # ghost cells take the owners' conserved state; the conversion below is pointwise
+    sync!((rho, rhoU), model.domain, config)
+    sync!(rhoE, model.domain, config)
+
     kernel! = _sized(_cons_to_prim!, backend, workgroup, n_cells)
     kernel!(U, p, T, Mach, rho, rhoU, rhoE, model.domain.cells, model.fluid)
 end
+
+# the flux kernels read gradU of ghost cells (processor faces); tensor gradients are not
+# exchanged by grad!, so the velocity gradient is synced here (no-op serial)
+_sync_gradU!(gradU, mesh, config) = Discretise.sync_gradient!(gradU.result, mesh, config)
 
 function interpolate_primitive_fields!(
     model, boundaries, rhof, mdotf, time, config
@@ -1431,6 +1456,7 @@ function refresh_stage!(
     limit_gradient!(schemes.T.limiter, gradT, T, config)
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
+    _sync_gradU!(gradU, model.domain, config)
     update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
     update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
 end
@@ -1536,7 +1562,7 @@ function GODUNOV(
     n_cells = length(mesh.cells)
     TF = _get_float(mesh)
 
-    dim_exp = typeof(mesh) <: Mesh2 ? TF(0.5) : TF(1/3)   # dx = V^dim_exp
+    dim_exp = _base_mesh(mesh) isa Mesh2 ? TF(0.5) : TF(1/3)   # dx = V^dim_exp
 
     outputWriter = initialise_writer(output, model.domain)
 
@@ -1547,6 +1573,10 @@ function GODUNOV(
 
     @info "Initialising conservative variables from primitive fields..."
 
+    # prime ghosts with the owners' initial state (no-op serial)
+    sync!((p, U), mesh, config); sync!(T, mesh, config)
+    @. rho.values = p.values / (R.values * T.values)
+
     kernel! = _sized(_prim_to_cons!, backend, workgroup, n_cells)
     kernel!(rhoU, rhoE, rho, U, p, model.fluid)
 
@@ -1556,7 +1586,6 @@ function GODUNOV(
 
     @info "Initialising face fields, gradients and viscous coefficients..."
 
-    @. rho.values = p.values / (R.values * T.values)
     interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
@@ -1564,6 +1593,7 @@ function GODUNOV(
 
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
+    _sync_gradU!(gradU, mesh, config)
     grad!(gradT, Tf, T, boundaries.T, time, config)
     limit_gradient!(schemes.T.limiter, gradT, T, config)
     update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
@@ -1577,7 +1607,8 @@ function GODUNOV(
 
     @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
 
-    bar = _progress_bar(iterations, progress)
+    bar = _progress_bar(iterations, progress && !is_distributed_mesh(mesh))
+    n_global = global_sum(n_owned_cells(mesh), mesh)
 
     for iteration ∈ 1:iterations
 
@@ -1586,7 +1617,7 @@ function GODUNOV(
                            gradU, gradRho, gradP, gradT, mueff, kappa_eff, Uf, mesh, time, config)
 
         # 2. L2 density residual (before conservative update)
-        rho_res = norm(res_rho.values) / sqrt(TF(n_cells))
+        rho_res, rhoU_res, rhoE_res = _residual_norms(workspace, mesh, n_global)
         if !isfinite(rho_res)
             @error "Godunov solver diverged (non-finite density residual) at iteration $iteration; reduce the Courant number"
             R_rho[iteration:end]  .= TF(NaN)
@@ -1595,13 +1626,12 @@ function GODUNOV(
             break
         end
         R_rho[iteration]  = rho_res
-        R_rhoU[iteration] = sqrt(norm(res_rhoUx.values)^2 + norm(res_rhoUy.values)^2 +
-                                 norm(res_rhoUz.values)^2) / sqrt(TF(n_cells))
-        R_rhoE[iteration] = norm(res_rhoE.values) / sqrt(TF(n_cells))
+        R_rhoU[iteration] = rhoU_res
+        R_rhoE[iteration] = rhoE_res
 
         # 3. Time step (adaptive CFL or fixed)
         dt = compute_dt!(workspace, model, runtime, config, dim_exp, iteration)
-        dt_time = _time_increment(dt)   # local time stepping: dt is the per-cell array, time follows the minimum
+        dt_time = _time_increment(dt, mesh)   # local time stepping: dt is the per-cell array, time follows the minimum
         time += dt_time
 
         # 4. Advance W^n → W^{n+1} (FEuler: single update; RK2: two-stage SSP)
@@ -1621,6 +1651,7 @@ function GODUNOV(
 
         # 8. Turbulence update (recomputes gradU and S internally)
         turbulence!(turbulenceModel, model, S, prev, time, config)
+        _sync_gradU!(gradU, mesh, config)
 
         # 9. Effective viscosity and thermal conductivity
         update_nueff!(nueff, nu, model.turbulence, config)
@@ -1652,6 +1683,15 @@ function GODUNOV(
     base = (rho=R_rho, rhoU=R_rhoU, rhoE=R_rhoE,
             rho_rel=rel(R_rho), rhoU_rel=rel(R_rhoU), rhoE_rel=rel(R_rhoE))
     return isnothing(forces) ? base : merge(base, (forces=force_log,))
+end
+
+# RMS of the cell residuals over the owned cells of every rank, one reduction for all three
+function _residual_norms(workspace, mesh, n_global)
+    (; res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
+    sq(f) = sum(abs2, _owned(f.values, mesh))
+    s = global_sum([sq(res_rho), sq(res_rhoUx) + sq(res_rhoUy) + sq(res_rhoUz), sq(res_rhoE)], mesh)
+    TF = eltype(s)
+    return sqrt(s[1] / TF(n_global)), sqrt(s[2] / TF(n_global)), sqrt(s[3] / TF(n_global))
 end
 
 # Optional force history: `forces=(patches=[:wing], interval=10)`; the result holds, per patch,

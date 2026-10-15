@@ -284,6 +284,7 @@ end
 # This is a gradient method that does not take BCs as arguments (implicitly assuming the the gradient at boundaries is 0)
 function grad!(grad::Grad{Gauss,F,R,I,M}, phif, phi, time, config) where {F,R<:VectorField,I,M}
     green_gauss!(grad, phif, config)
+    sync!(grad.result, grad.result.mesh, config) # self-syncing seam (no-op serial)
 end
 
 function grad!(grad::Grad{Gauss,F,R,I,M}, phif, config) where {F,R<:VectorField,I,M}

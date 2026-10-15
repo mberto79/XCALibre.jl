@@ -70,6 +70,8 @@ Calculate the viscous force vector `[Fx, Fy, Fz]` acting on a given patch/bounda
 
 On a distributed mesh the call is collective: every rank must make it, and all ranks return the
 force on the whole patch.
+
+Patches with a `Slip` or `Symmetry` velocity boundary condition exert no shear, so their viscous force is zero.
 """
 function viscous_force(patch::Symbol, model, config)
     mesh = model.domain
@@ -82,6 +84,10 @@ function viscous_force(patch::Symbol, model, config)
 
     ID = boundary_index(model.boundary_info, patch)
     @info "calculating viscous force on patch: $patch at index $ID"
+    if _patch_bc(config.boundaries.U, ID) isa Union{Slip,Symmetry}
+        @info "Viscous force on $patch: (0, 0, 0) (Slip/Symmetry patch carries no shear)"
+        return zeros(TF, 3)
+    end
     Uw = _patch_bc_value(config.boundaries.U, ID) # wall velocity from the U boundary condition
     IDs_range = get_boundaries(mesh.boundaries)[ID].IDs_range
     (; faces, boundary_cellsID) = mesh
@@ -119,12 +125,13 @@ end
 end
 
 # Host-side lookup of the BC value matching a boundary ID (BCs is a heterogeneous tuple)
-_patch_bc_value(BCs, ID) = begin
+_patch_bc(BCs, ID) = begin
     for bc ∈ BCs
-        bc.ID == ID && return bc.value
+        bc.ID == ID && return bc
     end
     error("No boundary condition found for boundary index $ID")
 end
+_patch_bc_value(BCs, ID) = _patch_bc(BCs, ID).value
 
 """
     function boundary_average(patch::Symbol, field, config; time=0)

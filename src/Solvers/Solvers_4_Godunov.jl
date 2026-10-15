@@ -626,6 +626,68 @@ end
                           cID, F_rho, F_rhoU, F_rhoE)
 end
 
+# ── Characteristic far field: U, p and T all Dirichlet (free stream) ───────────────
+# Boundary state from the normal Riemann invariants; the exact physical flux of that state is used.
+@inline function _apply_inviscid_bc!(
+    flux_scheme, bc_U::AbstractDirichlet,
+    bc_p::Union{Dirichlet, DirichletFunction}, bc_T::Union{Dirichlet, FixedTemperature, DirichletFunction},
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, fID, time
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]
+    i   = fID - bc_U.IDs_range.start + 1
+
+    TF    = eltype(rho.values)
+    gamma = TF(fluid.gamma.values)
+    R_gas = TF(fluid.R.values)
+    gm1   = gamma - one(TF)
+
+    UL   = U[cID]
+    pL   = p[cID]
+    rhoL = rho[cID]
+    TL   = T[cID]
+
+    # free stream from the BCs (ghost = 2 q_bc - q_L for U and p; T ghost is T_bc)
+    U_inf = TF(0.5) * (UL + ghost_velocity(bc_U, face, UL, normal, time, i))
+    p_inf = max(TF(0.5) * (pL + ghost_pressure(bc_p, face, pL, normal, time, i)), TF(1e-10))
+    T_inf = max(ghost_temperature(bc_T, face, TL, time, i), TF(1e-10))
+    rho_inf = p_inf / (R_gas * T_inf)
+    a_inf   = sqrt(gamma * p_inf / rho_inf)
+
+    un_i = UL ⋅ normal
+    a_i  = sqrt(gamma * pL / rhoL)
+    un_inf = U_inf ⋅ normal
+
+    if un_inf >= a_inf || un_i >= a_i       # supersonic outflow
+        Ub, pb, rhob = UL, pL, rhoL
+    elseif un_inf <= -a_inf || un_i <= -a_i # supersonic inflow
+        Ub, pb, rhob = U_inf, p_inf, rho_inf
+    else
+        Rp = un_i + 2 * a_i / gm1
+        Rm = un_inf - 2 * a_inf / gm1
+        un_b = TF(0.5) * (Rp + Rm)
+        a_b  = max(TF(0.25) * gm1 * (Rp - Rm), TF(1e-10))
+        if un_b >= zero(TF)                 # outflow: entropy and tangential velocity from the interior
+            Ut   = UL - un_i * normal
+            rhob = rhoL * (a_b / a_i)^(2 / gm1)
+        else                                # inflow: from the free stream
+            Ut   = U_inf - un_inf * normal
+            rhob = rho_inf * (a_b / a_inf)^(2 / gm1)
+        end
+        Ub = Ut + un_b * normal
+        pb = rhob * a_b^2 / gamma
+    end
+
+    F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
+        flux_scheme, Ub, Ub, pb, pb, rhob, rhob, normal, area, gamma
+    )
+    _accumulate_inviscid!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                          cID, F_rho, F_rhoU, F_rhoE)
+end
+
 # ── Fallback: Neumann, Zerogradient, Extrapolated, far-field, etc. ──────────────
 # Impermeability check: |un_face| ≤ 1e-10 → exact wall flux; otherwise Riemann solve.
 @inline function _apply_inviscid_bc!(

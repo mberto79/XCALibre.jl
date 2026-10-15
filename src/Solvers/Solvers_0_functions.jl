@@ -538,6 +538,27 @@ const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow, :Godunov
 _warn_skipped_postprocess(mesh, postprocess) = nothing
 _has_postprocess(p) = !(p === nothing || (p isa Union{Tuple,AbstractVector} && isempty(p)))
 
+## Time schemes
+
+_time_schemes(s::Schemes) = (s.time,)
+_time_schemes(schemes) = Tuple(s.time for s ∈ values(schemes) if s isa Schemes)
+_is_crank_nicolson(t) = t === CrankNicolson || t isa CrankNicolson
+
+# the explicit terms are taken at the time level of one scheme, shared by all fields
+function check_time_schemes(schemes)
+    t = _time_schemes(schemes)
+    any(_is_crank_nicolson, t) && Euler ∈ t && throw(ArgumentError(
+        "CrankNicolson and Euler cannot be combined: use the same time scheme for every field"))
+    nothing
+end
+
+# solvers whose time integration outside the Time terms is explicit and first order (or absent)
+function reject_crank_nicolson(schemes, solver, reason)
+    any(_is_crank_nicolson, _time_schemes(schemes)) && throw(ArgumentError(
+        "CrankNicolson is not available in $solver: $reason"))
+    nothing
+end
+
 # called by every solver entry point, named for itself; a no-op on a serial mesh
 function check_distributed_support(solver::Symbol, model)
     is_distributed_mesh(model.domain) || return nothing

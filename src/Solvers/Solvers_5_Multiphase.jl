@@ -5,6 +5,9 @@ function multiphase!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
     transpose_stress=true)
     check_distributed_support(:multiphase, model)
+    reject_crank_nicolson(config.schemes, "multiphase!",
+        "the volume fraction is advanced by an explicit first-order (MULES) step, so the time \
+        integration cannot be second order; use Euler")
 
     residuals = setup_multiphase_solvers(
         MULTIPHASE, model, config;

@@ -28,6 +28,7 @@ function piso!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
     petsc_options="", restart=nothing, transpose_stress=true)
     check_distributed_support(:PISO, model)
+    check_time_schemes(config.schemes)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config;

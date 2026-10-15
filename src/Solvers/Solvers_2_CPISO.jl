@@ -30,6 +30,7 @@ function cpiso!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     transpose_stress=true)
     check_distributed_support(:CPISO, model)
+    check_time_schemes(config.schemes)
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config;

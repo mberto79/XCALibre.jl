@@ -275,4 +275,37 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
             @test cn_order([maximum(abs.(r[k] .- ref[k])) for r ∈ (r1, r2)]) > 1.9
         end
     end
+
+    @testset "off-centring coefficient" begin
+        # ψ = 0 is backward Euler; 0 < ψ < 1 lies between the two
+        tend = 0.05
+        exact = 1 .+ cos.(pi .* xc) .* exp(λ*tend)
+        err(s) = maximum(abs.(heat(s, 0.005, tend) .- exact))
+        @test heat(CrankNicolson(0.0), 0.005, tend) ≈ heat(Euler, 0.005, tend) rtol=1e-12
+        @test err(CrankNicolson()) < err(CrankNicolson(0.9)) < err(Euler)
+    end
+
+    @testset "CrankNicolson rejected at setup" begin
+        model = Physics(time=Transient(), fluid=Fluid{Incompressible}(nu=1e-3),
+            turbulence=RANS{Laminar}(), energy=Energy{Isothermal}(), domain=smesh)
+        BCs = assign(region=smesh, (U=[px..., py...], p=[px..., py...]))
+        cfg(U, p) = Configuration(solvers=(U=cn_tight(Bicgstab()), p=cn_tight(Cg())),
+            schemes=(U=Schemes(time=U), p=Schemes(time=p)), hardware=cn_hardware, boundaries=BCs,
+            runtime=Runtime(iterations=1, write_interval=-1, time_step=0.01))
+        cn = cfg(CrankNicolson, CrankNicolson)
+        # all stages share one time level
+        @test_throws ArgumentError run!(model, cfg(CrankNicolson, Euler); progress=false)
+        # explicit first-order transport outside the Time terms, or no time levels at all
+        for solver! ∈ (multiphase!, filmModel!, godunov!, simple!, csimple!, simple_MRF!)
+            @test_throws ArgumentError solver!(model, cn; progress=false)
+        end
+        steady = Physics(time=Steady(), solid=Solid{Uniform}(k=1.0, rho=1.0, cp=1.0),
+            energy=Energy{Conduction}(), domain=hmesh)
+        @test_throws ArgumentError laplace!(steady, Configuration(solvers=cn_tight(Cg()),
+            schemes=Schemes(time=CrankNicolson), hardware=cn_hardware,
+            boundaries=assign(region=hmesh, (T=[Zerogradient(:left), Zerogradient(:right),
+                Zerogradient(:bottom), Zerogradient(:top)],)),
+            runtime=Runtime(iterations=1, write_interval=-1, time_step=1)); progress=false)
+    end
+
 end

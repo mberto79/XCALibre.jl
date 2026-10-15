@@ -34,6 +34,8 @@ function simple!(
     petsc_options="", restart=nothing, transpose_stress=true, consistent=false
     )
     check_distributed_support(:SIMPLE, model)
+    reject_crank_nicolson(config.schemes, "simple!",
+        "a steady solver has no time levels; use SteadyState")
 
     residuals = setup_incompressible_solvers(
         SIMPLE, model, config;

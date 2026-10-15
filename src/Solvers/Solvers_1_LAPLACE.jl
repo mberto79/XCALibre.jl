@@ -143,7 +143,7 @@ function LAPLACE(
 
     sync!(T, mesh, config) # prime ghosts (no-op serial)
     for iteration ∈ 1:iterations
-        time = iteration *dt
+        time = iteration*dt_cpu[1]
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 

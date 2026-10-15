@@ -255,3 +255,37 @@ end
     p = model.momentum.p.values
     @test 0.2 * p_inf < minimum(p) && maximum(p) < 2.5 * p_inf
 end
+
+# ── Force history on Slip / Symmetry patches ────────────────────────────────
+@testset "Viscous force on Slip and Symmetry patches" begin
+    for (label, SlipBC) in [("Slip", Slip), ("Symmetry", Symmetry)]
+        @testset "$label" begin
+            model = make_model(mesh_dev)
+            BCs = assign(region=mesh_dev, (
+                U = [Dirichlet(:inlet, velocity), Zerogradient(:outlet), Dirichlet(:cylinder, noflow),
+                     SlipBC(:top), SlipBC(:bottom)],
+                p = [Dirichlet(:inlet, p_inf), Zerogradient(:outlet), Zerogradient(:cylinder),
+                     Zerogradient(:top), Zerogradient(:bottom)],
+                T = [Dirichlet(:inlet, T_inf), Zerogradient(:outlet), Zerogradient(:cylinder),
+                     Zerogradient(:top), Zerogradient(:bottom)],
+                nut = [Extrapolated(:inlet), Extrapolated(:outlet), Zerogradient(:cylinder),
+                       Symmetry(:top), Symmetry(:bottom)]))
+            schemes = (U=Schemes(), p=Schemes(), T=Schemes(), flux=HLLC(),
+                       time_stepping=FEuler(), reconstruction=Upwind())
+            runtime = Runtime(iterations=10, write_interval=-1, time_step=1e-7)
+            config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
+                                   hardware=hardware, boundaries=BCs)
+            initialise!(model.momentum.U, velocity)
+            initialise!(model.momentum.p, p_inf)
+            initialise!(model.energy.T, T_inf)
+            res = run!(model, config; progress=false,
+                       forces=(patches=[:cylinder, :top], interval=5))
+            @test res.forces.top.iteration == [5, 10]
+            @test all(f -> all(iszero, f), res.forces.top.viscous) # no shear on a slip patch
+            @test all(f -> all(isfinite, f) && f[2] != 0, res.forces.top.pressure) # pressure force kept
+            @test all(f -> all(isfinite, f), res.forces.cylinder.viscous)
+            @test viscous_force(:top, model, config) == zeros(3)
+            @test pressure_force(:top, model, config) == res.forces.top.pressure[end]
+        end
+    end
+end

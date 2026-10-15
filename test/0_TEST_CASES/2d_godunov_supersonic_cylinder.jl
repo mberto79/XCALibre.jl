@@ -76,7 +76,7 @@ end
 solvers = (rho = (convergence = 1e-15,),)
 
 # ── sub-test runner ─────────────────────────────────────────────────────────
-function run_godunov_test(flux, reconstruction, time_stepping, adaptive)
+function run_godunov_test(flux, reconstruction, time_stepping, adaptive; gradient=Gauss)
     model = make_model(mesh_dev)
     BCs   = make_bcs(mesh_dev)
 
@@ -88,9 +88,9 @@ function run_godunov_test(flux, reconstruction, time_stepping, adaptive)
     end
 
     schemes = (
-        U             = Schemes(gradient=Gauss),
-        p             = Schemes(gradient=Gauss),
-        T             = Schemes(gradient=Gauss),
+        U             = Schemes(gradient=gradient),
+        p             = Schemes(gradient=gradient),
+        T             = Schemes(gradient=gradient),
         flux          = flux,
         time_stepping = time_stepping,
     )
@@ -137,6 +137,13 @@ end
         @testset "reconstruction=$label" begin
             run_godunov_test(HLLC(), recon, FEuler(), nothing)
         end
+    end
+end
+
+# ── Gradient schemes (reconstruction, viscous and LES gradients) ────────────
+@testset "Gradient schemes" begin
+    @testset "gradient=LeastSquares" begin
+        run_godunov_test(HLLC(), MUSCL{VanLeer}(), FEuler(), nothing; gradient=LeastSquares)
     end
 end
 

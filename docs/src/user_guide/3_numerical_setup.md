@@ -65,6 +65,7 @@ The gradient of a ghost cell is taken from its owner on distributed meshes. In a
 |:-------|:------------|
 | Gauss | Green-Gauss uncorrected gradient scheme |
 | Midpoint | Green-Gauss skew corrected scheme (2 iterations - hardcoded) |
+| LeastSquares | Least-squares gradient over the face neighbours, weighted by the inverse squared distance (boundary faces use the boundary value); exact for linear fields on any mesh |
 
 #### Gradient limiters
 

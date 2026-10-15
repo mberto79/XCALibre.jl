@@ -5,7 +5,7 @@ export KWallFunction, OmegaWallFunction, NutWallFunction, NutMixingLengthWallFun
 export Linear, Upwind, LUST, LUSTDC, LUSTLU, LinearUpwind, LimitedLinearUpwind
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
-export Gauss, Midpoint
+export Gauss, Midpoint, LeastSquares
 
 # SUPPORTED DISCRETISATION SCHEMES 
 
@@ -75,6 +75,19 @@ struct LimitedLinearUpwind <: AbstractScheme end
 struct BoundedUpwind <: AbstractScheme end
 struct Gauss <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
+
+@doc raw"""
+    LeastSquares <: AbstractScheme
+
+Gradient scheme, selected with `Schemes(gradient=LeastSquares)`. The gradient of a cell is the
+weighted least-squares fit ``\min \sum_f w_f (\phi_f - \phi_P - \nabla\phi\cdot\mathbf{d}_f)^2``
+over its faces, with ``\mathbf{d}_f`` the vector from the cell centre to the neighbour centre
+(internal faces) or to the face centre (boundary faces, which use the boundary value) and
+``w_f = 1/|\mathbf{d}_f|^2``, so near neighbours dominate on stretched meshes. It is exact for
+linear fields on any mesh, skewed or stretched, where `Gauss` is not, and is computed cell by
+cell from a 3 x 3 normal matrix inverted once per `Grad`.
+"""
+struct LeastSquares <: AbstractScheme end
 struct SteadyState <: AbstractScheme end 
 struct Euler <: AbstractScheme end 
 struct CrankNicolson <: AbstractScheme end # not implemented yet

@@ -37,7 +37,7 @@ function make_model(mesh_dev)
     )
 end
 
-function make_bcs(mesh_dev)
+function make_bcs(mesh_dev; slip=Slip)
     assign(
         region=mesh_dev,
         (
@@ -45,8 +45,8 @@ function make_bcs(mesh_dev)
                 Dirichlet(:inlet,    velocity),
                 Zerogradient(:outlet),
                 Dirichlet(:cylinder, noflow),
-                Slip(:top),
-                Slip(:bottom)
+                slip(:top),
+                slip(:bottom)
             ],
             p = [
                 Dirichlet(:inlet, p_inf),
@@ -261,15 +261,7 @@ end
     for (label, SlipBC) in [("Slip", Slip), ("Symmetry", Symmetry)]
         @testset "$label" begin
             model = make_model(mesh_dev)
-            BCs = assign(region=mesh_dev, (
-                U = [Dirichlet(:inlet, velocity), Zerogradient(:outlet), Dirichlet(:cylinder, noflow),
-                     SlipBC(:top), SlipBC(:bottom)],
-                p = [Dirichlet(:inlet, p_inf), Zerogradient(:outlet), Zerogradient(:cylinder),
-                     Zerogradient(:top), Zerogradient(:bottom)],
-                T = [Dirichlet(:inlet, T_inf), Zerogradient(:outlet), Zerogradient(:cylinder),
-                     Zerogradient(:top), Zerogradient(:bottom)],
-                nut = [Extrapolated(:inlet), Extrapolated(:outlet), Zerogradient(:cylinder),
-                       Symmetry(:top), Symmetry(:bottom)]))
+            BCs = make_bcs(mesh_dev; slip=SlipBC)
             schemes = (U=Schemes(), p=Schemes(), T=Schemes(), flux=HLLC(),
                        time_stepping=FEuler(), reconstruction=Upwind())
             runtime = Runtime(iterations=10, write_interval=-1, time_step=1e-7)

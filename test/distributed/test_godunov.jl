@@ -1,8 +1,6 @@
-# Distributed density-based solver (godunov!) vs serial, per rank under mpiexec: fixed, adaptive
-# and local time stepping, first- and second-order reconstruction, Rusanov and HLLC, laminar and
-# KOmegaSST. Owned and ghost cells, residual and force histories must match the serial run: to
-# round-off when the update is explicit; with KOmegaSST the k and omega solves stop at their
-# tolerance (Krylov.jl serially, PETSc distributed), which sets the level of agreement.
+# godunov! distributed vs serial (fixed, adaptive and local time stepping; laminar and KOmegaSST):
+# owned/ghost fields, residual and force histories. Explicit updates match to round-off; with
+# KOmegaSST the k and omega solve tolerance (Krylov.jl serial, PETSc distributed) sets the level.
 using XCALibre, PETSc, MPI, Test
 
 MPI.Init()

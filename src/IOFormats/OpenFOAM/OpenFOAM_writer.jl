@@ -327,7 +327,7 @@ function write_results(
                 println(io, "boundaryField")
                 println(io, "{")
                 if suffix === nothing 
-                    fieldBCs = _field_bcs(BCs, label)
+                    fieldBCs = _field_bcs(BCs, label, boundaries_cpu)
                 elseif suffix == ""
                     fieldBCs = getproperty(BCs, :p)
                 end
@@ -360,7 +360,7 @@ function write_results(
                 println(io, "boundaryField")
                 println(io, "{")
                 if suffix === nothing 
-                    fieldBCs = _field_bcs(BCs, label)
+                    fieldBCs = _field_bcs(BCs, label, boundaries_cpu)
                 elseif suffix == ""
                     fieldBCs = getproperty(BCs, :U)
                 end
@@ -375,13 +375,10 @@ function write_results(
     end
 end
 
-# A written field without boundary conditions of its own (density, the wall distance of MeshWave,
-# ...) gets a zero-gradient entry on every patch the other fields cover, so the file stays readable.
-_field_bcs(BCs, label) = hasproperty(BCs, Symbol(label)) ? getproperty(BCs, Symbol(label)) :
-    map(BC -> _UnsetBC(BC.ID), first(BCs))
-struct _UnsetBC{I}
-    ID::I
-end
+# A field without boundary conditions of its own (density, MeshWave wall distance) is written
+# zero-gradient on every mesh patch: a bare (; ID) takes the catch-all _foam_boundary_entry
+_field_bcs(BCs, label, boundaries) = hasproperty(BCs, Symbol(label)) ?
+    getproperty(BCs, Symbol(label)) : ((; ID) for ID ∈ eachindex(boundaries))
 
 function _write_patch_entries(io, fieldBCs, boundaries_cpu)
     for BC ∈ fieldBCs

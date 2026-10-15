@@ -327,14 +327,11 @@ function write_results(
                 println(io, "boundaryField")
                 println(io, "{")
                 if suffix === nothing 
-                    fieldBCs = getproperty(BCs, Symbol(label))
+                    fieldBCs = _field_bcs(BCs, label)
                 elseif suffix == ""
                     fieldBCs = getproperty(BCs, :p)
                 end
-                for BC ∈ fieldBCs
-                    println(io, "\t", boundaries_cpu[BC.ID].name)
-                    println(io, _foam_boundary_entry(BC))
-                end
+                _write_patch_entries(io, fieldBCs, boundaries_cpu)
                 println(io, "}")
             end
         elseif field_type <: VectorField
@@ -363,14 +360,11 @@ function write_results(
                 println(io, "boundaryField")
                 println(io, "{")
                 if suffix === nothing 
-                    fieldBCs = getproperty(BCs, Symbol(label))
+                    fieldBCs = _field_bcs(BCs, label)
                 elseif suffix == ""
                     fieldBCs = getproperty(BCs, :U)
                 end
-                for BC ∈ fieldBCs
-                    println(io, "\t", boundaries_cpu[BC.ID].name)
-                    println(io, _foam_boundary_entry(BC))
-                end
+                _write_patch_entries(io, fieldBCs, boundaries_cpu)
                 println(io, "}")
             end
         else
@@ -378,6 +372,21 @@ function write_results(
             Input data should be a ScalarField or VectorField e.g. ("U", U)
             """)
         end
+    end
+end
+
+# A written field without boundary conditions of its own (density, the wall distance of MeshWave,
+# ...) gets a zero-gradient entry on every patch the other fields cover, so the file stays readable.
+_field_bcs(BCs, label) = hasproperty(BCs, Symbol(label)) ? getproperty(BCs, Symbol(label)) :
+    map(BC -> _UnsetBC(BC.ID), first(BCs))
+struct _UnsetBC{I}
+    ID::I
+end
+
+function _write_patch_entries(io, fieldBCs, boundaries_cpu)
+    for BC ∈ fieldBCs
+        println(io, "\t", boundaries_cpu[BC.ID].name)
+        println(io, _foam_boundary_entry(BC))
     end
 end
 

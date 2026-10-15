@@ -23,6 +23,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_foam_padded_neighbour.jl")
     end
 
+    @testset "OpenFOAM output of fields without boundary conditions" begin
+        include("unit_test_foam_writer_unset_bcs.jl")
+    end
+
     @testset "Mesh reordering" begin
         include("unit_test_mesh_reorder.jl")
     end

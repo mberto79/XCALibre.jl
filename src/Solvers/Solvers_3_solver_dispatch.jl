@@ -435,9 +435,9 @@ Returns a `NamedTuple` with the field:
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, forces=nothing
     ) where{T,F<:SupersonicFlow,M,Tu,E,D,BI} =
 begin
-    residuals = godunov!(model, config, output=output, progress=progress)
+    residuals = godunov!(model, config, output=output, progress=progress, forces=forces)
     return residuals
 end

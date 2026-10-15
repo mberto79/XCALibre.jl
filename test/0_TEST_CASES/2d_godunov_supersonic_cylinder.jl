@@ -171,6 +171,43 @@ end
     end
 end
 
+# ── Local (per-cell) time stepping and multistage Runge-Kutta ───────────────
+@testset "Local time stepping and multistage RK" begin
+    for (label, ts) in [("FEuler", FEuler()), ("RK2", RK2()), ("RK3", RK3()), ("RK5", RK5())]
+        @testset "LTS + $label" begin
+            run_godunov_test(
+                HLLC(), Upwind(), ts,
+                LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=20)
+            )
+        end
+    end
+
+    @testset "residuals and force history" begin
+        model = make_model(mesh_dev)
+        schemes = (
+            U = Schemes(gradient=Gauss), p = Schemes(gradient=Gauss), T = Schemes(gradient=Gauss),
+            flux = HLLC(), time_stepping = RK3(), reconstruction = Upwind(),
+        )
+        runtime = Runtime(iterations=40, write_interval=-1, time_step=1e-7,
+                          adaptive=LocalTimeStepping(maxCo=0.5))
+        config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
+                               hardware=hardware, boundaries=make_bcs(mesh_dev))
+        initialise!(model.momentum.U, velocity)
+        initialise!(model.momentum.p, p_inf)
+        initialise!(model.energy.T,   T_inf)
+        res = run!(model, config; progress=false,
+                   forces=(patches=[:cylinder], interval=10))
+        for k in (:rho, :rhoU, :rhoE, :rho_rel, :rhoU_rel, :rhoE_rel)
+            @test haskey(res, k)
+            @test length(res[k]) == 40
+            @test all(isfinite, res[k])
+        end
+        @test res.rho_rel[1] > 0 && res.rho[1] > 0
+        @test res.forces.cylinder.iteration == [10, 20, 30, 40]
+        @test all(f -> all(isfinite, f), res.forces.cylinder.pressure)
+    end
+end
+
 # ── Robin BCs are rejected ──────────────────────────────────────────────────
 @testset "Robin BC unsupported" begin
     BCs = assign(

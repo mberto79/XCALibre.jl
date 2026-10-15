@@ -100,6 +100,8 @@ The explicit density-based solver (`godunov!`, selected with `Fluid{SupersonicFl
 
 For steady problems the explicit solver converges much faster with local (per-cell) pseudo-time stepping, `Runtime(...; adaptive=LocalTimeStepping(maxCo=1.0, startCo=0.2, ramp=200))`: each cell advances with its own time step from the spectral radius of its faces, `dt_i = CFL / (0.5 Σ_f (|U_i·n_f| + a_i) A_f / V_i + ν_eff Σ_f A_f² / V_i²)`, and the Courant number is ramped from `startCo` to `maxCo` over `ramp` iterations. Converged fields do not depend on the time step. The multistage schemes `RK3()`, `RK4()` and `RK5()` (Jameson, low storage) allow a larger Courant number and are meant for this use; implicit turbulence equations use the smallest cell time step. `run!(model, config; forces=(patches=[:wall], interval=50))` also records pressure and viscous force histories, and the returned residuals hold the L2 norms of the density, momentum and energy residuals (`rho`, `rhoU`, `rhoE`) and their values normalised by their value at the end of the Courant ramp (`rho_rel`, ...). See `examples/2D_cylinder_supersonic_LTS.jl`.
 
+A boundary patch on which `U`, `p` and `T` are all `Dirichlet` (or `DirichletFunction`) is treated as a far field: the prescribed values are the free stream, and the boundary state is built from the characteristic (Riemann invariant) relations normal to the face, so outgoing waves leave the domain instead of reflecting. Supersonic faces take the interior state (outflow) or the free-stream state (inflow). Patches where `p` or `T` is not Dirichlet keep the reflecting ghost-state treatment.
+
 ```julia
 schemes = (
     U              = Schemes(gradient=Gauss),

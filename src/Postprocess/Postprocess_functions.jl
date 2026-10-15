@@ -12,6 +12,9 @@ Calculate the pressure force vector `[Fx, Fy, Fz]` acting on a given patch/bound
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
 - `model` `Physics` object defining the simulation
 - `config` `Configuration` object (provides the hardware backend)
+
+On a distributed mesh the call is collective: every rank must make it, and all ranks return the
+force on the whole patch.
 """
 function pressure_force(patch::Symbol, model, config)
     mesh = model.domain
@@ -64,6 +67,9 @@ Calculate the viscous force vector `[Fx, Fy, Fz]` acting on a given patch/bounda
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
 - `model` `Physics` object defining the simulation
 - `config` `Configuration` object (provides boundary conditions and hardware backend)
+
+On a distributed mesh the call is collective: every rank must make it, and all ranks return the
+force on the whole patch.
 """
 function viscous_force(patch::Symbol, model, config)
     mesh = model.domain

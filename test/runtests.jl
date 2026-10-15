@@ -51,6 +51,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_lustlu.jl")
     end
 
+    @testset "Least-squares gradient" begin
+        include("unit_test_least_squares.jl")
+    end
+
     @testset "Venkatakrishnan gradient limiter" begin
         include("unit_test_venkat_limiter.jl")
     end

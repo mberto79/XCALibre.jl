@@ -450,6 +450,11 @@ function kinetic_gradient!(grad::Grad{Midpoint}, phif, phi, config)
     sync!(grad.result, grad.result.mesh, config)
 end
 
+function kinetic_gradient!(grad::Grad{LeastSquares}, phif, phi, config)
+    zero_gradient_faces!(phif, phi, config)
+    least_squares!(grad, phif, phi, config)
+end
+
 # linear internal face values and the owner-cell value on boundary faces
 function zero_gradient_faces!(phif, phi, config)
     (; backend, workgroup) = config.hardware

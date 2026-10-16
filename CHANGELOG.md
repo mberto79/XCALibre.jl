@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Fixed
-* The kinetic-energy face interpolation of the enthalpy equation failed on the CPU with a `MethodError` for `__index_Global_Linear` when KernelAbstractions was older than 0.9.45, which the package's compat range (0.9.25 and later) allows: two kernels used `@index(Global) + nbfaces`, and KernelAbstractions supports an `@index` nested in an expression on the CPU only from 0.9.45. Both kernels now bind the index on its own line first, so they run with every allowed version, and a test checks that no kernel in `src/` or `ext/` nests `@index` [#PRNUM](@ref)
+* The kinetic-energy face interpolation of the enthalpy equation failed on the CPU with a `MethodError` for `__index_Global_Linear` when KernelAbstractions was older than 0.9.45, which the package's compat range (0.9.25 and later) allows: two kernels used `@index(Global) + nbfaces`, and KernelAbstractions supports an `@index` nested in an expression on the CPU only from 0.9.45. Both kernels now bind the index on its own line first, so they run with every allowed version, and a test checks that no kernel in `src/` or `ext/` nests `@index` [#236](@ref)
 * `godunov!` with `LocalTimeStepping` failed to compile on GPUs ("passing non-bitstype argument") because `LocalTimeStepping` stored `turbulence_dt` as a `Symbol`. The option is still given as `:min`, `:mean` or `:max` to the constructor, which now stores it as a singleton type, so the struct is `isbits`; results are unchanged. A GPU test, `test/gpu_local_time_stepping.jl`, runs the solver with local time stepping on a CUDA device [#218](@ref)
 
 ### Added

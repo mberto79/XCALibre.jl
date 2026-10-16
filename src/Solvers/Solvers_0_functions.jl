@@ -160,15 +160,16 @@ end
 
 ## TIME-CONSISTENT FACE FLUX
 # The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
-# faces it is moved towards rD_f·ṁⁿ/Δt from the face's own old flux (weight: `_time_flux_weight`).
-struct TimeFlux{F,V,W,M,T}
+# and periodic faces it is moved towards rD_f·ṁⁿ/Δt, the face's own old flux (`_time_flux_weight`).
+struct TimeFlux{F,V,W,M,P,T}
     mold::F     # ṁⁿ (mass flux of the time term's quantity)
     uold::V     # ρⁿUⁿ
     w::V        # scratch: rD·ρⁿUⁿ/Δt
     wf::W
     rDf::F
     phi::F
-    mask::M     # faces corrected (interior)
+    mask::M     # faces corrected: interior and periodic parent faces
+    pairs::P    # (parent, partner) face IDs of periodic patches; the partner takes -correction
     dt::T       # [Δtⁿ]
 end
 
@@ -178,9 +179,16 @@ function TimeFlux(U_eqn, mesh, BCs)
     nb = length(mesh.boundary_cellsID)
     mask = zeros(Bool, length(mesh.faces))
     mask[nb+1:end] .= true
+    parents, partners = _get_int(mesh)[], _get_int(mesh)[]
+    for BC ∈ BCs
+        BC isa PeriodicParent || continue
+        mask[BC.IDs_range] .= true
+        append!(parents, BC.IDs_range); append!(partners, Array(BC.value.face_map))
+    end
     backend = _get_backend(mesh)
     TimeFlux(FaceScalarField(mesh), VectorField(mesh), VectorField(mesh), FaceVectorField(mesh),
-        FaceScalarField(mesh), FaceScalarField(mesh), adapt(backend, mask), [one(_get_float(mesh))])
+        FaceScalarField(mesh), FaceScalarField(mesh), adapt(backend, mask),
+        (adapt(backend, parents), adapt(backend, partners)), [one(_get_float(mesh))])
 end
 
 # old levels at the start of a step: face mass flux rhof*mdotf (`rhof` is `nothing` for a mass flux)
@@ -202,7 +210,7 @@ end
 time_flux!(::Nothing, args...; kwargs...) = nothing
 function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config; rhof=nothing)
     dt = eltype(flux.values)(tf.dt[1])
-    (; w, wf, uold, rDf, phi, mold, mask) = tf
+    (; w, wf, uold, rDf, phi, mold, mask, pairs) = tf
     @. w.x.values = rD.values*uold.x.values/dt
     @. w.y.values = rD.values*uold.y.values/dt
     @. w.z.values = rD.values*uold.z.values/dt
@@ -212,9 +220,11 @@ function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config; rhof=nothing)
     interpolate!(rDf, rD, config)
     correct_interpolation_periodic(rDf, rD, BCs, config)
     r = isnothing(rhof) ? one(dt) : rhof.values
-    @. flux.values = ifelse(mask,
-        flux.values + _time_flux_weight(rDf.values, r, mold.values, phi.values, dt)*
-            (rDf.values*mold.values/dt - phi.values), flux.values)
+    @. phi.values = ifelse(mask, _time_flux_weight(rDf.values, r, mold.values, phi.values, dt)*
+        (rDf.values*mold.values/dt - phi.values), zero(dt))
+    @. flux.values += phi.values
+    parents, partners = pairs
+    isempty(parents) || (@views flux.values[partners] .-= phi.values[parents])
     nothing
 end
 

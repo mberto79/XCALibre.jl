@@ -1,4 +1,5 @@
 using XCALibre
+using StaticArrays
 using Test
 
 function dt_flux_cavity_mesh(n=16)
@@ -34,6 +35,33 @@ end
     a, b = cavity(0.002, 20.0), cavity(0.2, 20.0)
     @test maximum(abs.(a[1] .- b[1])) < 3.5e-2
     @test maximum(abs.(a[2] .- b[2])) < 0.25
+end
+
+# Periodic in x, lid velocity 0.5 + cos(2πx), so flow crosses the periodic faces. Steady Ux for
+# Δt = 0.002 and 0.2 differs by 2.9e-3 (pressure 1.6e-2) when only interior faces are corrected,
+# 1.9e-3 (1.0e-2) when the periodic pairs are too (the partner face takes minus the correction).
+@testset "Δt-consistent face flux on periodic faces" begin
+    mesh = dt_flux_cavity_mesh()
+    lid(coords, t, i) = SVector(0.5 + cos(2pi*coords[1]), 0.0, 0.0)
+    function cavity(dt, tend)
+        per = construct_periodic(mesh, CPU(), :left, :right)
+        model = Physics(time=Transient(), fluid=Fluid{Incompressible}(nu=0.05),
+            turbulence=RANS{Laminar}(), energy=Energy{Isothermal}(), domain=mesh)
+        BCs = assign(region=mesh, (
+            U=[Wall(:bottom,[0.0,0,0]), DirichletFunction(:top, lid), per...],
+            p=[Wall(:bottom), Wall(:top), per...]))
+        s() = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-12,
+            relax=1.0, rtol=1e-12, atol=1e-15)
+        config = Configuration(solvers=(U=s(), p=s()), schemes=(U=Schemes(time=Euler),
+            p=Schemes()), hardware=Hardware(backend=CPU(), workgroup=1024), boundaries=BCs,
+            runtime=Runtime(iterations=round(Int, tend/dt), write_interval=-1, time_step=dt))
+        initialise!(model.momentum.U, [0.0,0,0]); initialise!(model.momentum.p, 0.0)
+        run!(model, config; progress=false, pref=0.0)
+        copy(model.momentum.U.x.values), copy(model.momentum.p.values)
+    end
+    a, b = cavity(0.002, 20.0), cavity(0.2, 20.0)
+    @test maximum(abs.(a[1] .- b[1])) < 2.4e-3
+    @test maximum(abs.(a[2] .- b[2])) < 1.3e-2
 end
 
 # The same cavity in multiphase! (one phase, ν = 0.05): its face flux takes the same correction,

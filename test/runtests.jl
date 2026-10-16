@@ -105,6 +105,18 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_laplace.jl")
     end
 
+    @testset "Δt-consistent face flux" begin
+        include("unit_test_dt_consistent_flux.jl")
+    end
+
+    @testset "Crank-Nicolson temporal accuracy" begin
+        include("unit_test_crank_nicolson.jl")
+    end
+
+    @testset "Periodic mass flux" begin
+        include("unit_test_periodic_mass_flux.jl")
+    end
+
     @testset "Neumann Laplacian Sign Unit Test" begin
         include("unit_test_neumann_sign.jl")
     end
@@ -221,6 +233,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_reynolds_stress.jl")
         include("unit_test_post-process_transient.jl")
         include("unit_test_post-process_steady.jl")
+        include("unit_test_viscous_force_bcs.jl")
     end
 
 

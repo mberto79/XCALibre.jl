@@ -21,13 +21,14 @@ struct KEquation{S,SF,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure KEquation
 
-struct KEquationModel{T,D,S1,S2,E1,WS}
+struct KEquationModel{T,D,S1,S2,E1,WS,L}
     turbulence::T
     Δ::D 
     magS::S1
     k_eqn::E1
     state::S2
     wall_scratch::WS
+    levels::L   # lagged copy and old level of k under Crank-Nicolson (`nothing` otherwise)
 end
 Adapt.@adapt_structure KEquationModel
 
@@ -112,7 +113,8 @@ function initialise(
         magS, 
         k_eqn,
         ModelState(initial_residual, false),
-        wall_scratch(mesh, config.boundaries, config)
+        wall_scratch(mesh, config.boundaries, config),
+        transport_levels(k_eqn, (k=k,), mesh)
     ), config
 end
 
@@ -154,8 +156,8 @@ function turbulence!(
 
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-    
-  
+    lagged_coefficients!(les.levels, (k=k,))
+
     # Bind values, not fields, so the closures carry no mesh (xcal_foreach runs on any backend)
     rhov, rhofv, nufv, nutfv = field_values(rho), field_values(rhof), field_values(nuf), field_values(nutf)
     kv, nutv, Δv, gradUv = field_values(k), field_values(nut), field_values(Δ), field_values(gradU.result)
@@ -178,7 +180,7 @@ function turbulence!(
     
     # Solve k equation
     # prev .= k.values
-    discretise!(k_eqn, k, config)
+    discretise!(k_eqn, old_level(les.levels, :k, k), config; time)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
@@ -199,6 +201,17 @@ function turbulence!(
     state.residuals = ((:k , k_res),)
     state.converged = k_res < solvers.k.convergence
     nothing
+end
+
+function eddy_viscosity!(les::KEquationModel, model::Physics, S, time, config)
+    (; k, nut, nutf, coeffs) = les.turbulence
+    kv, nutv, Δv = field_values(k), field_values(nut), field_values(les.Δ)
+    xcal_foreach(nutv, config) do i
+        nutv[i] = coeffs.ck*Δv[i]*sqrt(max(kv[i], zero(eltype(kv))))
+    end
+    interpolate!(nutf, nut, config)
+    correct_boundaries!(nutf, nut, config.boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, config.boundaries.nut, model, config, les.wall_scratch)
 end
 
 # Specialise VTK writer

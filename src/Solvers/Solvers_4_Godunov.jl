@@ -1240,6 +1240,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function godunov!(model, config; output=VTK(), progress=true, forces=nothing)
     check_distributed_support(:Godunov, model)
+    reject_crank_nicolson(config.schemes, "godunov!",
+        "the turbulence transport is a split step after the explicit flow update, so the time \
+        integration cannot be second order; use Euler")
     _check_godunov_bcs(config.boundaries)
     residuals = _setup_godunov(model, config; output=output, progress=progress, forces=forces)
     return residuals

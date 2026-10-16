@@ -65,11 +65,12 @@ end
 Adapt.@adapt_structure InternalEnergy
 
 # Unified equation model container
-struct EnergyEquationModel{E1,State,CG,KG}
+struct EnergyEquationModel{E1,State,CG,KG,R}
     energy_eqn::E1
     state::State
     convection_gradient::CG # gradient of he for second-order convection schemes (or nothing)
     kinetic_gradient::KG # KineticGradient for the same schemes, sensible enthalpy only (or nothing)
+    rates::R # dp/dt and d(ρK)/dt under Crank-Nicolson (`nothing`: (q - qⁿ)/Δt)
 end
 Adapt.@adapt_structure EnergyEquationModel
 
@@ -145,7 +146,8 @@ function initialise(
 
     init_residual = (:he, 1.0)
     state = ModelState(init_residual, false)
-    return EnergyEquationModel(energy_eqn, state, cg, cgK)
+    rates = is_crank_nicolson_time(energy_eqn) ? (p=TimeRate(mesh), K=TimeRate(mesh)) : nothing
+    return EnergyEquationModel(energy_eqn, state, cg, cgK, rates)
 end
 
 """
@@ -213,11 +215,24 @@ function energy!(
             mdotf, energy_eqn.model.terms[2].type, time, config)
         @. Kf.values *= mdotf.values
         div!(divK, Kf, config)
-        @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
-        @. S_he.values = (p.values - prevP)/dt
+        if isnothing(energy.rates)
+            @. dKdt.values = (rho.values*K.values - prevRhoK)/dt
+            @. S_he.values = (p.values - prevP)/dt
+        else # rates with the scheme of the Time term, at the time level of the step
+            term = energy_eqn.model.terms[1]
+            time_level!(term, he, rho, time, config) # c and Δt of the step
+            @. dKdt.values = rho.values*K.values
+            rate!(dKdt.values, energy.rates.K, term, dKdt.values, prevRhoK, time)
+            rate!(S_he.values, energy.rates.p, term, p.values, prevP, time)
+        end
     else
         @. divK.values = 0
         @. dKdt.values = 0
+        # the pressure work at the time level of the Time term (Crank-Nicolson: of this iterate)
+        if !isnothing(energy.rates)
+            grad!(gradU, Uf, U, boundaries.U, time, config)
+            limit_gradient!(schemes.U.limiter, gradU, U, config)
+        end
         _compute_pdivU!(S_he, p, gradU, config)
         @. S_he.values = -S_he.values
     end
@@ -232,7 +247,7 @@ function energy!(
     # Set up and solve energy equation (second-order he: gradient set by kinetic_face!)
     isnothing(kinetic_gradient) && update_convection_gradient!(
         convection_gradient, he, boundaries.he, schemes.he.limiter, time, config)
-    discretise!(energy_eqn, he, config)
+    discretise!(energy_eqn, he, config; time)
     apply_boundary_conditions!(energy_eqn, boundaries.he, nothing, time, config)
     implicit_relaxation_diagdom!(energy_eqn, he.values, solvers.he.relax, nothing, config)
     update_preconditioner!(energy_eqn.preconditioner, mesh, config)

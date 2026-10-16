@@ -34,6 +34,10 @@ function laplace!(
     petsc_options=""
     )
     check_distributed_support(:Laplace, model)
+    model.time isa Steady ?
+        reject_crank_nicolson(config.schemes, "laplace! for a steady model",
+            "a steady solve has no time levels; use SteadyState") :
+        check_time_schemes(config.schemes)
 
     residuals = setup_laplace_solver(
         LAPLACE, model, config;
@@ -143,7 +147,7 @@ function LAPLACE(
 
     sync!(T, mesh, config) # prime ghosts (no-op serial)
     for iteration ∈ 1:iterations
-        time = iteration *dt
+        time = iteration*dt_cpu[1]
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 

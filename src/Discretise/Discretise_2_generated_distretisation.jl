@@ -17,15 +17,18 @@ _kernel_field(t::TensorField, m=()) = TensorField(
 _kernel_model(model, mesh) = begin
     m = (; face_gDiff=mesh.face_gDiff)
     terms = map(t -> Operator(
-        _kernel_field(t.flux), _kernel_field(t.phi, m), t.sign, t.type, _kernel_field(t.grad)), model.terms)
+        _kernel_field(t.flux), _kernel_field(t.phi, m), t.sign, _kernel_type(t.type),
+        _kernel_field(t.grad)), model.terms)
     sources = map(s -> Src(_kernel_field(s.field), s.sign), model.sources)
     terms, sources
 end
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev, config; rho_prev=eqn.model.terms[1].flux) where {T<:VectorModel,M,E,S,P}
+    eqn::ModelEquation{T,M,E,S,P}, prev, config; rho_prev=eqn.model.terms[1].flux, time=nothing
+    ) where {T<:VectorModel,M,E,S,P}
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
+    prev = time_level!(eqn.model.terms[1], prev, rho_prev, time, config)
 
     # Retrieve variabels for defition
     mesh = eqn.model.terms[1].phi.mesh
@@ -99,10 +102,12 @@ end
 end
 
 function discretise!(
-    eqn::ModelEquation{T,M,E,S,P}, prev, config; rho_prev=eqn.model.terms[1].flux) where {T<:ScalarModel,M,E,S,P}
+    eqn::ModelEquation{T,M,E,S,P}, prev, config; rho_prev=eqn.model.terms[1].flux, time=nothing
+    ) where {T<:ScalarModel,M,E,S,P}
 
     (; hardware, runtime) = config
     (; backend, workgroup) = hardware
+    prev = time_level!(eqn.model.terms[1], prev, rho_prev, time, config)
 
     # Retrieve variabels for defition
     mesh = eqn.model.terms[1].phi.mesh

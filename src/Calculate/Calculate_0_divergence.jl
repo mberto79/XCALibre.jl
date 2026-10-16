@@ -179,7 +179,8 @@ cell tensor field indexed as `tensor[i]` (including lazy forms such as `Dev2(T(g
 of the two cell values with the mesh weights; at boundary faces it is the owner-cell value.
 With a cell coefficient `Γc` (any cell-indexable value, e.g. ν + ν_t) internal faces take the
 interpolated product, `w Γc[P] tensor[P] + (1 - w) Γc[N] tensor[N]`, i.e. the face value of
-the cell flux tensor Γ·tensor; boundary faces keep `Γf[f]` times the owner value. Interpolating
+the cell flux tensor Γ·tensor; boundary faces keep `Γf[f]` times the owner value, and periodic
+faces take the internal-face value between the two cells of the pair. Interpolating
 Γ and the tensor separately instead lets a large neighbour viscosity multiply the steep
 gradient of a thin near-wall cell (a face weight close to 1 on the thin side), which makes an
 explicit source built this way unstable.
@@ -198,7 +199,7 @@ function div!(phi::VectorField, Γf, tensor, BCs, config; Γc=nothing)
     KernelAbstractions.synchronize(backend)
 
     for BC ∈ BCs
-        _div_tensor_boundary!(phiv, Γfv, tensor, BC, cells, faces, backend, workgroup)
+        _div_tensor_boundary!(phiv, Γfv, Γc, tensor, BC, cells, faces, backend, workgroup)
     end
     nothing
 end
@@ -239,11 +240,16 @@ _kernel_values(f) = f
     phi[i] = flux_sum/volume
 end
 
-_div_tensor_boundary!(phi, Γf, tensor, ::Union{Slip,Symmetry,Empty}, cells, faces, backend, workgroup) =
+_div_tensor_boundary!(phi, Γf, Γc, tensor, ::Union{Slip,Symmetry,Empty}, cells, faces, backend, workgroup) =
     nothing
 
+# periodic faces take the internal-face value from the two cells of the pair, so the fluxes of
+# matched faces are equal and opposite
+_div_tensor_boundary!(phi, Γf, Γc, tensor, BC::Union{Periodic,PeriodicParent}, cells, faces, backend, workgroup) =
+    div_tensor_periodic!(phi, Γf, Γc, tensor, BC, cells, faces, backend, workgroup)
+
 # boundary faces add their flux to the owner cell (normals point out of the domain)
-function _div_tensor_boundary!(phi, Γf, tensor, BC, cells, faces, backend, workgroup)
+function _div_tensor_boundary!(phi, Γf, Γc, tensor, BC, cells, faces, backend, workgroup)
     (; IDs_range) = BC
     isempty(IDs_range) && return nothing
     kernel! = _sized(_div_tensor_boundary_kernel!, backend, workgroup, length(IDs_range))
@@ -261,15 +267,54 @@ end
     Atomix.@atomic phi.z[cID] += flux[3]
 end
 
-# Boundary-face velocity gradient shared by the momentum transpose stress and the enthalpy viscous work.
-# face-normal gradient of U, or nothing to keep the owner-cell normal derivative
-@inline _boundary_sngrad(BC::Union{Wall,Dirichlet}, Uc, delta) =
+# Periodic face: Γ (parent face) times the tensor interpolated between the owner cells of the pair
+# with the weights of `correct_interpolation_periodic`; both faces get the same face tensor, so
+# their fluxes cancel as at an internal face.
+function div_tensor_periodic!(phi, Γf, Γc, tensor, BC, cells, faces, backend, workgroup)
+    (; IDs_range) = BC
+    isempty(IDs_range) && return nothing
+    kernel! = _sized(_div_tensor_periodic_kernel!, backend, workgroup, length(IDs_range))
+    kernel!(phi, Γf, Γc, tensor, IDs_range, BC.value.face_map, BC isa PeriodicParent, cells, faces)
+    KernelAbstractions.synchronize(backend)
+end
+
+@kernel inbounds=true function _div_tensor_periodic_kernel!(
+    phi, Γf, Γc, tensor, IDs_range, face_map, isparent, cells::AbstractArray{Cell{TF,SV,UR}}, faces
+    ) where {TF,SV,UR}
+    i = @index(Global)
+    fID = IDs_range[i]
+    pfID = face_map[i]
+    cID = faces.ownerCells[fID][1]
+    pcID = faces.ownerCells[pfID][1]
+    delta, pdelta = faces.delta[fID], faces.delta[pfID]
+    w = pdelta/(delta + pdelta) # share of the owner cell
+    ΓTf = _face_flux_tensor(Γf, Γc, isparent ? fID : pfID, w, _cell_coefficient(Γc, cID, TF), tensor[cID], pcID, tensor[pcID])
+    flux = (ΓTf*faces.normal[fID])*(faces.area[fID]/cells.volume[cID])
+    Atomix.@atomic phi.x[cID] += flux[1]
+    Atomix.@atomic phi.y[cID] += flux[2]
+    Atomix.@atomic phi.z[cID] += flux[3]
+end
+
+# Boundary-face velocity gradient shared by the momentum transpose stress and the enthalpy viscous
+# work: face-normal gradient of U at face fID and `time`, or nothing to keep the owner-cell one.
+# Fixed-value conditions: (U_b - U_c)/delta with the boundary value U_b of the face
+@inline _boundary_sngrad(BC::Union{Wall,Dirichlet}, Uc, delta, normal, faces, fID, time) =
     (SVector{3}(BC.value[1], BC.value[2], BC.value[3]) - Uc)/delta
-@inline _boundary_sngrad(::Union{Zerogradient,Extrapolated}, Uc, delta) = zero(Uc)
+# user function f(coords, time, index), evaluated as by the boundary assembly and interpolation
+@inline function _boundary_sngrad(BC::DirichletFunction, Uc, delta, normal, faces, fID, time)
+    i = fID - BC.IDs_range.start + 1
+    (convert(typeof(Uc), BC.value(faces.centre[fID], time, i)) - Uc)/delta
+end
+@inline _boundary_sngrad(BC::RotatingWall, Uc, delta, normal, faces, fID, time) =
+    (convert(typeof(Uc), BC.value(faces[fID])) - Uc)/delta
+# zero-gradient conditions (Outlet and NeumannFunction are zero gradient for velocity)
+@inline _boundary_sngrad(::Union{Zerogradient,Extrapolated,Outlet,NeumannFunction}, Uc, delta, normal, faces, fID, time) =
+    zero(Uc)
 # mirror condition: face value U_c - (U_c·n)n, normal gradient -(U_c·n)n/delta
-@inline _boundary_sngrad(::Union{Slip,Symmetry}, Uc, delta, normal) = -(Uc⋅normal)*normal/delta
-@inline _boundary_sngrad(BC, Uc, delta, normal) = _boundary_sngrad(BC, Uc, delta)
-@inline _boundary_sngrad(BC, Uc, delta) = nothing
+@inline _boundary_sngrad(::Union{Slip,Symmetry}, Uc, delta, normal, faces, fID, time) = -(Uc⋅normal)*normal/delta
+# conditions that do not apply to velocity (scalar-only ones, vector Neumann is not implemented);
+# periodic faces are handled as internal faces by the callers
+@inline _boundary_sngrad(BC, Uc, delta, normal, faces, fID, time) = nothing
 
 @inline _patch_gradient(Mc, ::Nothing, normal) = Mc
 @inline _patch_gradient(Mc, sngrad, normal) = Mc + (sngrad - Mc*normal)*normal'

@@ -366,7 +366,7 @@ function MULTIPHASE(
 
         # gradU of the start-of-step velocity (updated by turbulence! below), mueff of the new alpha
         transpose_stress && transpose_stress!(
-            divτT, mueff, gradU, boundaries.U, config; cell_mueff=mueffc)
+            divτT, mueff, gradU, boundaries.U, time, config; cell_mueff=mueffc)
 
         rx, ry, rz = solve_equation!(
             U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho_prev, time=time)

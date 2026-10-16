@@ -191,7 +191,7 @@ function SIMPLE_MRF(
         # Updates the OmegaU source term (function is defined below)
         update_mrf_sources!(omegaU, U, refFrames, config)
         transpose_stress && transpose_stress!(
-            divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
+            divτT, nueff, gradU, boundaries.U, time, config; cell_mueff=nueffc)
 
         rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
         

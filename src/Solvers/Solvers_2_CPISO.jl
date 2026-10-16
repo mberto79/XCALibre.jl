@@ -238,7 +238,7 @@ function CPISO(
     for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
-        begin_time_flux!(tflux, mdotf, U, rho, nothing, dt_cpu[1])
+        begin_time_flux!(tflux, mdotf, U, rho, nothing, dt_cpu[1]; pressure=(p, ∇p))
         extrapolate_lagged!(lagged, time, config) # explicit terms at the time level of the scheme
 
         # gradU and mueff of the start-of-step velocity (updated by turbulence! below)

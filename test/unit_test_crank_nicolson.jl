@@ -238,6 +238,32 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
         @test cn_order(e) > 1.6
     end
 
+    # Impulsively started lid-driven cavity on a parallelogram mesh (skew 45°). The cell gradient
+    # of pⁿ in ddtⁿ, interpolated to the faces, made an odd-even mode of p in time grow (|p| ~ 1e7
+    # after 300 steps at ψ = 1, 1e5 at ψ = 0.9); Euler gives max|Ux| 0.53 and max|p| 0.27.
+    @testset "PISO skewed mesh, impulsive start, ψ = $ψ" for ψ ∈ (1.0, 0.9)
+        P, line = XCALibre.Point, XCALibre.line!
+        pts = [P(0.0,0.0,0.0), P(1.0,0.0,0.0), P(1.0,1.0,0.0), P(2.0,1.0,0.0)]
+        edges = [line(pts,1,2,20), line(pts,3,4,20), line(pts,1,3,20), line(pts,2,4,20)]
+        patches = [XCALibre.Patch(:left,[3]), XCALibre.Patch(:right,[4]),
+            XCALibre.Patch(:bottom,[1]), XCALibre.Patch(:top,[2])]
+        kmesh = XCALibre.UNV2.update_mesh_format(XCALibre.generate!(XCALibre.MeshBuilder2D(
+            pts, edges, patches, [XCALibre.quad(edges,[1,2,3,4])])), Int64, Float64)
+        model = Physics(time=Transient(), fluid=Fluid{Incompressible}(nu=1e-3),
+            turbulence=RANS{Laminar}(), energy=Energy{Isothermal}(), domain=kmesh)
+        BCs = assign(region=kmesh, (U=[Wall(:left,[0.0,0,0]), Wall(:right,[0.0,0,0]),
+            Wall(:bottom,[0.0,0,0]), Dirichlet(:top,[1.0,0,0])],
+            p=[Wall(:left), Wall(:right), Wall(:bottom), Wall(:top)]))
+        config = Configuration(solvers=(U=cn_tight(Bicgstab()), p=cn_tight(Cg())),
+            schemes=(U=Schemes(time=CrankNicolson(ψ), divergence=LUST),
+            p=Schemes(time=CrankNicolson(ψ))), hardware=cn_hardware, boundaries=BCs,
+            runtime=Runtime(iterations=300, write_interval=-1, time_step=0.01))
+        initialise!(model.momentum.U, [0.0,0,0]); initialise!(model.momentum.p, 0.0)
+        run!(model, config; output=VTK(), progress=false, pref=0.0)
+        @test maximum(abs, model.momentum.U.x.values) < 0.7
+        @test maximum(abs, model.momentum.p.values) < 1.0
+    end
+
     # cpiso!: acoustic standing wave in a periodic strip (∂(ψp)/∂t, energy coupling), acoustic
     # Courant number 0.5; outer loops make the density of the time terms that of the state
     # equation at the new time level

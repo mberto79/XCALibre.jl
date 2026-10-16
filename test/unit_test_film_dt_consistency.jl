@@ -1,8 +1,6 @@
-# A film run to a steady state must not depend on the time step. Inclined plate, inlet with
-# prescribed h and U, no surface tension (σ = 0 isolates the cell-level coupling and the
-# inlet flux; the momentum-interpolation fluxes on interior faces still carry rD_f).
-# Before the fix (main fef95b73): max|Δh|/h_N = 1.06e-3, max|ΔUx|/U_N = 5.5e-4 between
-# Δt = 5e-5 and 6e-4. After: 5.8e-5 and 5.7e-7.
+# A film run to a steady state must not depend on Δt: inclined plate, prescribed h and U at
+# the inlet, σ = 0. Main fef95b73 gave max|Δh|/h_N = 1.06e-3 and max|ΔUx|/U_N = 5.5e-4
+# between Δt = 5e-5 and 6e-4; this fix gives 5.8e-5 and 5.7e-7.
 function film_dt_steady(dt; tend=1.0, σ=0.0)
     nx, ny = 50, 4
     L, W = 0.05, 0.004

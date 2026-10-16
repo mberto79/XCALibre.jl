@@ -19,9 +19,10 @@ end
 
 patches = (:wall, :top, :inlet, :outlet)
 
-# viscous_force takes the wall velocity from the U condition, so only Wall patches
-forces(model, config) = [(pressure_force(p, model, config),
-    p === :wall ? viscous_force(p, model, config) : zeros(3)) for p ∈ patches]
+# viscous_force takes the wall velocity of each face from the U condition of every patch
+# (Dirichlet inlet, zero-gradient outlet, wall, symmetry top)
+forces(model, config) = [(pressure_force(p, model, config), viscous_force(p, model, config))
+    for p ∈ patches]
 
 gmesh = rank == 0 ? bfs_mesh() : nothing
 ref = if rank == 0

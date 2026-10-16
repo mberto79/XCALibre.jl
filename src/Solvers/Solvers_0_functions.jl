@@ -158,6 +158,185 @@ function consistent_H!(Hv, rDt, rD, ∇p, config)
     end
 end
 
+## TIME-CONSISTENT FACE FLUX
+# The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
+# and periodic faces it is moved towards rD_f·ṁⁿ/Δt, the face's own old flux (`_time_flux_weight`).
+struct TimeFlux{F,V,W,M,P,T,O}
+    mold::F     # ṁⁿ (mass flux of the time term's quantity)
+    uold::V     # ρⁿUⁿ
+    w::V        # scratch: rD·ρⁿUⁿ/Δt
+    wf::W
+    rDf::F
+    phi::F
+    mask::M     # faces corrected: interior and periodic parent faces
+    pairs::P    # (parent, partner) face IDs of periodic patches; the partner takes -correction
+    dt::T       # [Δtⁿ]
+    pold::O     # Crank-Nicolson: start-of-step pressure (`nothing` for other schemes)
+end
+
+# Crank-Nicolson: pressure of the last step, its cell gradient (as held in ddtⁿ) and their changes
+struct OldPressure{S,C,V,F}
+    state::S    # the Time operator's CNState (its clock holds c of the step)
+    p::C        # pⁿ
+    gradp::V    # ∇pⁿ (cell)
+    dp::C       # pⁿ - pⁿ⁻¹
+    dgradp::V   # ∇pⁿ - ∇pⁿ⁻¹
+    phi::F      # scratch
+end
+_old_pressure(term, mesh) = nothing
+_old_pressure(term::Time{CrankNicolson,<:Discretise.CNState}, mesh) = OldPressure(term.state,
+    ScalarField(mesh), VectorField(mesh), ScalarField(mesh), VectorField(mesh), FaceScalarField(mesh))
+
+# `nothing` for equations without a time derivative (steady solvers)
+function TimeFlux(U_eqn, mesh, BCs)
+    unwrap_eqn(U_eqn).model.terms[1].type isa Time{SteadyState} && return nothing
+    nb = length(mesh.boundary_cellsID)
+    mask = zeros(Bool, length(mesh.faces))
+    mask[nb+1:end] .= true
+    parents, partners = _get_int(mesh)[], _get_int(mesh)[]
+    for BC ∈ BCs
+        BC isa PeriodicParent || continue
+        mask[BC.IDs_range] .= true
+        append!(parents, BC.IDs_range); append!(partners, Array(BC.value.face_map))
+    end
+    backend = _get_backend(mesh)
+    TimeFlux(FaceScalarField(mesh), VectorField(mesh), VectorField(mesh), FaceVectorField(mesh),
+        FaceScalarField(mesh), FaceScalarField(mesh), adapt(backend, mask),
+        (adapt(backend, parents), adapt(backend, partners)), [one(_get_float(mesh))],
+        _old_pressure(unwrap_eqn(U_eqn).model.terms[1].type, mesh))
+end
+
+# old levels at the start of a step: face mass flux rhof*mdotf (`rhof` is `nothing` for a mass flux)
+# and cell rho*U (`rho` is `nothing` for unit density); `pressure = (p, ∇p)` for Crank-Nicolson
+begin_time_flux!(::Nothing, args...; kwargs...) = nothing
+function begin_time_flux!(tf::TimeFlux, mdotf, U, rho, rhof, dt; pressure=nothing)
+    store_old_pressure!(tf.pold, pressure)
+    isnothing(rhof) ? copyto!(tf.mold.values, mdotf.values) :
+        (@. tf.mold.values = rhof.values*mdotf.values)
+    r = isnothing(rho) ? one(eltype(U.x.values)) : rho.values
+    @. tf.uold.x.values = r*U.x.values
+    @. tf.uold.y.values = r*U.y.values
+    @. tf.uold.z.values = r*U.z.values
+    tf.dt[1] = dt
+    nothing
+end
+
+# in the face flux of the interpolated H/a_P, the old-time source by its face value rD_f·ṁⁿ/Δt;
+# `rhof`: face density relating this volume flux to the mass flux ṁ (`nothing`: unit density)
+time_flux!(::Nothing, args...; kwargs...) = nothing
+function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config; rhof=nothing)
+    dt = eltype(flux.values)(tf.dt[1])
+    (; w, wf, uold, rDf, phi, mold, mask, pairs) = tf
+    @. w.x.values = rD.values*uold.x.values/dt
+    @. w.y.values = rD.values*uold.y.values/dt
+    @. w.z.values = rD.values*uold.z.values/dt
+    interpolate!(wf, w, config)
+    correct_boundaries!(wf, w, BCs, time, config)
+    flux!(phi, wf, config)
+    interpolate!(rDf, rD, config)
+    correct_interpolation_periodic(rDf, rD, BCs, config)
+    r = isnothing(rhof) ? one(dt) : rhof.values
+    @. phi.values = ifelse(mask, _time_flux_weight(rDf.values, r, mold.values, phi.values, dt)*
+        (rDf.values*mold.values/dt - phi.values), zero(dt))
+    old_pressure_flux!(phi, tf.pold, tf, rD, BCs, time, config)
+    @. flux.values += phi.values
+    parents, partners = pairs
+    isempty(parents) || (@views flux.values[partners] .-= phi.values[parents])
+    nothing
+end
+
+store_old_pressure!(::Nothing, pressure) = nothing
+store_old_pressure!(::OldPressure, ::Nothing) = throw(ArgumentError(
+    "begin_time_flux!: Crank-Nicolson needs the start-of-step pressure, pressure = (p, ∇p)"))
+function store_old_pressure!(op::OldPressure, (p, ∇p))
+    g, g0, dg = ∇p.result, op.gradp, op.dgradp
+    @. op.dp.values = p.values - op.p.values
+    @. dg.x.values = g.x.values - g0.x.values
+    @. dg.y.values = g.y.values - g0.y.values
+    @. dg.z.values = g.z.values - g0.z.values
+    copyto!(op.p.values, p.values)
+    copyto!(g0.x.values, g.x.values); copyto!(g0.y.values, g.y.values); copyto!(g0.z.values, g.z.values)
+    nothing
+end
+
+# Crank-Nicolson: c·ddtⁿ in H/a_P holds -c∇pⁿ; interpolated, pⁿ enters the pressure equation by the
+# wide Laplacian and an odd-even mode in time grows on non-orthogonal meshes. Half the step change
+# of pⁿ takes the compact face gradient instead (Rhie-Chow); smooth pressures change by O(Δt²).
+old_pressure_flux!(phi, ::Nothing, args...) = nothing
+function old_pressure_flux!(phi, op::OldPressure, tf, rD, BCs, time, config)
+    F = eltype(phi.values)
+    c = F(op.state.clock.v[3])
+    iszero(c) && return nothing
+    (; w, wf, rDf, mask) = tf
+    g = op.dgradp
+    @. w.x.values = rD.values*g.x.values
+    @. w.y.values = rD.values*g.y.values
+    @. w.z.values = rD.values*g.z.values
+    interpolate!(wf, w, config)
+    correct_boundaries!(wf, w, BCs, time, config)
+    flux!(op.phi, wf, config)
+    compact_pressure_flux!(op.phi, op.dp, rDf, BCs, config)
+    @. phi.values += ifelse(mask, c/2*op.phi.values, zero(F))
+    nothing
+end
+
+# phif -= rD_f·(∇p)_f·S with the compact face gradient of the pressure Laplacian, on interior faces
+# and periodic parent faces
+function compact_pressure_flux!(phif, p, rDf, BCs, config)
+    (; backend, workgroup) = config.hardware
+    mesh = p.mesh
+    n_bfaces = length(mesh.boundary_cellsID)
+    ndrange = length(mesh.faces) - n_bfaces
+    kernel! = _sized(_compact_pressure_flux!, backend, workgroup, ndrange)
+    kernel!(phif, p, rDf, mesh.face_gDiff, mesh.faces, n_bfaces)
+    for BC ∈ BCs
+        BC isa PeriodicParent || continue
+        ndrange = length(BC.IDs_range)
+        kernel! = _sized(_compact_pressure_flux_periodic!, backend, workgroup, ndrange)
+        kernel!(phif, p, rDf, mesh.faces, mesh.cells, BC.IDs_range, BC.value.face_map,
+            BC.value.transform.distance)
+    end
+    nothing
+end
+
+@kernel function _compact_pressure_flux!(phif, p, rDf, face_gDiff, faces, n_bfaces)
+    i = @index(Global)
+    fID = i + n_bfaces
+    @inbounds begin
+        cID1, cID2 = faces.ownerCells[fID]
+        phif[fID] -= rDf[fID]*face_gDiff[fID]*(p[cID2] - p[cID1])
+    end
+end
+
+# periodic pair: the face coefficient of the PeriodicParent Laplacian
+@kernel function _compact_pressure_flux_periodic!(
+    phif, p, rDf, faces, cells, IDs_range, face_map, distance)
+    i = @index(Global)
+    @inbounds begin
+        fID = IDs_range[i]
+        cID = faces.ownerCells[fID][1]
+        pcID = faces.ownerCells[face_map[i]][1]
+        Ef_mag, Δ = periodic_face_distance(faces, cells, fID, cID, pcID, distance)
+        phif[fID] -= (rDf[fID]*Ef_mag)/Δ*(p[pcID] - p[cID])
+    end
+end
+
+# Carried in full, the face memory evolves the mismatch e = ṁⁿ - (ρU)ⁿ_f·S as e ← (ρ_f·rD_f/Δt)·e,
+# which grows where a_P < ρV/Δt (Linear convection on graded meshes). θ_f = min(1, Δt/(ρ_f·rD_f))
+# bounds that gain by one; c_f = 1 - min(|e|/|ṁⁿ|, 1) damps faces whose old and cell fluxes differ.
+@inline function _time_flux_weight(rDf, rhof, m, phi, dt)
+    e = m - phi*dt/rDf
+    θ = min(one(dt), dt/(rhof*rDf))
+    c = one(dt) - min(abs(e)/(abs(m) + eps(typeof(dt))^2), one(dt))
+    θ*c
+end
+
+# ν_t and ν_eff of the current fields, for time schemes that extrapolate the explicit terms
+explicit_terms(turbulenceModel, model, S, nueff, nu, time, config) = () -> begin
+    eddy_viscosity!(turbulenceModel, model, S, time, config)
+    update_nueff!(nueff, nu, model.turbulence, config)
+end
+
 # halo=false leaves ghosts stale for a caller that exchanges rD together with Hv
 function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}
     (; hardware) = config
@@ -470,6 +649,27 @@ distributed_ready(::Val{:Godunov}, ::WALE) = false
 
 const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow, :Godunov)
 
+
+## Time schemes
+
+_time_schemes(s::Schemes) = (s.time,)
+_time_schemes(schemes) = Tuple(s.time for s ∈ values(schemes) if s isa Schemes)
+_is_crank_nicolson(t) = t === CrankNicolson || t isa CrankNicolson
+
+# the explicit terms are taken at the time level of one scheme, shared by all fields
+function check_time_schemes(schemes)
+    t = _time_schemes(schemes)
+    any(_is_crank_nicolson, t) && Euler ∈ t && throw(ArgumentError(
+        "CrankNicolson and Euler cannot be combined: use the same time scheme for every field"))
+    nothing
+end
+
+# solvers whose time integration outside the Time terms is explicit and first order (or absent)
+function reject_crank_nicolson(schemes, solver, reason)
+    any(_is_crank_nicolson, _time_schemes(schemes)) && throw(ArgumentError(
+        "CrankNicolson is not available in $solver: $reason"))
+    nothing
+end
 
 # called by every solver entry point, named for itself; a no-op on a serial mesh
 function check_distributed_support(solver::Symbol, model)

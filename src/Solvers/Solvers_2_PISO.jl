@@ -66,7 +66,6 @@ function PISO(
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
 
-    _warn_skipped_postprocess(mesh, postprocess)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -231,11 +230,11 @@ function PISO(
             ]
         )
 
-    distributed || runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+    runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
 
     if iteration%write_interval + signbit(write_interval) == 0
         outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-        distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+        save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
     end
 
     end # end for loop

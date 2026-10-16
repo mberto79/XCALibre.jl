@@ -14,7 +14,7 @@ mpiexec_available() && run_mpi_tests(
      "test_wall_distance.jl", "test_transpose_stress.jl", "test_linear_upwind.jl",
      "test_reorder.jl", "test_least_squares.jl", "test_forces.jl", "test_bound.jl",
      "test_godunov.jl", "test_unsupported.jl", "test_mixed_precision.jl", "test_les_wale.jl",
-     "test_failure.jl"]; ranks=[2])
+     "test_postprocess.jl", "test_failure.jl"]; ranks=[2])
 
 # odd rank count: asymmetric halos
 mpiexec_available() && run_mpi_tests(["test_halo.jl"]; ranks=[3])

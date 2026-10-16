@@ -80,7 +80,20 @@ timestep = 0.01
 runtime = Runtime(iterations=iterations, time_step=timestep, write_interval=-1)
 hardware = Hardware(backend=backend,workgroup = workgroup)
 
-postprocess = [FieldRMS(model.momentum.U; name="Urms"), FieldRMS(model.momentum.U;name="Urms_stop50", stop = 50*timestep,update_interval = 3*timestep), FieldRMS(model.momentum.U;name="Urms_start51", start = 51*timestep, update_interval = timestep/2)]
+# records U at every time step, for an exact reference RMS
+struct RMSProbe{F}
+    U::F
+    ux::Vector{Vector{Float64}}
+    uy::Vector{Vector{Float64}}
+end
+XCALibre.convert_time_to_iterations(p::RMSProbe, model, dt, iterations) = p
+function XCALibre.runtime_postprocessing!(p::RMSProbe, iter::Integer, n::Integer, S, time, config)
+    push!(p.ux, copy(p.U.x.values)); push!(p.uy, copy(p.U.y.values))
+    nothing
+end
+probe = RMSProbe(model.momentum.U, Vector{Float64}[], Vector{Float64}[])
+
+postprocess = [FieldRMS(model.momentum.U; name="Urms"), FieldRMS(model.momentum.U;name="Urms_stop50", stop = 50*timestep,update_interval = 3*timestep), FieldRMS(model.momentum.U;name="Urms_start51", start = 51*timestep, update_interval = timestep/2), probe]
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,postprocess=postprocess)
 
 @test initialise!(model.momentum.U, velocity) === nothing
@@ -93,7 +106,15 @@ v_rms_exact = U0*A/sqrt(2)
 u_rms = sum(postprocess[1].rms.x.values[end-25:end-15])/length(postprocess[1].rms.x.values[end-25:end-15])
 v_rms = sum(postprocess[1].rms.y.values[end-25:end-15])/length(postprocess[1].rms.y.values[end-25:end-15])
 
-@test u_rms ≈ u_rms_exact atol = 0.005
+# FieldRMS against the RMS of the recorded samples, in every cell
+sample_rms(u) = (m = sum(u)/length(u); sqrt.(max.(sum(x -> x.^2, u)/length(u) .- m.^2, 0.0)))
+@test postprocess[1].rms.x.values ≈ sample_rms(probe.ux) rtol = 1e-8
+@test postprocess[1].rms.y.values ≈ sample_rms(probe.uy) rtol = 1e-8
+
+# sanity bound only: the analytic value is the RMS of the inlet face, the samples are the first
+# cells, whose RMS depends on the discretisation on this coarse grid (on generated 40², 80² and 160²
+# grids the first-cell RMS of two face-flux treatments differs by 2.3e-3, 5e-5 and 1e-8)
+@test u_rms ≈ u_rms_exact rtol = 0.1
 @test v_rms ≈ v_rms_exact atol = 0.03
 
 #testing start and end and update_interval logic

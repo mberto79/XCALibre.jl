@@ -41,7 +41,7 @@ coord_extrema(mesh) = (
     # a partition holding no boundary face (an interior MPI rank)
     m = mesh
     interior = Mesh3(m.cells, m.cell_nodes, m.cell_faces, m.cell_neighbours, m.cell_nsign,
-        m.faces, m.face_nodes, m.face_gDiff, similar(m.boundaries, 0), m.nodes, m.node_cells,
+        m.faces, m.face_nodes, similar(m.boundaries, 0), m.nodes, m.node_cells,
         m.get_float, m.get_int, m.boundary_cellsID)
     @test total_boundary_faces(interior) == 0
     @test bounding_box(interior) == (pmin, pmax)

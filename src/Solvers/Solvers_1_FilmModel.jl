@@ -6,6 +6,9 @@ function filmModel!(
     inner_loops=2, progress=true
 )
     check_distributed_support(:FilmModel, model)
+    reject_crank_nicolson(config.schemes, "filmModel!",
+        "the film thickness and velocity are coupled by an explicit first-order step, so the time \
+        integration cannot be second order; use Euler")
     residuals = setup_FilmModel_Solver(
         FilmModel, model, config,
         output=output,

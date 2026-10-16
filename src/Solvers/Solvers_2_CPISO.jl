@@ -14,6 +14,8 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 - `pref` Reference pressure value for cases that do not have a pressure defining BC. Incompressible solvers only (default = `nothing`)
 - `ncorrectors` number of non-orthogonality correction loops (default = `0`)
 - `inner_loops` number to inner loops used in transient solver based on PISO algorithm (default = `0`)
+- `outer_loops` passes over momentum, energy and pressure per time step, so that the density of
+  the time terms matches the state equation at the new time level (default = `1`)
 - `transpose_stress` include the explicit viscous stress ∇·(μ_eff dev2((∇U)ᵀ)) in the momentum equation (default = `true`)
 
 # Output
@@ -25,16 +27,17 @@ Compressible and transient variant of the PISO algorithm with a sensible enthalp
 """
 function cpiso!(
     model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     transpose_stress=true)
     check_distributed_support(:CPISO, model)
+    check_time_schemes(config.schemes)
 
     residuals = setup_unsteady_compressible_solvers(
         CPISO, model, config;
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress,
+        inner_loops=inner_loops, outer_loops=outer_loops, progress=progress,
         transpose_stress=transpose_stress
         )
 
@@ -44,7 +47,7 @@ end
 # Setup for all compressible algorithms
 function setup_unsteady_compressible_solvers(
     solver_variant, model, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     transpose_stress=true
     )
 
@@ -124,7 +127,7 @@ function setup_unsteady_compressible_solvers(
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress,
+        inner_loops=inner_loops, outer_loops=outer_loops, progress=progress,
         transpose_stress=transpose_stress)
 
     return residuals
@@ -132,7 +135,7 @@ end # end function
 
 function CPISO(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true)
 
@@ -221,6 +224,12 @@ function CPISO(
     limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    tflux = TimeFlux(U_eqn, mesh, boundaries.U)
+
+    lagged = LaggedTerms(U_eqn, (mdotf, mueff, nueff, gradU.result,
+        explicit_fields(turbulenceModel, model)...); levels=((p_eqn, p, Psi),),
+        evaluate=() -> (eddy_viscosity!(turbulenceModel, model, S, time, config);
+            update_effective_viscosity!(model, nueff, mueff, config)))
 
     @info "Starting CPISO loops..."
 
@@ -229,6 +238,8 @@ function CPISO(
     for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
+        begin_time_flux!(tflux, mdotf, U, rho, nothing, dt_cpu[1]; pressure=(p, ∇p))
+        extrapolate_lagged!(lagged, time, config) # explicit terms at the time level of the scheme
 
         # gradU and mueff of the start-of-step velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
@@ -238,8 +249,11 @@ function CPISO(
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)
         @. model.energy.prevP = p.values
 
+        rx = ry = rz = rp = zero(TF)
+        for outer ∈ 1:outer_loops
         # Set up and solve momentum equations
-        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; rho_prev=rho)
+        rx, ry, rz = solve_equation!(U_eqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config;
+            rho_prev=rho, time=time)
 
         # Energy after correctors so dp/dt = (p_corrected - prevP)/dt ≠ 0
         energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
@@ -253,7 +267,6 @@ function CPISO(
 
         remove_pressure_source!(U_eqn, ∇p, config)
 
-        rp = 0.0
         for i ∈ 1:inner_loops
             H!(Hv, U, U_eqn, config)
 
@@ -264,8 +277,10 @@ function CPISO(
             if typeof(model.fluid) <: Compressible
 
                 flux!(pconv, Uf, config)
+                time_flux!(tflux, pconv, rD, boundaries.U, time, config; rhof=rhof)
                 @. pconv.values *= Psif.values
                 flux!(mdotf, Uf, config)
+                time_flux!(tflux, mdotf, rD, boundaries.U, time, config; rhof=rhof)
                 @. mdotf.values *= rhof.values
                 interpolate!(pf, p, config)
                 correct_boundaries!(pf, p, boundaries.p, time, config)
@@ -275,6 +290,7 @@ function CPISO(
             elseif typeof(model.fluid) <: WeaklyCompressible
 
                 flux!(mdotf, Uf, config)
+                time_flux!(tflux, mdotf, rD, boundaries.U, time, config; rhof=rhof)
                 @. mdotf.values *= rhof.values
                 div!(divHv, mdotf, config)
             end
@@ -283,7 +299,7 @@ function CPISO(
             @. prev = p.values
             @. p_boundary_reference = p.values
             if ncorrectors == 0
-                rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing)
+                rp = solve_equation!(p_eqn, p, boundaries.p, solvers.p, config; ref=nothing, time=time)
             end
 
             # Non-orthogonal correction: every pressure solve carries the explicit
@@ -292,7 +308,7 @@ function CPISO(
                 grad!(∇p, pf, p, boundaries.p, time, config)
                 limit_gradient!(schemes.p.limiter, ∇p, p, config)
                 @. p_boundary_reference = p.values
-                discretise!(p_eqn, p, config)
+                discretise!(p_eqn, p, config; time)
                 apply_boundary_conditions!(p_eqn, boundaries.p, nothing, time, config)
                 setReference!(p_eqn, pref, 1, config)
                 nonorthogonal_face_correction(
@@ -331,19 +347,11 @@ function CPISO(
             correct_velocity!(U, Hv, ∇p, rD, config)
 
         end # corrector loop end
+        end # outer loop end
 
         # Turbulence outside corrector loop
         turbulence!(turbulenceModel, model, S, prev, time, config)
-        update_viscosity!(model.fluid, model.energy, config)
-        update_nueff!(nueff, nuf, model.turbulence, config)
-        
-        # update turbulent dynamic viscosity
-        @. mueff.values = rhof.values*nueff.values
-        if model.turbulence isa Laminar 
-            @. model.energy.mueff_cell.values = rho.values*nu.values 
-        else
-            @. model.energy.mueff_cell.values = rho.values*(nu.values + nut.values)
-        end
+        update_effective_viscosity!(model, nueff, mueff, config)
 
         
         courant = max_courant_number!(cellsCourant, model, config)
@@ -377,4 +385,17 @@ function CPISO(
 
     store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p)
+end
+
+# molecular, effective and dynamic viscosities from the current fields
+function update_effective_viscosity!(model, nueff, mueff, config)
+    (; rho, rhof, nu, nuf) = model.fluid
+    update_viscosity!(model.fluid, model.energy, config)
+    update_nueff!(nueff, nuf, model.turbulence, config)
+    @. mueff.values = rhof.values*nueff.values
+    if model.turbulence isa Laminar
+        @. model.energy.mueff_cell.values = rho.values*nu.values
+    else
+        @. model.energy.mueff_cell.values = rho.values*(nu.values + model.turbulence.nut.values)
+    end
 end

@@ -48,6 +48,41 @@ _gDiff(face::Union{Face2D,Face3D}) =
 
 face_gDiff_coefficients(faces) = _gDiff.(faces)
 
+# boundary faces grouped by owner cell (cells ascending, faces ascending within a cell): kernels
+# adding boundary contributions run one work item per cell over its faces, so each cell sums them
+# in serial face order whatever the thread count (atomic face loops sum in arrival order)
+function boundary_cell_faces(boundary_cellsID::AbstractVector{I}) where I<:Integer
+    owners = Array(boundary_cellsID)
+    ncells = length(unique(owners))
+    cells, ranges = Vector{I}(undef, ncells), Vector{UnitRange{I}}(undef, ncells)
+    faces = Vector{I}(undef, length(owners))
+    boundary_cell_faces!(cells, ranges, faces, owners)
+    _like(boundary_cellsID, cells), _like(boundary_cellsID, ranges), _like(boundary_cellsID, faces)
+end
+
+# fills the grouping in place (reordering renumbers the cells but keeps the counts)
+function boundary_cell_faces!(cells, ranges, faces, owners)
+    I = eltype(faces)
+    perm = sortperm(owners; alg=MergeSort) # stable: faces stay ascending within a cell
+    j = 0
+    for k ∈ eachindex(perm)
+        f = perm[k]
+        faces[k] = I(f)
+        if k == 1 || owners[f] != owners[perm[k - 1]]
+            j += 1
+            cells[j] = owners[f]
+            ranges[j] = I(k):I(k)
+        else
+            ranges[j] = first(ranges[j]):I(k)
+        end
+    end
+    j == length(cells) || throw(ArgumentError("boundary cell count changed"))
+    cells, ranges, faces
+end
+
+_like(::Array, x::Array) = x
+_like(a, x) = copyto!(similar(a, eltype(x), length(x)), x)
+
 # the 3D readers build the mesh before filling the face geometry, so the array built with it
 # is refreshed once the geometry is final
 update_face_gDiff!(mesh) = (mesh.face_gDiff .= _gDiff.(mesh.faces); mesh)

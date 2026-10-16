@@ -36,13 +36,11 @@ function div!(phi::ScalarField, psif::FaceVectorField, config)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
     # KernelAbstractions.synchronize(backend)
 
-    # Retrieve number of boundary faces
-    nbfaces = length(mesh.boundary_cellsID)
-
-    # Launch boundary faces contribution kernel
-    ndrange = nbfaces
+    # Launch boundary faces contribution kernel: one work item per boundary cell
+    (; boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
+    ndrange = length(boundary_cells)
     kernel! = _sized(div_boundary_faces_contribution_kernel!, backend, workgroup, ndrange)
-    kernel!(faces, cells, phi, psif)
+    kernel!(faces, cells, phi, psif, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -78,19 +76,22 @@ end
 
 # Boundary faces contribution kernel
 
-@kernel function div_boundary_faces_contribution_kernel!(faces, cells, phi, psif)
-    i = @index(Global)
+# each boundary cell adds its boundary faces in face order (no atomics: deterministic)
+@kernel function div_boundary_faces_contribution_kernel!(
+    faces, cells, phi, psif, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
     
     @inbounds begin
-        # Retreive variables from work item boundary face
-        cID = faces.ownerCells[i][1]
+        cID = boundary_cells[j]
         volume = cells.volume[cID]
-        area, normal = faces.area[i], faces.normal[i]
+        for k ∈ boundary_cell_faces_range[j]
+            i = boundary_cell_faces[k]
+            area, normal = faces.area[i], faces.normal[i]
 
-        # Boundary contribution calculation (boundary normals are correct by definition)
-        Sf = area*normal
-        Atomix.@atomic phi.values[cID] += psif[i]⋅Sf/volume
-        # phi.values[cID] += psif[i]⋅Sf/volume
+            # Boundary contribution calculation (boundary normals are correct by definition)
+            Sf = area*normal
+            phi.values[cID] += psif[i]⋅Sf/volume
+        end
     end
 end
 
@@ -113,13 +114,11 @@ function div!(phi::ScalarField, psif::FaceScalarField, config)
     kernel!(cells, F, cell_faces, cell_nsign, faces, phi, psif)
     # KernelAbstractions.synchronize(backend)
 
-    # Retrieve number of boundary faces
-    nbfaces = length(mesh.boundary_cellsID)
-
-    # Launch boundary faces contribution kernel
-    ndrange = nbfaces
+    # Launch boundary faces contribution kernel: one work item per boundary cell
+    (; boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
+    ndrange = length(boundary_cells)
     kernel! = _sized(div_noS_boundary_faces_contribution_kernel!, backend, workgroup, ndrange)
-    kernel!(faces, cells, phi, psif)
+    kernel!(faces, cells, phi, psif, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
     # KernelAbstractions.synchronize(backend)
 end
 
@@ -153,19 +152,17 @@ end
 
 # Boundary faces contribution kernel
 
-@kernel function div_noS_boundary_faces_contribution_kernel!(faces, cells, phi, psif)
-    i = @index(Global)
+# each boundary cell adds its boundary faces in face order (no atomics: deterministic)
+@kernel function div_noS_boundary_faces_contribution_kernel!(
+    faces, cells, phi, psif, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
     
     @inbounds begin
-        # Retreive variables from work item boundary face
-        cID = faces.ownerCells[i][1]
+        cID = boundary_cells[j]
         volume = cells.volume[cID]
-        area, normal = faces.area[i], faces.normal[i]
-
-        # Boundary contribution calculation (boundary normals are correct by definition)
-        # Sf = area*normal
-        Atomix.@atomic phi.values[cID] += psif[i]/volume
-        # phi.values[cID] += psif[i]⋅Sf/volume
+        for k ∈ boundary_cell_faces_range[j]
+            phi.values[cID] += psif[boundary_cell_faces[k]]/volume
+        end
     end
 end
 # Divergence of a cell tensor field scaled by a face coefficient
@@ -198,7 +195,7 @@ function div!(phi::VectorField, Γf, tensor, BCs, config; Γc=nothing)
     KernelAbstractions.synchronize(backend)
 
     for BC ∈ BCs
-        _div_tensor_boundary!(phiv, Γfv, tensor, BC, cells, faces, backend, workgroup)
+        _div_tensor_boundary!(phiv, Γfv, tensor, BC, mesh, backend, workgroup)
     end
     nothing
 end
@@ -239,26 +236,33 @@ _kernel_values(f) = f
     phi[i] = flux_sum/volume
 end
 
-_div_tensor_boundary!(phi, Γf, tensor, ::Union{Slip,Symmetry,Empty}, cells, faces, backend, workgroup) =
+_div_tensor_boundary!(phi, Γf, tensor, ::Union{Slip,Symmetry,Empty}, mesh, backend, workgroup) =
     nothing
 
-# boundary faces add their flux to the owner cell (normals point out of the domain)
-function _div_tensor_boundary!(phi, Γf, tensor, BC, cells, faces, backend, workgroup)
+# boundary faces add their flux to the owner cell (normals point out of the domain); one work item
+# per boundary cell adds its faces of this patch in face order, so the sum is deterministic
+function _div_tensor_boundary!(phi, Γf, tensor, BC, mesh, backend, workgroup)
     (; IDs_range) = BC
     isempty(IDs_range) && return nothing
-    kernel! = _sized(_div_tensor_boundary_kernel!, backend, workgroup, length(IDs_range))
-    kernel!(phi, Γf, tensor, IDs_range, cells, faces)
+    (; cells, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
+    kernel! = _sized(_div_tensor_boundary_kernel!, backend, workgroup, length(boundary_cells))
+    kernel!(phi, Γf, tensor, IDs_range, cells, faces,
+        boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
     KernelAbstractions.synchronize(backend)
 end
 
-@kernel inbounds=true function _div_tensor_boundary_kernel!(phi, Γf, tensor, IDs_range, cells, faces)
-    i = @index(Global)
-    fID = IDs_range[i]
-    cID = faces.ownerCells[fID][1]
-    flux = Γf[fID]*(tensor[cID]*faces.normal[fID])*(faces.area[fID]/cells.volume[cID])
-    Atomix.@atomic phi.x[cID] += flux[1]
-    Atomix.@atomic phi.y[cID] += flux[2]
-    Atomix.@atomic phi.z[cID] += flux[3]
+@kernel inbounds=true function _div_tensor_boundary_kernel!(phi, Γf, tensor, IDs_range, cells, faces,
+    boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
+    cID = boundary_cells[j]
+    for k ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[k]
+        fID ∈ IDs_range || continue
+        flux = Γf[fID]*(tensor[cID]*faces.normal[fID])*(faces.area[fID]/cells.volume[cID])
+        phi.x[cID] += flux[1]
+        phi.y[cID] += flux[2]
+        phi.z[cID] += flux[3]
+    end
 end
 
 # Boundary-face velocity gradient shared by the momentum transpose stress and the enthalpy viscous work.

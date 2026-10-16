@@ -42,28 +42,34 @@ _transpose_stress_boundary!(source, mueff, gradU, U, ::Empty, mesh, backend, wor
 function _transpose_stress_boundary!(source, mueff, gradU, U, BC, mesh, backend, workgroup)
     (; IDs_range) = BC
     isempty(IDs_range) && return nothing
-    (; cells, faces) = mesh
-    kernel! = _sized(_transpose_stress_boundary_kernel!, backend, workgroup, length(IDs_range))
-    kernel!(source, mueff, gradU, U, BC, IDs_range, cells, faces)
+    (; cells, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
+    kernel! = _sized(_transpose_stress_boundary_kernel!, backend, workgroup, length(boundary_cells))
+    kernel!(source, mueff, gradU, U, BC, IDs_range, cells, faces,
+        boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
     KernelAbstractions.synchronize(backend)
 end
 
 # _boundary_sngrad and _patch_gradient (boundary-face gradient) live in Calculate_0_divergence.jl
 
+# one work item per boundary cell adds its faces of this patch in face order (deterministic)
 @kernel inbounds=true function _transpose_stress_boundary_kernel!(
-    source, mueff, gradU, U, BC, IDs_range, cells, faces)
-    i = @index(Global)
-    fID = IDs_range[i]
-    cID = faces.ownerCells[fID][1]
-    normal, area, delta = faces.normal[fID], faces.area[fID], faces.delta[fID]
-    TF = typeof(area)
-    Mc = gradU[cID] # Mc[i,j] = ∂U_i/∂x_j
-    Mb = _patch_gradient(Mc, _boundary_sngrad(BC, U[cID], delta, normal), normal)
-    Tb = Mb' - TF(2)/3*tr(Mb)*I
-    flux = mueff[fID]*(Tb*normal)*(area/cells.volume[cID])
-    Atomix.@atomic source.x[cID] += flux[1]
-    Atomix.@atomic source.y[cID] += flux[2]
-    Atomix.@atomic source.z[cID] += flux[3]
+    source, mueff, gradU, U, BC, IDs_range, cells, faces,
+    boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
+    cID = boundary_cells[j]
+    for k ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[k]
+        fID ∈ IDs_range || continue
+        normal, area, delta = faces.normal[fID], faces.area[fID], faces.delta[fID]
+        TF = typeof(area)
+        Mc = gradU[cID] # Mc[i,j] = ∂U_i/∂x_j
+        Mb = _patch_gradient(Mc, _boundary_sngrad(BC, U[cID], delta, normal), normal)
+        Tb = Mb' - TF(2)/3*tr(Mb)*I
+        flux = mueff[fID]*(Tb*normal)*(area/cells.volume[cID])
+        source.x[cID] += flux[1]
+        source.y[cID] += flux[2]
+        source.z[cID] += flux[3]
+    end
 end
 
 # Cell μ_eff = ρ(ν + ν_t), evaluated on access. `rho === nothing` gives the kinematic ν_eff of

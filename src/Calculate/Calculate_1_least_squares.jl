@@ -30,12 +30,12 @@ function _lsq_geometry(mesh)
     TF = eltype(mesh.cells.volume)
     backend = get_backend(mesh.cells.volume)
     n = length(mesh.cells)
-    nb = length(mesh.boundary_cellsID)
+    nb = length(mesh.boundary_cells)
     G = ntuple(_ -> KernelAbstractions.zeros(backend, TF, n), 6)
     kernel! = _sized(_lsq_geometry_internal!, backend, 256, n)
     kernel!(G..., mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
     kernel! = _sized(_lsq_geometry_boundary!, backend, 256, nb)
-    kernel!(G..., mesh.cells, mesh.faces)
+    kernel!(G..., mesh.cells, mesh.faces, mesh.boundary_cells, mesh.boundary_cell_faces_range, mesh.boundary_cell_faces)
     kernel! = _sized(_lsq_geometry_invert!, backend, 256, n)
     kernel!(G...)
     return LSQGeometry(G)
@@ -56,18 +56,22 @@ end
     gxy[i] = G[1,2]; gxz[i] = G[1,3]; gyz[i] = G[2,3]
 end
 
+# boundary kernels: one work item per boundary cell adds its faces in face order (deterministic)
 @kernel inbounds=true function _lsq_geometry_boundary!(
-    gxx, gyy, gzz, gxy, gxz, gyz, cells, faces)
-    fID = @index(Global)
-    cID = faces.ownerCells[fID][1]
-    d, w = _lsq_boundary(cells, faces, fID, cID)
-    G = w*(d*d')
-    Atomix.@atomic gxx[cID] += G[1,1]
-    Atomix.@atomic gyy[cID] += G[2,2]
-    Atomix.@atomic gzz[cID] += G[3,3]
-    Atomix.@atomic gxy[cID] += G[1,2]
-    Atomix.@atomic gxz[cID] += G[1,3]
-    Atomix.@atomic gyz[cID] += G[2,3]
+    gxx, gyy, gzz, gxy, gxz, gyz, cells, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
+    cID = boundary_cells[j]
+    for k ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[k]
+        d, w = _lsq_boundary(cells, faces, fID, cID)
+        G = w*(d*d')
+        gxx[cID] += G[1,1]
+        gyy[cID] += G[2,2]
+        gzz[cID] += G[3,3]
+        gxy[cID] += G[1,2]
+        gxz[cID] += G[1,3]
+        gyz[cID] += G[2,3]
+    end
 end
 
 @kernel inbounds=true function _lsq_geometry_invert!(gxx, gyy, gzz, gxy, gxz, gyz)
@@ -95,13 +99,13 @@ function least_squares!(grad::Grad{LeastSquares,F,R,I,M}, phif, phi, config) whe
     (; x, y, z) = grad.result
     (; mesh) = phi
     n = length(x)
-    nbfaces = length(mesh.boundary_cellsID)
+    nbcells = length(mesh.boundary_cells)
 
     kernel! = _sized(_lsq_internal_scalar!, backend, workgroup, n)
     kernel!(x, y, z, phi, mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
 
-    kernel! = _sized(_lsq_boundary_scalar!, backend, workgroup, nbfaces)
-    kernel!(x, y, z, phif, phi, mesh.cells, mesh.faces)
+    kernel! = _sized(_lsq_boundary_scalar!, backend, workgroup, nbcells)
+    kernel!(x, y, z, phif, phi, mesh.cells, mesh.faces, mesh.boundary_cells, mesh.boundary_cell_faces_range, mesh.boundary_cell_faces)
 
     kernel! = _sized(_lsq_solve_scalar!, backend, workgroup, n)
     kernel!(x, y, z, grad.correctors.Ginv...)
@@ -124,14 +128,17 @@ end
     dx.values[i] = b[1]; dy.values[i] = b[2]; dz.values[i] = b[3]
 end
 
-@kernel inbounds=true function _lsq_boundary_scalar!(dx, dy, dz, phif, phi, cells, faces)
-    fID = @index(Global)
-    cID = faces.ownerCells[fID][1]
-    d, w = _lsq_boundary(cells, faces, fID, cID)
-    b = w*(phif[fID] - phi[cID])*d
-    Atomix.@atomic dx.values[cID] += b[1]
-    Atomix.@atomic dy.values[cID] += b[2]
-    Atomix.@atomic dz.values[cID] += b[3]
+@kernel inbounds=true function _lsq_boundary_scalar!(dx, dy, dz, phif, phi, cells, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
+    cID = boundary_cells[j]
+    for k ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[k]
+        d, w = _lsq_boundary(cells, faces, fID, cID)
+        b = w*(phif[fID] - phi[cID])*d
+        dx.values[cID] += b[1]
+        dy.values[cID] += b[2]
+        dz.values[cID] += b[3]
+    end
 end
 
 @kernel inbounds=true function _lsq_solve_scalar!(dx, dy, dz, gxx, gyy, gzz, gxy, gxz, gyz)
@@ -148,13 +155,13 @@ function least_squares!(grad::Grad{LeastSquares,F,R,I,M}, psif, psi, config) whe
     (; xx, xy, xz, yx, yy, yz, zx, zy, zz) = grad.result
     (; mesh) = psi
     n = length(xx)
-    nbfaces = length(mesh.boundary_cellsID)
+    nbcells = length(mesh.boundary_cells)
 
     kernel! = _sized(_lsq_internal_vector!, backend, workgroup, n)
     kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psi, mesh.cells, mesh.cell_faces, mesh.cell_neighbours)
 
-    kernel! = _sized(_lsq_boundary_vector!, backend, workgroup, nbfaces)
-    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, mesh.cells, mesh.faces)
+    kernel! = _sized(_lsq_boundary_vector!, backend, workgroup, nbcells)
+    kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, mesh.cells, mesh.faces, mesh.boundary_cells, mesh.boundary_cell_faces_range, mesh.boundary_cell_faces)
 
     kernel! = _sized(_lsq_solve_vector!, backend, workgroup, n)
     kernel!(xx, xy, xz, yx, yy, yz, zx, zy, zz, grad.correctors.Ginv...)
@@ -181,20 +188,23 @@ end
 end
 
 @kernel inbounds=true function _lsq_boundary_vector!(
-    xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, cells, faces)
-    fID = @index(Global)
-    cID = faces.ownerCells[fID][1]
-    d, w = _lsq_boundary(cells, faces, fID, cID)
-    b = w*((psif[fID] - psi[cID])*d')
-    Atomix.@atomic xx.values[cID] += b[1,1]
-    Atomix.@atomic xy.values[cID] += b[1,2]
-    Atomix.@atomic xz.values[cID] += b[1,3]
-    Atomix.@atomic yx.values[cID] += b[2,1]
-    Atomix.@atomic yy.values[cID] += b[2,2]
-    Atomix.@atomic yz.values[cID] += b[2,3]
-    Atomix.@atomic zx.values[cID] += b[3,1]
-    Atomix.@atomic zy.values[cID] += b[3,2]
-    Atomix.@atomic zz.values[cID] += b[3,3]
+    xx, xy, xz, yx, yy, yz, zx, zy, zz, psif, psi, cells, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
+    cID = boundary_cells[j]
+    for k ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[k]
+        d, w = _lsq_boundary(cells, faces, fID, cID)
+        b = w*((psif[fID] - psi[cID])*d')
+        xx.values[cID] += b[1,1]
+        xy.values[cID] += b[1,2]
+        xz.values[cID] += b[1,3]
+        yx.values[cID] += b[2,1]
+        yy.values[cID] += b[2,2]
+        yz.values[cID] += b[2,3]
+        zx.values[cID] += b[3,1]
+        zy.values[cID] += b[3,2]
+        zz.values[cID] += b[3,3]
+    end
 end
 
 @kernel inbounds=true function _lsq_solve_vector!(

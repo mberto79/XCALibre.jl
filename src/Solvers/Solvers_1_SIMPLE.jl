@@ -351,41 +351,48 @@ end
 
 function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothing)
     mesh = grad.mesh
-    (; faces, cells, boundary_cellsID) = mesh
+    (; faces, cells, cell_faces, cell_nsign) = mesh
 
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     (; b) = eqn.equation
-    
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
 
-    ndrange = n_ifaces
+    # each cell sums the corrections of its internal faces (no atomics): the sum is the same
+    # whatever the thread count, and each face's correction is evaluated alike from both cells
+    ndrange = length(cells)
     kernel! = _sized(_nonorthogonal_face_correction, backend, workgroup, ndrange)
-    kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
+    kernel!(b, correction, grad, flux, faces, cells, cell_faces, cell_nsign)
 end
 
 @kernel function _nonorthogonal_face_correction(
-    b, correction, grad, flux, faces, cells, n_bfaces)
+    b, correction, grad, flux, faces, cells, cell_faces, cell_nsign)
     i = @index(Global)
-    fID = i + n_bfaces
-    face = faces[fID]
-    (; ownerCells, area, normal, weight) = face
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
+    @inbounds begin
+        source = zero(eltype(b))
+        for fi ∈ cells.faces_range[i]
+            fID = cell_faces[fi]
+            face = faces[fID]
+            (; ownerCells, area, normal, weight) = face
+            cID1 = ownerCells[1]
+            cID2 = ownerCells[2]
 
-    gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
-    dPN = cells[cID2].centre - cells[cID1].centre
-    projected_delta = max(
-        dPN⋅normal, oftype(area, MIN_PROJECTED_DELTA_RATIO)*norm(dPN))
-    correction_vector = normal - dPN/projected_delta
-    face_correction = flux[fID]*area*(gradi⋅correction_vector)
+            gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
+            dPN = cells[cID2].centre - cells[cID1].centre
+            projected_delta = max(
+                dPN⋅normal, oftype(area, MIN_PROJECTED_DELTA_RATIO)*norm(dPN))
+            correction_vector = normal - dPN/projected_delta
+            face_correction = flux[fID]*area*(gradi⋅correction_vector)
 
-    store_face_correction!(correction, fID, face_correction)
-    Atomix.@atomic b[cID1] += face_correction
-    Atomix.@atomic b[cID2] -= face_correction
+            if cID1 == i
+                store_face_correction!(correction, fID, face_correction)
+                source += face_correction
+            else
+                source -= face_correction
+            end
+        end
+        b[i] += source
+    end
 end
 
 ### TEMP LOCATION FOR PROTOTYPING

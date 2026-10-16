@@ -210,8 +210,29 @@ end
         @test res.omega_relerr < 1e-10
         @test res.levels >= 2
     end
+    # composed (fused top-k) levels refresh through the gathered member lists; a refresh is
+    # bitwise repeatable (one work item per coarse row, no atomic adds)
+    for ml in (2, 3), k in (1, 2)
+        res = XCALibre.Solve.validate_refresh(A1, A2, ml, CPU(); max_coarse=64, fused_top=k)
+        @test res.relerr < 1e-12
+        @test res.omega_relerr < 1e-10
+    end
+    B1, _ = poisson2d(96) # many workgroups per refresh launch
+    B2 = deepcopy(B1)
+    XCALibre.Solve._nzval(B2) .*= 0.9
+    for k in (0, 1)
+        h = XCALibre.Solve.build_matrix_free_hierarchy(B1, 2, CPU(); max_coarse=64, fused_top=k)
+        plan = XCALibre.Solve.build_refresh_plan(h)
+        coarse(h) = [(copy(Array(XCALibre.Solve._nzval(lv.A))), copy(Array(lv.invdiag))) for lv in h.st.levels]
+        XCALibre.Solve.refresh_matrix_free_hierarchy!(h.st, plan, B2)
+        first_values = (coarse(h), copy(Array(XCALibre.Solve._nzval(plan.coarsest_csr))))
+        @test all(1:20) do _
+            XCALibre.Solve.refresh_matrix_free_hierarchy!(h.st, plan, B2)
+            (coarse(h), Array(XCALibre.Solve._nzval(plan.coarsest_csr))) == first_values
+        end
+    end
     # split precision (finest F64 / coarse F32): refresh must reproduce the F64 build to coarse-F32
-    # accuracy and stay iteration-equivalent. (GPU-only atomic type mismatch is guarded in test_AMG.jl.)
+    # accuracy and stay iteration-equivalent (the GPU type match is guarded in test_AMG.jl)
     for ml in (1, 2)
         rm = XCALibre.Solve.validate_refresh(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
         @test rm.relerr < 1e-5

@@ -451,19 +451,23 @@ end
     end
 end
 
-# Inviscid flux — boundary faces, face-based loop (atomics)
+# Inviscid flux — boundary faces: one work item per boundary cell adds its faces in face order
+# (no atomics), so the residual does not depend on the thread count
 @kernel function _inviscid_bc_flux!(
     flux_scheme, U_BCs, p_BCs, T_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     rho, U, p, T, mesh, fluid, time
 )
-    fID = @index(Global)
+    j = @index(Global)
+    @uniform (; boundary_cell_faces_range, boundary_cell_faces) = mesh
 
-    @inbounds _inviscid_bc_dispatch!(
-        flux_scheme, U_BCs, p_BCs, T_BCs,
-        res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        rho, U, p, T, mesh, fluid, fID, time
-    )
+    @inbounds for k ∈ boundary_cell_faces_range[j]
+        _inviscid_bc_dispatch!(
+            flux_scheme, U_BCs, p_BCs, T_BCs,
+            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            rho, U, p, T, mesh, fluid, boundary_cell_faces[k], time
+        )
+    end
 end
 
 @generated function _inviscid_bc_dispatch!(
@@ -512,22 +516,22 @@ end
     cID = ownerCells[1]
 
     Fp = p[cID] * area * normal
-    Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
-    Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
-    Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
+    res_rhoUx.values[cID] += Fp[1]
+    res_rhoUy.values[cID] += Fp[2]
+    res_rhoUz.values[cID] += Fp[3]
 end
 
-# ── Shared atomic accumulation helper for Riemann-path BC handlers ───────────────
+# ── Shared accumulation helper for Riemann-path BC handlers ───────────────
 
 @inline function _accumulate_inviscid!(
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     cID, F_rho, F_rhoU::SVector{3}, F_rhoE
 )
-    Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
-    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
+    res_rho.values[cID]   += F_rho
+    res_rhoUx.values[cID] += F_rhoU[1]
+    res_rhoUy.values[cID] += F_rhoU[2]
+    res_rhoUz.values[cID] += F_rhoU[3]
+    res_rhoE.values[cID]  += F_rhoE
 end
 
 # ── Outlet BC: outflow (un_L > 0) UR=UL, so with Zerogradient bc_p/bc_T L=R and the flux is exact ──
@@ -605,9 +609,9 @@ end
     if abs(un_bc) <= TF(1e-10)
         # Prescribed velocity is tangential → impermeable exact wall flux.
         Fp = pL * area * normal
-        Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
-        Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
-        Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
+        res_rhoUx.values[cID] += Fp[1]
+        res_rhoUy.values[cID] += Fp[2]
+        res_rhoUz.values[cID] += Fp[3]
         return
     end
 
@@ -715,9 +719,9 @@ end
     if abs(un_face) <= TF(1e-10)
         # Impermeable: exact wall flux
         Fp = pL * area * normal
-        Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
-        Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
-        Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
+        res_rhoUx.values[cID] += Fp[1]
+        res_rhoUy.values[cID] += Fp[2]
+        res_rhoUz.values[cID] += Fp[3]
         return
     end
 
@@ -1052,13 +1056,17 @@ end
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh
 )
-    fID = @index(Global)
+    j = @index(Global)
+    @uniform (; boundary_cell_faces_range, boundary_cell_faces) = mesh
 
-    @inbounds _viscous_bc_dispatch!(
-        U_BCs, T_BCs,
-        res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh, fID
-    )
+    # one work item per boundary cell adds its faces in face order (deterministic)
+    @inbounds for k ∈ boundary_cell_faces_range[j]
+        _viscous_bc_dispatch!(
+            U_BCs, T_BCs,
+            res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh, boundary_cell_faces[k]
+        )
+    end
 end
 
 @generated function _viscous_bc_dispatch!(
@@ -1118,10 +1126,10 @@ end
     F_visc_E = (Uf_face ⋅ tau_n) + q_wall
 
     tau_n_area = tau_n * area
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
-    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+    res_rhoUx.values[cID] -= tau_n_area[1]
+    res_rhoUy.values[cID] -= tau_n_area[2]
+    res_rhoUz.values[cID] -= tau_n_area[3]
+    res_rhoE.values[cID]  -= F_visc_E * area
 end
 
 # Wall (no-slip): two-point gradient (U_wall-U_cell)/δ⊗n — orthogonal, avoids thin-cell amplification.
@@ -1152,10 +1160,10 @@ end
     F_visc_E = (U_wall ⋅ tau_n) + q_wall
 
     tau_n_area = tau_n * area
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
-    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+    res_rhoUx.values[cID] -= tau_n_area[1]
+    res_rhoUy.values[cID] -= tau_n_area[2]
+    res_rhoUz.values[cID] -= tau_n_area[3]
+    res_rhoE.values[cID]  -= F_visc_E * area
 end
 
 # Slip/Symmetry: zero shear + adiabatic → no viscous flux.
@@ -1197,10 +1205,10 @@ end
     F_visc_E = (Uf_face ⋅ tau_n) + kf * (gradT_f ⋅ normal)
 
     tau_n_area = tau_n * area
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
-    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+    res_rhoUx.values[cID] -= tau_n_area[1]
+    res_rhoUy.values[cID] -= tau_n_area[2]
+    res_rhoUz.values[cID] -= tau_n_area[3]
+    res_rhoE.values[cID]  -= F_visc_E * area
 end
 
 # ============================================================
@@ -1357,7 +1365,7 @@ function compute_residuals!(
     (; hardware) = config
     (; backend, workgroup) = hardware
     n_cells  = length(mesh.cells)
-    n_bfaces = length(mesh.boundary_cellsID)
+    n_bcells = length(mesh.boundary_cells)
 
     kernel! = _sized(_zero_residuals!, backend, workgroup, n_cells)
     kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
@@ -1369,12 +1377,12 @@ function compute_residuals!(
     kernel! = _sized(_viscous_flux_internal!, backend, workgroup, n_cells)
     kernel!(res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, U, T, gradU, gradT, mueff, kappa_eff, mesh)
 
-    kernel! = _sized(_inviscid_bc_flux!, backend, workgroup, n_bfaces)
+    kernel! = _sized(_inviscid_bc_flux!, backend, workgroup, n_bcells)
     kernel!(flux_scheme, boundaries.U, boundaries.p, boundaries.T,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, T, mesh, model.fluid, time)
 
-    kernel! = _sized(_viscous_bc_flux!, backend, workgroup, n_bfaces)
+    kernel! = _sized(_viscous_bc_flux!, backend, workgroup, n_bcells)
     kernel!(boundaries.U, boundaries.T, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh)
 end

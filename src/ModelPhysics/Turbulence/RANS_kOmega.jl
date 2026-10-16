@@ -26,7 +26,7 @@ struct KOmega{S1,S2,S3,F3,C} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmega
 
-struct KOmegaModel{T,E1,E2,S1,WS,GK,GO} 
+struct KOmegaModel{T,E1,E2,S1,WS,GK,GO,L} 
     turbulence::T
     k_eqn::E1 
     ω_eqn::E2
@@ -34,6 +34,7 @@ struct KOmegaModel{T,E1,E2,S1,WS,GK,GO}
     wall_scratch::WS
     ∇k::GK # gradients for second-order convection schemes (or nothing)
     ∇ω::GO
+    levels::L # lagged copies and old levels under Crank-Nicolson (`nothing` otherwise)
 end
 Adapt.@adapt_structure KOmegaModel
 
@@ -132,6 +133,8 @@ function initialise(
         @reset ω_eqn.solver = _workspace(solvers.omega, ω_eqn)
     end
 
+    levels = transport_levels(k_eqn, (k=k, omega=omega), mesh)
+
     # wrap transported-scalar eqns for the distributed solve seam (identity serial). This is
     # the single hook that makes any turbulence model distributed-capable.
     k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config; label="k")
@@ -140,7 +143,7 @@ function initialise(
     initial_residual = ((:k, 1.0),(:omega, 1.0))
     return KOmegaModel(
         turbulence, k_eqn, ω_eqn, ModelState(initial_residual, false),
-        wall_scratch(mesh, boundaries, config), ∇k, ∇ω
+        wall_scratch(mesh, boundaries, config), ∇k, ∇ω, levels
         ), config
 end
 
@@ -192,6 +195,7 @@ function turbulence!(
 
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
+    lagged_coefficients!(rans.levels, (k=k, omega=omega))
     # One pass over the cells and one over the faces: the strain-rate magnitude feeds both
     # productions, so writing it to Pk and reading it back twice was three passes for one.
     # Every field is bound with `field_values` so the closures carry values, not meshes.
@@ -227,7 +231,7 @@ function turbulence!(
     # Solve omega equation
     # prev .= omega.values
     update_convection_gradient!(∇ω, omega, boundaries.omega, config.schemes.omega.limiter, time, config)
-    discretise!(ω_eqn, omega, config)
+    discretise!(ω_eqn, old_level(rans.levels, :omega, omega), config; time)
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
@@ -242,7 +246,7 @@ function turbulence!(
     # Solve k equation
     # prev .= k.values
     update_convection_gradient!(∇k, k, boundaries.k, config.schemes.k.limiter, time, config)
-    discretise!(k_eqn, k, config)
+    discretise!(k_eqn, old_level(rans.levels, :k, k), config; time)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
@@ -263,6 +267,17 @@ function turbulence!(
     state.residuals = ((:k , k_res),(:omega, ω_res))
     state.converged = k_res < solvers.k.convergence && ω_res < solvers.omega.convergence
     return nothing
+end
+
+function eddy_viscosity!(rans::KOmegaModel, model::Physics, S, time, config)
+    (; k, omega, nut, nutf) = rans.turbulence
+    kv, omegav, nutv = field_values(k), field_values(omega), field_values(nut)
+    xcal_foreach(nutv, config) do i
+        nutv[i] = kv[i]/omegav[i]
+    end
+    interpolate!(nutf, nut, config)
+    correct_boundaries!(nutf, nut, config.boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, config.boundaries.nut, model, config, rans.wall_scratch)
 end
 
 # Specialise VTK writer

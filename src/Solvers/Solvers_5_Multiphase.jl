@@ -5,6 +5,9 @@ function multiphase!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
     transpose_stress=true)
     check_distributed_support(:multiphase, model)
+    reject_crank_nicolson(config.schemes, "multiphase!",
+        "the volume fraction is advanced by an explicit first-order (MULES) step, so the time \
+        integration cannot be second order; use Euler")
 
     residuals = setup_multiphase_solvers(
         MULTIPHASE, model, config;
@@ -1315,10 +1318,6 @@ function correct_mass_flux_mp!(mdotf, p_eqn, config; previous, time=nothing)
     (; backend, workgroup) = hardware
 
     p = p_eqn.model.terms[1].phi
-    A = _A(p_eqn)
-    nzval = _nzval(A)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
 
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
@@ -1332,8 +1331,7 @@ function correct_mass_flux_mp!(mdotf, p_eqn, config; previous, time=nothing)
 
     p_BCs = config.boundaries.p_rgh # this line had to be changed from ".p"
     for BC ∈ p_BCs
-        correct_mass_periodic(
-            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+        correct_mass_periodic(BC, mdotf, p, pterm, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
 

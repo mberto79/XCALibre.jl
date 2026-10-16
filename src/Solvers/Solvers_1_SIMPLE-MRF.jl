@@ -32,6 +32,8 @@ function simple_MRF!(
     transpose_stress=true
     )
     check_distributed_support(:SIMPLE_MRF, model)
+    reject_crank_nicolson(config.schemes, "simple_MRF!",
+        "a steady solver has no time levels; use SteadyState")
 
     residuals = setup_incompressible_solvers_MRF(
         SIMPLE_MRF, model, config; 

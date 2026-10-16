@@ -28,6 +28,7 @@ function piso!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
     petsc_options="", restart=nothing, transpose_stress=true)
     check_distributed_support(:PISO, model)
+    check_time_schemes(config.schemes)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config;
@@ -127,6 +128,8 @@ function PISO(
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     tflux = TimeFlux(U_eqn, mesh, boundaries.U)
+    lagged = LaggedTerms(U_eqn, (mdotf, nueff, gradU.result, explicit_fields(turbulenceModel, model)...);
+        evaluate=explicit_terms(turbulenceModel, model, S, nueff, nu, time, config))
 
     @info "Starting PISO loops..."
 
@@ -136,7 +139,8 @@ function PISO(
     for iteration ∈ start+1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
-        begin_time_flux!(tflux, mdotf, U, nothing, nothing, dt_cpu[1])
+        begin_time_flux!(tflux, mdotf, U, nothing, nothing, dt_cpu[1]; pressure=(p, ∇p))
+        extrapolate_lagged!(lagged, time, config) # explicit terms at the time level of the scheme
 
         # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(

@@ -55,20 +55,16 @@ BCs = assign(
 
 
 
-solvers = (
-    T = SolverSetup(
-        solver      = Cg(), # Bicgstab(), Gmres()
-        preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
-        convergence = 1e-8,
-        relax       = 0.8,
-        rtol = 1e-4,
-        atol = 1e-5
-    )
+solvers = SolverSetup(
+    solver      = Cg(), # Bicgstab(), Gmres()
+    preconditioner = Jacobi(), # Jacobi(), #NormDiagonal(), # DILU()
+    convergence = 1e-8,
+    relax       = 0.8,
+    rtol = 1e-4,
+    atol = 1e-5
 )
 
-schemes = (
-    T = Schemes(laplacian = Linear)
-)
+schemes = Schemes(laplacian = Linear)
 
 
 runtime = Runtime(

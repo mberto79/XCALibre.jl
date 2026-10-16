@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Fixed
+* The Laplace example, its test cases and unit test wrote `schemes = (\n T = Schemes(...)\n)`, which is a plain assignment rather than a named tuple: it passed the single `Schemes` and `SolverSetup` that `laplace!` expects, but also bound a global `T` that shadowed `XCALibre.T` for every later test file. They now pass `Schemes(...)` and `SolverSetup(...)` directly, the Laplace example says so, and the Robin unit test builds a real named tuple [#PRNUM](@ref)
 * `godunov!` with `LocalTimeStepping` failed to compile on GPUs ("passing non-bitstype argument") because `LocalTimeStepping` stored `turbulence_dt` as a `Symbol`. The option is still given as `:min`, `:mean` or `:max` to the constructor, which now stores it as a singleton type, so the struct is `isbits`; results are unchanged. A GPU test, `test/gpu_local_time_stepping.jl`, runs the solver with local time stepping on a CUDA device [#218](@ref)
 
 ### Added

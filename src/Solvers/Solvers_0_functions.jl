@@ -158,6 +158,67 @@ function consistent_H!(Hv, rDt, rD, ∇p, config)
     end
 end
 
+## TIME-CONSISTENT FACE FLUX
+
+# The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
+# and periodic faces it is replaced by rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady
+# state does not depend on Δt and the old cell and face levels stay coupled.
+struct TimeFlux{F,V,W,M,T}
+    mold::F     # ṁⁿ (mass flux of the time term's quantity)
+    uold::V     # ρⁿUⁿ
+    w::V        # scratch: rD·ρⁿUⁿ/Δt
+    wf::W
+    rDf::F
+    phi::F
+    mask::M     # faces corrected
+    dt::T       # [Δtⁿ]
+end
+
+# `nothing` for equations without a time derivative (steady solvers)
+function TimeFlux(U_eqn, mesh, BCs)
+    unwrap_eqn(U_eqn).model.terms[1].type isa Time{SteadyState} && return nothing
+    nb = length(mesh.boundary_cellsID)
+    mask = zeros(Bool, length(mesh.faces))
+    mask[nb+1:end] .= true
+    for BC ∈ BCs
+        BC isa Discretise.AbstractPeriodic && (mask[BC.IDs_range] .= true)
+    end
+    backend = _get_backend(mesh)
+    TimeFlux(FaceScalarField(mesh), VectorField(mesh), VectorField(mesh), FaceVectorField(mesh),
+        FaceScalarField(mesh), FaceScalarField(mesh), adapt(backend, mask), [one(_get_float(mesh))])
+end
+
+# old levels at the start of a step: face mass flux rhof*mdotf (`rhof` is `nothing` for a mass flux)
+# and cell rho*U (`rho` is `nothing` for unit density)
+begin_time_flux!(::Nothing, args...) = nothing
+function begin_time_flux!(tf::TimeFlux, mdotf, U, rho, rhof, dt)
+    isnothing(rhof) ? copyto!(tf.mold.values, mdotf.values) :
+        (@. tf.mold.values = rhof.values*mdotf.values)
+    r = isnothing(rho) ? one(eltype(U.x.values)) : rho.values
+    @. tf.uold.x.values = r*U.x.values
+    @. tf.uold.y.values = r*U.y.values
+    @. tf.uold.z.values = r*U.z.values
+    tf.dt[1] = dt
+    nothing
+end
+
+# in the face flux of the interpolated H/a_P, the old-time source by its face value rD_f·ṁⁿ/Δt
+time_flux!(::Nothing, args...) = nothing
+function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config)
+    dt = eltype(flux.values)(tf.dt[1])
+    (; w, wf, uold, rDf, phi, mold, mask) = tf
+    @. w.x.values = rD.values*uold.x.values/dt
+    @. w.y.values = rD.values*uold.y.values/dt
+    @. w.z.values = rD.values*uold.z.values/dt
+    interpolate!(wf, w, config)
+    correct_boundaries!(wf, w, BCs, time, config)
+    flux!(phi, wf, config)
+    interpolate!(rDf, rD, config)
+    correct_interpolation_periodic(rDf, rD, BCs, config)
+    @. flux.values = ifelse(mask, flux.values + rDf.values*mold.values/dt - phi.values, flux.values)
+    nothing
+end
+
 # halo=false leaves ghosts stale for a caller that exchanges rD together with Hv
 function inverse_diagonal!(rD::S, eqn, config; halo=true) where {S<:ScalarField}
     (; hardware) = config

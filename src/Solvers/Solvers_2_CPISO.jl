@@ -266,10 +266,10 @@ function CPISO(
             if typeof(model.fluid) <: Compressible
 
                 flux!(pconv, Uf, config)
-                time_flux!(tflux, pconv, rD, boundaries.U, time, config)
+                time_flux!(tflux, pconv, rD, boundaries.U, time, config; rhof=rhof)
                 @. pconv.values *= Psif.values
                 flux!(mdotf, Uf, config)
-                time_flux!(tflux, mdotf, rD, boundaries.U, time, config)
+                time_flux!(tflux, mdotf, rD, boundaries.U, time, config; rhof=rhof)
                 @. mdotf.values *= rhof.values
                 interpolate!(pf, p, config)
                 correct_boundaries!(pf, p, boundaries.p, time, config)
@@ -279,7 +279,7 @@ function CPISO(
             elseif typeof(model.fluid) <: WeaklyCompressible
 
                 flux!(mdotf, Uf, config)
-                time_flux!(tflux, mdotf, rD, boundaries.U, time, config)
+                time_flux!(tflux, mdotf, rD, boundaries.U, time, config; rhof=rhof)
                 @. mdotf.values *= rhof.values
                 div!(divHv, mdotf, config)
             end

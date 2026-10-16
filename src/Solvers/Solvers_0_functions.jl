@@ -162,10 +162,7 @@ end
 
 # The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
 # faces it is moved towards rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady state depends
-# far less on Δt. Carried in full, the face memory makes the face/cell mismatch e = ṁⁿ - (ρU)ⁿ_f·S
-# evolve as e ← (rD_f/Δt)·e, which grows where a_P < V/Δt (Linear convection on graded meshes).
-# The correction is therefore weighted per face by θ_f·c_f: θ_f = min(1, Δt/rD_f) keeps that gain
-# at most one, and c_f = 1 - min(|e|/|ṁⁿ|, 1), OpenFOAM's ddtCouplingCoeff, makes it decay.
+# far less on Δt. The weight θ_f·c_f of this correction is defined at `_time_flux_weight`.
 struct TimeFlux{F,V,W,M,T}
     mold::F     # ṁⁿ (mass flux of the time term's quantity)
     uold::V     # ρⁿUⁿ
@@ -202,9 +199,10 @@ function begin_time_flux!(tf::TimeFlux, mdotf, U, rho, rhof, dt)
     nothing
 end
 
-# in the face flux of the interpolated H/a_P, the old-time source by its face value rD_f·ṁⁿ/Δt
-time_flux!(::Nothing, args...) = nothing
-function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config)
+# in the face flux of the interpolated H/a_P, the old-time source by its face value rD_f·ṁⁿ/Δt;
+# `rhof`: face density relating this volume flux to the mass flux ṁ (`nothing`: unit density)
+time_flux!(::Nothing, args...; kwargs...) = nothing
+function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config; rhof=nothing)
     dt = eltype(flux.values)(tf.dt[1])
     (; w, wf, uold, rDf, phi, mold, mask) = tf
     @. w.x.values = rD.values*uold.x.values/dt
@@ -215,17 +213,19 @@ function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config)
     flux!(phi, wf, config)
     interpolate!(rDf, rD, config)
     correct_interpolation_periodic(rDf, rD, BCs, config)
+    r = isnothing(rhof) ? one(dt) : rhof.values
     @. flux.values = ifelse(mask,
-        flux.values + _time_flux_weight(rDf.values, mold.values, phi.values, dt)*
+        flux.values + _time_flux_weight(rDf.values, r, mold.values, phi.values, dt)*
             (rDf.values*mold.values/dt - phi.values), flux.values)
     nothing
 end
 
-# θ_f·c_f for the face-minus-cell old source rD_f·ṁⁿ/Δt - φ_f, whose Δt/rD_f multiple is the
-# mismatch e ≈ ṁⁿ - (ρU)ⁿ_f·S
-@inline function _time_flux_weight(rDf, m, phi, dt)
+# Carried in full, the face memory evolves the mismatch e = ṁⁿ - (ρU)ⁿ_f·S as e ← (ρ_f·rD_f/Δt)·e,
+# which grows where a_P < ρV/Δt (Linear convection on graded meshes). θ_f = min(1, Δt/(ρ_f·rD_f))
+# bounds that gain by one; c_f = 1 - min(|e|/|ṁⁿ|, 1) damps faces whose old and cell fluxes differ.
+@inline function _time_flux_weight(rDf, rhof, m, phi, dt)
     e = m - phi*dt/rDf
-    θ = min(one(dt), dt/rDf)
+    θ = min(one(dt), dt/(rhof*rDf))
     c = one(dt) - min(abs(e)/(abs(m) + eps(typeof(dt))^2), one(dt))
     θ*c
 end

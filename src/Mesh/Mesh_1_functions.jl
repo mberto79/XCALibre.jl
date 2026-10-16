@@ -450,40 +450,20 @@ function get_boundaries(boundaries::AbstractGPUArray)
     return boundaries_cpu
 end
 
+"""
+    pmin, pmax = bounding_box(mesh)
+
+Return the corners of the axis-aligned box enclosing all mesh nodes as `SVector{3}`s of the
+mesh float type. On a distributed mesh the box encloses the nodes of all ranks.
+"""
 function bounding_box(mesh::AbstractMesh)
-    (; faces, face_nodes, nodes) = mesh
-    nbfaces = total_boundary_faces(mesh)
-
-    backend = get_backend(face_nodes)
+    (; node_coords) = mesh
     F = _get_float(mesh)
-
-    pmin = KernelAbstractions.zeros(backend, F, 3)
-    pmax = KernelAbstractions.zeros(backend, F, 3)
-
-    ndrange = nbfaces
-    workgroup = typeof(backend) <: CPU ? cld(nbfaces, Threads.nthreads()) : 32
-    kernel! = _bounding_box(backend, workgroup, ndrange)
-    kernel!(pmin, pmax, faces, face_nodes, nodes)
+    inf = SVector{3,F}(typemax(F), typemax(F), typemax(F))
+    pmin = reduce((a, b) -> min.(a, b), node_coords; init=inf)
+    pmax = reduce((a, b) -> max.(a, b), node_coords; init=-inf)
     return pmin, pmax
 end
-
-@kernel function _bounding_box(pmin, pmax, faces, face_nodes, nodes)
-    fID = @index(Global)
-    @inbounds face = faces[fID]
-    (; nodes_range) = face
-
-    @inbounds for nID ∈ @view face_nodes[nodes_range]
-        node = nodes[nID]
-        coords = node.coords
-        pmin[1] = min(pmin[1], coords[1])
-        pmin[2] = min(pmin[2], coords[2])
-        pmin[3] = min(pmin[3], coords[3])
-        pmax[1] = max(pmax[1], coords[1])
-        pmax[2] = max(pmax[2], coords[2])
-        pmax[3] = max(pmax[3], coords[3])
-    end
-end
-
 
 # function total_boundary_faces(mesh::Mesh2{I,F}) where {I,F}
 function total_boundary_faces(mesh::AbstractMesh)

@@ -1248,6 +1248,9 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 function godunov!(model, config; output=VTK(), progress=true, forces=nothing)
     check_distributed_support(:Godunov, model)
+    reject_crank_nicolson(config.schemes, "godunov!",
+        "the turbulence transport is a split step after the explicit flow update, so the time \
+        integration cannot be second order; use Euler")
     _check_godunov_bcs(config.boundaries)
     residuals = _setup_godunov(model, config; output=output, progress=progress, forces=forces)
     return residuals
@@ -1669,7 +1672,7 @@ function GODUNOV(
             turbulenceModel.state.residuals...
         ])
 
-        _log_forces!(force_log, forces, iteration, model, config)
+        _log_forces!(force_log, forces, iteration, time, model, config)
 
         if iteration % write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)
@@ -1705,14 +1708,14 @@ _force_log(forces) = NamedTuple{Tuple(forces.patches)}(Tuple(
     (iteration=Int[], pressure=Vector{Vector{Float64}}(), viscous=Vector{Vector{Float64}}())
     for _ ∈ forces.patches))
 
-_log_forces!(::Nothing, forces, iteration, model, config) = nothing
-function _log_forces!(log, forces, iteration, model, config)
+_log_forces!(::Nothing, forces, iteration, time, model, config) = nothing
+function _log_forces!(log, forces, iteration, time, model, config)
     iteration % forces.interval == 0 || return nothing
     for patch ∈ forces.patches
         h = log[patch]
         push!(h.iteration, iteration)
         push!(h.pressure, Float64.(pressure_force(patch, model, config)))
-        push!(h.viscous,  Float64.(viscous_force(patch, model, config)))
+        push!(h.viscous,  Float64.(viscous_force(patch, model, config; time=time)))
     end
     return nothing
 end

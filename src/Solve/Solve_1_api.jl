@@ -6,7 +6,7 @@ export wrap_eqn
 export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
-export global_any, global_sum, global_min, n_owned_cells
+export global_any, global_sum, global_min, n_owned_cells, global_cell_index
 export solve_equation!
 export AdaptiveTimeStepping, LocalTimeStepping
 
@@ -298,7 +298,7 @@ function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=eqn.model.terms[1].flux, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    discretise!(eqn, phi, config, rho_prev=rho_prev)  
+    discretise!(eqn, phi, config, rho_prev=rho_prev, time=time)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
         make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
@@ -320,7 +320,7 @@ function solve_equation!(
 
     mesh = psi.mesh
 
-    discretise!(psiEqn, psi, config, rho_prev=rho_prev)
+    discretise!(psiEqn, psi, config, rho_prev=rho_prev, time=time)
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
@@ -377,13 +377,6 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
         )
 
-    # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
-    if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-        xcal_foreach(x, config) do i 
-            x[i] = 2*x[i] - values[i]
-        end
-    end
-
     ndrange = length(values)
     kernel! = _sized(_copy!, backend, workgroup, ndrange)
     kernel!(values, x)
@@ -400,9 +393,7 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     A = _A(phiEqn)
     b = _b(phiEqn, component)
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
-    # Crank-Nicolson's explicit step 2x_new - x_old is x_old + 2d
-    α = typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson} ? 2 : 1
-    iterations = mixed_solve!(phiEqn.solver, A, b, values, α, setup, config, result.mesh)
+    iterations = mixed_solve!(phiEqn.solver, A, b, values, setup, config, result.mesh)
     iterations ≥ setup.itmax && @warn "Maximum number of iterations reached!"
     return residual(phiEqn, component, config)
 end
@@ -637,6 +628,9 @@ global_min(v, mesh) = v
 
 # cells this rank updates and reduces over (owned cells first, then ghosts on a distributed mesh)
 n_owned_cells(mesh) = length(mesh.cells)
+
+# mesh-wide id of local cell i (its index in the undecomposed mesh): serial identity
+global_cell_index(mesh, i) = i
 
 function make_symmetric!(eqn, config)
     (; hardware) = config

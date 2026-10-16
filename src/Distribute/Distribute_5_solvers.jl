@@ -44,7 +44,7 @@ end
 function Solve.solve_equation!(
     deqn::DistributedEqn, phi, phiBCs, solversetup, config; time=nothing, ref=nothing, irelax=nothing)
     eqn = deqn.eqn
-    discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux)
+    discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux, time=time)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     _is_pure_laplacian(eqn) && make_symmetric!(eqn, config)
     setReference!(deqn, ref, 1, config)
@@ -61,7 +61,7 @@ function Solve.solve_equation!(
     time=nothing)
     eqn = deqn.eqn
     n = deqn.partition.n_owned
-    discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux)
+    discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux, time=time)
     update_equation!(eqn, config)
     apply_boundary_conditions!(eqn, psiBCs, xdir, time, config)
     implicit_relaxation_diagdom!(eqn, psi.x.values, solversetup.relax, xdir, config)
@@ -196,9 +196,6 @@ end
 # NEW SECTION: reduction + mesh seams (extend the serial identities from Solvers)
 
 Solve.is_distributed_mesh(::DistributedMesh) = true
-Solvers._warn_skipped_postprocess(dm::DistributedMesh, postprocess) =
-    Solvers._has_postprocess(postprocess) && dm.partition.rank == 0 &&
-        @warn "runtime post-processing (config.postprocess) is not distributed yet and is skipped" maxlog=1
 Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) == 0
 Solve.global_any(flag::Bool, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(Int(flag), max, getfield(dm, :comm)) > 0)
@@ -209,14 +206,23 @@ Solve.global_sum(v, dm::DistributedMesh) =
 Solve.global_min(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, min, getfield(dm, :comm)))
 Solve.n_owned_cells(dm::DistributedMesh) = getfield(dm, :partition).n_owned
+Solve.global_cell_index(dm::DistributedMesh, i) = getfield(dm, :orig_cells)[i]
 
 # global_max seam: Courant dt must be identical on every rank
 Solvers.global_max(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, max, getfield(dm, :comm)))
 # courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh
 Solvers._base_mesh(dm::DistributedMesh) = getfield(dm, :mesh)
-# LES Δ scaling dispatches on Mesh2/Mesh3; the local extent normal to Empty patches is the global one
+# LES Δ scaling dispatches on Mesh2/Mesh3; the local extent normal to Empty patches is the global
+# one, since every cell of a one-cell-thick mesh touches both Empty planes
 ModelPhysics.delta_scaling(dm::DistributedMesh, BCs) = ModelPhysics.delta_scaling(getfield(dm, :mesh), BCs)
+# bounding box over all ranks; a rank's local box (owned and ghost cells) is only part of it
+function bounding_box(dm::DistributedMesh)
+    pmin, pmax = bounding_box(getfield(dm, :mesh))
+    comm = getfield(dm, :comm)
+    return typeof(pmin)(MPI.Allreduce(Vector(pmin), min, comm)),
+           typeof(pmax)(MPI.Allreduce(Vector(pmax), max, comm))
+end
 
 # MeshWave wall distance: a cell touching a wall node needs every wall face through that node,
 # and some belong to other ranks. A node shared between ranks lies on a processor face of each

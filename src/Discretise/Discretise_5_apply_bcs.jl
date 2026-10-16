@@ -40,9 +40,11 @@ function _apply_boundary_conditions!(
     # one work item per boundary cell adds its faces in face order: each matrix row and source entry
     # is written by one work item only, so the assembly does not depend on the thread count
     ndrange = length(boundary_cells)
+    terms = map(t -> Operator(t.flux, t.phi, t.sign, _kernel_type(t.type), t.grad), model.terms)
+    kmodel = Model{TN,SN,typeof(terms),S}(terms, model.sources)
     kernel! = _sized(apply_boundary_conditions_kernel!, backend, workgroup, ndrange)
     kernel!(
-        model, BCs, model.terms, faces, cells, boundary_cellsID, boundary_cells,
+        kmodel, BCs, terms, faces, cells, boundary_cellsID, boundary_cells,
         boundary_cell_faces_range, boundary_cell_faces, colval, rowptr, nzval, b, component, time,
         ndrange=ndrange
         )

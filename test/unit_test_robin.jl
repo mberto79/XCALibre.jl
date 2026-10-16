@@ -15,7 +15,7 @@ solvers = (
         preconditioner = Jacobi(),
         convergence    = 1e-8,
         relax          = 1.0,
-    )
+    ),
 )
 schemes = (T = Schemes(laplacian = Linear),)
 

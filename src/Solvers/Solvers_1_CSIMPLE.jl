@@ -35,6 +35,8 @@ function csimple!(
     consistent=false
     )
     check_distributed_support(:CSIMPLE, model)
+    reject_crank_nicolson(config.schemes, "csimple!",
+        "a steady solver has no time levels; use SteadyState")
 
     residuals = setup_compressible_solvers(
         CSIMPLE, model, config; 
@@ -226,7 +228,7 @@ function CSIMPLE(
 
         # gradU and mueff of the current velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
-            mueffgradUt, mueff, gradU, boundaries.U, config; cell_mueff=mueffc)
+            mueffgradUt, mueff, gradU, boundaries.U, time, config; cell_mueff=mueffc)
 
         # Store previous values for next time step energy source terms
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)

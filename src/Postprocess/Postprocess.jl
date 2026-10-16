@@ -16,6 +16,7 @@ using XCALibre.Calculate
 using XCALibre.Discretise
 using XCALibre.ModelPhysics
 using XCALibre.Solve
+import XCALibre.Calculate: _boundary_sngrad
 # using XCALibre.Turbulence
 
 include("Postprocess_functions.jl")

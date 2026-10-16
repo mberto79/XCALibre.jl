@@ -1661,7 +1661,7 @@ function GODUNOV(
             turbulenceModel.state.residuals...
         ])
 
-        _log_forces!(force_log, forces, iteration, model, config)
+        _log_forces!(force_log, forces, iteration, time, model, config)
 
         if iteration % write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)
@@ -1697,14 +1697,14 @@ _force_log(forces) = NamedTuple{Tuple(forces.patches)}(Tuple(
     (iteration=Int[], pressure=Vector{Vector{Float64}}(), viscous=Vector{Vector{Float64}}())
     for _ ∈ forces.patches))
 
-_log_forces!(::Nothing, forces, iteration, model, config) = nothing
-function _log_forces!(log, forces, iteration, model, config)
+_log_forces!(::Nothing, forces, iteration, time, model, config) = nothing
+function _log_forces!(log, forces, iteration, time, model, config)
     iteration % forces.interval == 0 || return nothing
     for patch ∈ forces.patches
         h = log[patch]
         push!(h.iteration, iteration)
         push!(h.pressure, Float64.(pressure_force(patch, model, config)))
-        push!(h.viscous,  Float64.(viscous_force(patch, model, config)))
+        push!(h.viscous,  Float64.(viscous_force(patch, model, config; time=time)))
     end
     return nothing
 end

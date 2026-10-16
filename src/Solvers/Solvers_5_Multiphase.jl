@@ -751,11 +751,11 @@ function reconstruct!(phi::VectorField, psif::FaceScalarField, moments, config)
     kernel! = _sized(_reconstruct_internal_moments!, backend, workgroup, ndrange)
     kernel!(cells, cell_faces, faces, psif, moments)
 
-    n_boundary_faces = length(mesh.boundary_cellsID)
-    if n_boundary_faces > 0
+    n_boundary_cells = length(mesh.boundary_cells)
+    if n_boundary_cells > 0
         # psif is 0 on boundary faces for the multiphase callers, which makes this the constraint n_b⋅u = 0; potential_flow! passes a real boundary flux
-        kernel! = _sized(_reconstruct_boundary_moments!, backend, workgroup, n_boundary_faces)
-        kernel!(faces, psif, moments)
+        kernel! = _sized(_reconstruct_boundary_moments!, backend, workgroup, n_boundary_cells)
+        kernel!(faces, psif, moments, mesh.boundary_cells, mesh.boundary_cell_faces_range, mesh.boundary_cell_faces)
     end
 
     # a DistributedMesh is not <: Mesh2, and the 3D branch inverts a moment matrix singular in 2D
@@ -790,24 +790,27 @@ end
     end
 end
 
-@kernel function _reconstruct_boundary_moments!(faces, psif, moments)
-    fID = @index(Global)
+# one work item per boundary cell adds its faces in face order (deterministic)
+@kernel function _reconstruct_boundary_moments!(faces, psif, moments, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
     @inbounds begin
-        face = faces[fID]
-        cID = face.ownerCells[1]
-        (; area, normal) = face
-        M = area*(normal*normal')
-        b = psif[fID]*normal
+        cID = boundary_cells[j]
+        for k ∈ boundary_cell_faces_range[j]
+            fID = boundary_cell_faces[k]
+            area, normal = faces.area[fID], faces.normal[fID]
+            M = area*(normal*normal')
+            b = psif[fID]*normal
 
-        Atomix.@atomic moments[cID,1] += M[1,1]
-        Atomix.@atomic moments[cID,2] += M[1,2]
-        Atomix.@atomic moments[cID,3] += M[1,3]
-        Atomix.@atomic moments[cID,4] += M[2,2]
-        Atomix.@atomic moments[cID,5] += M[2,3]
-        Atomix.@atomic moments[cID,6] += M[3,3]
-        Atomix.@atomic moments[cID,7] += b[1]
-        Atomix.@atomic moments[cID,8] += b[2]
-        Atomix.@atomic moments[cID,9] += b[3]
+            moments[cID,1] += M[1,1]
+            moments[cID,2] += M[1,2]
+            moments[cID,3] += M[1,3]
+            moments[cID,4] += M[2,2]
+            moments[cID,5] += M[2,3]
+            moments[cID,6] += M[3,3]
+            moments[cID,7] += b[1]
+            moments[cID,8] += b[2]
+            moments[cID,9] += b[3]
+        end
     end
 end
 
@@ -1486,10 +1489,9 @@ function div_slip_outer!(vector::VectorField, alphaf, rhof, rho1f, rho2f, Urf, c
     kernel! = _sized(div_slip_outer_kernel!, backend, workgroup, ndrange)
     kernel!(cells, cell_faces, cell_nsign, faces, vector, alphaf, rhof, rho1f, rho2f, Urf)
 
-    nbfaces = length(mesh.boundary_cellsID)
-    ndrange = nbfaces
+    ndrange = length(mesh.boundary_cells)
     kernel! = _sized(div_slip_outer_boundary_kernel!, backend, workgroup, ndrange)
-    kernel!(faces, cells, vector, alphaf, rhof, rho1f, rho2f, Urf)
+    kernel!(faces, cells, vector, alphaf, rhof, rho1f, rho2f, Urf, mesh.boundary_cells, mesh.boundary_cell_faces_range, mesh.boundary_cell_faces)
 end
 
 @kernel inbounds=true function div_slip_outer_kernel!(cells::AbstractArray{Cell{TF,SV,UR}}, cell_faces, cell_nsign, faces, vector, alphaf, rhof, rho1f, rho2f, Urf) where {TF,SV,UR}
@@ -1525,24 +1527,29 @@ end
     end
 end
 
-@kernel function div_slip_outer_boundary_kernel!(faces, cells, vector, alphaf, rhof, rho1f, rho2f, Urf)
-    i = @index(Global)
+# one work item per boundary cell adds its faces in face order (deterministic)
+@kernel function div_slip_outer_boundary_kernel!(faces, cells, vector, alphaf, rhof, rho1f, rho2f, Urf,
+    boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
 
     @inbounds begin
         TF = eltype(Urf.x)
-        cID = faces[i].ownerCells[1]
-        volume = cells[cID].volume
-        (; area, normal) = faces[i]
+        cID = boundary_cells[j]
+        volume = cells.volume[cID]
+        for k ∈ boundary_cell_faces_range[j]
+            i = boundary_cell_faces[k]
+            area, normal = faces.area[i], faces.normal[i]
 
-        ux = Urf.x[i]
-        uy = Urf.y[i]
-        uz = Urf.z[i]
+            ux = Urf.x[i]
+            uy = Urf.y[i]
+            uz = Urf.z[i]
 
-        coeff = _slip_coeff(alphaf, rhof, rho1f, rho2f, i, TF)
-        w = coeff * (ux*normal[1] + uy*normal[2] + uz*normal[3]) * area / volume
+            coeff = _slip_coeff(alphaf, rhof, rho1f, rho2f, i, TF)
+            w = coeff * (ux*normal[1] + uy*normal[2] + uz*normal[3]) * area / volume
 
-        Atomix.@atomic vector.x.values[cID] += w * ux
-        Atomix.@atomic vector.y.values[cID] += w * uy
-        Atomix.@atomic vector.z.values[cID] += w * uz
+            vector.x.values[cID] += w * ux
+            vector.y.values[cID] += w * uy
+            vector.z.values[cID] += w * uz
+        end
     end
 end

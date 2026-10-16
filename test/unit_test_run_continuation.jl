@@ -91,11 +91,11 @@ end
 snapshot(model) = copy.((model.momentum.U.x.values, model.momentum.U.y.values,
     model.momentum.p.values, hasproperty(model.energy, :T) ? model.energy.T.values : Float64[]))
 
-# Threaded boundary accumulation is atomic, so its summation order can vary between runs (~1e-14
-# in a field); a continued run that rebuilds its face flux from U differs by ~1e-5 here.
-reldiff(a, b) = maximum(abs.(a .- b); init=0.0)/max(maximum(abs.(a); init=0.0), eps())
-fields_match(m1, m2) = all(reldiff.(snapshot(m1), snapshot(m2)) .<= 1e-10)
-residuals_match(r1, r2) = all(reldiff(r1[k], r2[k]) <= 1e-8 for k ∈ (:Ux, :Uy, :p))
+# Every kernel sums in a fixed order (boundary faces per owner cell, see
+# unit_test_boundary_accumulation.jl), so a continued run retraces the uninterrupted one exactly,
+# at any thread count.
+fields_match(m1, m2) = snapshot(m1) == snapshot(m2)
+residuals_match(r1, r2) = all(r1[k] == r2[k] for k ∈ (:Ux, :Uy, :p))
 
 function continuation_check(case, n)
     model1, config1, _ = case(2n)

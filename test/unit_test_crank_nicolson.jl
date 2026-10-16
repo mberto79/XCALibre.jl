@@ -6,11 +6,14 @@ using Test
 # Guards the Time operator's old levels (ddtⁿ, variable time steps, backward-Euler first step)
 # and the extrapolation of the lagged explicit terms to tⁿ⁺¹.
 
+# qualified: other test files bind `quad` to a mesh in Main
 function cn_strip_mesh(nx, ny, Lx, Ly)
-    pts = [Point(0.0,0.0,0.0), Point(Lx,0.0,0.0), Point(0.0,Ly,0.0), Point(Lx,Ly,0.0)]
-    edges = [line!(pts,1,2,nx), line!(pts,3,4,nx), line!(pts,1,3,ny), line!(pts,2,4,ny)]
-    patches = [Patch(:left,[3]), Patch(:right,[4]), Patch(:bottom,[1]), Patch(:top,[2])]
-    mesh = generate!(MeshBuilder2D(pts, edges, patches, [quad(edges,[1,2,3,4])]))
+    P, line, M = XCALibre.Point, XCALibre.line!, XCALibre.MeshBuilder2D
+    pts = [P(0.0,0.0,0.0), P(Lx,0.0,0.0), P(0.0,Ly,0.0), P(Lx,Ly,0.0)]
+    edges = [line(pts,1,2,nx), line(pts,3,4,nx), line(pts,1,3,ny), line(pts,2,4,ny)]
+    patches = [XCALibre.Patch(:left,[3]), XCALibre.Patch(:right,[4]), XCALibre.Patch(:bottom,[1]),
+        XCALibre.Patch(:top,[2])]
+    mesh = XCALibre.generate!(M(pts, edges, patches, [XCALibre.quad(edges,[1,2,3,4])]))
     XCALibre.UNV2.update_mesh_format(mesh, Int64, Float64)
 end
 

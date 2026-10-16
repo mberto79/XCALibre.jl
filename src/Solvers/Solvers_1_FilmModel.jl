@@ -255,7 +255,10 @@ function FilmModel(
         )
         rh = zero(TF)
         for i ∈ 1:inner_loops
-            H!(Hv, tempU, U_eqn, config)
+            # PISO corrector: H is built from the velocity corrected in the previous loop
+            # (the predictor in the first loop), so that a converged step satisfies the
+            # discrete momentum equation independently of Δt.
+            H!(Hv, U, U_eqn, config)
 
             correct_film_velocity!(
                 tempU, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho.values[1],
@@ -267,10 +270,12 @@ function FilmModel(
             )
 
             getDf!(Df, rDf, hf, wcf, gNormalf, config)
+            zero_film_correction_flux!(Df, boundaries.U, config)
             update_film_surface_flux!(
                 filmSurfaceFlux, rDf, hf, wf, w, filmVelocityFlux, boundaries.h,
                 P_surf, P_surff, rho.values[1], config
             )
+            zero_film_correction_flux!(filmSurfaceFlux, boundaries.U, config)
             div!(surfaceFluxDiv, filmSurfaceFlux, config)
             
             copyto!(prev, h.values)
@@ -292,6 +297,7 @@ function FilmModel(
                 coeffs.σ, gNormalf, time, config
             )
             getDf!(Df, rDf, hf, wcf, gNormalf, config)
+            zero_film_correction_flux!(Df, boundaries.U, config)
 
             correct_film_velocity!(
                 U, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho.values[1],
@@ -309,6 +315,7 @@ function FilmModel(
                 filmSurfaceFlux, rDf, hf, wf, w, filmVelocityFlux, boundaries.h,
                 P_surf, P_surff, rho.values[1], config
             )
+            zero_film_correction_flux!(filmSurfaceFlux, boundaries.U, config)
             correct_film_flux2!(phif, filmSurfaceFlux, Df, h_eqn, hf, w, wf, boundaries.h, time, config)
         end
 
@@ -322,15 +329,8 @@ function FilmModel(
 
         apply_wetting_to_velocity!(U, w, config)
 
-        correct_film_velocity!(
-            tempU, Hv, h, ∇P_hydr, ∇P_surf, P_hydrf, P_surff, rD, rho.values[1],
-            surfaceNormal, config; include_hydrostatic=false, include_surface=false
-        )
-        update_film_fluxes!(
-            phif, filmVelocityFlux, mdotf, Uf, tempU, hf, w, wf,
-            boundaries.U, boundaries.h, time, config
-        )
-        apply_film_convection_flux!(phif, h_eqn.model.terms[2], h, config)
+        # Momentum is convected by the final conservative film flux (the h-equation flux
+        # of the last inner loop), not by a flux rebuilt from H/a_P.
         scale_face_flux!(phif_U, phif, profile_factor, config)
 
         grad!(∇w, wf, w, internal_BCs.w, time, config)
@@ -515,17 +515,6 @@ end
     @inbounds begin
         PLf[i] = Pg - P_hydrf[i] - P_surff[i]
     end
-end
-
-function update_film_fluxes!(
-    phif, filmVelocityFlux, mdotf, Uf, U, hf, w, wf, UBCs, hBCs, time, config
-)
-    interpolate!(Uf, U, config)
-    correct_boundaries!(Uf, U, UBCs, time, config)
-    flux!(mdotf, Uf, config)
-    apply_film_boundary_flux_policy!(mdotf, hBCs, config)
-    apply_wetted_velocity_flux!(filmVelocityFlux, mdotf, w, wf, config)
-    apply_film_flux!(phif, filmVelocityFlux, hf, config)
 end
 
 function update_film_fluxes!(
@@ -821,15 +810,6 @@ end
     end
 end
 
-function apply_film_flux!(phif, filmVelocityFlux, hf, config)
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
-    ndrange = length(phif)
-    kernel! = _sized(_apply_film_flux!, backend, workgroup, ndrange)
-    kernel!(phif, filmVelocityFlux, hf)
-end
-
 function apply_film_flux!(phif, scaledFlux, filmVelocityFlux, hf, scale, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
@@ -837,14 +817,6 @@ function apply_film_flux!(phif, scaledFlux, filmVelocityFlux, hf, scale, config)
     ndrange = length(phif)
     kernel! = _sized(_apply_film_flux!, backend, workgroup, ndrange)
     kernel!(phif, scaledFlux, filmVelocityFlux, hf, scale)
-end
-
-@kernel function _apply_film_flux!(phif, filmVelocityFlux, hf)
-    fID = @index(Global)
-
-    @inbounds begin
-        phif[fID] = filmVelocityFlux[fID] * hf[fID]
-    end
 end
 
 @kernel function _apply_film_flux!(phif, scaledFlux, filmVelocityFlux, hf, scale)
@@ -999,6 +971,29 @@ end
             ifelse(ref > zero(ref), max(flux, zero(flux)), zero(flux))
         )
     end
+end
+
+# On boundary faces where the velocity BC fixes the normal velocity (Dirichlet, Wall,
+# RotatingWall, Slip, Symmetry), the film flux is h_b·(U_b·S): the momentum-interpolation correction fluxes
+# (gravity Df·∇h and surface tension), which are scaled by rD_f and hence by Δt, are
+# zeroed, so the prescribed inflow is honoured independently of Δt.
+function zero_film_correction_flux!(faceFlux, UBCs::Tuple, config)
+    for UBC in UBCs
+        zero_film_correction_flux!(faceFlux, UBC, config)
+    end
+end
+
+zero_film_correction_flux!(faceFlux, UBC, config) = nothing
+
+function zero_film_correction_flux!(
+    faceFlux, UBC::Union{AbstractDirichlet,Wall,RotatingWall,Slip,Symmetry}, config
+)
+    (; hardware) = config
+    (; backend, workgroup) = hardware
+
+    ndrange = length(UBC.IDs_range)
+    kernel! = _apply_film_noflux_boundary_flux_policy!(backend)
+    kernel!(faceFlux, UBC.IDs_range; _dynamic_setup(backend, workgroup, ndrange)...)
 end
 
 @kernel function _zero_face_flux!(faceFlux)

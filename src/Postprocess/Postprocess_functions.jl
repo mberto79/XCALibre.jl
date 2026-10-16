@@ -241,9 +241,9 @@ wall_shear_stress(patch::Symbol, model, config; time=0) = begin
     (; nu) = model.fluid
     (; U) = model.momentum
     (; backend, workgroup) = config.hardware
-    (; boundaries, boundary_cellsID, faces) = mesh
-    ID = boundary_index(boundaries, patch)
-    (; IDs_range) = boundaries[ID]
+    (; boundary_cellsID, faces) = mesh
+    ID = boundary_index(model.boundary_info, patch)
+    IDs_range = get_boundaries(mesh.boundaries)[ID].IDs_range
     @info "calculating wall shear stress on patch: $patch at index $ID"
     BC = _shear_patch_bc(config.boundaries.U, ID, patch)
 

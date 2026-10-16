@@ -304,6 +304,7 @@ function MULTIPHASE(
     limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    tflux = TimeFlux(U_eqn, mesh, boundaries.U)
 
     @info "Starting multiphase solver..."
 
@@ -315,6 +316,7 @@ function MULTIPHASE(
         time += dt_cpu[1]
 
         @. rho_prev.values = rho.values
+        begin_time_flux!(tflux, mdotf, U, rho, rhof, dt_cpu[1]) # old levels before the alpha update
 
         if typeof(mp_model) <: Mixture
             @. U_prev.x.values = U.x.values
@@ -387,6 +389,7 @@ function MULTIPHASE(
             correct_boundaries!(Uf, Hv, boundaries.U, time, config)
 
             flux!(mdotf, Uf, config)
+            time_flux!(tflux, mdotf, rD, boundaries.U, time, config; rhof=rhof)
 
             phi_gf!(phi_gf, rho, ghf, rDf, model, config)
 

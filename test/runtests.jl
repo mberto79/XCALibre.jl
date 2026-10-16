@@ -79,6 +79,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("test_DILU.jl")
     end
 
+    @testset "Bounding box and LES Empty distance" begin
+        include("unit_test_bounding_box.jl")
+    end
+
     @testset "AMG preconditioner freeze" begin
         @test BoomerAMG(freeze=7).freeze == 7 && GAMG(freeze=7).freeze == 7
         @test BoomerAMG().freeze == 10 && GAMG().freeze == 25

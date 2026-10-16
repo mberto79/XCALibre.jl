@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Fixed
+* `bounding_box(mesh)`, used for the LES filter width Δ on meshes with `Empty` patches, crashed with a `DivideError` on a CPU rank of a distributed mesh holding no boundary face, updated its corners from all threads without synchronisation, and started from the origin instead of ±Inf, so the box always contained the origin and the distance between the `Empty` planes was wrong for a mesh away from z = 0. The box is now a reduction over the mesh nodes (returned as `SVector`s, global over all ranks on a distributed mesh), and the `Empty` distance is the extent of the nodes along the patch normal, max(x·n) − min(x·n). The DILU diagonal extraction no longer launches with a zero CPU workgroup on an empty matrix [#231](@ref)
 * `godunov!` with `LocalTimeStepping` failed to compile on GPUs ("passing non-bitstype argument") because `LocalTimeStepping` stored `turbulence_dt` as a `Symbol`. The option is still given as `:min`, `:mean` or `:max` to the constructor, which now stores it as a singleton type, so the struct is `isbits`; results are unchanged. A GPU test, `test/gpu_local_time_stepping.jl`, runs the solver with local time stepping on a CUDA device [#218](@ref)
 
 ### Added

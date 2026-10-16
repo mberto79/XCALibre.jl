@@ -23,7 +23,7 @@ import XCALibre.Fields: initialise!
 import XCALibre.Solvers: global_max, _base_mesh
 import XCALibre.Solvers
 import XCALibre.Calculate
-import XCALibre.Mesh: _get_float
+import XCALibre.Mesh: _get_float, bounding_box
 import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval, get_phi, get_values
 import XCALibre.Solve
 import XCALibre.Solve: solve_equation!, solve_system!, residual, setReference!,

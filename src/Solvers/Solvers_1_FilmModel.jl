@@ -973,10 +973,9 @@ end
     end
 end
 
-# On boundary faces where the velocity BC fixes the normal velocity (Dirichlet, Wall,
-# RotatingWall, Slip, Symmetry), the film flux is h_b·(U_b·S): the momentum-interpolation correction fluxes
-# (gravity Df·∇h and surface tension), which are scaled by rD_f and hence by Δt, are
-# zeroed, so the prescribed inflow is honoured independently of Δt.
+# Where the U BC fixes the normal velocity the film flux is h_b·(U_b·S): the gravity (Df)
+# and surface-tension correction fluxes, scaled by rD_f and hence by Δt, are zeroed there
+# so that a prescribed inflow is honoured independently of Δt.
 function zero_film_correction_flux!(faceFlux, UBCs::Tuple, config)
     for UBC in UBCs
         zero_film_correction_flux!(faceFlux, UBC, config)

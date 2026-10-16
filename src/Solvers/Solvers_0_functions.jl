@@ -161,8 +161,11 @@ end
 ## TIME-CONSISTENT FACE FLUX
 
 # The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
-# faces it is replaced by rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady
-# state does not depend on Δt and the old cell and face levels stay coupled.
+# faces it is moved towards rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady state depends
+# far less on Δt. Carried in full, the face memory makes the face/cell mismatch e = ṁⁿ - (ρU)ⁿ_f·S
+# evolve as e ← (rD_f/Δt)·e, which grows where a_P < V/Δt (Linear convection on graded meshes).
+# The correction is therefore weighted per face by θ_f·c_f: θ_f = min(1, Δt/rD_f) keeps that gain
+# at most one, and c_f = 1 - min(|e|/|ṁⁿ|, 1), OpenFOAM's ddtCouplingCoeff, makes it decay.
 struct TimeFlux{F,V,W,M,T}
     mold::F     # ṁⁿ (mass flux of the time term's quantity)
     uold::V     # ρⁿUⁿ
@@ -212,8 +215,19 @@ function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config)
     flux!(phi, wf, config)
     interpolate!(rDf, rD, config)
     correct_interpolation_periodic(rDf, rD, BCs, config)
-    @. flux.values = ifelse(mask, flux.values + rDf.values*mold.values/dt - phi.values, flux.values)
+    @. flux.values = ifelse(mask,
+        flux.values + _time_flux_weight(rDf.values, mold.values, phi.values, dt)*
+            (rDf.values*mold.values/dt - phi.values), flux.values)
     nothing
+end
+
+# θ_f·c_f for the face-minus-cell old source rD_f·ṁⁿ/Δt - φ_f, whose Δt/rD_f multiple is the
+# mismatch e ≈ ṁⁿ - (ρU)ⁿ_f·S
+@inline function _time_flux_weight(rDf, m, phi, dt)
+    e = m - phi*dt/rDf
+    θ = min(one(dt), dt/rDf)
+    c = one(dt) - min(abs(e)/(abs(m) + eps(typeof(dt))^2), one(dt))
+    θ*c
 end
 
 # ν_t and ν_eff of the current fields, for time schemes that extrapolate the explicit terms

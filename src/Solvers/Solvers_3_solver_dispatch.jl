@@ -381,7 +381,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     transpose_stress=true
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
@@ -390,7 +390,7 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress,
+        inner_loops=inner_loops, outer_loops=outer_loops, progress=progress,
         transpose_stress=transpose_stress
         )
     return residuals
@@ -399,7 +399,7 @@ end
 # Compressible solver (transient)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     transpose_stress=true
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} =
 begin
@@ -408,7 +408,7 @@ begin
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress,
+        inner_loops=inner_loops, outer_loops=outer_loops, progress=progress,
         transpose_stress=transpose_stress
         )
     return residuals

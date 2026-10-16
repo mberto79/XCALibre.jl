@@ -1,7 +1,7 @@
 
 # TRANSIENT TERM 
 @inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
-    term::Operator{F,P,I,Time{T}}, colval, rowptr, nzval, cellID, zcellID,
+    term::Operator{F,P,I,<:Time{T}}, colval, rowptr, nzval, cellID, zcellID,
     cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
     ) where {F,P,I,T,TF} = begin
     # nothing

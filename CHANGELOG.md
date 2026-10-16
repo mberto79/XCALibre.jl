@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Fixed
+* Transient `piso!` and `cpiso!` runs converged to a steady state depended on the time step: the face flux interpolates H/a_P, whose old-time source rD ρⁿUⁿ/Δt is a cell value. On interior and periodic faces this source is now taken from the face's own old mass flux, rD_f ṁⁿ/Δt (also in the pressure-convection flux of compressible `cpiso!`). For a lid-driven cavity at Re 20 the steady velocity from Δt = 0.002 and Δt = 0.2 now differs by 2.6e-3 of the lid speed instead of 6.0e-2; `test/unit_test_dt_consistent_flux.jl` checks it. Euler results of transient runs change slightly; temporal order is unchanged (1.0) [#225](@ref)
 * `godunov!` with `LocalTimeStepping` failed to compile on GPUs ("passing non-bitstype argument") because `LocalTimeStepping` stored `turbulence_dt` as a `Symbol`. The option is still given as `:min`, `:mean` or `:max` to the constructor, which now stores it as a singleton type, so the struct is `isbits`; results are unchanged. A GPU test, `test/gpu_local_time_stepping.jl`, runs the solver with local time stepping on a CUDA device [#218](@ref)
 
 ### Added

@@ -161,7 +161,7 @@ end
 ## TIME-CONSISTENT FACE FLUX
 
 # The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
-# and periodic faces it is replaced by rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady
+# faces it is replaced by rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady
 # state does not depend on Δt and the old cell and face levels stay coupled.
 struct TimeFlux{F,V,W,M,T}
     mold::F     # ṁⁿ (mass flux of the time term's quantity)
@@ -170,7 +170,7 @@ struct TimeFlux{F,V,W,M,T}
     wf::W
     rDf::F
     phi::F
-    mask::M     # faces corrected
+    mask::M     # faces corrected (interior)
     dt::T       # [Δtⁿ]
 end
 
@@ -180,9 +180,6 @@ function TimeFlux(U_eqn, mesh, BCs)
     nb = length(mesh.boundary_cellsID)
     mask = zeros(Bool, length(mesh.faces))
     mask[nb+1:end] .= true
-    for BC ∈ BCs
-        BC isa Discretise.AbstractPeriodic && (mask[BC.IDs_range] .= true)
-    end
     backend = _get_backend(mesh)
     TimeFlux(FaceScalarField(mesh), VectorField(mesh), VectorField(mesh), FaceVectorField(mesh),
         FaceScalarField(mesh), FaceScalarField(mesh), adapt(backend, mask), [one(_get_float(mesh))])

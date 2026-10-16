@@ -25,7 +25,22 @@ print_tree(AbstractScheme) # hide
 |:-------|:------------|
 | SteadyState | sets the time derivative to zero |
 | Euler | First order implicit Euler scheme (implicit)|
-| CrankNicolson | Second order central scheme (implicit-explicit) |
+| CrankNicolson | Second order trapezoidal scheme (implicit); `CrankNicolson(ψ)` with an off-centring coefficient `ψ` |
+
+`CrankNicolson` evaluates every term of an equation at the new time level ``t^{n+1}`` and takes the time derivative as
+
+```math
+\left(\frac{\partial \rho\phi}{\partial t}\right)^{n+1} = (1 + \psi)\,\frac{(\rho\phi)^{n+1} - (\rho\phi)^n}{\Delta t^n} - \psi \left(\frac{\partial \rho\phi}{\partial t}\right)^n,
+```
+
+where the time derivative of the previous step is kept by the equation's `Time` term. With ``\psi = 1`` (`CrankNicolson` or `CrankNicolson(1)`) this is the second-order trapezoidal rule, also with time steps that change from step to step; ``\psi = 0`` is backward Euler, and values in between are first order but damp the oscillations that the trapezoidal rule leaves undamped (stiff modes such as diffusion across thin wall cells, or a non-solenoidal initial field). Boundary values, the pressure and the pressure correctors are all at ``t^{n+1}``.
+
+- The first time step of a run, including a run resumed with `restart` or continued with a second `run!`, is a backward-Euler step: the time derivative of the step before is not stored in the results.
+- Terms treated explicitly (the convecting face flux, the eddy viscosity and velocity gradient of the LES and transpose-stress terms, the lagged coefficients of the `KEquation`, `KOmega`, `KOmegaSST` and `KOmegaLKE` equations) are extrapolated to ``t^{n+1}`` from the two previous steps, using the time-step history, and are evaluated from the initial fields on the first step, so the eddy viscosity need not be initialised.
+- In `cpiso!` the density of the time terms must match the state equation at ``t^{n+1}``: second order needs `outer_loops` passes over momentum, energy and pressure per step (keyword of `run!` and `cpiso!`, default 1). About 8 passes reproduce the order in an acoustic test; each pass costs about one `Euler` time step.
+- `relax` below 1 changes the equations solved in each step and lowers the order for either scheme.
+- With `AdaptiveTimeStepping`, let the time step change gradually (`maxGrow` and `minShrink` close to 1).
+- Use one time scheme for every field: combining `CrankNicolson` and `Euler` raises an `ArgumentError`. `CrankNicolson` also raises an `ArgumentError` in `multiphase!` (explicit first-order volume-fraction transport), `filmModel!` (explicit first-order film coupling), `godunov!` (turbulence transport split from the explicit flow update) and the steady solvers.
 ---
 #### Laplacian schemes
 

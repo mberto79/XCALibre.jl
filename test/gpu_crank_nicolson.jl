@@ -1,6 +1,5 @@
-# CPU/GPU equality of Crank-Nicolson runs: piso! with the LES models and cpiso! (Time-term old
-# levels, extrapolated explicit terms; not part of runtests.jl: needs a GPU). Run with an
-# environment that has XCALibre and CUDA:
+# CPU/GPU equality of Crank-Nicolson runs of piso! with the LES models and of cpiso! (not part of
+# runtests.jl: needs a GPU). Run with an environment that has XCALibre and CUDA:
 #   julia --project=<env> test/gpu_crank_nicolson.jl
 using XCALibre, Test, CUDA, Printf
 

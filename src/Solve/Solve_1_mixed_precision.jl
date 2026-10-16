@@ -59,9 +59,8 @@ const MAX_REFINEMENTS = 20
 _work_type(::MixedF16) = Float32
 
 # low-precision state of a ModelEquation: Krylov workspace, operator sharing A's sparsity and the
-# preconditioner (a Preconditioner for MixedF32, Jacobi's diagonal operator for MixedF16). dinv,
-# rfull, s, dptr and comp are `nothing` for MixedF32; c is BiCGStab's shadow vector (`nothing` for
-# other solvers).
+# preconditioner (Preconditioner for MixedF32, Jacobi diagonal for MixedF16); dinv, rfull, s, dptr
+# and comp are `nothing` for MixedF32, c is BiCGStab's shadow vector (`nothing` for other solvers)
 struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B,C}
     precision::PR
     krylov::W
@@ -205,10 +204,9 @@ function mixed_solve!(ws::MixedWorkspace, A, b, values, setup, config, mesh)
     iterations
 end
 
-# solves A·d = b - Ax for d from d = 0 and adds d to values unless ‖b - Ax‖ ≤ target (`nothing`
-# skips the norm); returns the Krylov count and ‖b - Ax‖ before the correction. Later corrections
-# reduce only to the target: the outer convergence check reads the post-solve residual, so
-# overshooting rtol would stop a run early
+# solves A·d = b - Ax from d = 0 and adds d unless ‖b - Ax‖ ≤ target (`nothing` skips the norm);
+# returns the Krylov count and ‖b - Ax‖ before the correction. Later corrections reduce only to the
+# target: the outer convergence check reads the post-solve residual (overshooting rtol stops a run)
 _correction_rtol(rtol, target, rnorm) = isnothing(target) || iszero(target) ? rtol : max(rtol, target/rnorm)
 
 function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, rtol, target, setup, config, mesh)

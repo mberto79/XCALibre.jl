@@ -298,6 +298,7 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
 
     @testset "Thin Film Solver" begin
         include(joinpath(TEST_CASES_DIR, "2d_EFM.jl"))
+        include("unit_test_film_dt_consistency.jl")
     end
 
     @testset "Distributed (MPI)" begin

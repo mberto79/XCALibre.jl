@@ -119,12 +119,6 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     outer_A = outer_operator(workspace.hierarchy, A)
     _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 
-    if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-        xcal_foreach(x, config) do i
-            x[i] = 2 * x[i] - values[i]
-        end
-    end
-
     copyto!(values, x)
     workspace.iterations >= itmax && @warn "Maximum number of iterations reached!" maxlog=10
 

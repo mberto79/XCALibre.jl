@@ -32,12 +32,12 @@ function stress_case(mesh)
     gradU = Grad{Gauss}(U)
     grad!(gradU, FaceVectorField(mesh), U, BCs.U, 0.0, config)
     source = VectorField(mesh)
-    SV.transpose_stress!(source, nu, gradU, BCs.U, config)
+    SV.transpose_stress!(source, nu, gradU, BCs.U, 0.0, config)
     # cell-viscosity form (interpolated product): the ghost cell viscosities must be exchanged
     nuc = ScalarField(mesh)
     nuc.values .= [1 + 30x + 50y^2 for (x, y, _) ∈ centres]
     source_cell = VectorField(mesh)
-    SV.transpose_stress!(source_cell, nu, gradU, BCs.U, config; cell_mueff=SV.cell_nueff(nuc, nothing))
+    SV.transpose_stress!(source_cell, nu, gradU, BCs.U, 0.0, config; cell_mueff=SV.cell_nueff(nuc, nothing))
     source, source_cell
 end
 

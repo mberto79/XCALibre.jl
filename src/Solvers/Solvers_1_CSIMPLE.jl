@@ -228,7 +228,7 @@ function CSIMPLE(
 
         # gradU and mueff of the current velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
-            mueffgradUt, mueff, gradU, boundaries.U, config; cell_mueff=mueffc)
+            mueffgradUt, mueff, gradU, boundaries.U, time, config; cell_mueff=mueffc)
 
         # Store previous values for next time step energy source terms
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)

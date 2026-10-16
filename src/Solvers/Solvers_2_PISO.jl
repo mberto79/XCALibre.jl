@@ -144,7 +144,7 @@ function PISO(
 
         # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
-            divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
+            divτT, nueff, gradU, boundaries.U, time, config; cell_mueff=nueffc)
 
         rx, ry, rz = solve_equation!(
             U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)

@@ -163,7 +163,9 @@ end
 # The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
 # faces it is replaced by rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady
 # state does not depend on Δt and the old cell and face levels stay coupled.
-struct TimeFlux{F,V,W,M,T}
+struct TimeFlux{F,V,W,M,T,O}
+    term::O     # the Time operator of the momentum equation
+    ddt0f::F    # (dṁ/dt)ⁿ, under Crank-Nicolson
     mold::F     # ṁⁿ (mass flux of the time term's quantity)
     uold::V     # ρⁿUⁿ
     w::V        # scratch: rD·ρⁿUⁿ/Δt
@@ -181,7 +183,8 @@ function TimeFlux(U_eqn, mesh, BCs)
     mask = zeros(Bool, length(mesh.faces))
     mask[nb+1:end] .= true
     backend = _get_backend(mesh)
-    TimeFlux(FaceScalarField(mesh), VectorField(mesh), VectorField(mesh), FaceVectorField(mesh),
+    TimeFlux(unwrap_eqn(U_eqn).model.terms[1].type, FaceScalarField(mesh), FaceScalarField(mesh),
+        VectorField(mesh), VectorField(mesh), FaceVectorField(mesh),
         FaceScalarField(mesh), FaceScalarField(mesh), adapt(backend, mask), [one(_get_float(mesh))])
 end
 
@@ -189,6 +192,7 @@ end
 # and cell rho*U (`rho` is `nothing` for unit density)
 begin_time_flux!(::Nothing, args...) = nothing
 function begin_time_flux!(tf::TimeFlux, mdotf, U, rho, rhof, dt)
+    _advance_face_ddt!(tf, tf.term, mdotf, rhof)
     isnothing(rhof) ? copyto!(tf.mold.values, mdotf.values) :
         (@. tf.mold.values = rhof.values*mdotf.values)
     r = isnothing(rho) ? one(eltype(U.x.values)) : rho.values
@@ -202,17 +206,39 @@ end
 # in the face flux of the interpolated H/a_P, the old-time source by its face value rD_f·ṁⁿ/Δt
 time_flux!(::Nothing, args...) = nothing
 function time_flux!(tf::TimeFlux, flux, rD, BCs, time, config)
-    dt = eltype(flux.values)(tf.dt[1])
-    (; w, wf, uold, rDf, phi, mold, mask) = tf
-    @. w.x.values = rD.values*uold.x.values/dt
-    @. w.y.values = rD.values*uold.y.values/dt
-    @. w.z.values = rD.values*uold.z.values/dt
+    (; w, wf, rDf, phi, mask) = tf
+    dt, c = _time_source!(w, tf, tf.term, rD)
     interpolate!(wf, w, config)
     correct_boundaries!(wf, w, BCs, time, config)
     flux!(phi, wf, config)
     interpolate!(rDf, rD, config)
     correct_interpolation_periodic(rDf, rD, BCs, config)
-    @. flux.values = ifelse(mask, flux.values + rDf.values*mold.values/dt - phi.values, flux.values)
+    m, d = tf.mold.values, tf.ddt0f.values
+    @. flux.values = ifelse(mask, flux.values + rDf.values*((1 + c)*m/dt + c*d) - phi.values,
+        flux.values)
+    nothing
+end
+
+# rD times the old-time source per volume of the Time term; returns its Δt and coefficient c
+function _time_source!(w, tf, term, rD)
+    dt = eltype(rD.values)(tf.dt[1])
+    foreach((wc, u) -> (@. wc = rD.values*u/dt), _vector_arrays(w), _vector_arrays(tf.uold))
+    dt, zero(dt)
+end
+function _time_source!(w, tf, term::Time{CrankNicolson,<:Discretise.CNState}, rD)
+    _, dt, c = term.state.clock.v
+    foreach((wc, b) -> (@. wc = rD.values*b), _vector_arrays(w), _vector_arrays(term.state.source))
+    eltype(rD.values)(dt), eltype(rD.values)(c)
+end
+_vector_arrays(v) = (v.x.values, v.y.values, v.z.values)
+
+# Crank-Nicolson: (dṁ/dt)ⁿ = (1 + c)(ṁⁿ - ṁⁿ⁻¹)/Δtⁿ⁻¹ - c (dṁ/dt)ⁿ⁻¹ at the start of a step
+_advance_face_ddt!(tf, term, mdotf, rhof) = nothing
+function _advance_face_ddt!(tf, term::Time{CrankNicolson,<:Discretise.CNState}, mdotf, rhof)
+    t0, dt0, c0 = term.state.clock.v
+    m = isnothing(rhof) ? mdotf.values : rhof.values .* mdotf.values
+    isnan(t0) ? fill!(tf.ddt0f.values, 0) :
+        (@. tf.ddt0f.values = (1 + c0)*(m - tf.mold.values)/dt0 - c0*tf.ddt0f.values)
     nothing
 end
 

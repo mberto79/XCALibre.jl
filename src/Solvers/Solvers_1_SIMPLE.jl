@@ -143,7 +143,7 @@ function SIMPLE(
     (; backend) = hardware
 
     # wrapped eqns solve through the seam (serial identity / DistributedEqn); the raw eqns
-    # are assembled/discretised in-place below. distributed skips ProgressMeter/postprocess.
+    # are assembled/discretised in-place below. distributed skips ProgressMeter.
     U_deqn, p_deqn = U_eqn, p_eqn
     U_eqn, p_eqn = unwrap_eqn(U_eqn), unwrap_eqn(p_eqn)
     distributed = is_distributed_mesh(mesh)
@@ -152,7 +152,6 @@ function SIMPLE(
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
 
-    _warn_skipped_postprocess(mesh, postprocess)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -305,7 +304,7 @@ function SIMPLE(
             is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-                distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+                save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
         end
@@ -321,11 +320,11 @@ function SIMPLE(
                 ]
             )
 
-        distributed || runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+        runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
 
         if iteration%write_interval + signbit(write_interval) == 0
             outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-            distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop

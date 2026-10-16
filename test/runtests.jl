@@ -241,6 +241,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_viscous_force_bcs.jl")
     end
 
+    @testset "Probe" begin
+        include("unit_test_probe.jl")
+    end
+
 
     @testset "Incompressible" begin
 

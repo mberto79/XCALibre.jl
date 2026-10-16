@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Fixed
-* `Qcriterion` ignored its `start`, `stop` and `update_interval` keywords: it computed Q on every time step or iteration of the run, unlike `FieldAverage`, `FieldRMS`, `ReynoldsStress` and `Probe`. Q is now computed only inside its window and, outside it, keeps its last computed value (zero before `start`), which is what the post-processed output contains, as for the other post-processing fields. Without a window Q is computed every step, as before [#PRNUM](@ref)
+* `Qcriterion` ignored its `start`, `stop` and `update_interval` keywords: it computed Q on every time step or iteration of the run, unlike `FieldAverage`, `FieldRMS`, `ReynoldsStress` and `Probe`. Q is now computed only inside its window and, outside it, keeps its last computed value (zero before `start`), which is what the post-processed output contains, as for the other post-processing fields. Without a window Q is computed every step, as before [#229](@ref)
 * `godunov!` with `LocalTimeStepping` failed to compile on GPUs ("passing non-bitstype argument") because `LocalTimeStepping` stored `turbulence_dt` as a `Symbol`. The option is still given as `:min`, `:mean` or `:max` to the constructor, which now stores it as a singleton type, so the struct is `isbits`; results are unchanged. A GPU test, `test/gpu_local_time_stepping.jl`, runs the solver with local time stepping on a CUDA device [#218](@ref)
 
 ### Added

@@ -221,6 +221,7 @@ function CPISO(
     limit_gradient!(schemes.U.limiter, gradU, U, config)
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    tflux = TimeFlux(U_eqn, mesh, boundaries.U)
 
     @info "Starting CPISO loops..."
 
@@ -229,6 +230,7 @@ function CPISO(
     for iteration ∈ 1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
+        begin_time_flux!(tflux, mdotf, U, rho, nothing, dt_cpu[1])
 
         # gradU and mueff of the start-of-step velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
@@ -264,8 +266,10 @@ function CPISO(
             if typeof(model.fluid) <: Compressible
 
                 flux!(pconv, Uf, config)
+                time_flux!(tflux, pconv, rD, boundaries.U, time, config; rhof=rhof)
                 @. pconv.values *= Psif.values
                 flux!(mdotf, Uf, config)
+                time_flux!(tflux, mdotf, rD, boundaries.U, time, config; rhof=rhof)
                 @. mdotf.values *= rhof.values
                 interpolate!(pf, p, config)
                 correct_boundaries!(pf, p, boundaries.p, time, config)
@@ -275,6 +279,7 @@ function CPISO(
             elseif typeof(model.fluid) <: WeaklyCompressible
 
                 flux!(mdotf, Uf, config)
+                time_flux!(tflux, mdotf, rD, boundaries.U, time, config; rhof=rhof)
                 @. mdotf.values *= rhof.values
                 div!(divHv, mdotf, config)
             end

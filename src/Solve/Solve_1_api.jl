@@ -6,7 +6,7 @@ export wrap_eqn
 export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
-export global_any, global_sum, global_min, n_owned_cells
+export global_any, global_sum, global_min, n_owned_cells, global_cell_index
 export solve_equation!
 export AdaptiveTimeStepping, LocalTimeStepping
 
@@ -628,6 +628,9 @@ global_min(v, mesh) = v
 
 # cells this rank updates and reduces over (owned cells first, then ghosts on a distributed mesh)
 n_owned_cells(mesh) = length(mesh.cells)
+
+# mesh-wide id of local cell i (its index in the undecomposed mesh): serial identity
+global_cell_index(mesh, i) = i
 
 function make_symmetric!(eqn, config)
     (; hardware) = config

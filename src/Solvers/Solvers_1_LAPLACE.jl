@@ -177,10 +177,10 @@ function LAPLACE(
                 ]
             )
 
-        distributed || runtime_postprocessing!(postprocess,iteration,iterations,nothing,time,config)
+        runtime_postprocessing!(postprocess,iteration,iterations,nothing,time,config)
         if iteration%write_interval + signbit(write_interval) == 0
             outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-            distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop

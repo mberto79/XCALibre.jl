@@ -235,7 +235,8 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
             println(io, ";")
             println(io, "boundaryField")
             println(io, "{")
-            fieldBCs = IOFormats._field_bcs(BCs, label, boundaries_cpu)
+            fieldBCs = suffix == "" ? IOFormats._postprocess_bcs(BCs, label, field, boundaries_cpu) :
+                IOFormats._field_bcs(BCs, label, boundaries_cpu)
             IOFormats._write_patch_entries(io, fieldBCs, boundaries_cpu)
             # ponytail: proc-patch values written as uniform zero; ParaView's decomposed
             # reader ignores them — write real ghost values if OF utilities ever need them
@@ -251,9 +252,16 @@ function write_results(iteration::TI, time, dmesh::DistributedMesh, w::PFOAMWrit
             println(io, "}")
         end
     end
+    suffix == "" && return nothing # post-processed fields: phi and time were written with the fields
     w.flux[] === nothing || _write_phi(joinpath(timedirpath, "phi"), timedir, dmesh, w, backend)
     w.dt[] === nothing || _write_uniform_time(timedirpath, timedir, iteration, time, Array(w.dt[])[1])
 end
+
+# runtime post-processing output goes to the processor directories next to the fields, with the
+# patch types the serial OpenFOAM writer gives it
+IOFormats.save_postprocessing(postprocess, iteration, time, dmesh::DistributedMesh, w::PFOAMWriter, BCs) =
+    postprocess === nothing ? nothing :
+    write_results(iteration, time, dmesh, w, BCs, IOFormats.build_args(postprocess)...; suffix="")
 
 # the loop position a restart resumes from, in OpenFOAM's own uniform/time dictionary
 function _write_uniform_time(timedirpath, timedir, iteration, time, dt)

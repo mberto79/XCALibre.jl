@@ -159,10 +159,8 @@ function consistent_H!(Hv, rDt, rD, ∇p, config)
 end
 
 ## TIME-CONSISTENT FACE FLUX
-
 # The face flux interpolates H/a_P, whose old-time source rD·ρⁿUⁿ/Δt is a cell value; on interior
-# faces it is moved towards rD_f·ṁⁿ/Δt from the face's own old flux, so that a steady state depends
-# far less on Δt. The weight θ_f·c_f of this correction is defined at `_time_flux_weight`.
+# faces it is moved towards rD_f·ṁⁿ/Δt from the face's own old flux (weight: `_time_flux_weight`).
 struct TimeFlux{F,V,W,M,T}
     mold::F     # ṁⁿ (mass flux of the time term's quantity)
     uold::V     # ρⁿUⁿ

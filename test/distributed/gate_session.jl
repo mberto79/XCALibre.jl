@@ -7,10 +7,9 @@ MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
 
-# test_mixed_precision: PETSc_jll's Float32 library solves corrections for Float64 fields;
-# test_les_wale: algebraic nut from gradU matches serial on owned and ghost cells; test_godunov:
-# one density-based smoke case (the full set is test_godunov_full.jl); test_failure last: every
-# failure path errors on all ranks, and it is the file most likely to hang
+# test_mixed_precision: Float32 PETSc corrections for Float64 fields; test_les_wale: nut on owned
+# and ghost cells; test_godunov: one smoke case (full set: test_godunov_full.jl); test_failure last:
+# every failure path errors on all ranks, and it is the file most likely to hang
 const FILES = ["test_partition.jl", "test_halo.jl", "test_assembly.jl", "test_laplace.jl",
     "test_psimple.jl", "test_wall_distance.jl", "test_transpose_stress.jl",
     "test_linear_upwind.jl", "test_reorder.jl", "test_least_squares.jl", "test_forces.jl",

@@ -44,8 +44,8 @@ BCs = assign(
 )
 
 schemes = (
-    U = Schemes(time=Euler),
-    p = Schemes()
+    U = Schemes(time=CrankNicolson),
+    p = Schemes(time=CrankNicolson)
 )
 
 

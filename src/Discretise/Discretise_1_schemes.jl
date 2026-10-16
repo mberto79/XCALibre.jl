@@ -10,27 +10,27 @@ cIndex - Index of the cell based on sparse matrix. Use to index "nzval_array"
 
 # SteadyState
 @inline function scheme!(
-    term::Operator{F,P,I,Time{SteadyState}}, 
+    term::Operator{F,P,I,<:Time{SteadyState}}, 
     nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     # nothing
     z = zero(eltype(nzval_array))
     z, z
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{SteadyState}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
+    term::Operator{F,P,I,<:Time{SteadyState}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P,I} = begin
     z = zero(eltype(cells.volume))
     z, z
 end
 
 ## Euler
 @inline function scheme!(
-    term::Operator{F,P,I,Time{Euler}}, 
+    term::Operator{F,P,I,<:Time{Euler}}, 
     nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
     0.0, 0.0 # add types if this approach works
 end
 
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+    term::Operator{F,P,I,<:Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
         volume = cells.volume[cID]
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]
@@ -40,7 +40,7 @@ end
         return ac, b
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin # Special case for U_eqn (rho)
+    term::Operator{F,P,I,<:Time{Euler}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin # Special case for U_eqn (rho)
         volume = cells.volume[cID]
         vol_rdt = volume/runtime.dt[1]
         rho = term.flux[cID]
@@ -51,31 +51,21 @@ end
         return ac, b
 end
 
-## Crank-Nicholson
+## Crank-Nicolson: the matrix carries (1 + c)ρV/Δt and the source V·S, with S = (1 + c)ρxⁿ/Δt +
+## c ddtⁿ set by `time_level!` (c = ψ, or 0 on the backward-Euler first step); in a kernel the
+## operator's state is the 1-element array holding 1 + c
 @inline function scheme!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, 
+    term::Operator{F,P,I,<:Time{CrankNicolson}}, 
     nzval_array, cells, faces, nID, ns, cIndex, nIndex, fID, prev, runtime)  where {F,P,I}
-
-    0.0, 0.0 # add types if this approach works
+    z = zero(eltype(nzval_array))
+    z, z
 end
 @inline scheme_source!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:ScalarField,I} = begin
+    term::Operator{F,P,I,<:Time{CrankNicolson}}, cells, cID, cIndex, prev, runtime, rho_prev
+    )  where {F,P,I} = begin
         volume = cells.volume[cID]
-        vol_rdt = volume/runtime.dt[1]
-        rho = term.flux[cID]
-        
-        ac = rho * vol_rdt
-        b = rho_prev[cID]*prev[cID]*vol_rdt # Careful with non U_eqn (e.g. T eqn.)
-        return ac, b
-end
-@inline scheme_source!(
-    term::Operator{F,P,I,Time{CrankNicolson}}, cells, cID, cIndex, prev, runtime, rho_prev)  where {F,P<:VectorField,I} = begin
-        volume = cells.volume[cID]
-        vol_rdt = volume/runtime.dt[1]
-        rho = term.flux[cID]
-        
-        ac = rho * vol_rdt
-        b = rho_prev[cID]*prev[cID]*vol_rdt
+        ac = term.type.state[1]*term.flux[cID]*volume/runtime.dt[1]
+        b = prev[cID]*volume
         return ac, b
 end
 

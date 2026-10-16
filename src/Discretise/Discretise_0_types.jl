@@ -90,7 +90,22 @@ cell from a 3 x 3 normal matrix inverted once per `Grad`.
 struct LeastSquares <: AbstractScheme end
 struct SteadyState <: AbstractScheme end 
 struct Euler <: AbstractScheme end 
-struct CrankNicolson <: AbstractScheme end # not implemented yet
+"""
+    CrankNicolson(ψ=1)
+
+Crank-Nicolson time scheme in trapezoidal form, with every other term of the equation at tⁿ⁺¹:
+the Time term is the time derivative at tⁿ⁺¹, ddtⁿ⁺¹ = (1 + ψ)(xⁿ⁺¹ - xⁿ)/Δt - ψ ddtⁿ, where
+ddtⁿ is kept from the previous step. `ψ = 1` is the second-order trapezoidal rule, `ψ = 0` is
+backward Euler, and values in between damp the oscillations the trapezoidal rule leaves
+undamped. `CrankNicolson` without arguments is `CrankNicolson(1)`. The first time step of a run
+is a backward-Euler step.
+"""
+struct CrankNicolson <: AbstractScheme
+    ψ::Float64
+end
+CrankNicolson() = CrankNicolson(1.0)
+crank_nicolson_coefficient(::Type{CrankNicolson}) = 1.0
+crank_nicolson_coefficient(c::CrankNicolson) = c.ψ
 
 
 # SUPPORTED BOUNDARY CONDITIONS 

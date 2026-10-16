@@ -32,6 +32,6 @@ include("LES_Smagorinsky.jl")
 include("LES_KEquation.jl")
 include("LES_WALE.jl")
 
-export initialise, turbulence!, save_output, restart_turbulence!
+export initialise, turbulence!, save_output, restart_turbulence!, eddy_viscosity!, explicit_fields
 
 # end # end module

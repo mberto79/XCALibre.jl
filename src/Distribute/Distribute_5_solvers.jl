@@ -44,7 +44,7 @@ end
 function Solve.solve_equation!(
     deqn::DistributedEqn, phi, phiBCs, solversetup, config; time=nothing, ref=nothing, irelax=nothing)
     eqn = deqn.eqn
-    discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux)
+    discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux, time=time)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     _is_pure_laplacian(eqn) && make_symmetric!(eqn, config)
     setReference!(deqn, ref, 1, config)
@@ -61,7 +61,7 @@ function Solve.solve_equation!(
     time=nothing)
     eqn = deqn.eqn
     n = deqn.partition.n_owned
-    discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux)
+    discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux, time=time)
     update_equation!(eqn, config)
     apply_boundary_conditions!(eqn, psiBCs, xdir, time, config)
     implicit_relaxation_diagdom!(eqn, psi.x.values, solversetup.relax, xdir, config)

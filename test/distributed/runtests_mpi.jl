@@ -8,4 +8,4 @@ i = findfirst(startswith("--ranks="), args)
 ranks = i === nothing ? [1, 2, 3, 5] : parse.(Int, split(split(popat!(args, i), '=')[2], ','))
 files = isempty(args) ? ["test_halo.jl"] : args
 mpiexec_available() || error("mpiexec is not runnable from $(Base.active_project())")
-run_mpi_tests(files; ranks)
+run_mpi_tests(files; ranks, cap=typemax(Int))

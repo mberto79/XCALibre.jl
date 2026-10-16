@@ -1,8 +1,6 @@
-# Fast distributed gate: the subset that catches partitioning, halo, assembly and solver
-# regressions. The two-rank files share one mpiexec session (gate_session.jl); each launch costs
-# minutes of compilation. Rank counts above XCALIBRE_TEST_MAX_RANKS (default 2) are skipped, see
-# driver.jl. The rest of the suite, and other rank counts, are named explicitly to
-# runtests_mpi.jl, e.g. `--ranks=2,3 test_godunov_full.jl`.
+# Fast distributed gate (partitioning, halo, assembly, solvers). Two-rank files share one mpiexec
+# session (gate_session.jl); rank counts above XCALIBRE_TEST_MAX_RANKS (default 2) are skipped.
+# Other files and rank counts: runtests_mpi.jl, e.g. `--ranks=2,3 test_godunov_full.jl`.
 include(joinpath(@__DIR__, "driver.jl"))
 
 mpiexec_available() && run_mpi_tests(["gate_session.jl"]; ranks=[2], timeout=2400)

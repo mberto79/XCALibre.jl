@@ -11,10 +11,9 @@ function dt_flux_cavity_mesh(n=16)
         patches, [XCALibre.quad(edges,[1,2,3,4])])), Int64, Float64)
 end
 
-# Lid-driven cavity run to a steady state with Euler at two time steps 100 times apart: the steady
-# state should depend little on Δt. With the old-time source of the face flux taken from the cells
-# the two differ by 6.0e-2 of the lid speed (pressure 0.38); with the weighted face correction by
-# 2.8e-2 (0.18). Carried in full the face's old flux gives 2.6e-3, but it is unstable (below).
+# Lid-driven cavity, steady state with Euler at Δt 100 times apart. Old-time source from the cells:
+# they differ by 6.0e-2 of the lid speed (pressure 0.38); weighted face correction: 2.8e-2 (0.18).
+# Carried in full, the face's old flux gives 2.6e-3 but is unstable (graded mesh below).
 @testset "Δt-consistent face flux" begin
     mesh = dt_flux_cavity_mesh()
     function cavity(dt, tend)
@@ -102,10 +101,9 @@ end
     @test maximum(abs.(a[2] .- b[2]))/a[3][1] < 0.25
 end
 
-# A 2-D channel whose cells shrink fivefold along the flow (blockMeshDict next to the mesh), Linear
-# convection, ν = 1e-5, Courant number about 1.2 in the smallest cells. There a_P < V/Δt, so the
-# face's old flux carried in full grew the face/cell mismatch by rD_f/Δt ≈ 1.3 per step (max|Ux|
-# 1.3e8 after 500 steps); the weighted correction keeps it bounded.
+# 2-D channel, cells shrink fivefold along the flow, Linear convection, ν = 1e-5, Courant number 1.2
+# in the smallest cells. There a_P < V/Δt: the face's old flux carried in full grew the face/cell
+# mismatch by rD_f/Δt ≈ 1.3 per step (max|Ux| 1.3e8 after 500 steps); the weighted one is bounded.
 @testset "Δt-consistent face flux on a graded mesh" begin
     mesh = FOAM3D_mesh(pkgdir(XCALibre, "test/grids/OF_graded_channel/polyMesh"), scale=1)
     model = Physics(time=Transient(), fluid=Fluid{Incompressible}(nu=1e-5),

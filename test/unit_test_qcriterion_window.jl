@@ -18,7 +18,7 @@ model = Physics(
 
 U = model.momentum.U
 gradU = Grad{Gauss}(U)
-S = StrainRate(gradU, T(gradU), U, FaceVectorField(mesh_dev))
+S = StrainRate(gradU, XCALibre.T(gradU), U, FaceVectorField(mesh_dev))
 
 # Solid-body rotation, dU/dy = 1 and dV/dx = -1: zero strain, |Ω|² = 2, so Q = 1
 gradU.result.xy.values .= 1.0

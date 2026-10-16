@@ -485,7 +485,8 @@ end
 end
 
 @kernel inbounds=true function _kinetic_face!(Kf, K, gradK, h, gradh, mdotf, scheme, nbfaces)
-    i = @index(Global) + nbfaces
+    j = @index(Global)
+    i = j + nbfaces
     @uniform cells = Kf.mesh.cells
     @uniform faces = Kf.mesh.faces
     c1, c2 = faces.ownerCells[i]

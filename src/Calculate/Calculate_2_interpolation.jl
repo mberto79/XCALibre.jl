@@ -262,7 +262,8 @@ function interpolate!(phif::FaceScalarField, phi::ScalarField, mdotf::FaceScalar
 end
 
 @kernel inbounds=true function _interpolate_convected!(fvals, vals, mdotf, scheme, faces, nbfaces)
-    i = @index(Global) + nbfaces
+    j = @index(Global)
+    i = j + nbfaces
     weight, ownerCells = faces.weight[i], faces.ownerCells[i]
     fvals[i] = convected_face_value(scheme, vals[ownerCells[1]], vals[ownerCells[2]], weight, mdotf[i])
 end

@@ -97,6 +97,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_xvector.jl")
     end
 
+    @testset "Kernel index binding" begin
+        include("unit_test_kernel_index_pattern.jl")
+    end
+
     @testset "Laplace Unit Test" begin
         include("unit_test_laplace.jl")
     end

@@ -8,7 +8,7 @@ using Test
 # serial face loop for any workgroup size and thread count; atomic face loops made corner cells
 # depend on the thread schedule, and unconverged iterations amplified that round-off
 
-config_for(workgroup) = (hardware = Hardware(backend=CPU(), workgroup=workgroup),)
+ba_config(workgroup) = (hardware = Hardware(backend=CPU(), workgroup=workgroup),)
 grids = pkgdir(XCALibre, "examples/0_GRIDS")
 
 @testset "Boundary faces grouped by owner cell" begin
@@ -65,25 +65,33 @@ end
         dv[c] += psif[f]⋅(faces.area[f]*faces.normal[f])/cells.volume[c]
     end
 
+    # bitwise equal for every schedule; the hand loop may round differently once the compiler
+    # contracts the dot product differently (seen on Julia 1.13), so it is checked to round-off
     grad = Grad{Gauss}(ScalarField(mesh))
     divergence = ScalarField(mesh)
+    grad!(grad, phif, ba_config(1))
+    div!(divergence, psif, ba_config(1))
+    rx, ry, rd = copy(grad.result.x.values), copy(grad.result.y.values), copy(divergence.values)
+    @test rx ≈ gx rtol=1e-12
+    @test ry ≈ gy rtol=1e-12
+    @test rd ≈ dv rtol=1e-12
     @test all(1:repeats) do _
         all(workgroups) do workgroup
-            config = config_for(workgroup)
+            config = ba_config(workgroup)
             grad!(grad, phif, config)
             div!(divergence, psif, config)
-            grad.result.x.values == gx && grad.result.y.values == gy && divergence.values == dv
+            grad.result.x.values == rx && grad.result.y.values == ry && divergence.values == rd
         end
     end
 
     # least squares: same result for every schedule
     phi = ScalarField(mesh); phi.values .= randn(rng, ncells)
     lsq = Grad{LeastSquares}(phi)
-    grad!(lsq, phif, phi, 0.0, config_for(ncells))
+    grad!(lsq, phif, phi, 0.0, ba_config(ncells))
     lx = copy(lsq.result.x.values)
     @test all(1:repeats) do _
         all(workgroups) do workgroup
-            grad!(lsq, phif, phi, 0.0, config_for(workgroup))
+            grad!(lsq, phif, phi, 0.0, ba_config(workgroup))
             lsq.result.x.values == lx
         end
     end

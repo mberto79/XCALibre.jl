@@ -2,12 +2,9 @@ using XCALibre
 using StaticArrays
 using Test
 
-# Temporal accuracy of the Crank-Nicolson scheme (trapezoidal form, every other term at tⁿ⁺¹).
-# Guards the Time operator's old levels (ddtⁿ, variable time steps, backward-Euler first step)
-# and the extrapolation of the lagged explicit terms to tⁿ⁺¹.
-
-# qualified: other test files bind `quad` to a mesh in Main
-function cn_strip_mesh(nx, ny, Lx, Ly)
+# Temporal accuracy of Crank-Nicolson: the Time operator's old levels (ddtⁿ, variable time steps,
+# backward-Euler first step) and the extrapolation of the lagged explicit terms to tⁿ⁺¹.
+function cn_strip_mesh(nx, ny, Lx, Ly) # qualified names: other test files bind `quad` in Main
     P, line, M = XCALibre.Point, XCALibre.line!, XCALibre.MeshBuilder2D
     pts = [P(0.0,0.0,0.0), P(Lx,0.0,0.0), P(0.0,Ly,0.0), P(Lx,Ly,0.0)]
     edges = [line(pts,1,2,nx), line(pts,3,4,nx), line(pts,1,3,ny), line(pts,2,4,ny)]

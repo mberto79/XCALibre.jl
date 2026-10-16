@@ -399,10 +399,6 @@ function correct_mass_flux!(
 
     p = p_eqn.model.terms[1].phi
     (; faces, cells, boundary_cellsID) = p.mesh
-    A = _A(p_eqn)
-    nzval = _nzval(A)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
 
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
@@ -419,8 +415,7 @@ function correct_mass_flux!(
 
     p_BCs = config.boundaries.p
     for BC ∈ p_BCs
-        correct_mass_periodic(
-            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+        correct_mass_periodic(BC, mdotf, p, pterm, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
 
@@ -460,36 +455,39 @@ end
 
 correct_mass_periodic(arg...) = nothing
 
+# The face coefficient of the PeriodicParent Laplacian, not the matrix entry: where the periodic
+# partner cell is also an interior neighbour (two cells across) the entry sums both faces, and in
+# the compressible solvers it also holds the pressure-convection coefficients
 function correct_mass_periodic(
-    BC::PeriodicParent, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+    BC::PeriodicParent, mdotf, p, pterm, cells, faces, backend, workgroup)
     (; IDs_range, value) = BC
-    (; face_map) = value
+    (; face_map, transform) = value
     ndrange = length(IDs_range)
     kernel! = _correct_mass_periodic(backend)
-    kernel!(mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map;
-        _dynamic_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, pterm.flux, pterm.sign, cells, faces, IDs_range, face_map,
+        transform.distance; _dynamic_setup(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_mass_periodic(
-    mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
+    mdotf, p, rhorDf, psign, cells, faces, IDs_range, face_map, distance)
     i = @index(Global)
     fID = IDs_range[i]
     pfID = face_map[i]
 
-    face = faces[fID]
-    pface = faces[pfID]
-    cID1 = face.ownerCells[1]
-    cID2 = pface.ownerCells[1]
+    cID1 = faces.ownerCells[fID][1]
+    cID2 = faces.ownerCells[pfID][1]
+    Ef_mag, Δ = periodic_face_distance(faces, cells, fID, cID1, cID2, distance)
+    aN = psign*(rhorDf[fID]*Ef_mag)/Δ
+    mdotf[fID] += aN*(p[cID2] - p[cID1])
+    mdotf[pfID] = -mdotf[fID]
+end
 
-    p1 = p[cID1]
-    p2 = p[cID2]
-    # need to get aN from sparse system
-    zID = spindex(rowptr, colval, cID1, cID2)
-    aN = nzval[zID]
-    correction = aN*(p2 - p1)
-    mdotf[fID] += correction
-    mdotf[pfID] = -mdotf[fID] 
-    
+# |E_f| and the cell distance Δ of a periodic face pair, as in the PeriodicParent Laplacian
+@inline function periodic_face_distance(faces, cells, fID, cID, pcID, distance)
+    Sf = faces.area[fID]*faces.normal[fID]
+    e = faces.e[fID]
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
+    norm(Ef), norm((cells.centre[pcID] - distance) - cells.centre[cID])
 end
 
 ### Correct interpolation at periodic boundaries

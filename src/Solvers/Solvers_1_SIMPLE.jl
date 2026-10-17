@@ -143,7 +143,7 @@ function SIMPLE(
     (; backend) = hardware
 
     # wrapped eqns solve through the seam (serial identity / DistributedEqn); the raw eqns
-    # are assembled/discretised in-place below. distributed skips ProgressMeter/postprocess.
+    # are assembled/discretised in-place below. distributed skips ProgressMeter.
     U_deqn, p_deqn = U_eqn, p_eqn
     U_eqn, p_eqn = unwrap_eqn(U_eqn), unwrap_eqn(p_eqn)
     distributed = is_distributed_mesh(mesh)
@@ -152,7 +152,6 @@ function SIMPLE(
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
 
-    _warn_skipped_postprocess(mesh, postprocess)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -216,7 +215,7 @@ function SIMPLE(
 
         # gradU and nueff of the current velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
-            divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
+            divτT, nueff, gradU, boundaries.U, time, config; cell_mueff=nueffc)
 
         rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
@@ -305,7 +304,7 @@ function SIMPLE(
             is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-                distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+                save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
         end
@@ -321,11 +320,11 @@ function SIMPLE(
                 ]
             )
 
-        distributed || runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+        runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
 
         if iteration%write_interval + signbit(write_interval) == 0
             outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-            distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop
@@ -352,41 +351,48 @@ end
 
 function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothing)
     mesh = grad.mesh
-    (; faces, cells, boundary_cellsID) = mesh
+    (; faces, cells, cell_faces, cell_nsign) = mesh
 
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     (; b) = eqn.equation
-    
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
 
-    ndrange = n_ifaces
+    # each cell sums the corrections of its internal faces (no atomics): the sum is the same
+    # whatever the thread count, and each face's correction is evaluated alike from both cells
+    ndrange = length(cells)
     kernel! = _sized(_nonorthogonal_face_correction, backend, workgroup, ndrange)
-    kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
+    kernel!(b, correction, grad, flux, faces, cells, cell_faces, cell_nsign)
 end
 
 @kernel function _nonorthogonal_face_correction(
-    b, correction, grad, flux, faces, cells, n_bfaces)
+    b, correction, grad, flux, faces, cells, cell_faces, cell_nsign)
     i = @index(Global)
-    fID = i + n_bfaces
-    face = faces[fID]
-    (; ownerCells, area, normal, weight) = face
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
+    @inbounds begin
+        source = zero(eltype(b))
+        for fi ∈ cells.faces_range[i]
+            fID = cell_faces[fi]
+            face = faces[fID]
+            (; ownerCells, area, normal, weight) = face
+            cID1 = ownerCells[1]
+            cID2 = ownerCells[2]
 
-    gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
-    dPN = cells[cID2].centre - cells[cID1].centre
-    projected_delta = max(
-        dPN⋅normal, oftype(area, MIN_PROJECTED_DELTA_RATIO)*norm(dPN))
-    correction_vector = normal - dPN/projected_delta
-    face_correction = flux[fID]*area*(gradi⋅correction_vector)
+            gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
+            dPN = cells[cID2].centre - cells[cID1].centre
+            projected_delta = max(
+                dPN⋅normal, oftype(area, MIN_PROJECTED_DELTA_RATIO)*norm(dPN))
+            correction_vector = normal - dPN/projected_delta
+            face_correction = flux[fID]*area*(gradi⋅correction_vector)
 
-    store_face_correction!(correction, fID, face_correction)
-    Atomix.@atomic b[cID1] += face_correction
-    Atomix.@atomic b[cID2] -= face_correction
+            if cID1 == i
+                store_face_correction!(correction, fID, face_correction)
+                source += face_correction
+            else
+                source -= face_correction
+            end
+        end
+        b[i] += source
+    end
 end
 
 ### TEMP LOCATION FOR PROTOTYPING

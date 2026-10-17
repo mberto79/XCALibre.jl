@@ -649,9 +649,6 @@ distributed_ready(::Val{:Godunov}, ::WALE) = false
 
 const DISTRIBUTED_SOLVERS = (:SIMPLE, :PISO, :Laplace, :potential_flow, :Godunov)
 
-# runtime post-processing has no distributed implementation; Distribute warns once from rank 0
-_warn_skipped_postprocess(mesh, postprocess) = nothing
-_has_postprocess(p) = !(p === nothing || (p isa Union{Tuple,AbstractVector} && isempty(p)))
 
 ## Time schemes
 

@@ -393,10 +393,9 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
         kernel!(values, x)
     end
 
-    iterations = Krylov.iteration_count(solver)
-    iterations == itmax && @warn "Maximum number of iterations reached!"
-
     res = residual(phiEqn, component, config)
+    Krylov.issolved(solver) || _warn_unconverged(phiEqn, setup, component,
+        solver.stats.status, Krylov.iteration_count(solver))
     return res
 end
 
@@ -405,10 +404,38 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     A = _A(phiEqn)
     b = _b(phiEqn, component)
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
-    iterations = mixed_solve!(phiEqn.solver, A, b, values, setup, config, result.mesh)
-    iterations ≥ setup.itmax && @warn "Maximum number of iterations reached!"
-    return residual(phiEqn, component, config)
+    iterations, converged, reason = mixed_solve!(phiEqn.solver, A, b, values, setup, config, result.mesh)
+    res = residual(phiEqn, component, config)
+    converged || _warn_unconverged(phiEqn, setup, component, reason, iterations)
+    return res
 end
+
+# NEW SECTION: reporting linear solves that stop without meeting atol/rtol
+
+# one message on every solve path (serial, mixed precision, AMG, PETSc), at most `maxlog` per equation
+const UNCONVERGED_MAXLOG = 10
+
+_solve_name(setup, tag) = string(nameof(typeof(setup.solver)),
+    setup.precision isa FullPrecision ? "" : " ($(nameof(typeof(setup.precision))))",
+    " solve", isempty(tag) ? "" : " [$tag]")
+
+function _warn_unconverged(name, reason, iterations, rnorm, norm_name, setup, id)
+    @warn "$name did not converge in $iterations iterations ($reason): $norm_name = " *
+        "$(Float64(rnorm)), atol = $(setup.atol), rtol = $(setup.rtol) (shown at most " *
+        "$UNCONVERGED_MAXLOG times per equation)" maxlog=UNCONVERGED_MAXLOG _id=id
+end
+
+# serial solves report ‖b - Ax‖₂ of the returned iterate, read from `residual`'s |b - Ax| in R
+function _warn_unconverged(eqn::ModelEquation, setup, component, reason, iterations)
+    tag = _component_tag(component)
+    _warn_unconverged(_solve_name(setup, tag), reason, iterations, norm(eqn.equation.R),
+        "‖b - Ax‖₂", setup, (:unconverged_solve, objectid(eqn.solver), tag))
+end
+
+_component_tag(::Nothing) = ""
+_component_tag(::XDir) = "x component"
+_component_tag(::YDir) = "y component"
+_component_tag(::ZDir) = "z component"
 
 # BiCGStab shadow vector M⁻¹(b - Ax0), as PETSc bcgs: Krylov.jl's default c = b suits only a zero
 # initial guess, and warm-started iterates degraded as steady runs converged (10M motorBike diverged).

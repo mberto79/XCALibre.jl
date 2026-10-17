@@ -62,39 +62,40 @@ end
 # NEW SECTION: incompressible hot paths (BFS; capture deqns via the unified setup hook)
 
 include(joinpath(@__DIR__, "psimple_case.jl"))
-import XCALibre.Solvers: setup_incompressible_solvers, correct_mass_flux!, max_courant_number!
+import XCALibre.Solvers: SIMPLE, setup_incompressible_solvers, correct_mass_flux!,
+    max_courant_number!
 import XCALibre.Solve: make_symmetric!, unwrap_eqn, sync!
 
 gm2 = rank == 0 ? bfs_mesh() : nothing
 dm2 = distribute(gm2; comm=comm)
 model2, config2 = incompressible_case(dm2, bfs_bcs; iterations=3)
-# capture the wrapped eqns the same way the solver body receives them
+# capture the wrapped eqns the solver body receives, after the body has run: its iterations set
+# the face viscosity, mass flux and pressure source, so the measured solves are non-trivial
 captured = setup_incompressible_solvers(
-    (args...; kwargs...) -> args, model2, config2)
+    (args...; kwargs...) -> (SIMPLE(args...; kwargs...); args), model2, config2)
 _, _, ∇p, U_deqn, p_deqn, config2 = captured
-(; U, p, Uf, pf) = model2.momentum
+(; U, p) = model2.momentum
 bcs2 = config2.boundaries
 U_eqn, p_eqn = unwrap_eqn(U_deqn), unwrap_eqn(p_deqn)
 mdotf = XCALibre.ModelFramework.get_flux(U_eqn, 2)
 xdir, ydir, zdir = XCALibre.ModelFramework.XDir(), XCALibre.ModelFramework.YDir(), XCALibre.ModelFramework.ZDir()
 
-# prime state the way the unified SIMPLE body does (self-syncing seams)
-sync!(U, dm2, config2); sync!(p, dm2, config2)
-interpolate!(Uf, U, config2)
-correct_boundaries!(Uf, U, bcs2.U, 0.0, config2)
-XCALibre.Solvers.flux!(mdotf, Uf, config2)
-grad!(∇p, pf, p, bcs2.p, 0.0, config2)
-
 usolve!() = solve_equation!(U_deqn, U, bcs2.U, config2.solvers.U, xdir, ydir, zdir, config2)
 psolve_eqn!() = solve_equation!(p_deqn, p, bcs2.p, config2.solvers.p, config2; ref=nothing)
 
-usolve!(); usolve!(); psolve_eqn!(); psolve_eqn!() # warmup
+# a solve that stops at once (zero face viscosity: no interior matrix) would measure nothing
+ksp_state(d) = (s = d.solver; (Int(PETSc.LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)),
+    Int(PETSc.LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp))))
+usolve!(); u_reason, u_its = ksp_state(U_deqn)
+psolve_eqn!(); p_reason, p_its = ksp_state(p_deqn)
+usolve!(); psolve_eqn!() # warmup
 p_prev = similar(p.values)
 copyto!(p_prev, p.values)
 make_symmetric!(p_eqn, config2)
 correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
 cCo = KernelAbstractions.zeros(backend, Float64, length(dm2.cells))
 max_courant_number!(cCo, model2, config2)
+sync!(U, dm2, config2)
 
 a_ueqn = @allocated usolve!()
 a_peqn = @allocated psolve_eqn!()
@@ -107,6 +108,10 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
     "halo3=$a_halo3 courant=$a_cour")
 
 @testset "Phase 5 perf (rank $rank)" begin
+    # the measured solves converge (positive reason) after real Krylov iterations
+    @test u_reason > 0 && u_its > 0
+    @test p_reason > 0 && p_its > 0
+
     # ~2x measured at introduction; halo/solve terms scale per neighbour
     @test a_sym <= 2_048
     @test a_cmf <= 12_288
@@ -141,9 +146,9 @@ is3d = dm2.mesh isa Mesh3
 println("COMM rank=$rank exchanges/iter=$halo_per_iter allreduces/iter=$red_per_iter")
 
 @testset "communication budget (rank $rank)" begin
-    # laminar SIMPLE: one width-3 exchange for all momentum components, one for rD and Hv, p after
+    # laminar SIMPLE: one per row of ∇U (transpose stress), U after its solve, rD with Hv, p after
     # its solve, p after relaxation, grad p; one all-reduce for U's residuals and one for p's. A new
     # round is a regression.
-    @test halo_per_iter == 5
+    @test halo_per_iter == 8
     @test red_per_iter == 2
 end

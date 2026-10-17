@@ -46,9 +46,9 @@ function run_bfs(tscheme)
         U = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, rtol=1e-3),
         p = SolverSetup(solver=Gmres(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, rtol=1e-3)
     )
-    # impulsive start from a non-solenoidal field: Euler and CrankNicolson differ by ~40% at 150
-    # steps, the start-up transient being unresolved in Δt; by 400 steps both are within 4%
-    runtime = Runtime(iterations=400, time_step=0.005, write_interval=400)
+    # impulsive start from a non-solenoidal field: the start-up transient is not converged in Δt
+    # (Euler and CrankNicolson differ by ~40% at 150 steps); at 1000 steps they agree to 0.5%
+    runtime = Runtime(iterations=1000, time_step=0.005, write_interval=1000)
     hardware = Hardware(backend=backend, workgroup=workgroup)
     config = Configuration(
         solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -71,5 +71,5 @@ end
 end
 @testset "CrankNicolson" begin
     modelCN = run_bfs(CrankNicolson)
-    @test mean(modelCN.momentum.U.x.values) ≈ mean(modelE.momentum.U.x.values) rtol=0.06
+    @test mean(modelCN.momentum.U.x.values) ≈ mean(modelE.momentum.U.x.values) rtol=1e-2
 end

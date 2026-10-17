@@ -121,6 +121,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_periodic_mass_flux.jl")
     end
 
+    @testset "Transient verification examples" begin
+        include("unit_test_transient_verification_examples.jl")
+    end
+
     @testset "Neumann Laplacian Sign Unit Test" begin
         include("unit_test_neumann_sign.jl")
     end

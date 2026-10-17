@@ -21,13 +21,12 @@ _krylov_vector(v) = v
 _like_workspace(::XVector, v::Vector) = XVector(v)
 _like_workspace(_, v) = v
 _index_type(A) = eltype(_rowptr(A))
+
 # NEW SECTION: shadow-vector breakdown
 
-# BiCGStab and CGS divide by ⟨c, r⟩ and ⟨c, Ap⟩ for their shadow vector c. Both vanish together
-# (0/0) once the residual is orthogonal to c, e.g. when b - Ax₀ is nonzero in a few cells only and
-# the matrix couples those cells one way (upwind convection): one step later the residual has left
-# the cells c covers. Krylov.jl flags the breakdown after the 0/0 step has reached x, so the caller
-# re-solves from x₀ with the dense shadow `_fallback_shadow!`.
+# BiCGStab/CGS take ⟨c, r⟩/⟨c, Ap⟩ for the shadow c: 0/0 once r ⟂ c (b - Ax₀ in a few cells, coupled
+# one way as by upwinding). Krylov.jl flags it after the 0/0 step reached x, so callers re-solve
+# from x₀ with the dense shadow `_fallback_shadow!`
 const _ShadowWorkspace = Union{BicgstabWorkspace, CgsWorkspace}
 
 _broke_down(workspace, itmax) = false

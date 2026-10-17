@@ -56,6 +56,8 @@ For example to probe velocity at location `[1.0, 2.0, 3.0]`:
 postprocess = Probe(model.momentum.U, mesh; location=[1.0, 2.0, 3.0], name="velocity probe at [1,2,3]")
 config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs, postprocess=postprocess)
 ```
+On a distributed mesh pass the distributed mesh and create the probe on every rank; the rank that
+owns the nearest cell samples it and rank 0 writes the file.
 
 ### Example: Post-process multiple fields 
 To post-process multiple fields as a time, a vector of objects can be passed instead e.g. 

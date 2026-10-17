@@ -12,3 +12,6 @@ function psolve! end
 
 # adjoint solve
 function psolve_transpose! end
+
+# Krylov iterations of the last solve
+function piterations end

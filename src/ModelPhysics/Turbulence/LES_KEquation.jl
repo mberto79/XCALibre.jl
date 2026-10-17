@@ -21,13 +21,14 @@ struct KEquation{S,SF,C} <: AbstractLESModel
 end
 Adapt.@adapt_structure KEquation
 
-struct KEquationModel{T,D,S1,S2,E1,WS}
+struct KEquationModel{T,D,S1,S2,E1,WS,L}
     turbulence::T
     Δ::D 
     magS::S1
     k_eqn::E1
     state::S2
     wall_scratch::WS
+    levels::L   # lagged copy and old level of k under Crank-Nicolson (`nothing` otherwise)
 end
 Adapt.@adapt_structure KEquationModel
 
@@ -112,7 +113,8 @@ function initialise(
         magS, 
         k_eqn,
         ModelState(initial_residual, false),
-        wall_scratch(mesh, config.boundaries, config)
+        wall_scratch(mesh, config.boundaries, config),
+        transport_levels(k_eqn, (k=k,), mesh)
     ), config
 end
 
@@ -139,8 +141,7 @@ function turbulence!(
     ) where {T,F,SO,M,Tu<:AbstractTurbulenceModel,E,D,BI}
 
     mesh = model.domain
-    (; solvers, runtime, hardware, boundaries) = config
-    (; workgroup, backend) = hardware
+    (; solvers, runtime, boundaries) = config
     (; rho, rhof, nu, nuf) = model.fluid
     (; k, kf, nut, nutf, coeffs) = les.turbulence
     (; k_eqn, state) = les
@@ -155,24 +156,31 @@ function turbulence!(
 
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-    
-  
-    wk = _setup(backend, workgroup, length(mueffk))[2]
-    AK.foreachindex(mueffk, min_elems=wk, block_size=wk) do i 
-        mueffk[i] = rhof[i]*(nuf[i] + nutf[i])
+    lagged_coefficients!(les.levels, (k=k,))
+
+    # Bind values, not fields, so the closures carry no mesh (xcal_foreach runs on any backend)
+    rhov, rhofv, nufv, nutfv = field_values(rho), field_values(rhof), field_values(nuf), field_values(nutf)
+    kv, nutv, Δv, gradUv = field_values(k), field_values(nut), field_values(Δ), field_values(gradU.result)
+    mueffkv, Pkv, Dkfv, divUv = field_values(mueffk), field_values(Pk), field_values(Dkf), field_values(divU)
+
+    xcal_foreach(mueffkv, config) do i
+        mueffkv[i] = rhofv[i]*(nufv[i] + nutfv[i])
     end
 
     twoThirds = ScalarFloat(mesh)(2/3)
-    wk = _setup(backend, workgroup, length(Pk))[2]
-    AK.foreachindex(Pk, min_elems=wk, block_size=wk) do i 
-        Pk[i] = 2*nut[i]*rho[i]*(gradU[i]⋅Dev(S)[i])
-        Dkf[i] = coeffs.ce*rho[i]*sqrt(k[i])/(Δ[i])
-        divU[i] = twoThirds*rho[i]*tr(gradU[i])
+    xcal_foreach(Pkv, config) do i
+        gradUi = gradUv[i]
+        Si = (gradUi + gradUi')/2
+        DevSi = Si - eltype(Si)(1/3)*tr(Si)*I # Dev(S)[i]
+        rhoi = rhov[i]
+        Pkv[i] = 2*nutv[i]*rhoi*(gradUi⋅DevSi)
+        Dkfv[i] = coeffs.ce*rhoi*sqrt(kv[i])/Δv[i]
+        divUv[i] = twoThirds*rhoi*tr(gradUi)
     end
     
     # Solve k equation
     # prev .= k.values
-    discretise!(k_eqn, k, config)
+    discretise!(k_eqn, old_level(les.levels, :k, k), config; time)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
@@ -181,9 +189,8 @@ function turbulence!(
     bound!(k, prev, config)
     # explicit_relaxation!(k, prev, solvers.k.relax, config)
 
-    wk = _setup(backend, workgroup, length(nut))[2]
-    AK.foreachindex(nut, min_elems=wk, block_size=wk) do i 
-        nut[i] = coeffs.ck*Δ[i]*sqrt(k[i])
+    xcal_foreach(nutv, config) do i
+        nutv[i] = coeffs.ck*Δv[i]*sqrt(kv[i])
     end
 
     interpolate!(nutf, nut, config)
@@ -194,6 +201,17 @@ function turbulence!(
     state.residuals = ((:k , k_res),)
     state.converged = k_res < solvers.k.convergence
     nothing
+end
+
+function eddy_viscosity!(les::KEquationModel, model::Physics, S, time, config)
+    (; k, nut, nutf, coeffs) = les.turbulence
+    kv, nutv, Δv = field_values(k), field_values(nut), field_values(les.Δ)
+    xcal_foreach(nutv, config) do i
+        nutv[i] = coeffs.ck*Δv[i]*sqrt(max(kv[i], zero(eltype(kv))))
+    end
+    interpolate!(nutf, nut, config)
+    correct_boundaries!(nutf, nut, config.boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, config.boundaries.nut, model, config, les.wall_scratch)
 end
 
 # Specialise VTK writer

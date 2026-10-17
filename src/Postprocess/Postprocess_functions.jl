@@ -12,6 +12,9 @@ Calculate the pressure force vector `[Fx, Fy, Fz]` acting on a given patch/bound
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
 - `model` `Physics` object defining the simulation
 - `config` `Configuration` object (provides the hardware backend)
+
+On a distributed mesh the call is collective: every rank must make it, and all ranks return the
+force on the whole patch.
 """
 function pressure_force(patch::Symbol, model, config)
     mesh = model.domain
@@ -36,7 +39,7 @@ function pressure_force(patch::Symbol, model, config)
         _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
-    Fp = TF[sum(fx), sum(fy), sum(fz)]
+    Fp = global_sum(TF[sum(fx), sum(fy), sum(fz)], mesh) # patch faces are split over the ranks
     @info "Pressure force on $patch: ($(Fp[1]), $(Fp[2]), $(Fp[3]))"
     return Fp
 end
@@ -55,7 +58,7 @@ end
 end
 
 """
-    viscous_force(patch::Symbol, model, config)
+    viscous_force(patch::Symbol, model, config; time=0)
 
 Calculate the viscous force vector `[Fx, Fy, Fz]` acting on a given patch/boundary.
 
@@ -64,8 +67,23 @@ Calculate the viscous force vector `[Fx, Fy, Fz]` acting on a given patch/bounda
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
 - `model` `Physics` object defining the simulation
 - `config` `Configuration` object (provides boundary conditions and hardware backend)
+
+# Optional arguments
+
+- `time` the time at which the velocity condition of the patch is evaluated (default `0`). It
+  matters only for a `DirichletFunction` whose function depends on time: pass the solution time
+  (the iteration number for steady runs), as the solvers do when they evaluate the condition.
+
+The wall velocity of each face is the face value of the velocity boundary condition: the fixed
+vector of `Wall` and `Dirichlet`, the function of `DirichletFunction` evaluated at the face
+centre and `time`, or the rotation velocity of `RotatingWall`. Patches with a `Slip`,
+`Symmetry` or zero-gradient velocity boundary condition exert no shear, so their viscous force
+is zero.
+
+On a distributed mesh the call is collective: every rank must make it, and all ranks return the
+force on the whole patch.
 """
-function viscous_force(patch::Symbol, model, config)
+function viscous_force(patch::Symbol, model, config; time=0)
     mesh = model.domain
     U = model.momentum.U
     nu = model.fluid.nu
@@ -76,7 +94,11 @@ function viscous_force(patch::Symbol, model, config)
 
     ID = boundary_index(model.boundary_info, patch)
     @info "calculating viscous force on patch: $patch at index $ID"
-    Uw = _patch_bc_value(config.boundaries.U, ID) # wall velocity from the U boundary condition
+    BC = _shear_patch_bc(config.boundaries.U, ID, patch)
+    if BC isa Union{Slip,Symmetry}
+        @info "Viscous force on $patch: (0, 0, 0) (Slip/Symmetry patch carries no shear)"
+        return zeros(TF, 3)
+    end
     IDs_range = get_boundaries(mesh.boundaries)[ID].IDs_range
     (; faces, boundary_cellsID) = mesh
 
@@ -86,25 +108,23 @@ function viscous_force(patch::Symbol, model, config)
     fz = KernelAbstractions.zeros(backend, TF, n)
 
     kernel! = _viscous_force!(backend)
-    kernel!(fx, fy, fz, U, Uw, nu, nut, rho, faces, boundary_cellsID, IDs_range;
+    kernel!(fx, fy, fz, U, BC, nu, nut, rho, faces, boundary_cellsID, IDs_range, TF(time);
         _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
-    Fv = TF[sum(fx), sum(fy), sum(fz)]
+    Fv = global_sum(TF[sum(fx), sum(fy), sum(fz)], mesh)
     @info "Viscous force on $patch: ($(Fv[1]), $(Fv[2]), $(Fv[3]))"
     return Fv
 end
 
 @kernel function _viscous_force!(
-    fx, fy, fz, U, Uw, nu, nut, rho, faces, boundary_cellsID, IDs_range)
+    fx, fy, fz, U, BC, nu, nut, rho, faces, boundary_cellsID, IDs_range, time)
     i = @index(Global)
     @inbounds begin
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
-        (; area, normal, delta) = faces[fID]
-        Udiff = U[cID] - Uw
-        Up = Udiff - (Udiff⋅normal)*normal # parallel velocity difference
-        snGrad = Up/delta # boundary delta is the wall-normal distance
+        area = faces.area[fID]
+        snGrad = _wall_shear_gradient(BC, U[cID], faces, fID, time)
         coeff = rho[cID]*area*(nu[cID] + nut[fID]) # nut is wall-face value νtf (wall funcs)
         fx[i] = snGrad[1]*coeff
         fy[i] = snGrad[2]*coeff
@@ -112,13 +132,26 @@ end
     end
 end
 
-# Host-side lookup of the BC value matching a boundary ID (BCs is a heterogeneous tuple)
-_patch_bc_value(BCs, ID) = begin
+# Tangential part of (U_c - U_b)/delta at boundary face fID, from the boundary-face normal
+# gradient of the velocity condition (U_b - U_c)/delta (`_boundary_sngrad`, value at `time`)
+@inline function _wall_shear_gradient(BC, Uc, faces, fID, time)
+    normal = faces.normal[fID]
+    g = _boundary_sngrad(BC, Uc, faces.delta[fID], normal, faces, fID, time)
+    return (g⋅normal)*normal - g
+end
+
+# Host-side lookup of the velocity condition of a boundary ID (BCs is a heterogeneous tuple);
+# periodic and empty patches have no wall, so no wall shear
+_patch_bc(BCs, ID) = begin
     for bc ∈ BCs
-        bc.ID == ID && return bc.value
+        bc.ID == ID && return bc
     end
     error("No boundary condition found for boundary index $ID")
 end
+_shear_patch_bc(BCs, ID, patch) = _check_shear_patch(_patch_bc(BCs, ID), patch)
+_check_shear_patch(BC, patch) = BC
+_check_shear_patch(BC::Union{Periodic,PeriodicParent,Empty}, patch) = throw(ArgumentError(
+    "patch $patch has a $(nameof(typeof(BC))) velocity condition, which carries no wall shear"))
 
 """
     function boundary_average(patch::Symbol, field, config; time=0)
@@ -183,59 +216,64 @@ function boundary_average(patch::Symbol, field, fieldBCs, config; time=0)
 end
 
 """
-    wall_shear_stress(patch::Symbol, model,config)
+    wall_shear_stress(patch::Symbol, model, config; time=0)
 
-Function to calculate the wall shear stress acting on a given patch/boundary.
+Function to calculate the wall shear stress acting on a given patch/boundary. Returns the
+kinematic wall shear stress of each face of the patch, `ν_eff (U_c - U_b)_t/δ` (`U_b` the face
+value of the velocity condition, `t` the part tangential to the face), as a `FaceVectorField`
+of the patch length, and the face centres as a vector.
 
 # Input arguments
 
 - `patch::Symbol` name of the boundary of interest (as a `Symbol`)
 - `model` instance of `Physics` object needs to be passed 
 - `config` need to pass `Configuration` object as this contains the boundary conditions
+
+# Optional arguments
+
+- `time` the time at which the velocity condition of the patch is evaluated (default `0`), as
+  in [`viscous_force`](@ref), which uses the same face values.
 """
-wall_shear_stress(patch::Symbol, model,config)  = begin
-    # Line below needs to change to do selection based on nut BC
-    turbulence = model.turbulence
-    UBCs = config.boundaries.U
-    typeof(turbulence) <: Laminar ? nut = ConstantScalar(0.0) : nut = model.turbulence.nutf # wall-face νtf
+wall_shear_stress(patch::Symbol, model, config; time=0) = begin
     mesh = model.domain
+    TF = _get_float(mesh)
+    nut = model.turbulence isa Laminar ? ConstantScalar(zero(TF)) : model.turbulence.nutf # wall-face νtf
     (; nu) = model.fluid
     (; U) = model.momentum
-    (; boundaries, boundary_cellsID, faces) = mesh
-    ID = boundary_index(boundaries, patch)
-    boundary = boundaries[ID]
-    (; IDs_range) = boundary
-    @info "calculating viscous forces on patch: $patch at index $ID"
-    x = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    y = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    z = FaceScalarField(zeros(Float64, length(IDs_range)), mesh)
-    tauw = FaceVectorField(x,y,z, mesh)
-    Uw = zero(_get_float(mesh))
-    for i ∈ 1:length(UBCs)
-        if ID == UBCs[i].ID
-            Uw = UBCs[i].value
-            surface_normal_gradient!(tauw, U, UBCs[i].value, IDs_range)
-        end
-    end
+    (; backend, workgroup) = config.hardware
+    (; boundary_cellsID, faces) = mesh
+    ID = boundary_index(model.boundary_info, patch)
+    IDs_range = get_boundaries(mesh.boundaries)[ID].IDs_range
+    @info "calculating wall shear stress on patch: $patch at index $ID"
+    BC = _shear_patch_bc(config.boundaries.U, ID, patch)
 
-    pos = fill(SVector{3,Float64}(0,0,0), length(IDs_range))
-    for i ∈ eachindex(tauw)
-        # fID = facesID[i]
-        # cID = cellsID[i]
-        fID = IDs_range[i]
-        cID = boundary_cellsID[fID]
-        face = faces[fID]
-        nueff = nu[cID]  + nut[fID] # nut is wall-face value νtf (wall funcs)
-        tauw.x[i] *= nueff
-        tauw.y[i] *= nueff
-        tauw.z[i] *= nueff
-        pos[i] = face.centre
-    end
-    
+    n = length(IDs_range)
+    x = FaceScalarField(KernelAbstractions.zeros(backend, TF, n), mesh)
+    y = FaceScalarField(KernelAbstractions.zeros(backend, TF, n), mesh)
+    z = FaceScalarField(KernelAbstractions.zeros(backend, TF, n), mesh)
+    tauw = FaceVectorField(x, y, z, mesh)
+
+    kernel! = _wall_shear_stress!(backend)
+    kernel!(tauw, U, BC, nu, nut, faces, boundary_cellsID, IDs_range, TF(time);
+        _dynamic_setup(backend, workgroup, n)...)
+    KernelAbstractions.synchronize(backend)
+
+    pos = Array(faces.centre[IDs_range])
     return tauw, pos
 end
+
+@kernel function _wall_shear_stress!(
+    tauw, U, BC, nu, nut, faces, boundary_cellsID, IDs_range, time)
+    i = @index(Global)
+    @inbounds begin
+        fID = IDs_range[i]
+        cID = boundary_cellsID[fID]
+        nueff = nu[cID] + nut[fID] # nut is wall-face value νtf (wall funcs)
+        tauw[i] = nueff*_wall_shear_gradient(BC, U[cID], faces, fID, time)
+    end
+end
 """
-    stress_tensor(U::VectorField, ν, νt, config)
+    stress_tensor(U::VectorField, ν, νt, config; time=0)
 
 Function to calculate the stress tensor.
 
@@ -245,14 +283,19 @@ Function to calculate the stress tensor.
 - `ν` laminar viscosity of the fluid
 - `νt` eddy viscosity from turbulence models. Pass ConstantScalar(0) for laminar flows
 - `config` need to pass `Configuration` object as this contains the boundary conditions
+
+# Optional arguments
+
+- `time` the time at which the velocity boundary conditions are evaluated (default `0`), as in
+  [`viscous_force`](@ref)
 """
-stress_tensor(U, ν, νt, config) = begin
+stress_tensor(U, ν, νt, config; time=0) = begin
     mesh = U.mesh
     TF = _get_float(mesh)
     gradU = Grad{Midpoint}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(U.mesh)
-    grad!(gradU, Uf, U, config.boundaries.U, zero(TF), config) # assuming time=0
+    grad!(gradU, Uf, U, config.boundaries.U, TF(time), config)
     # grad!(gradU, Uf, U, boundaries.U, , config)
     nueff = ScalarField(U.mesh) # temp variable
     nueff.values .= ν .+ νt.values

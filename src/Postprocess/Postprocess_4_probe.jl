@@ -31,7 +31,7 @@ Constructor to probe an internal field during runtime and write it out to a .csv
 
 # Input arguments 
 - `field`, the field you want to probe, such as `model.momentum.U`
-- `mesh_cpu`, the mesh object stored on the CPU needs to be passed, this is to find the nearest cell centre to the location you want to probe 
+- `mesh_cpu`, the mesh object stored on the CPU needs to be passed, this is to find the nearest cell centre to the location you want to probe. On a distributed mesh pass the distributed mesh (on the CPU) on every rank: the rank owning the nearest cell samples it and rank 0 writes the file
 
 # Input Keyword arguments
 - `location`, e.g `location = [1.0, 2.0, 0.0]` and must be a vector ∈ ℝ³ even for 2D simulations
@@ -45,30 +45,31 @@ Constructor to probe an internal field during runtime and write it out to a .csv
 """
 function Probe(field,mesh_cpu;location::AbstractVector, name::AbstractString,output::ProbeOutput = CSV(),start::Union{Real,Nothing}=nothing,stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     length(location) == 3 || throw(ArgumentError("location must be a 3 element vector "))
-    index, best_centre = find_nearest_cell_index(mesh_cpu,location)
-    @info "Nearest cell centre located at $best_centre "
+    index, best_centre = find_nearest_cell_index(mesh_cpu, location, field.mesh)
+    is_report_rank(field.mesh) && @info "Nearest cell centre located at $best_centre "
 
     return Probe(field=field, index=index,name=name,output=output,start=start,stop=stop,update_interval=update_interval)
 end
 
+# On a distributed mesh only the rank owning the probed cell has index > 0; the others add zero to
+# the sum over ranks, and rank 0 writes the file
 function runtime_postprocessing!(prb::Probe{T,I,S,O},iter::Integer,n_iterations::Integer,Str,time,config) where {T<:VectorField,I,S,O}
     if must_calculate(prb,iter,n_iterations)
-        index = prb.index
-
-        fx = @allowscalar prb.field.x.values[index]
-        fy = @allowscalar prb.field.y.values[index]
-        fz = @allowscalar prb.field.z.values[index]
-        write_probe_to_file(time,fx,fy,fz,prb.name,prb.output)
+        (; index, field) = prb
+        TF = eltype(field.x.values)
+        f = index > 0 ? TF[@allowscalar(field.x.values[index]), @allowscalar(field.y.values[index]),
+            @allowscalar(field.z.values[index])] : zeros(TF, 3)
+        f = global_sum(f, field.mesh)
+        is_report_rank(field.mesh) && write_probe_to_file(time,f[1],f[2],f[3],prb.name,prb.output)
     end
     return nothing
 end
 function runtime_postprocessing!(prb::Probe{T,I,S,O}, iter::Integer, n_iterations::Integer,Str, time, config) where {T<:ScalarField,I,S,O}
     if must_calculate(prb, iter, n_iterations)
-        index = prb.index
-
-        f = @allowscalar prb.field.values[index]
-
-        write_probe_to_file(time, f, prb.name, prb.output)
+        (; index, field) = prb
+        f = index > 0 ? @allowscalar(field.values[index]) : zero(eltype(field.values))
+        f = global_sum(f, field.mesh)
+        is_report_rank(field.mesh) && write_probe_to_file(time, f, prb.name, prb.output)
     end
     return nothing
 end
@@ -111,21 +112,30 @@ function write_probe_to_file(time, fx, fy, fz, name, ::CSV)
         println(io, time, ',', fx, ',', fy, ',', fz)
     end
 end
-function find_nearest_cell_index(mesh, vector_coords)
-    best_index = 1
+# Nearest owned cell centre, ties to the lowest mesh-wide cell id (the serial choice). `mesh` holds
+# the geometry on the host, `pmesh` (the field's mesh) the ranks; index is 0 on the other ranks.
+function find_nearest_cell_index(mesh, vector_coords, pmesh=mesh)
+    best_index = 0
     best_distance = Inf
-
-    @inbounds for i ∈ eachindex(mesh.cells)
+    best_id = typemax(Int)
+    @inbounds for i ∈ 1:n_owned_cells(pmesh)
         ctr = mesh.cells[i].centre
-        distance =  (ctr[1] - vector_coords[1])^2 + (ctr[2] - vector_coords[2])^2 + (ctr[3] - vector_coords[3])^2
-        if distance < best_distance
+        distance = Float64((ctr[1] - vector_coords[1])^2 + (ctr[2] - vector_coords[2])^2 + (ctr[3] - vector_coords[3])^2)
+        id = Int(global_cell_index(pmesh, i))
+        if distance < best_distance || (distance == best_distance && id < best_id)
             best_distance = distance
             best_index = i
+            best_id = id
         end
     end
-    best_centre = mesh.cells[best_index].centre
+    candidate = best_distance == global_min(best_distance, pmesh) ? best_id : typemax(Int)
+    winner = global_min(candidate, pmesh) # collective: every rank must reach it
+    owner = candidate < typemax(Int) && candidate == winner
+    index = owner ? best_index : 0
+    centre = owner ? Vector{Float64}(mesh.cells[index].centre) : zeros(3)
+    best_centre = global_sum(centre, pmesh)
 
-    return best_index, best_centre
+    return index, best_centre
 end
 
 function convert_time_to_iterations(prb::Probe, model,dt,iterations)

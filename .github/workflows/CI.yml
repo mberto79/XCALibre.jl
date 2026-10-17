@@ -39,6 +39,9 @@ jobs:
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+        env:
+          # the gate's three-rank files (asymmetric halos, sub-communicator, empty wall-function patch)
+          XCALIBRE_TEST_MAX_RANKS: 3
         with:
-          # Julia 1.12+ coverage instrumentation slows the solver loops ~90x (1.10: ~6x)
-          coverage: ${{ matrix.version == '1.10' }}
+          # Coverage instrumentation slows the solver loops (~6x on 1.10, ~90x on 1.12+), so it stays off
+          coverage: false

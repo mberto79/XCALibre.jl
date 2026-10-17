@@ -119,17 +119,15 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     outer_A = outer_operator(workspace.hierarchy, A)
     _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 
-    if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-        xcal_foreach(x, config) do i
-            x[i] = 2 * x[i] - values[i]
-        end
-    end
-
     copyto!(values, x)
-    workspace.iterations >= itmax && @warn "Maximum number of iterations reached!" maxlog=10
-
-    return residual(phiEqn, component, config)
+    res = residual(phiEqn, component, config)
+    workspace.converged || _warn_unconverged(phiEqn, setup, component, _amg_reason(workspace, itmax),
+        workspace.iterations)
+    return res
 end
+
+_amg_reason(workspace, itmax) = workspace.iterations ≥ itmax ?
+    "maximum number of iterations exceeded" : "stagnating, non-finite or indefinite iteration"
 
 function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::AMGSolver, A, b, x; itmax, atol, rtol)
     return amg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)

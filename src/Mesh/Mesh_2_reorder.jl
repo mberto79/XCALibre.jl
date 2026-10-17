@@ -99,6 +99,8 @@ function _reorder_mesh!(mesh, method)
     for f ∈ 1:nbfaces
         mesh.boundary_cellsID[f] = face_ownerCells[f][1]
     end
+    boundary_cell_faces!(mesh.boundary_cells, mesh.boundary_cell_faces_range, mesh.boundary_cell_faces,
+        mesh.boundary_cellsID)
     # each neighbour is the other cell of the (reordered) face
     for (i, r) ∈ enumerate(cell_faces_range), j ∈ r
         o = face_ownerCells[mesh.cell_faces[j]]

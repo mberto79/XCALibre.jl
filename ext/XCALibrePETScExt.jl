@@ -3,7 +3,8 @@ module XCALibrePETScExt
 using XCALibre, MPI, PETSc
 using PETSc: LibPETSc
 using XCALibre.Distribute
-import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!, _parallel_partition
+import XCALibre.Distribute: PETScSolver, passemble!, psolve!, psolve_transpose!, piterations,
+    _parallel_partition
 import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval
 import XCALibre.Mesh: _get_float
 
@@ -94,6 +95,10 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     bptr::Base.RefValue{Ptr{Cvoid}} # b's array, set by passemble! and placed by the next solve
     setup_every::Int   # rebuild the PC every N solves (1 = every solve, PETSc default)
     nsolve::Base.RefValue{Int}
+    name::String       # equation label and method, for reporting unconverged solves
+    tol::NamedTuple{(:atol,:rtol),Tuple{Float64,Float64}}
+    report::Bool       # warn on an unconverged solve; false when an outer loop reports instead
+    root::Bool         # the reason is global, so one rank reports it
 end
 
 # one PetscInt width is loaded per process, fixed by PETSc's "PetscInt" preference at precompile
@@ -188,7 +193,7 @@ end
 # from a Float32 copy of the matrix values; fields stay in the mesh's float type
 function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         comm=getfield(dmesh, :comm), petsc_options="", label="", float_type=_get_float(dmesh),
-        nzval=nothing)
+        nzval=nothing, report=true)
     petsc_options = _options_for(petsc_options, label)
     part = dmesh.partition
     TF = float_type
@@ -271,7 +276,9 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
     setup_every = _pc_freeze(setup.preconditioner)
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
-        _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0))
+        _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0),
+        XCALibre.Solve._solve_name(setup, label), (atol=Float64(atol), rtol=Float64(rtol)), report,
+        MPI.Comm_rank(comm) == 0)
 end
 
 # NEW SECTION: assembly and solve
@@ -425,9 +432,33 @@ end
 function psolve!(s::XPETScSolver, x::AbstractVector)
     _maybe_freeze_pc!(s)
     _with_placed(_ksp_solve, s, x)
+    # a shadow-vector breakdown (BiCGStab) stops at the last finite iterate; solving again from
+    # there restarts with the current residual as the shadow, as the serial solves retry theirs
+    for _ ∈ 1:2
+        _broke_down(s) || break
+        _with_placed(_ksp_solve, s, x)
+    end
+    _report_unconverged(s)
+    x
 end
 
-psolve_transpose!(s::XPETScSolver, x::AbstractVector) = _with_placed(_ksp_solve_transpose, s, x)
+# every negative KSPConvergedReason (iteration cap, divergence, breakdown, indefinite PC, NaN)
+function _report_unconverged(s::XPETScSolver)
+    s.report || return nothing
+    reason = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
+    (Integer(reason) < 0 && s.root) || return nothing
+    XCALibre.Solve._warn_unconverged(s.name, string(reason), piterations(s),
+        LibPETSc.KSPGetResidualNorm(s.petsclib, s.ksp), "KSP residual norm", s.tol,
+        (:unconverged_solve, s.name))
+end
+
+piterations(s::XPETScSolver) = Int(LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp))
+
+_broke_down(s::XPETScSolver) = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp) ∈
+    (LibPETSc.KSP_DIVERGED_BREAKDOWN, LibPETSc.KSP_DIVERGED_BREAKDOWN_BICG)
+
+psolve_transpose!(s::XPETScSolver, x::AbstractVector) =
+    (_with_placed(_ksp_solve_transpose, s, x); _report_unconverged(s); x)
 
 _ksp_solve(s) = PETSc.solve!(s.x, s.ksp, s.b)
 _ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)

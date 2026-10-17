@@ -1,7 +1,7 @@
 
 # TRANSIENT TERM 
 @inline (bc::AbstractBoundary)( # Used for all schemes (using "T")
-    term::Operator{F,P,I,Time{T}}, colval, rowptr, nzval, cellID, zcellID,
+    term::Operator{F,P,I,<:Time{T}}, colval, rowptr, nzval, cellID, zcellID,
     cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
     ) where {F,P,I,T,TF} = begin
     # nothing
@@ -15,6 +15,21 @@ end
     cells, faces, fID, i, component, time
     ) where {F,P,I,S<:SecondOrderUpwind} = bc(
         _upwind(term), colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
+
+# LUSTDC: boundary faces take the LUST coefficients, so the converged state is that of LUST
+@inline (bc::AbstractBoundary)(
+    term::Operator{F,P,I,Divergence{LUSTDC}}, colval, rowptr, nzval, cellID, zcellID,
+    cells, faces, fID, i, component, time
+    ) where {F,P,I} = bc(
+        Operator(term.flux, term.phi, term.sign, Divergence{LUST}()),
+        colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
+
+# LUSTLU: boundary faces take the LUST coefficients (periodic patches add the correction, periodic.jl)
+@inline (bc::AbstractBoundary)(
+    term::Operator{F,P,I,Divergence{LUSTLU}}, colval, rowptr, nzval, cellID, zcellID,
+    cells, faces, fID, i, component, time
+    ) where {F,P,I} = bc(
+        _lust(term), colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
 
 # KWallFunction
 @inline (bc::KWallFunction)(

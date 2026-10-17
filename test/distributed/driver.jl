@@ -10,12 +10,27 @@ catch err
     false
 end
 
-function run_mpi_tests(files; ranks=[1, 2], timeout=1200)
+const _PRECOMPILED = Ref(false)
+
+# Rank counts above XCALIBRE_TEST_MAX_RANKS (default 2) are skipped: each extra rank costs a
+# Julia process compiling the whole solver. Set it higher to run the wider rank counts;
+# runtests_mpi.jl runs the rank counts it is given.
+max_test_ranks() = parse(Int, get(ENV, "XCALIBRE_TEST_MAX_RANKS", "2"))
+
+function run_mpi_tests(files; ranks=[1, 2], timeout=1200, cap=max_test_ranks())
+    skipped = filter(>(cap), ranks)
+    ranks = filter(<=(cap), ranks)
+    isempty(skipped) || @testset "mpi $file n=$n" for file ∈ files, n ∈ skipped
+        @info "skipped: $file at $n ranks (XCALIBRE_TEST_MAX_RANKS=$cap)"
+        @test_skip n <= cap
+    end
+    isempty(ranks) && return nothing
     dir = @__DIR__
     project = dirname(Base.active_project())
     julia = Base.julia_cmd()
     # precompile serially first: parallel first-use of the same cache races
-    run(`$julia --project=$project --startup-file=no -e "using XCALibre, MPI, PETSc, Test"`)
+    _PRECOMPILED[] || run(`$julia --project=$project --startup-file=no -e "using XCALibre, MPI, PETSc, Test"`)
+    _PRECOMPILED[] = true
     # the outer set keeps a failing (file, n) from aborting the rest: a top-level for-testset
     # throws at the end of the iteration that fails
     @testset "distributed suite" begin

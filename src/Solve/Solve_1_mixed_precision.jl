@@ -196,9 +196,8 @@ end
 
 # NEW SECTION: correction solve
 
-# x += d per correction until ‖b - Ax‖ ≤ max(atol, rtol·‖b - Ax₀‖); a single correction unless rtol
-# is below what the low precision attains. Returns the total Krylov iteration count, whether the
-# tolerance was met and, when not, why
+# x += d per correction until ‖b - Ax‖ ≤ max(atol, rtol·‖b - Ax₀‖), one unless rtol is below what the
+# low precision attains; returns the total Krylov iterations, whether the target was met, and why not
 function mixed_solve!(ws::MixedWorkspace, A, b, values, setup, config, mesh)
     (; atol, rtol) = setup
     inner_rtol = max(rtol, _attainable_rtol(ws.precision))

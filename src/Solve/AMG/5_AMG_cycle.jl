@@ -75,7 +75,7 @@ function LinearAlgebra.mul!(y, A::_AMGCoarseOp, x)
     return y
 end
 
-mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ}
+mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ,C}
     workspace::WS
     op::OP
     M::M
@@ -85,6 +85,7 @@ mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ}
     nzval::NZ
     total_iters::Int
     calls::Int
+    c::C        # retry shadow vector for BiCGStab/CGS (`nothing` for other solvers)
 end
 
 _amg_krylov_solver_for(cs::OnDeviceKrylov, A) =
@@ -93,8 +94,16 @@ _amg_krylov_coarse_solver(cs::OnDeviceKrylov, hierarchy) =
     _amg_krylov_solver_for(cs, hierarchy.host_levels[end].A)
 
 function _apply_coarse_direct!(x, kb::AMGKrylovCoarse, b)
-    krylov_solve!(kb.workspace, kb.op, b; M=kb.M, ldiv=false, atol=kb.atol, rtol=kb.rtol, itmax=kb.itmax)
-    copyto!(x, Krylov.solution(kb.workspace))
+    kw = (; M=kb.M, ldiv=false, atol=kb.atol, rtol=kb.rtol, itmax=kb.itmax)
+    krylov_solve!(kb.workspace, kb.op, b; kw...)
+    # shadow-vector breakdown (see `_broke_down`): retry with the dense shadow, else no correction
+    _broke_down(kb.workspace, kb.itmax) &&
+        krylov_solve!(kb.workspace, kb.op, b; c=_fallback_shadow!(kb.c), kw...)
+    if _broke_down(kb.workspace, kb.itmax)
+        fill!(x, zero(eltype(x)))
+    else
+        copyto!(x, Krylov.solution(kb.workspace))
+    end
     kb.total_iters += Krylov.iteration_count(kb.workspace)
     kb.calls += 1
     return x
@@ -175,7 +184,8 @@ function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDeviceKrylov)
     solver_choice = _amg_krylov_coarse_solver(cs, hierarchy)
     op = _AMGCoarseOp(_rowptr(level.A), _colval(level.A), _nzval(level.A), n, n, hierarchy.backend, hierarchy.workgroup)
     ws = _workspace(solver_choice, level.rhs)
-    hierarchy.coarse_inv[] = AMGKrylovCoarse(ws, op, Diagonal(level.inv_diagonal), cs.rtol, cs.atol, cs.itmax, _nzval(level.A), 0, 0)
+    c = ws isa _ShadowWorkspace ? similar(level.rhs) : nothing
+    hierarchy.coarse_inv[] = AMGKrylovCoarse(ws, op, Diagonal(level.inv_diagonal), cs.rtol, cs.atol, cs.itmax, _nzval(level.A), 0, 0, c)
     return hierarchy
 end
 

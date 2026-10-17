@@ -21,3 +21,33 @@ _krylov_vector(v) = v
 _like_workspace(::XVector, v::Vector) = XVector(v)
 _like_workspace(_, v) = v
 _index_type(A) = eltype(_rowptr(A))
+# NEW SECTION: shadow-vector breakdown
+
+# BiCGStab and CGS divide by ⟨c, r⟩ and ⟨c, Ap⟩ for their shadow vector c. Both vanish together
+# (0/0) once the residual is orthogonal to c, e.g. when b - Ax₀ is nonzero in a few cells only and
+# the matrix couples those cells one way (upwind convection): one step later the residual has left
+# the cells c covers. Krylov.jl flags the breakdown after the 0/0 step has reached x, so the caller
+# re-solves from x₀ with the dense shadow `_fallback_shadow!`.
+const _ShadowWorkspace = Union{BicgstabWorkspace, CgsWorkspace}
+
+_broke_down(workspace, itmax) = false
+function _broke_down(workspace::_ShadowWorkspace, itmax)
+    Krylov.issolved(workspace) && return false
+    # not solved before the iteration limit (Krylov.jl reads itmax = 0 as 2n): a breakdown
+    limit = iszero(itmax) ? 2*length(workspace.x) : itmax
+    return Krylov.iteration_count(workspace) < limit
+end
+
+# positive, non-constant and the same on every run and backend: it is not orthogonal to any
+# residual that solves meet in practice, and keeps threaded runs bit-reproducible
+function _fallback_shadow!(c)
+    data = c isa XVector ? parent(c) : c
+    kernel! = _sized(_fallback_shadow_kernel!, get_backend(data), 256, length(data))
+    kernel!(data)
+    return c
+end
+
+@kernel function _fallback_shadow_kernel!(c)
+    i = @index(Global)
+    @inbounds c[i] = convert(eltype(c), 0.5f0 + Float32((i*40503) & 65535)/65536f0)
+end

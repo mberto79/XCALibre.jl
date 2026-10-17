@@ -371,15 +371,27 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
     ldiv = is_ldiv(precon)
+    bw, x0 = _like_workspace(x, b), _like_workspace(x, values)
     krylov_solve!(
-        solver, opA, _like_workspace(x, b), _like_workspace(x, values);
+        solver, opA, bw, x0;
         _shadow(solver, P, ldiv, phiEqn, values, b, config)...,
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
         )
+    # values still hold x₀: re-solve from there with a dense shadow (Fx is scratch until `residual`)
+    if _broke_down(solver, itmax)
+        krylov_solve!(
+            solver, opA, bw, x0; c=_fallback_shadow!(_like_workspace(x, phiEqn.equation.Fx)),
+            M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
+            )
+    end
 
-    ndrange = length(values)
-    kernel! = _sized(_copy!, backend, workgroup, ndrange)
-    kernel!(values, x)
+    if _broke_down(solver, itmax)
+        @warn "$(nameof(typeof(solver))) broke down twice; the field keeps its previous values" maxlog=10
+    else
+        ndrange = length(values)
+        kernel! = _sized(_copy!, backend, workgroup, ndrange)
+        kernel!(values, x)
+    end
 
     iterations = Krylov.iteration_count(solver)
     iterations == itmax && @warn "Maximum number of iterations reached!"

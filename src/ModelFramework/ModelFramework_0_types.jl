@@ -1,6 +1,6 @@
 export AbstractOperator, AbstractSource, AbstractEquation   
 export Operator, Source, Src
-export Time, Laplacian, Divergence, Si
+export Time, Laplacian, Divergence, Si, time_operator
 export Model, ScalarEquation, VectorEquation, ModelEquation, ScalarModel, VectorModel
 export nzval_index
 export spindex, spindex_csc
@@ -15,20 +15,31 @@ abstract type AbstractEquation end
 
 # Base Operator
 
-struct Operator{F,P,S,T} <: AbstractOperator
+# `grad` holds the cell gradient of `phi` for schemes that reconstruct face values (`nothing` otherwise)
+struct Operator{F,P,S,T,G} <: AbstractOperator
     flux::F
     phi::P 
     sign::S
     type::T
+    grad::G
 end
 Adapt.@adapt_structure Operator
+Operator(flux, phi, sign, type) = Operator(flux, phi, sign, type, nothing)
 
 # operators
 
-struct Time{T} end
-function Adapt.adapt_structure(to, itp::Time{T}) where {T}
-    Time{T}()
+# `state` holds the old time levels of schemes that keep them (`nothing` otherwise)
+struct Time{T,S}
+    state::S
 end
+Time{T}() where T = Time{T,Nothing}(nothing)
+function Adapt.adapt_structure(to, itp::Time{T}) where {T}
+    state = adapt(to, itp.state)
+    Time{T,typeof(state)}(state)
+end
+
+# the Time operator of scheme T for field phi; schemes with old levels extend it
+time_operator(T, phi) = Time{T}()
 
 struct Laplacian{T} end
 function Adapt.adapt_structure(to, itp::Laplacian{T}) where {T}
@@ -48,11 +59,11 @@ end
 # constructors
 
 Time{T}(flux, phi) where T = Operator(
-    flux, phi, 1, Time{T}()
+    flux, phi, 1, time_operator(T, phi)
     )
 
 Time{T}(phi) where T = Operator(
-    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, Time{T}()
+    ConstantScalar(one(_get_int(phi.mesh))), phi, 1, time_operator(T, phi)
     )
 
 Laplacian{T}(flux, phi) where T = Operator(
@@ -62,6 +73,9 @@ Laplacian{T}(flux, phi) where T = Operator(
 Divergence{T}(flux, phi) where T = Operator(
     flux, phi, 1, Divergence{T}()
     )
+
+# schemes without a face reconstruction ignore the gradient (see `LinearUpwind`)
+Divergence{T}(flux, phi, grad) where T = Divergence{T}(flux, phi)
 
 Si(flux, phi) = Operator(
     flux, phi, 1, Si()

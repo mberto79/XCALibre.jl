@@ -327,14 +327,11 @@ function write_results(
                 println(io, "boundaryField")
                 println(io, "{")
                 if suffix === nothing 
-                    fieldBCs = getproperty(BCs, Symbol(label))
+                    fieldBCs = _field_bcs(BCs, label, boundaries_cpu)
                 elseif suffix == ""
-                    fieldBCs = getproperty(BCs, :p)
+                    fieldBCs = _postprocess_bcs(BCs, label, field, boundaries_cpu)
                 end
-                for BC ∈ fieldBCs
-                    println(io, "\t", boundaries_cpu[BC.ID].name)
-                    println(io, _foam_boundary_entry(BC))
-                end
+                _write_patch_entries(io, fieldBCs, boundaries_cpu)
                 println(io, "}")
             end
         elseif field_type <: VectorField
@@ -363,14 +360,11 @@ function write_results(
                 println(io, "boundaryField")
                 println(io, "{")
                 if suffix === nothing 
-                    fieldBCs = getproperty(BCs, Symbol(label))
+                    fieldBCs = _field_bcs(BCs, label, boundaries_cpu)
                 elseif suffix == ""
-                    fieldBCs = getproperty(BCs, :U)
+                    fieldBCs = _postprocess_bcs(BCs, label, field, boundaries_cpu)
                 end
-                for BC ∈ fieldBCs
-                    println(io, "\t", boundaries_cpu[BC.ID].name)
-                    println(io, _foam_boundary_entry(BC))
-                end
+                _write_patch_entries(io, fieldBCs, boundaries_cpu)
                 println(io, "}")
             end
         else
@@ -378,6 +372,25 @@ function write_results(
             Input data should be a ScalarField or VectorField e.g. ("U", U)
             """)
         end
+    end
+end
+
+# A field without boundary conditions of its own (density, MeshWave wall distance) is written
+# zero-gradient on every mesh patch: a bare (; ID) takes the catch-all _foam_boundary_entry
+_field_bcs(BCs, label, boundaries) = hasproperty(BCs, Symbol(label)) ?
+    getproperty(BCs, Symbol(label)) : ((; ID) for ID ∈ eachindex(boundaries))
+
+# post-processed fields (suffix "") take the patch types of p (scalars) or U (vectors); cases
+# without that field write them zero-gradient
+function _postprocess_bcs(BCs, label, field, boundaries)
+    name = field isa ScalarField ? :p : :U
+    hasproperty(BCs, name) ? getproperty(BCs, name) : _field_bcs(BCs, label, boundaries)
+end
+
+function _write_patch_entries(io, fieldBCs, boundaries_cpu)
+    for BC ∈ fieldBCs
+        println(io, "\t", boundaries_cpu[BC.ID].name)
+        println(io, _foam_boundary_entry(BC))
     end
 end
 

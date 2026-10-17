@@ -17,7 +17,8 @@ function bound!(field, work, config)
     ndrange = length(values)
     kernel! = _sized(_bound!, backend, workgroup, ndrange)
     kernel!(values, work, cells, cell_neighbours)
-    # KernelAbstractions.synchronize(backend)
+    # a ghost cell sees only part of its neighbours, so it takes its owner's bounded value
+    sync!(field, mesh, config) # no-op serial
 end
 
 @kernel function _bound!(values, unbounded, cells, cell_neighbours)
@@ -154,52 +155,48 @@ function set_production!(sums, counts, BC::KWallFunction, model, gradU, config)
     
     # Deconstruct mesh to required fields
     mesh = model.domain
-    (; faces, boundary_cellsID, boundaries) = mesh
+    (; faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
 
     # Extract physics models
     (; fluid, momentum, turbulence) = model
 
-    # facesID_range = get_boundaries(BC, boundaries)
-    # boundaries_cpu = get_boundaries(boundaries)
-    # facesID_range = boundaries_cpu[BC.ID].IDs_range
-    facesID_range = BC.IDs_range
-    start_ID = facesID_range[1]
-
-    # Execute apply boundary conditions kernel
-    ndrange = length(facesID_range)
+    # one work item per boundary cell sums its faces of this patch in face order (deterministic)
+    ndrange = length(boundary_cells)
     kernel! = _set_production!(backend)
     kernel!(
-        sums, counts, BC, fluid, momentum, turbulence, faces, boundary_cellsID,
-        start_ID, gradU;
+        sums, counts, BC, fluid, momentum, turbulence, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces, gradU;
         _dynamic_setup(backend, workgroup, ndrange)...
     )
 end
 
 @kernel function _set_production!(
     sums, counts, BC::KWallFunction, fluid, momentum, turbulence, faces,
-    boundary_cellsID, start_ID, gradU)
-    i = @index(Global)
-    fID = i + start_ID - 1 # Redefine thread index to become face ID
+    boundary_cells, boundary_cell_faces_range, boundary_cell_faces, gradU)
+    j = @index(Global)
+    cID = boundary_cells[j]
+    for kf ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[kf]
+        fID ∈ BC.IDs_range || continue
 
-    (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
-    (; nu, rho) = fluid
-    (; U, Uf) = momentum
-    (; k, nut) = turbulence
+        (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
+        (; nu, rho) = fluid
+        (; U, Uf) = momentum
+        (; k, nut) = turbulence
 
-    cID = boundary_cellsID[fID]
-    face = faces[fID]
-    nuc = nu[cID]
-    (; delta, normal)= face
-    y = wall_normal_distance(face) # wall distance; delta (floored) stays in the face snGrad
-    uStar = cmu^eltype(sums)(0.25)*sqrt(k[cID])
-    dUdy = uStar/(kappa*y)
-    yplus = y_plus(k[cID], nuc, y, cmu)
-    nutw = nut_wall(nuc, yplus, kappa, E)
-    Uw = Uf[fID]
-    mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
-    Pf = yplus > yPlusLam ? rho[cID]*(nu[cID] + nutw)*mag_grad_U*dUdy : zero(eltype(sums))
-    Atomix.@atomic sums[cID] += Pf
-    Atomix.@atomic counts[cID] += one(eltype(counts))
+        face = faces[fID]
+        nuc = nu[cID]
+        (; delta, normal)= face
+        y = wall_normal_distance(face) # wall distance; delta (floored) stays in the face snGrad
+        uStar = cmu^eltype(sums)(0.25)*sqrt(k[cID])
+        dUdy = uStar/(kappa*y)
+        yplus = y_plus(k[cID], nuc, y, cmu)
+        nutw = nut_wall(nuc, yplus, kappa, E)
+        Uw = Uf[fID]
+        mag_grad_U = mag(sngrad(U[cID], Uw, delta, normal))
+        Pf = yplus > yPlusLam ? rho[cID]*(nu[cID] + nutw)*mag_grad_U*dUdy : zero(eltype(sums))
+        sums[cID] += Pf
+        counts[cID] += one(eltype(counts))
+    end
 end
 
 # Only the mixing-length variant writes a cell value, so the averaging phases are
@@ -278,59 +275,61 @@ function correct_nut_wall!(νtf, BC::NutMixingLengthWallFunction, sums, counts, 
     (; backend, workgroup) = hardware
 
     mesh = model.domain
-    (; faces, boundary_cellsID) = mesh
+    (; faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
     (; fluid, momentum, turbulence) = model
 
-    facesID_range = BC.IDs_range
-    start_ID = facesID_range[1]
-
-    ndrange = length(facesID_range)
+    # one work item per boundary cell sums its faces of this patch in face order (deterministic)
+    ndrange = length(boundary_cells)
     kernel! = _correct_nut_wall_mixing_length!(backend)
     kernel!(νtf.values, sums, counts, fluid, momentum, turbulence, BC, faces,
-        boundary_cellsID, start_ID; _dynamic_setup(backend, workgroup, ndrange)...)
+        boundary_cells, boundary_cell_faces_range, boundary_cell_faces; _dynamic_setup(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_nut_wall_mixing_length!(
-    values, sums, counts, fluid, momentum, turbulence, BC::NutMixingLengthWallFunction, faces, boundary_cellsID, start_ID)
-    i = @index(Global)
-    fID = i + start_ID - 1
+    values, sums, counts, fluid, momentum, turbulence, BC::NutMixingLengthWallFunction, faces,
+    boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
+    cID = boundary_cells[j]
+    for kf ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[kf]
+        fID ∈ BC.IDs_range || continue
 
-    (; kappa, E, yPlusLam) = BC.value
-    (; nu) = fluid
-    (; U) = momentum
-    (; nut) = turbulence
+        (; kappa, E, yPlusLam) = BC.value
+        (; nu) = fluid
+        (; U) = momentum
+        (; nut) = turbulence
 
-    cID = boundary_cellsID[fID]
-    face = faces[fID]
-    (; normal) = face
-    delta = wall_normal_distance(face) # wall distance of the cell centre
-    nuc = nu[cID]
+        face = faces[fID]
+        (; normal) = face
+        delta = wall_normal_distance(face) # wall distance of the cell centre
+        nuc = nu[cID]
 
-    # Tangential velocity magnitude at cell centre (wall velocity = 0)
-    Ucell = U[cID]
-    U_tang = Ucell - (Ucell ⋅ normal) * normal
-    U_tang_mag = mag(U_tang)
+        # Tangential velocity magnitude at cell centre (wall velocity = 0)
+        Ucell = U[cID]
+        U_tang = Ucell - (Ucell ⋅ normal) * normal
+        U_tang_mag = mag(U_tang)
 
-    # Newton iteration: solve U_tang_mag = (u_tau/kappa)*ln(E*u_tau*delta/nu) for u_tau
-    # Initial guess from viscous sublayer: u_tau ≈ sqrt(nu*|U_t|/delta)
-    u_tau = sqrt(nuc * U_tang_mag / delta + eltype(values)(1e-20))
-    for _ in 1:10
-        yp  = u_tau * delta / nuc
-        lv  = log(max(E * yp, eltype(values)(1.0 + 1e-4)))
-        f   = U_tang_mag * kappa - u_tau * lv
-        df  = -(lv + one(eltype(values)))
-        u_tau = max(u_tau - f / df, eltype(values)(1e-20))
-    end
+        # Newton iteration: solve U_tang_mag = (u_tau/kappa)*ln(E*u_tau*delta/nu) for u_tau
+        # Initial guess from viscous sublayer: u_tau ≈ sqrt(nu*|U_t|/delta)
+        u_tau = sqrt(nuc * U_tang_mag / delta + eltype(values)(1e-20))
+        for _ in 1:10
+            yp  = u_tau * delta / nuc
+            lv  = log(max(E * yp, eltype(values)(1.0 + 1e-4)))
+            f   = U_tang_mag * kappa - u_tau * lv
+            df  = -(lv + one(eltype(values)))
+            u_tau = max(u_tau - f / df, eltype(values)(1e-20))
+        end
 
-    yplus = u_tau * delta / nuc
-    nutw  = nut_wall(nuc, yplus, kappa, E)
+        yplus = u_tau * delta / nuc
+        nutw  = nut_wall(nuc, yplus, kappa, E)
 
-    if yplus > yPlusLam
-        values[fID] = nutw
-        Atomix.@atomic sums[cID] += nutw
-        Atomix.@atomic counts[cID] += one(eltype(counts))
-    else
-        values[fID] = zero(eltype(values))
+        if yplus > yPlusLam
+            values[fID] = nutw
+            sums[cID] += nutw
+            counts[cID] += one(eltype(counts))
+        else
+            values[fID] = zero(eltype(values))
+        end
     end
 end
 
@@ -390,53 +389,45 @@ function constrain!(sums, counts, BC::OmegaWallFunction, model, config)
 
     # Deconstruct mesh to required fields
     mesh = model.domain
-    (; faces, boundaries, boundary_cellsID) = mesh
+    (; faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
 
     fluid = model.fluid 
     # turbFields = model.turbulence.fields
     turbulence = model.turbulence
 
-    # facesID_range = get_boundaries(BC, boundaries)
-    # boundaries_cpu = get_boundaries(boundaries)
-    # facesID_range = boundaries_cpu[BC.ID].IDs_range
-    facesID_range = BC.IDs_range
-    start_ID = facesID_range[1]
-
-    # Execute apply boundary conditions kernel
-    ndrange = length(facesID_range)
+    # one work item per boundary cell sums its faces of this patch in face order (deterministic)
+    ndrange = length(boundary_cells)
     kernel! = _constrain!(backend)
     kernel!(
-        turbulence, fluid, BC, faces, start_ID, boundary_cellsID, sums, counts;
+        turbulence, fluid, BC, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces, sums, counts;
         _dynamic_setup(backend, workgroup, ndrange)...
     )
 end
 
-@kernel function _constrain!(turbulence, fluid, BC::OmegaWallFunction, faces, start_ID, boundary_cellsID, sums, counts)
-    i = @index(Global)
-    fID = i + start_ID - 1 # Redefine thread index to become face ID
+@kernel function _constrain!(turbulence, fluid, BC::OmegaWallFunction, faces,
+    boundary_cells, boundary_cell_faces_range, boundary_cell_faces, sums, counts)
+    j = @index(Global)
 
     @uniform begin
         nu = fluid.nu
         k = turbulence.k
         (; kappa, beta1, cmu, B, E, yPlusLam) = BC.value
     end
-    ωc = zero(eltype(sums))
-
     @inbounds begin
-        cID = boundary_cellsID[fID]
-        face = faces[fID]
-        y = wall_normal_distance(face)
-        ωvis = ω_vis(nu[cID], y, beta1)
-        ωlog = ω_log(k[cID], y, cmu, kappa)
-        yplus = y_plus(k[cID], nu[cID], y, cmu) 
+        cID = boundary_cells[j]
+        for kf ∈ boundary_cell_faces_range[j]
+            fID = boundary_cell_faces[kf]
+            fID ∈ BC.IDs_range || continue
+            face = faces[fID]
+            y = wall_normal_distance(face)
+            ωvis = ω_vis(nu[cID], y, beta1)
+            ωlog = ω_log(k[cID], y, cmu, kappa)
+            yplus = y_plus(k[cID], nu[cID], y, cmu)
 
-        if yplus > yPlusLam 
-            ωc = ωlog
-        else
-            ωc = ωvis
+            ωc = yplus > yPlusLam ? ωlog : ωvis
+            sums[cID] += ωc
+            counts[cID] += one(eltype(counts))
         end
-        Atomix.@atomic sums[cID] += ωc
-        Atomix.@atomic counts[cID] += one(eltype(counts))
     end
 end
 

@@ -265,162 +265,78 @@ function periodic_matrix_connectivity(BC::PeriodicParent, mesh)
     return i, j
 end
 
-@define_boundary Periodic Laplacian{Linear} begin
-    zero(TF), zero(TF)
+# the parent face and cell of the pair, and the cell across, seen from either patch
+@inline function _periodic_pair(bc::AbstractPeriodic, faces, cellID, fID, i)
+    pfID = bc.value.face_map[i] # face on the other side
+    pcellID = faces.ownerCells[pfID][1]
+    bc isa PeriodicParent ? (fID, cellID, pcellID) : (pfID, pcellID, cellID)
 end
 
-# @define_boundary Union{PeriodicParent,Periodic} Laplacian{Linear} begin
-@define_boundary PeriodicParent Laplacian{Linear} begin
+# Both patches take the parent face's coefficients; each writes only its own row (one writer per
+# entry). Parent cell P, cell C across: row P gets A[P,P] += ac, A[P,C] += an; row C gets
+# A[C,C] += -an, A[C,P] += -ac. Returns this side's diagonal (b gets nothing).
+@inline function _periodic_row!(bc::AbstractPeriodic, nzval, rowptr, colval, cellID, fP, cP, cC, ac, an)
+    if bc isa PeriodicParent
+        nzval[spindex(rowptr, colval, cellID, cC)] += an
+        return ac, zero(ac)
+    else
+        nzval[spindex(rowptr, colval, cellID, cP)] += -ac
+        return -an, zero(an)
+    end
+end
 
-    phi = term.phi
-    mesh = phi.mesh 
-    (; faces, cells) = mesh
-    values = get_values(phi, component)
+# linear interpolation weights of the parent cell (w) and the cell across (wn) at the parent face
+@inline function _periodic_weights(bc, cells, faces, fP, cP, cC)
+    C1 = cells.centre[cP]
+    C2 = cells.centre[cC] - bc.value.transform.distance
+    n = faces.normal[fP]
+    wn = ((faces.centre[fP] - C1)⋅n)/((C2 - C1)⋅n)
+    one(wn) - wn, wn
+end
+
+@define_boundary Union{PeriodicParent,Periodic} Laplacian{Linear} begin
+    fP, cP, cC = _periodic_pair(bc, faces, cellID, fID, i)
     (; transform) = bc.value
-    
-    area, normal, e = faces.area[fID], faces.normal[fID], faces.e[fID]
-
-    # determine id of periodic cell and interpolate face value
-    pfID = bc.value.face_map[i] # id of periodic face 
-    pface = faces[pfID]
-    pcellID = pface.ownerCells[1]
-    C1 = cells.centre[cellID]
-    C2 = cells[pcellID].centre - transform.distance
+    area, normal, e = faces.area[fP], faces.normal[fP], faces.e[fP]
 
     # for improved accuracy this needs to include the discretisation used for noncorrection
-    d = C2 - C1
+    d = (cells.centre[cC] - transform.distance) - cells.centre[cP]
     Δ = norm(d)
     Sf = area*normal # no need to flip normal direction - outwards by mesh contract
-    Af = norm(Sf)
-    
-    
+
     # Use form below to ensure correctness, could be simplified for performance
-    e = e # original
-    Ef = ((Sf⋅Sf)/(Sf⋅e))*e # original
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
     Ef_mag = norm(Ef)
-    gamma = -term.sign*(term.flux[fID]*Ef_mag)/Δ
+    gamma = -term.sign*(term.flux[fP]*Ef_mag)/Δ
 
-
-    NN = spindex(rowptr, colval, pcellID, pcellID)
-    Atomix.@atomic nzval[NN] += gamma
-
-    NP = spindex(rowptr, colval, pcellID, cellID)
-    Atomix.@atomic nzval[NP] += -gamma
-
-    PN = spindex(rowptr, colval, cellID, pcellID)
-    Atomix.@atomic nzval[PN] += -gamma
-
-    gamma, zero(gamma) # PP assigned first value returned
+    _periodic_row!(bc, nzval, rowptr, colval, cellID, fP, cP, cC, gamma, -gamma)
 end
 
-@define_boundary Periodic Divergence{Linear} begin
-    0.0, 0.0
-end
-
-@define_boundary PeriodicParent Divergence{Linear} begin
-    phi = term.phi
-    mesh = phi.mesh 
-    (; faces, cells) = mesh
-    values = get_values(phi, component)
-    (; transform) = bc.value
-
-    # determine id of periodic cell and interpolate face value
-    pfID = bc.value.face_map[i] # id of periodic face 
-    pface = faces[pfID]
-    pcellID = pface.ownerCells[1]
-    C1 = cells.centre[cellID]
-    C2 = cells[pcellID].centre - transform.distance
-    Cf = faces.centre[fID]
-    n = faces.normal[fID]
-
-    Pf = Cf - C1
-    PN = C2 - C1 
-
-    wn = (Pf⋅n)/(PN⋅n)
-    w = one(wn) - wn
-    # w = pface.delta/(faces.delta[fID] + pface.delta)
-    # wn = one(w) - w
+@define_boundary Union{PeriodicParent,Periodic} Divergence{Linear} begin
+    fP, cP, cC = _periodic_pair(bc, faces, cellID, fID, i)
+    w, wn = _periodic_weights(bc, cells, faces, fP, cP, cC)
 
     # Calculate link coefficients
-    ap = term.sign*(term.flux[fID])
-    ac = ap*w
-    an = ap*wn
-
-    NN = spindex(rowptr, colval, pcellID, pcellID)
-    NP = spindex(rowptr, colval, pcellID, cellID)
-    PN = spindex(rowptr, colval, cellID, pcellID)
-    
-    # handle shadow cell first
-    Atomix.@atomic nzval[NN] += -an 
-    Atomix.@atomic nzval[NP] += -ac
-
-    # now handle master cell 
-    Atomix.@atomic nzval[PN] += an
-    ac, zero(ac)
+    ap = term.sign*(term.flux[fP])
+    _periodic_row!(bc, nzval, rowptr, colval, cellID, fP, cP, cC, ap*w, ap*wn)
 end
 
-@define_boundary Periodic Divergence{Upwind} begin
-    0.0, 0.0
-end
-# @define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
-@define_boundary PeriodicParent Divergence{Upwind} begin
-    phi = term.phi
-    mesh = phi.mesh 
-    (; faces, cells) = mesh
-    values = get_values(phi, component)
-    (; transform) = bc.value
+@define_boundary Union{PeriodicParent,Periodic} Divergence{Upwind} begin
+    fP, cP, cC = _periodic_pair(bc, faces, cellID, fID, i)
 
-    # determine id of periodic cell and interpolate face value
-    pfID = bc.value.face_map[i] # id of periodic face 
-    pface = faces[pfID]
-    pcellID = pface.ownerCells[1]
-
-    mdot = term.sign*(term.flux[fID])
+    mdot = term.sign*(term.flux[fP])
     z = zero(mdot)
     ap = max(mdot, z) # flow leaves master
     an = -max(-mdot, z) # flow leaves shadow
-
-    NN = spindex(rowptr, colval, pcellID, pcellID)
-    NP = spindex(rowptr, colval, pcellID, cellID)
-    PN = spindex(rowptr, colval, cellID, pcellID)
-    
-    # handle shadow cell first
-    Atomix.@atomic nzval[NN] += -an
-    Atomix.@atomic nzval[NP] += -ap
-
-    # now handle master cell 
-    Atomix.@atomic nzval[PN] += an
-    ap, zero(ap)
+    _periodic_row!(bc, nzval, rowptr, colval, cellID, fP, cP, cC, ap, an)
 end
 
-@define_boundary Periodic Divergence{LUST} begin
-    0.0, 0.0
-end
-
-@define_boundary PeriodicParent Divergence{LUST} begin
-    phi = term.phi
-    mesh = phi.mesh 
-    (; faces, cells) = mesh
-    values = get_values(phi, component)
-    (; transform) = bc.value
-
-    # determine id of periodic cell and interpolate face value
-    pfID = bc.value.face_map[i] # id of periodic face 
-    pface = faces[pfID]
-    pcellID = pface.ownerCells[1]
-    C1 = cells.centre[cellID]
-    C2 = cells[pcellID].centre - transform.distance
-    Cf = faces.centre[fID]
-    n = faces.normal[fID]
-
-    Pf = Cf - C1
-    PN = C2 - C1 
-
-    wn = (Pf⋅n)/(PN⋅n)
-    w = one(wn) - wn
+@define_boundary Union{PeriodicParent,Periodic} Divergence{LUST} begin
+    fP, cP, cC = _periodic_pair(bc, faces, cellID, fID, i)
+    w, wn = _periodic_weights(bc, cells, faces, fP, cP, cC)
 
     # Calculate link coefficients
-    mdot = term.sign*(term.flux[fID])
+    mdot = term.sign*(term.flux[fP])
     acLinear = mdot*w 
     anLinear = mdot*wn
     z = zero(mdot)
@@ -430,19 +346,36 @@ end
     quarter = TF(0.25)
     ac = three_quarters*acLinear + quarter*acUpwind
     an = three_quarters*anLinear + quarter*anUpwind
-
-    NN = spindex(rowptr, colval, pcellID, pcellID)
-    NP = spindex(rowptr, colval, pcellID, cellID)
-    PN = spindex(rowptr, colval, cellID, pcellID)
-    
-    # handle shadow cell first
-    Atomix.@atomic nzval[NN] += -an
-    Atomix.@atomic nzval[NP] += -ac
-
-    # now handle master cell 
-    Atomix.@atomic nzval[PN] += an
-    ac, zero(ac)
+    _periodic_row!(bc, nzval, rowptr, colval, cellID, fP, cP, cC, ac, an)
 end
+
+# LUSTLU: LUST coefficients plus the explicit correction of the upwind quarter. Both sides take the
+# flux of the parent face, and each adds the correction to its own cell (the kernel writes b only there)
+@inline function (bc::AbstractPeriodic)(
+    term::Operator{F,P,I,Divergence{LUSTLU}}, colval, rowptr, nzval, cellID, zcellID,
+    cells::AbstractVector{<:Cell{TF}}, faces, fID, i, component, time
+    ) where {F,P,I,TF}
+    ap, bp = bc(_lust(term), colval, rowptr, nzval, cellID, zcellID, cells, faces, fID, i, component, time)
+    ap, bp + _periodic_lustlu_source(bc, term, term.grad, cells, faces, cellID, fID, i, component)
+end
+
+_periodic_lustlu_source(bc, term, grad::Nothing, cells::AbstractVector{<:Cell{TF}}, faces, cellID, fID, i, component) where TF = zero(TF)
+
+@inline function _periodic_lustlu_source(
+    bc, term, grad, cells::AbstractVector{<:Cell{TF}}, faces, cellID, fID, i, component) where TF
+    pfID = bc.value.face_map[i] # face on the other side
+    pcellID = faces.ownerCells[pfID][1]
+    isparent = bc isa PeriodicParent
+    fP, cP, fC, cC = isparent ? (fID, cellID, pfID, pcellID) : (pfID, pcellID, fID, cellID)
+    flux = term.sign*term.flux[fP] # out of the parent cell
+    fU, uID = flux > zero(flux) ? (fP, cP) : (fC, cC)
+    δ = _component(_reconstruct(grad[uID], faces.centre[fU] - cells.centre[uID]), component)
+    source = -flux*TF(0.25)*δ # into the parent cell
+    isparent ? source : -source
+end
+
+@inline _component(δ, ::Nothing) = δ
+@inline _component(δ, component) = δ[component.value]
 
 @define_boundary Union{PeriodicParent,Periodic} Si begin
     0.0, 0.0

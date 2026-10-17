@@ -20,11 +20,12 @@ using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
 import XCALibre.Fields: field_values, transpose_values
-import XCALibre.Calculate: _kernel_values, _boundary_sngrad, _patch_gradient
+import XCALibre.Calculate: _kernel_values, _boundary_sngrad, _patch_gradient, div_tensor_periodic!
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
+using XCALibre.Solve: MinDt, MeanDt, MaxDt
 using XCALibre.Calculate
 using XCALibre.ModelPhysics
 using XCALibre.IOFormats

@@ -1,28 +1,39 @@
 # NEW SECTION
 
-@kernel function _amg_rap_scatter_recompute_kernel!(dst_nz, @Const(src_rowptr), @Const(src_colval),
-                                                    @Const(src_nzval), @Const(row_macro),
-                                                    @Const(coarse_pos), @Const(inv_sqrt_w),
-                                                    @Const(tgt_rowptr), @Const(tgt_colval))
-    i = @index(Global)
+# binary search of column J in target row [lo, hi] (the pattern is checked by _assert_rap_total)
+@inline function _amg_slot(tgt_colval, lo, hi, J)
+    p = lo
+    @inbounds while lo <= hi
+        mid = (lo + hi) >> 1; cv = Int(tgt_colval[mid])
+        if cv == J
+            p = mid; break
+        elseif cv < J
+            lo = mid + 1
+        else
+            hi = mid - 1
+        end
+    end
+    p
+end
+
+# Coarse rows are refreshed by gathering (one writer per entry, schedule-independent sums): one work
+# item per aggregate g, whose fine rows are the contiguous agg_offsets[g]:agg_offsets[g+1]-1
+@kernel function _amg_rap_gather_recompute_kernel!(dst_nz, @Const(src_rowptr), @Const(src_colval),
+                                                   @Const(src_nzval), @Const(row_macro),
+                                                   @Const(coarse_pos), @Const(inv_sqrt_w),
+                                                   @Const(agg_offsets),
+                                                   @Const(tgt_rowptr), @Const(tgt_colval))
+    g = @index(Global)
     T = eltype(dst_nz)
     @inbounds begin
-        gi = Int(row_macro[i]); I = Int(coarse_pos[gi]); swi = inv_sqrt_w[gi]
+        I = Int(coarse_pos[g]); swi = inv_sqrt_w[g]
         tlo = Int(tgt_rowptr[I]); thi = Int(tgt_rowptr[I + 1]) - 1
-        for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
-            j = Int(src_colval[s]); gj = Int(row_macro[j]); J = Int(coarse_pos[gj])
-            lo = tlo; hi = thi; p = tlo                       # binary search J in tgt row I
-            while lo <= hi
-                mid = (lo + hi) >> 1; cv = Int(tgt_colval[mid])
-                if cv == J
-                    p = mid; break
-                elseif cv < J
-                    lo = mid + 1
-                else
-                    hi = mid - 1
-                end
+        for i in Int(agg_offsets[g]):(Int(agg_offsets[g + 1]) - 1)
+            for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
+                j = Int(src_colval[s]); gj = Int(row_macro[j]); J = Int(coarse_pos[gj])
+                p = _amg_slot(tgt_colval, tlo, thi, J)
+                dst_nz[p] += T(swi * inv_sqrt_w[gj] * src_nzval[s])  # T cast: split precision (src/dst may differ)
             end
-            Atomix.@atomic dst_nz[p] += T(swi * inv_sqrt_w[gj] * src_nzval[s])  # T cast: split precision (src/dst may differ)
         end
     end
 end
@@ -63,59 +74,90 @@ end
     end
 end
 
-@kernel function _amg_rap_scatter_composed_kernel!(dst_nz, @Const(src_rowptr), @Const(src_colval),
-                                                   @Const(src_nzval), @Const(comp_dst), @Const(comp_s),
-                                                   @Const(tgt_rowptr), @Const(tgt_colval))
-    i = @index(Global)
+# composed maps (finest row -> row of a coarser level) gather per target row I over its finest rows
+# members[member_ptr[I]:member_ptr[I+1]-1] (ascending), built once by _amg_composed_members
+@kernel function _amg_rap_gather_composed_kernel!(dst_nz, @Const(src_rowptr), @Const(src_colval),
+                                                  @Const(src_nzval), @Const(comp_dst), @Const(comp_s),
+                                                  @Const(member_ptr), @Const(members),
+                                                  @Const(tgt_rowptr), @Const(tgt_colval))
+    I = @index(Global)
     T = eltype(dst_nz)
     @inbounds begin
-        I = Int(comp_dst[i]); si = comp_s[i]
         tlo = Int(tgt_rowptr[I]); thi = Int(tgt_rowptr[I + 1]) - 1
-        for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
-            j = Int(src_colval[s]); J = Int(comp_dst[j])
-            lo = tlo; hi = thi; p = tlo
-            while lo <= hi
-                mid = (lo + hi) >> 1; cv = Int(tgt_colval[mid])
-                if cv == J
-                    p = mid; break
-                elseif cv < J
-                    lo = mid + 1
-                else
-                    hi = mid - 1
-                end
+        for m in Int(member_ptr[I]):(Int(member_ptr[I + 1]) - 1)
+            i = Int(members[m]); si = comp_s[i]
+            for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
+                j = Int(src_colval[s]); J = Int(comp_dst[j])
+                p = _amg_slot(tgt_colval, tlo, thi, J)
+                dst_nz[p] += T(si * comp_s[j] * src_nzval[s])
             end
-            Atomix.@atomic dst_nz[p] += T(si * comp_s[j] * src_nzval[s])
         end
     end
 end
 
-@kernel function _amg_diag_scatter_composed_kernel!(d, @Const(src_rowptr), @Const(src_colval),
-                                                    @Const(src_nzval), @Const(comp_dst), @Const(comp_s))
-    i = @index(Global)
+@kernel function _amg_diag_gather_composed_kernel!(d, @Const(src_rowptr), @Const(src_colval),
+                                                   @Const(src_nzval), @Const(comp_dst), @Const(comp_s),
+                                                   @Const(member_ptr), @Const(members))
+    I = @index(Global)
     T = eltype(d)
     @inbounds begin
-        I = Int(comp_dst[i]); si = comp_s[i]
-        for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
-            j = Int(src_colval[s])
-            Int(comp_dst[j]) == I || continue
-            Atomix.@atomic d[I] += T(si * comp_s[j] * src_nzval[s])
+        for m in Int(member_ptr[I]):(Int(member_ptr[I + 1]) - 1)
+            i = Int(members[m]); si = comp_s[i]
+            for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
+                j = Int(src_colval[s])
+                Int(comp_dst[j]) == I || continue
+                d[I] += T(si * comp_s[j] * src_nzval[s])
+            end
         end
     end
 end
 
 # Cross-aggregate terms only; within-aggregate terms land on diagonal (caller adds |d_I|)
-@kernel function _amg_absrowsum_scatter_composed_kernel!(rs, @Const(src_rowptr), @Const(src_colval),
-                                                         @Const(src_nzval), @Const(comp_dst), @Const(comp_s))
-    i = @index(Global)
+@kernel function _amg_absrowsum_gather_composed_kernel!(rs, @Const(src_rowptr), @Const(src_colval),
+                                                        @Const(src_nzval), @Const(comp_dst), @Const(comp_s),
+                                                        @Const(member_ptr), @Const(members))
+    I = @index(Global)
     T = eltype(rs)
     @inbounds begin
-        I = Int(comp_dst[i]); si = comp_s[i]
-        for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
-            j = Int(src_colval[s])
-            Int(comp_dst[j]) == I && continue
-            Atomix.@atomic rs[I] += T(abs(si * comp_s[j] * src_nzval[s]))
+        for m in Int(member_ptr[I]):(Int(member_ptr[I + 1]) - 1)
+            i = Int(members[m]); si = comp_s[i]
+            for s in src_rowptr[i]:(src_rowptr[i + 1] - 1)
+                j = Int(src_colval[s])
+                Int(comp_dst[j]) == I && continue
+                rs[I] += T(abs(si * comp_s[j] * src_nzval[s]))
+            end
         end
     end
+end
+
+# finest rows of each row of level l + 1 under the composed map (l = 1..fused_top + 1), as
+# (member_ptr, members) with members ascending; the map is structural, so built once
+function _amg_composed_members(st::MatrixFreeHierarchy, dev)
+    ft = st.fused_top
+    ft > 0 || return Any[]
+    dst = collect(Int32, 1:st.levels[1].n)
+    out = Any[]
+    for l in 1:(ft + 1)
+        lv = st.levels[l]
+        rm = Array(lv.row_macro); cp = Array(lv.coarse_pos)
+        @inbounds for i in eachindex(dst)
+            dst[i] = cp[rm[dst[i]]]
+        end
+        nt = length(cp)
+        ptr = zeros(Int32, nt + 1)
+        @inbounds for I in dst
+            ptr[I + 1] += 1
+        end
+        ptr[1] = 1
+        cumsum!(ptr, ptr)
+        next = ptr[1:nt]
+        members = Vector{Int32}(undef, length(dst))
+        @inbounds for i in eachindex(dst) # ascending i: members stay sorted within a row
+            I = dst[i]; members[next[I]] = i; next[I] += 1
+        end
+        push!(out, (dev(ptr), dev(members)))
+    end
+    out
 end
 
 @kernel function _amg_invert_diag_kernel!(d)
@@ -148,6 +190,7 @@ mutable struct MatrixFreeRefreshPlan{DI, MA, HCS, VT}
     omega_nominal::VT
     comp_dst::Any
     comp_s::Any
+    comp_members::Vector{Any} # per composed stage: (member_ptr, members), see _amg_composed_members
     eig::Vector{Any}
     eig_warm::Vector{Bool}
 end
@@ -190,7 +233,8 @@ function build_refresh_plan(handle)
     comp_s = st.fused_top > 0 ? dev(zeros(T, n1)) : dev(T[])
     eig = Any[dev(zeros(eltype(lv.invdiag), lv.n)) for lv in st.levels]
     return MatrixFreeRefreshPlan(dev(handle.pvms[1]), coarsest_csr, coarsest_host,
-                         dev(T[st.omega_nominal]), comp_dst, comp_s, eig, fill(false, M))
+                         dev(T[st.omega_nominal]), comp_dst, comp_s, _amg_composed_members(st, dev),
+                         eig, fill(false, M))
 end
 
 # warm=true reuses previous eigenvector (fewer iters needed as operator drifts slowly)
@@ -265,10 +309,13 @@ function refresh_matrix_free_hierarchy!(st::MatrixFreeHierarchy, plan::MatrixFre
             lv = st.levels[l]
             _fill_device!(bk, lv.invdiag, zero(eltype(lv.invdiag)))
             _fill_device!(bk, lv.rhs, zero(eltype(lv.rhs)))
-            _launch_amg_kernel!(bk, wg, _amg_diag_scatter_composed_kernel!, lv1.n, lv.invdiag,
-                                _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s)
-            _launch_amg_kernel!(bk, wg, _amg_absrowsum_scatter_composed_kernel!, lv1.n, lv.rhs,
-                                _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s)
+            mptr, members = plan.comp_members[l - 1]
+            _launch_amg_kernel!(bk, wg, _amg_diag_gather_composed_kernel!, lv.n, lv.invdiag,
+                                _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s,
+                                mptr, members)
+            _launch_amg_kernel!(bk, wg, _amg_absrowsum_gather_composed_kernel!, lv.n, lv.rhs,
+                                _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s,
+                                mptr, members)
             KernelAbstractions.synchronize(bk)
             lv.rhs .+= abs.(lv.invdiag)  # invdiag still holds the raw diagonal here (inverted next)
             _launch_amg_kernel!(bk, wg, _amg_invert_diag_kernel!, lv.n, lv.invdiag)
@@ -282,18 +329,19 @@ function refresh_matrix_free_hierarchy!(st::MatrixFreeHierarchy, plan::MatrixFre
         tgt = ft + 2 <= M ? st.levels[ft + 2].A : plan.coarsest_csr
         dst_nz = _nzval(tgt)
         _fill_device!(bk, dst_nz, zero(eltype(dst_nz)))
-        _launch_amg_kernel!(bk, wg, _amg_rap_scatter_composed_kernel!, lv1.n, dst_nz,
+        mptr, members = plan.comp_members[ft + 1]
+        _launch_amg_kernel!(bk, wg, _amg_rap_gather_composed_kernel!, length(mptr) - 1, dst_nz,
                             _rowptr(A1), _colval(A1), _nzval(A1), plan.comp_dst, plan.comp_s,
-                            _rowptr(tgt), _colval(tgt))
+                            mptr, members, _rowptr(tgt), _colval(tgt))
     end
     for l in (ft == 0 ? 1 : ft + 2):M
         lv = st.levels[l]; src = lv.A
         tgt = l < M ? st.levels[l + 1].A : plan.coarsest_csr
         dst_nz = _nzval(tgt)
         _fill_device!(bk, dst_nz, zero(eltype(dst_nz)))
-        _launch_amg_kernel!(bk, wg, _amg_rap_scatter_recompute_kernel!, lv.n, dst_nz,
+        _launch_amg_kernel!(bk, wg, _amg_rap_gather_recompute_kernel!, lv.n_coarse, dst_nz,
                             _rowptr(src), _colval(src), _nzval(src),
-                            lv.row_macro, lv.coarse_pos, lv.inv_sqrt_w,
+                            lv.row_macro, lv.coarse_pos, lv.inv_sqrt_w, lv.agg_offsets,
                             _rowptr(tgt), _colval(tgt))
     end
     for l in 1:M

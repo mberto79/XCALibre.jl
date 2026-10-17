@@ -6,9 +6,9 @@ export wrap_eqn
 export unwrap_eqn
 export is_distributed_mesh
 export is_report_rank
-export global_any
+export global_any, global_sum, global_min, n_owned_cells, global_cell_index
 export solve_equation!
-export AdaptiveTimeStepping
+export AdaptiveTimeStepping, LocalTimeStepping
 
 struct SolverSetup{
     F<:AbstractFloat,
@@ -161,7 +161,47 @@ AdaptiveTimeStepping(;
     maxGrow=1.2
 ) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping}}
+# The reduction rule is a singleton type, not a `Symbol`, so that `LocalTimeStepping` is `isbits`
+# and can be passed to GPU kernels.
+struct MinDt end
+struct MeanDt end
+struct MaxDt end
+
+"""
+    LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
+
+Local (per-cell) pseudo-time stepping for the explicit density-based solver
+(`Fluid{SupersonicFlow}`, `godunov!`). Pass it as `adaptive` to `Runtime` to converge
+steady problems faster: every cell advances with its own time step
+`dt_i = CFL / (0.5 Σ_f (|U_i·n_f| + a_i) A_f / V_i + ν_eff Σ_f A_f² / V_i²)`, so the result of a
+converged run does not depend on `dt` and the iterations are not a time history. It combines with
+`FEuler()`, `RK2()` and the multistage schemes `RK3()`, `RK4()`, `RK5()`.
+
+# Input arguments
+
+- `maxCo::AbstractFloat`: Courant number of the cells (final value of the ramp).
+- `startCo::AbstractFloat`: Courant number of the first iteration.
+- `ramp::Integer`: number of iterations over which the Courant number grows linearly from
+  `startCo` to `maxCo` (`0` = no ramp). Useful to start from a uniform field.
+- `turbulence_dt::Symbol`: the implicit turbulence equations take one time step, the `:min` (default), `:mean` or `:max` of the cell time steps of the iteration.
+"""
+struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R<:Union{MinDt,MeanDt,MaxDt}}
+    maxCo::F
+    startCo::F
+    ramp::I
+    turbulence_dt::R
+end
+Adapt.@adapt_structure LocalTimeStepping
+
+_turbulence_dt_rule(s::Symbol) = s === :min ? MinDt() : s === :mean ? MeanDt() : s === :max ? MaxDt() :
+    throw(ArgumentError("`turbulence_dt` must be :min, :mean or :max, got :$s"))
+_turbulence_dt_rule(r::Union{MinDt,MeanDt,MaxDt}) = r
+
+function LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
+    LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), _turbulence_dt_rule(turbulence_dt))
+end
+
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping, LocalTimeStepping}}
     iterations::I
     dt::V
     write_interval::I
@@ -242,7 +282,7 @@ The `Schemes` struct is used at the top-level API to help users define discretis
 - `divergence`: is used to set the divergence scheme (default is `Linear`) 
 - `laplacian`: is used to set the laplacian scheme (default is `Linear`)
 - `gradient`:  is used to set the gradient scheme (default is `Gauss`)
-- `limiter`: is used to specify if gradient limiters should be used, currently supported limiters include `FaceBased` and `MFaceBased` (default is `nothing`)
+- `limiter`: is used to specify if gradient limiters should be used, currently supported limiters include `CellBased`, `Venkatakrishnan`, `FaceBased` and `MFaceBased` (default is `nothing`)
 """
 @kwdef struct Schemes
     time=SteadyState
@@ -258,7 +298,7 @@ function solve_equation!(
     eqn::ModelEquation{T,M,E,S,P}, phi, phiBCs, solversetup, config; rho_prev=eqn.model.terms[1].flux, time=nothing, ref=nothing, irelax=nothing
     ) where {T<:ScalarModel,M,E,S,P}
 
-    discretise!(eqn, phi, config, rho_prev=rho_prev)  
+    discretise!(eqn, phi, config, rho_prev=rho_prev, time=time)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     if length(eqn.model.terms) == 1 && typeof(eqn.model.terms[1]) <: Laplacian
         make_symmetric!(eqn, config) # added this to test stability of periodic boundaries
@@ -280,7 +320,7 @@ function solve_equation!(
 
     mesh = psi.mesh
 
-    discretise!(psiEqn, psi, config, rho_prev=rho_prev)
+    discretise!(psiEqn, psi, config, rho_prev=rho_prev, time=time)
     update_equation!(psiEqn, config)
     
     apply_boundary_conditions!(psiEqn, psiBCs, xdir, time, config)
@@ -331,22 +371,27 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
     ldiv = is_ldiv(precon)
+    bw, x0 = _like_workspace(x, b), _like_workspace(x, values)
     krylov_solve!(
-        solver, opA, _like_workspace(x, b), _like_workspace(x, values);
+        solver, opA, bw, x0;
         _shadow(solver, P, ldiv, phiEqn, values, b, config)...,
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
         )
-
-    # Perform explicit step for Crank-Nicholson. Otherwise simply update field with solution
-    if typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson}
-        xcal_foreach(x, config) do i 
-            x[i] = 2*x[i] - values[i]
-        end
+    # values still hold x₀: re-solve from there with a dense shadow (Fx is scratch until `residual`)
+    if _broke_down(solver, itmax)
+        krylov_solve!(
+            solver, opA, bw, x0; c=_fallback_shadow!(_like_workspace(x, phiEqn.equation.Fx)),
+            M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
+            )
     end
 
-    ndrange = length(values)
-    kernel! = _sized(_copy!, backend, workgroup, ndrange)
-    kernel!(values, x)
+    if _broke_down(solver, itmax)
+        @warn "$(nameof(typeof(solver))) broke down twice; the field keeps its previous values" maxlog=10
+    else
+        ndrange = length(values)
+        kernel! = _sized(_copy!, backend, workgroup, ndrange)
+        kernel!(values, x)
+    end
 
     iterations = Krylov.iteration_count(solver)
     iterations == itmax && @warn "Maximum number of iterations reached!"
@@ -360,9 +405,7 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     A = _A(phiEqn)
     b = _b(phiEqn, component)
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
-    # Crank-Nicolson's explicit step 2x_new - x_old is x_old + 2d
-    α = typeof(phiEqn.model.terms[1].type) <: Time{CrankNicolson} ? 2 : 1
-    iterations = mixed_solve!(phiEqn.solver, A, b, values, α, setup, config, result.mesh)
+    iterations = mixed_solve!(phiEqn.solver, A, b, values, setup, config, result.mesh)
     iterations ≥ setup.itmax && @warn "Maximum number of iterations reached!"
     return residual(phiEqn, component, config)
 end
@@ -588,6 +631,18 @@ wrap_eqn(eqn, mesh, setup, config; kwargs...) = eqn
 
 # true on every rank if flag is true on any rank: serial identity, Distribute reduces over ranks
 global_any(flag::Bool, mesh) = flag
+
+# sum over ranks of a number or array (e.g. a patch integral): serial identity, Distribute reduces
+global_sum(v, mesh) = v
+
+# minimum over ranks (e.g. a global time step): serial identity, Distribute reduces
+global_min(v, mesh) = v
+
+# cells this rank updates and reduces over (owned cells first, then ghosts on a distributed mesh)
+n_owned_cells(mesh) = length(mesh.cells)
+
+# mesh-wide id of local cell i (its index in the undecomposed mesh): serial identity
+global_cell_index(mesh, i) = i
 
 function make_symmetric!(eqn, config)
     (; hardware) = config

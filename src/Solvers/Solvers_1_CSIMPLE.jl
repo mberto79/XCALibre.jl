@@ -35,6 +35,8 @@ function csimple!(
     consistent=false
     )
     check_distributed_support(:CSIMPLE, model)
+    reject_crank_nicolson(config.schemes, "csimple!",
+        "a steady solver has no time levels; use SteadyState")
 
     residuals = setup_compressible_solvers(
         CSIMPLE, model, config; 
@@ -74,11 +76,13 @@ function setup_compressible_solvers(
     mueffgradUt = VectorField(mesh) # ∇·(μ_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
     divHv = ScalarField(mesh)
 
+    gradU = Grad{schemes.U.gradient}(U) # also feeds the LinearUpwind face reconstruction
+
     @info "Defining models..."
 
     U_eqn = (
         Time{schemes.U.time}(rho, U)
-        + Divergence{schemes.U.divergence}(mdotf, U) 
+        + Divergence{schemes.U.divergence}(mdotf, U, gradU.result) 
         - Laplacian{schemes.U.laplacian}(mueff, U) 
         == 
         - Source(∇p.result)
@@ -120,7 +124,7 @@ function setup_compressible_solvers(
     turbulenceModel, config = initialise(model.turbulence, model, mdotf, p_eqn, config)
 
     residuals  = solver_variant(
-        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config;
+        model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config; gradU=gradU,
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
@@ -134,6 +138,7 @@ end # end function
 function CSIMPLE(
     model, turbulenceModel, energyModel, ∇p, U_eqn, p_eqn, config ; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true,
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true, consistent=false
     )
     
@@ -168,7 +173,6 @@ function CSIMPLE(
     @info "Allocating working memory..."
 
     # Define aux fields 
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT, U, Uf)
 
@@ -224,7 +228,7 @@ function CSIMPLE(
 
         # gradU and mueff of the current velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
-            mueffgradUt, mueff, gradU, boundaries.U, config; cell_mueff=mueffc)
+            mueffgradUt, mueff, gradU, boundaries.U, time, config; cell_mueff=mueffc)
 
         # Store previous values for next time step energy source terms
         @. model.energy.prevRhoK = rho.values*0.5*(U.x.values^2 + U.y.values^2 + U.z.values^2)

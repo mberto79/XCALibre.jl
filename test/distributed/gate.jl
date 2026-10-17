@@ -1,14 +1,11 @@
-# Fast distributed gate: one three-rank mpiexec session (gate_session.jl) runs the files that catch
-# partitioning, halo, assembly and solver regressions; three ranks give asymmetric halos and the
-# sst wall-function test its empty patches. The two-rank and wider sweeps are named explicitly to
-# runtests_mpi.jl (nightly/manual).
-using Test
-using XCALibre
+# Fast distributed gate (partitioning, halo, assembly, solvers). Two-rank files share one mpiexec
+# session (gate_session.jl); rank counts above XCALIBRE_TEST_MAX_RANKS (default 2) are skipped.
+# Other files and rank counts: runtests_mpi.jl, e.g. `--ranks=2,3 test_godunov_full.jl`.
 include(joinpath(@__DIR__, "driver.jl"))
 
-# partitioning needs no MPI: serial, in-process
-let m = Module(:test_partition)
-    Base.include(m, joinpath(@__DIR__, "test_partition.jl"))
-end
+mpiexec_available() && run_mpi_tests(["gate_session.jl"]; ranks=[2], timeout=2400)
 
-mpiexec_available() && run_mpi_tests(["gate_session.jl"]; ranks=[3])
+# three ranks: asymmetric halos, a sub-communicator smaller than the world, and the y-band
+# partition that empties a wall-function patch on some rank
+mpiexec_available() && run_mpi_tests(
+    ["test_halo.jl", "test_halo_subcomm.jl", "test_turbulence_sst_wallfn.jl"]; ranks=[3])

@@ -2,6 +2,7 @@ export DistributedScalarField, DistributedVectorField
 export sync!, pnorm, pdot, pmean
 
 import XCALibre.Solve: sync!
+import XCALibre.Discretise: sync_gradient!
 
 # ScalarField on a DistributedMesh paired with its HaloExchange
 struct DistributedScalarField{F<:ScalarField,H<:HaloExchange}
@@ -52,6 +53,15 @@ end
 end
 # tensor (and other) ghosts are never consumed off-rank — mirrors grad!'s tensor path
 @inline sync!(x, dm::DistributedMesh, config) = nothing
+
+# second-order face reconstructions read the gradient of a ghost upwind cell, which only its owner knows
+sync_gradient!(g::AbstractVectorField, dm::DistributedMesh, config) = sync!(g, dm, config)
+function sync_gradient!(t::AbstractTensorField, dm::DistributedMesh, config)
+    sync!(VectorField(t.xx, t.xy, t.xz, dm), dm, config)
+    sync!(VectorField(t.yx, t.yy, t.yz, dm), dm, config)
+    sync!(VectorField(t.zx, t.zy, t.zz, dm), dm, config)
+    nothing
+end
 
 # ghost centres are verbatim copies, so delegation alone leaves ghosts consistent
 initialise!(df::DistributedField, value) = initialise!(df.field, value)

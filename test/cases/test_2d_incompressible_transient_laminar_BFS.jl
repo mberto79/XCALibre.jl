@@ -41,7 +41,7 @@ function run_bfs(tscheme)
             ]
         )
     )
-    schemes = (U = Schemes(time=tscheme), p = Schemes())
+    schemes = (U = Schemes(time=tscheme), p = Schemes(time=tscheme))
     solvers = (
         U = SolverSetup(solver=Bicgstab(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, rtol=1e-3),
         p = SolverSetup(solver=Gmres(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, rtol=1e-3)

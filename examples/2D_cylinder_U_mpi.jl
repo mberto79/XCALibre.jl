@@ -1,6 +1,6 @@
 # Distributed (MPI) version of 2D_cylinder_U.jl; needs XCALibre, PETSc and MPI (PETSc_jll/MPI.jl binaries suffice).
 # Install the launcher once: julia --project=<env> -e 'using MPI; MPI.install_mpiexecjl()'
-# Run: mpiexecjl -n 4 julia --project=<env> examples/2D_cylinder_U_mpi.jl; writes nothing (write_interval=-1)
+# Run: mpiexecjl -n 4 julia --project=<env> examples/2D_cylinder_U_mpi.jl; writes only probe_wake.csv (write_interval=-1)
 using XCALibre, PETSc, MPI
 
 # every rank makes this identical call: rank 0 reads and partitions, the others receive
@@ -74,8 +74,14 @@ schemes = (
 
 runtime = Runtime(iterations=1000, write_interval=-1, time_step=0.0025)
 
+# runtime post-processing runs on every rank: the averages cover each rank's own cells and the
+# probe is sampled by the rank owning the nearest cell; rank 0 writes probe_wake.csv
+postprocess = [FieldAverage(model.momentum.U; name="U_mean", start=1.0),
+    Probe(model.momentum.U, mesh_dist; location=[0.5, 0.0, 0.0], name="probe_wake")]
+
 config = Configuration(
-    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
+    solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs,
+    postprocess=postprocess)
 
 GC.gc(true)
 

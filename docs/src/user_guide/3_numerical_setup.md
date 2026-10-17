@@ -25,7 +25,23 @@ print_tree(AbstractScheme) # hide
 |:-------|:------------|
 | SteadyState | sets the time derivative to zero |
 | Euler | First order implicit Euler scheme (implicit)|
-| CrankNicolson | Second order central scheme (implicit-explicit) |
+| CrankNicolson | Second order trapezoidal scheme (implicit); `CrankNicolson(ψ)` with an off-centring coefficient `ψ` |
+
+`CrankNicolson` evaluates every term of an equation at the new time level ``t^{n+1}`` and takes the time derivative as
+
+```math
+\left(\frac{\partial \rho\phi}{\partial t}\right)^{n+1} = (1 + \psi)\,\frac{(\rho\phi)^{n+1} - (\rho\phi)^n}{\Delta t^n} - \psi \left(\frac{\partial \rho\phi}{\partial t}\right)^n,
+```
+
+where the time derivative of the previous step is kept by the equation's `Time` term. With ``\psi = 1`` (`CrankNicolson` or `CrankNicolson(1)`) this is the second-order trapezoidal rule, also with time steps that change from step to step; ``\psi = 0`` is backward Euler, and values in between are first order but damp the oscillations that the trapezoidal rule leaves undamped (stiff modes such as diffusion across thin wall cells, or a non-solenoidal initial field). Boundary values, the pressure and the pressure correctors are all at ``t^{n+1}``.
+
+- The first time step of a run, including a run resumed with `restart` or continued with a second `run!`, is a backward-Euler step: the time derivative of the step before is not stored in the results.
+- Terms treated explicitly (the convecting face flux, the eddy viscosity and velocity gradient of the LES and transpose-stress terms, the lagged coefficients of the `KEquation`, `KOmega`, `KOmegaSST` and `KOmegaLKE` equations) are extrapolated to ``t^{n+1}`` from the two previous steps, using the time-step history, and are evaluated from the initial fields on the first step, so the eddy viscosity need not be initialised. This extrapolation is the only difference between `CrankNicolson(0)` and `Euler`.
+- The pressure of a `CrankNicolson(1)` run can alternate from step to step (an odd-even mode in time that the trapezoidal rule leaves undamped, started for example by an impulsive start); the velocity is unaffected, but the pressure solves take more iterations. `CrankNicolson(0.9)` damps it. In the face flux, half the step change of the old pressure gradient held in the time derivative takes the compact face gradient, so that this mode cannot grow on non-orthogonal meshes.
+- In `cpiso!` the density of the time terms must match the state equation at ``t^{n+1}``: second order needs `outer_loops` passes over momentum, energy and pressure per step (keyword of `run!` and `cpiso!`, default 1). About 8 passes reproduce the order in an acoustic test; each pass costs about one `Euler` time step.
+- `relax` below 1 changes the equations solved in each step and lowers the order for either scheme.
+- With `AdaptiveTimeStepping`, let the time step change gradually (`maxGrow` and `minShrink` close to 1).
+- Use one time scheme for every field: combining `CrankNicolson` and `Euler` raises an `ArgumentError`. `CrankNicolson` also raises an `ArgumentError` in `multiphase!` (explicit first-order volume-fraction transport), `filmModel!` (explicit first-order film coupling), `godunov!` (turbulence transport split from the explicit flow update) and the steady solvers.
 ---
 #### Laplacian schemes
 
@@ -41,6 +57,23 @@ print_tree(AbstractScheme) # hide
 | Upwind | 1st order upwind scheme |
 | BoundedUpwind | Bounded version of the Upwind scheme |
 | LUST | 1st/2nd order mixed scheme (fixed at 75% Linear - 25% Upwind) |
+| LUSTDC | `LUST` in deferred-correction form: upwind matrix coefficients with the 75% (Linear - Upwind) part of the face value added explicitly |
+| LUSTLU | `LUST` coefficients in the matrix plus an explicit gradient correction of its upwind quarter (as `LinearUpwind`); for transient and LES runs, needs a gradient of the transported field |
+| LinearUpwind | 2nd order upwind scheme: upwind matrix coefficients with an explicit (deferred) correction of the face value from the upwind-cell gradient |
+| LimitedLinearUpwind | Bounded version of `LinearUpwind`: the correction is limited per face with the downwind value (TVD bound) |
+
+`Upwind`, `BoundedUpwind`, `LinearUpwind`, `LimitedLinearUpwind` and `LUSTDC` keep the matrix diagonally dominant. `Linear` and `LUST` put central-difference coefficients in the matrix, which loses diagonal dominance where convection dominates and allows oscillations across discontinuities.
+
+`LinearUpwind` reconstructs the face value of the upwind cell `U` as ``\phi_f = \phi_U + (\nabla\phi)_U \cdot (\mathbf{x}_f - \mathbf{x}_U)``; the reconstruction is exact for linear fields on any mesh, and the gradient limiter set for the field (`Schemes(limiter=...)`) is applied to the gradient used. A gradient limiter reduces over- and undershoots but does not remove them from a steady solution; `LimitedLinearUpwind` also bounds the face value between the upwind and downwind cell values and falls back to upwind at local extrema. Both schemes use upwind values on boundary faces.
+
+The solvers supply the gradient for the momentum equation, for `he`, and for `k` and `omega` of `KOmega` and `KOmegaSST` (for `he` the kinetic energy K = |U|²/2 of the explicit flux ∇·(ṁK) is reconstructed at the faces in the same way, and h and K are limited as one total enthalpy: the `he` limiter acts on ∇(h + K) and ∇K, h takes their difference, and the `LimitedLinearUpwind` clip of h also scales the K correction, so that a uniform h + K stays a discrete solution); for other equations both schemes reduce to `Upwind` with a warning.
+
+The gradient of a ghost cell is taken from its owner on distributed meshes. In a user-built equation the gradient field is passed as a third argument, e.g. `Divergence{LinearUpwind}(mdotf, phi, gradphi.result)`.
+
+`LUSTDC` is `LUST` with the same face values but an upwind matrix: the 75% (`Linear` - `Upwind`) part of the face value is added explicitly from the current field, and boundary faces use the `LUST` boundary coefficients (periodic patches keep its implicit coupling). It needs no gradient. A converged steady solution therefore matches `LUST` up to the momentum diagonal used in the face-flux (Rhie-Chow) interpolation, a difference of the same size as changing the velocity relaxation factor. Use it for steady runs (`simple!`, `csimple!`) that diverge with `LUST` where convection dominates. In transient runs the explicit part lags one time step: results match `LUST` as the time step goes to zero, but the scheme becomes unstable at smaller Courant numbers than `LUST`, so `LUST`, which is unchanged, remains the recommended scheme for transient and LES runs. `LUSTDC` is not OpenFOAM's `LUST`: that scheme keeps the 75% linear part implicit and corrects the remaining upwind quarter explicitly with the upwind-cell gradient, as `LinearUpwind` does, whereas both `LUST` and `LUSTDC` use the plain upwind value for that quarter.
+
+`LUSTLU` is the opt-in second-order variant of `LUST` for transient and LES runs. The matrix has exactly the `LUST` coefficients (75% linear, 25% upwind, so the same implicit coupling and time-step limit), and the upwind quarter of the face value is corrected explicitly with the gradient of the upwind cell, `φ_f = ¾ φ_lin + ¼ [φ_U + (∇φ)_U · (x_f − x_U)]`, which removes the first-order dissipation `LUST` retains from that quarter (the gradient is limited with `Schemes(limiter=...)`, as for `LinearUpwind`). On a Taylor-Green vortex at Re 1600 with WALE it raises the kinetic energy at t = 10 by about 37% relative to `LUST`, which was 22% below the OpenFOAM `LUST` reference; the stability limit of `piso!` on a Re 100 cylinder is that of `LUST`. `LUST` itself is unchanged, boundary faces use the `LUST` coefficients, and without a gradient `LUSTLU` reduces to `LUST`. It is available for `U` and the other transported fields of the incompressible and compressible solvers, but not for `he`.
+
 ---
 #### Gradient schemes
 
@@ -48,15 +81,53 @@ print_tree(AbstractScheme) # hide
 |:-------|:------------|
 | Gauss | Green-Gauss uncorrected gradient scheme |
 | Midpoint | Green-Gauss skew corrected scheme (2 iterations - hardcoded) |
+| LeastSquares | Least-squares gradient over the face neighbours, weighted by the inverse squared distance (boundary faces use the boundary value); exact for linear fields on any mesh |
 
 #### Gradient limiters
 
 | **Scheme** | **Description** |
 |:-------|:------------|
+| CellBased | Barth-Jespersen: one factor per cell keeps the face-extrapolated values within the neighbour minimum and maximum; `CellBased(level)` blends it with the unlimited gradient |
+| Venkatakrishnan | Same bounds as `CellBased` with the smooth limiter function of Venkatakrishnan; `Venkatakrishnan(K)` (default `K = 5`) leaves differences below ε² = (K h)³ unlimited, h being the cell length scale |
 | FaceBased | Limit gradient calculation based on face extrapolation |
 | MFaceBased | Limit gradient calculation based on face extrapolation in multiple dimensions |
 
+`Venkatakrishnan` changes the limiting factor continuously with the field instead of switching it at the bound; with `K = 0` it limits more than `CellBased` and also limits a linear field on distorted cells. Because ε² is compared with squared differences of the field, the effect of `K` depends on the units of the field and the cell size. `CellBased` and `Venkatakrishnan` are constructed without the mesh, e.g. `Schemes(divergence=LinearUpwind, limiter=Venkatakrishnan(5.0))`.
+
 The construction of all gradient limiters currently requires users to pass the mesh object that will be used for the simulations e.g. `MFaceBased(mesh)`. Notice that the mesh object must be moved to the same device where the simulation will be performed. To prevent mistakes and avoid errors, it is recommended to construct the limiters using the simulation `Physics` object directly since it provide a reference to the mesh (domain) e.g. if a `Physics` object named `model` has been created, construct the limiter as `MFaceBased(model.domain)`
+
+---
+#### Density-based (`SupersonicFlow`) solver
+
+The explicit density-based solver (`godunov!`, selected with `Fluid{SupersonicFlow}`) advances the conservative variables ``[\rho, \rho\mathbf{U}, \rho E]`` and does not use the divergence, Laplacian or time schemes above. Its inviscid fluxes are set with three entries of the `schemes` tuple, while the `gradient` of `U`, `p` and `T` is used for the viscous fluxes and for the reconstruction.
+
+| **Entry** | **Options** | **Description** |
+|:-------|:------------|:------------|
+| `flux` | `Rusanov()` | Local Lax-Friedrichs flux, most dissipative and robust (default) |
+| | `HLLC()` | Harten-Lax-van Leer flux with contact restoration, sharper contacts and boundary layers |
+| `reconstruction` | `Upwind()` | 1st order, cell-centred values |
+| | `MUSCL{VanLeer}()` | 2nd order MUSCL, smooth TVD limiter |
+| | `MUSCL{MinMod}()` | 2nd order MUSCL, most diffusive TVD limiter |
+| | `MUSCL{Superbee}()` | 2nd order MUSCL, least diffusive TVD limiter |
+| `time_stepping` | `FEuler()` | Explicit forward Euler, 1st order (default) |
+| | `RK2()` | Explicit 2-stage SSP Runge-Kutta, 2nd order |
+
+`reconstruction` must be given. The time step is fixed with `Runtime(time_step=...)` or, with `adaptive=AdaptiveTimeStepping(maxCo=...)`, set every iteration from the CFL condition (convective plus diffusive wave speeds). Only `rho` takes a `convergence` entry in `solvers`, there are no linear solvers. For example (see `examples/2D_cylinder_supersonic.jl`):
+
+For steady problems the explicit solver converges much faster with local (per-cell) pseudo-time stepping, `Runtime(...; adaptive=LocalTimeStepping(maxCo=1.0, startCo=0.2, ramp=200))`: each cell advances with its own time step from the spectral radius of its faces, `dt_i = CFL / (0.5 Σ_f (|U_i·n_f| + a_i) A_f / V_i + ν_eff Σ_f A_f² / V_i²)`, and the Courant number is ramped from `startCo` to `maxCo` over `ramp` iterations. Converged fields do not depend on the time step. The multistage schemes `RK3()`, `RK4()` and `RK5()` (Jameson, low storage) allow a larger Courant number and are meant for this use; implicit turbulence equations use the smallest cell time step. `run!(model, config; forces=(patches=[:wall], interval=50))` also records pressure and viscous force histories, and the returned residuals hold the L2 norms of the density, momentum and energy residuals (`rho`, `rhoU`, `rhoE`) and their values normalised by their value at the end of the Courant ramp (`rho_rel`, ...). See `examples/2D_cylinder_supersonic_LTS.jl`.
+
+A boundary patch on which `U`, `p` and `T` are all `Dirichlet` (or `DirichletFunction`) is treated as a far field: the prescribed values are the free stream, and the boundary state is built from the characteristic (Riemann invariant) relations normal to the face, so outgoing waves leave the domain instead of reflecting. Supersonic faces take the interior state (outflow) or the free-stream state (inflow). Patches where `p` or `T` is not Dirichlet keep the reflecting ghost-state treatment.
+
+```julia
+schemes = (
+    U              = Schemes(gradient=Gauss),
+    p              = Schemes(gradient=Gauss),
+    T              = Schemes(gradient=Gauss),
+    flux           = HLLC(),
+    reconstruction = MUSCL{VanLeer}(),
+    time_stepping  = RK2(),
+)
+```
 
 ---
 ### Specifying schemes
@@ -110,6 +181,8 @@ Linear solvers in XCALibre.jl are provided by [Krylov.jl](https://github.com/Jul
 - `Bicgstab()` is a general purpose linear solver. Works well with non-symmetric matrices e.g. for `U`.
 - `Cg()` is particular strong with symmetric matrices e.g to solve the pressure equation.
 - `Gmres()` is a general solver. We have found it works best on the CPU backend.
+
+`Bicgstab()` and `Cgs()` break down when the residual becomes orthogonal to their shadow vector, which can happen when the initial residual is nonzero in a few cells only and the matrix couples them one way (upwind convection). Such a solve is repeated from its initial guess with a fixed, dense shadow vector; if it breaks down again, the field keeps its previous values and a warning is printed. Distributed solves continue from the last iterate instead, which restarts BiCGStab with the current residual as the shadow vector.
 
 For more information on these solvers you can review the excellent documentation provided by the [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl) team. 
 

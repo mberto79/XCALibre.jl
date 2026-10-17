@@ -2,10 +2,10 @@ export AbstractScheme, AbstractBoundary
 export AbstractDirichlet, AbstractNeumann, AbstractPhysicalConstraint, AbstractWallFunction
 export KWallFunction, OmegaWallFunction, NutWallFunction, NutMixingLengthWallFunction
 # export Constant, Linear, Upwind, LUST
-export Linear, Upwind, LUST
+export Linear, Upwind, LUST, LUSTDC, LUSTLU, LinearUpwind, LimitedLinearUpwind
 export BoundedUpwind
 export SteadyState, Euler, CrankNicolson
-export Gauss, Midpoint
+export Gauss, Midpoint, LeastSquares
 
 # SUPPORTED DISCRETISATION SCHEMES 
 
@@ -14,12 +14,98 @@ abstract type AbstractScheme end
 struct Linear <: AbstractScheme end
 struct Upwind <: AbstractScheme end
 struct LUST <: AbstractScheme end
+
+@doc raw"""
+    LUSTDC <: AbstractScheme
+
+`LUST` in deferred-correction form. The matrix holds the upwind coefficients, so it stays
+diagonally dominant, and the face correction ``\frac{3}{4}(\phi_{lin} - \phi_U)`` is added
+explicitly from the current field, with ``\phi_{lin}`` the linearly interpolated and ``\phi_U``
+the upwind face value. A converged steady solution has the face values of `LUST`,
+``\phi_f = \frac{3}{4}\phi_{lin} + \frac{1}{4}\phi_U``. Boundary faces use the `LUST`
+boundary coefficients (periodic patches keep its implicit coupling). No gradient is needed.
+Intended for steady runs: in transient runs the correction lags one time step, so results
+differ from `LUST` by ``O(\Delta t)`` and the stable time step is smaller; use `LUST` for
+transient and LES runs. This is not OpenFOAM's `LUST`, which keeps the linear part implicit and
+corrects the remaining quarter explicitly with the upwind-cell gradient, as `LinearUpwind` does.
+"""
+struct LUSTDC <: AbstractScheme end
+
+@doc raw"""
+    LUSTLU <: AbstractScheme
+
+`LUST` plus an explicit second-order correction of its upwind share, for transient and LES runs.
+The matrix holds the `LUST` coefficients (75 % linear, 25 % upwind), and the upwind quarter of the
+face value is corrected explicitly with the gradient of the upwind cell, as in `LinearUpwind`:
+
+``\phi_f = \frac{3}{4}\phi_{lin} + \frac{1}{4}\left[\phi_U + (\nabla\phi)_U \cdot (\mathbf{x}_f - \mathbf{x}_U)\right]``.
+
+The face value is second order on any mesh and `LUST`'s first-order dissipation is removed. The
+gradient is supplied through the equation's operator, `Divergence{LUSTLU}(flux, phi, grad)`; the
+solvers pass the gradient of `U` (limited with `Schemes(limiter=...)`). Boundary faces take the
+`LUST` coefficients; periodic patches also get the correction. Without a gradient the scheme
+reduces to `LUST` (as in the film and multiphase solvers). It is not available for `he`.
+"""
+struct LUSTLU <: AbstractScheme end
+
+@doc raw"""
+    LinearUpwind <: AbstractScheme
+
+Second-order upwind divergence scheme. The matrix holds the upwind coefficients and the face
+value is corrected explicitly (deferred correction) with the gradient of the upwind cell,
+``\phi_f = \phi_U + (\nabla\phi)_U \cdot (\mathbf{x}_f - \mathbf{x}_U)``. The gradient is
+supplied through the equation's operator, `Divergence{LinearUpwind}(flux, phi, grad)`; the
+solvers pass the gradient of `U` (limited with `Schemes(limiter=...)`). Boundary faces use
+upwind values. Without a gradient the scheme reduces to `Upwind`.
+"""
+struct LinearUpwind <: AbstractScheme end
+
+@doc raw"""
+    LimitedLinearUpwind <: AbstractScheme
+
+Bounded form of `LinearUpwind`. The face correction ``\delta`` is limited per face with the
+downwind value, ``0 \le \delta/\Delta \le \min(r, 1)``, where ``\Delta = \phi_D - \phi_U`` and
+``r = 2 (\nabla\phi)_U \cdot (\mathbf{x}_D - \mathbf{x}_U)/\Delta - 1``. The face value then lies
+between the upwind and downwind values and local extrema are convected with upwind values. Steady
+solutions stay bounded on regular meshes, and over- and undershoots are much reduced on irregular
+ones. The limiter is inactive for linear fields on uniform meshes (``r = 1``) and reduces the
+scheme to first order at extrema and discontinuities.
+"""
+struct LimitedLinearUpwind <: AbstractScheme end
 struct BoundedUpwind <: AbstractScheme end
 struct Gauss <: AbstractScheme end
 struct Midpoint <: AbstractScheme end
+
+@doc raw"""
+    LeastSquares <: AbstractScheme
+
+Gradient scheme, selected with `Schemes(gradient=LeastSquares)`. The gradient of a cell is the
+weighted least-squares fit ``\min \sum_f w_f (\phi_f - \phi_P - \nabla\phi\cdot\mathbf{d}_f)^2``
+over its faces, with ``\mathbf{d}_f`` the vector from the cell centre to the neighbour centre
+(internal faces) or to the face centre (boundary faces, which use the boundary value) and
+``w_f = 1/|\mathbf{d}_f|^2``, so near neighbours dominate on stretched meshes. It is exact for
+linear fields on any mesh, skewed or stretched, where `Gauss` is not, and is computed cell by
+cell from a 3 x 3 normal matrix inverted once per `Grad`.
+"""
+struct LeastSquares <: AbstractScheme end
 struct SteadyState <: AbstractScheme end 
 struct Euler <: AbstractScheme end 
-struct CrankNicolson <: AbstractScheme end # not implemented yet
+"""
+    CrankNicolson(ψ=1)
+
+Crank-Nicolson time scheme in trapezoidal form, with every other term of the equation at tⁿ⁺¹:
+the Time term is the time derivative at tⁿ⁺¹, ddtⁿ⁺¹ = (1 + ψ)(xⁿ⁺¹ - xⁿ)/Δt - ψ ddtⁿ, where
+ddtⁿ is kept from the previous step. `ψ = 1` is the second-order trapezoidal rule, `ψ = 0` is
+backward Euler, and values in between damp the oscillations the trapezoidal rule leaves
+undamped. `CrankNicolson` without arguments is `CrankNicolson(1)`. The first time step of a run
+is a backward-Euler step.
+"""
+struct CrankNicolson <: AbstractScheme
+    ψ::Float64
+end
+CrankNicolson() = CrankNicolson(1.0)
+crank_nicolson_coefficient(::Type{CrankNicolson}) = 1.0
+crank_nicolson_coefficient(c::CrankNicolson) = c.ψ
 
 
 # SUPPORTED BOUNDARY CONDITIONS 

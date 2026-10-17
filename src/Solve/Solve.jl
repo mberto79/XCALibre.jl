@@ -32,6 +32,7 @@ include("Smoothers/Smoothers.jl")
 include("Solve_1_Krylov_solvers.jl")
 include("Solve_1_mixed_precision.jl")
 include("Solve_1_api.jl")
+include("Solve_2_lagged_terms.jl")
 include("AMG/AMG.jl")
 
 end

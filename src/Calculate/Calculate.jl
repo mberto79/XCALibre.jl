@@ -19,6 +19,7 @@ using XCALibre.Fields
 import XCALibre.Fields: field_values # not exported: kernel-argument helper
 using XCALibre.ModelFramework
 using XCALibre.Discretise
+using XCALibre.Discretise: convected_face_value # not exported: face value of a divergence scheme
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
 using XCALibre.Simulate
@@ -26,11 +27,13 @@ using XCALibre.Simulate
 
 include("Calculate_0_gradient.jl")
 include("Calculate_0_gradient_cell_limiter.jl")
+include("Calculate_0_gradient_venkat_limiter.jl")
 include("Calculate_0_gradient_face_limiter.jl")
 include("Calculate_0_gradient_mface_limiter.jl")
 include("Calculate_0_divergence.jl")
 include("Calculate_0_laplacian.jl")
 include("Calculate_1_green_gauss.jl")
+include("Calculate_1_least_squares.jl")
 include("Calculate_2_interpolation.jl")
 include("Calculate_3_orthogonality_correction.jl")
 include("Calculate_4_wall_distance.jl")

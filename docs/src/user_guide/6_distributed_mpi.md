@@ -376,8 +376,15 @@ ranks than GPUs they share one and a warning says so.
 Output on a distributed mesh is written with `output=OpenFOAM()` in the decomposed layout; VTK has
 no decomposed writer, so a run that asks for VTK output with a positive `write_interval` stops with
 an error at its first write. Leave `write_interval=-1` when no output is needed.
-Runtime post-processing (`postprocess` in the `Configuration`, such as field averages) is not
-distributed yet: it is skipped on a distributed mesh, with a warning from rank 0.
+Runtime post-processing (`postprocess` in the `Configuration`) runs on distributed meshes as in
+serial. `FieldAverage`, `FieldRMS`, `ReynoldsStress` and `Qcriterion` update each rank's own cells,
+and with `output=OpenFOAM()` their fields are written to the processor directories next to `U` and
+`p`. A `Probe` is sampled by the rank that owns the cell nearest to its location (the same cell as
+in serial) and rank 0 writes the probe file. Create it with the distributed mesh,
+`Probe(model.momentum.U, mesh_dist; location=..., name=...)`, on every rank.
+The patch force integrals [`pressure_force`](@ref) and [`viscous_force`](@ref) are distributed and
+collective: every rank must call them (after or between `run!` calls), each rank integrates the faces
+of the patch it holds and every rank returns the sum over ranks. Calling them on one rank only hangs.
 
 ## Output, checkpoints and restart
 
@@ -733,6 +740,12 @@ Distributed today:
 
 - Steady and transient incompressible flow through the SIMPLE and PISO families.
 - The Laplace (conduction) solver, and `potential_flow!` for initialising a velocity field.
+- The explicit density-based solver for `Fluid{SupersonicFlow}` (`godunov!`), with every flux,
+  reconstruction and time-stepping scheme, global and local time stepping, `Laminar`, `KOmega` and
+  `KOmegaSST` turbulence, and the force history of `run!(...; forces=...)`. Each rank updates its
+  own cells; the conserved state and the gradients the flux needs are exchanged at every stage, and
+  residuals, time steps and forces are reduced over all ranks, so a run matches the serial one to
+  round-off (to the linear-solver tolerance of `k` and `omega` with a turbulence model).
 - `Laminar`, `KOmega` and `KOmegaSST` turbulence, including wall distance, and the `WALE` LES model.
 - CPU and GPU backends, periodic patches, and writing results in OpenFOAM's decomposed layout so
   that the usual tools can reconstruct them.
@@ -740,8 +753,8 @@ Distributed today:
 Not distributed yet. These raise an error naming every missing piece, rather than silently giving a
 wrong answer: without a distributed linear-solve seam each rank would solve only its own block.
 
-- Compressible flow (`csimple!`, `cpiso!`), the density-based supersonic solver, multiple reference
-  frames, the film model and the multiphase solver.
+- Pressure-based compressible flow (`csimple!`, `cpiso!`), multiple reference frames, the film
+  model and the multiphase solver.
 - The `KOmegaLKE` transition model and the LES models other than `WALE`.
 - Float32 with `BoomerAMG`, because the stock PETSc libraries include hypre at Float64 only.
 - GPU runs without a CUDA-enabled PETSc build (see [Setting up MPI and PETSc](@ref)).

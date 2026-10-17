@@ -28,6 +28,7 @@ function piso!(
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
     petsc_options="", restart=nothing, transpose_stress=true)
     check_distributed_support(:PISO, model)
+    check_time_schemes(config.schemes)
 
     residuals = setup_incompressible_solvers(
         PISO, model, config;
@@ -46,6 +47,7 @@ end
 function PISO(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config; 
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true, restart=nothing,
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true
     )
     
@@ -65,7 +67,6 @@ function PISO(
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
 
-    _warn_skipped_postprocess(mesh, postprocess)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -80,7 +81,6 @@ function PISO(
     @info "Allocating working memory..."
 
     # Define aux fields
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     Uf = FaceVectorField(mesh)
     S = StrainRate(gradU, gradUT, U, Uf)
@@ -126,6 +126,9 @@ function PISO(
     nueffc = cell_nueff(nu, model.turbulence) # cell ν_eff for the transpose stress
 
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
+    tflux = TimeFlux(U_eqn, mesh, boundaries.U)
+    lagged = LaggedTerms(U_eqn, (mdotf, nueff, gradU.result, explicit_fields(turbulenceModel, model)...);
+        evaluate=explicit_terms(turbulenceModel, model, S, nueff, nu, time, config))
 
     @info "Starting PISO loops..."
 
@@ -135,10 +138,12 @@ function PISO(
     for iteration ∈ start+1:iterations
         copyto!(dt_cpu, config.runtime.dt)
         time += dt_cpu[1]
+        begin_time_flux!(tflux, mdotf, U, nothing, nothing, dt_cpu[1]; pressure=(p, ∇p))
+        extrapolate_lagged!(lagged, time, config) # explicit terms at the time level of the scheme
 
         # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
-            divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
+            divτT, nueff, gradU, boundaries.U, time, config; cell_mueff=nueffc)
 
         rx, ry, rz = solve_equation!(
             U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config; time=time)
@@ -161,6 +166,7 @@ function PISO(
 
             # new approach
             flux!(mdotf, Uf, config)
+            time_flux!(tflux, mdotf, rD, boundaries.U, time, config)
             div!(divHv, mdotf, config)
 
             # Pressure calculations (previous implementation)
@@ -231,11 +237,11 @@ function PISO(
             ]
         )
 
-    distributed || runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+    runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
 
     if iteration%write_interval + signbit(write_interval) == 0
         outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-        distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+        save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
     end
 
     end # end for loop

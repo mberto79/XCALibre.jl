@@ -19,8 +19,9 @@ This is the top level API function to initiate a simulation. It uses the user-pr
 - Steady weakly compressible (SIMPLE algorithm for coupling)
 - Transient weakly compressible (PISO algorithm for coupling)
 
-On a distributed mesh only the incompressible SIMPLE and PISO solvers and the Laplace solver are
-supported; any other solver or model errors rather than solving each rank's block on its own.
+On a distributed mesh only the incompressible SIMPLE and PISO solvers, the Laplace solver and the
+density-based solver (`SupersonicFlow`) are supported; any other solver or model errors rather
+than solving each rank's block on its own.
 
 Calling `run!` again on the same model continues from its current fields, including the face mass
 flux of the last iteration, and retraces the uninterrupted run. Re-initialising the fields (e.g.
@@ -380,7 +381,7 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     transpose_stress=true
     ) where{T<:Transient,F<:WeaklyCompressible,M,Tu,E,D,BI} = 
 begin
@@ -389,7 +390,7 @@ begin
         output=output,
         pref=pref, 
         ncorrectors=ncorrectors, 
-        inner_loops=inner_loops, progress=progress,
+        inner_loops=inner_loops, outer_loops=outer_loops, progress=progress,
         transpose_stress=transpose_stress
         )
     return residuals
@@ -398,7 +399,7 @@ end
 # Compressible solver (transient)
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, progress=true,
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=2, outer_loops=1, progress=true,
     transpose_stress=true
     ) where{T<:Transient,F<:Compressible,M,Tu,E,D,BI} =
 begin
@@ -407,7 +408,7 @@ begin
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
-        inner_loops=inner_loops, progress=progress,
+        inner_loops=inner_loops, outer_loops=outer_loops, progress=progress,
         transpose_stress=transpose_stress
         )
     return residuals
@@ -435,9 +436,9 @@ Returns a `NamedTuple` with the field:
 """
 run!(
     model::Physics{T,F,M,Tu,E,D,BI}, config;
-    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true
+    output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, forces=nothing
     ) where{T,F<:SupersonicFlow,M,Tu,E,D,BI} =
 begin
-    residuals = godunov!(model, config, output=output, progress=progress)
+    residuals = godunov!(model, config, output=output, progress=progress, forces=forces)
     return residuals
 end

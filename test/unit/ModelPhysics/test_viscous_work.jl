@@ -48,7 +48,7 @@ function vw_case(TF, γ, μ; top=nothing, slip=false, updown=1)
     for f ∈ eachindex(mesh.faces); mdotf.values[f] = updown*sign(mesh.faces[f].normal[2]); end
 
     work = ScalarField(mesh)
-    VW.viscous_work!(work, mueff, mueff_cell, U, Uf, gradU, mdotf, config.boundaries.U, config)
+    VW.viscous_work!(work, mueff, mueff_cell, U, Uf, gradU, mdotf, config.boundaries.U, zero(TF), config)
     dissipation = ScalarField(mesh)
     VW.viscous_dissipation!(dissipation, mueff_cell.values, gradU, config.boundaries.U, config)
 

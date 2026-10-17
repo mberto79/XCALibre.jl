@@ -734,7 +734,7 @@ try
             @test norm(Array(b_gpu) - Array(parent(A2)) * Array(x32g2)) / norm(Array(b_gpu)) < 1e-6
         end
 
-        # Matrix-free split-precision device refresh: the coarse RAP scatter atomically adds across precisions (F64 finest -> F32
+        # Matrix-free split-precision device refresh: the coarse RAP gather adds across precisions (F64 finest -> F32
         # coarse); guards the type match and that the refreshed mixed-precision state converges like the F64 build.
         # Needs a matrix large enough to coarsen at max_coarse=64, so build a 2D Poisson here (A is 5x5).
         let nx = 40

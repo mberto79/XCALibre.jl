@@ -34,6 +34,8 @@ function simple!(
     petsc_options="", restart=nothing, transpose_stress=true, consistent=false
     )
     check_distributed_support(:SIMPLE, model)
+    reject_crank_nicolson(config.schemes, "simple!",
+        "a steady solver has no time levels; use SteadyState")
 
     residuals = setup_incompressible_solvers(
         SIMPLE, model, config;
@@ -74,11 +76,13 @@ function setup_incompressible_solvers(
     divHv = ScalarField(mesh)
     divτT = VectorField(mesh) # ∇·(ν_eff dev2((∇U)ᵀ)), stays zero if transpose_stress=false
 
+    gradU = Grad{schemes.U.gradient}(U) # also feeds the LinearUpwind face reconstruction
+
     @info "Defining models..."
 
     U_eqn = (
         Time{schemes.U.time}(U)
-        + Divergence{schemes.U.divergence}(mdotf, U)
+        + Divergence{schemes.U.divergence}(mdotf, U, gradU.result)
         - Laplacian{schemes.U.laplacian}(nueff, U)
         ==
         - Source(∇p.result)
@@ -111,7 +115,7 @@ function setup_incompressible_solvers(
     # only SIMPLE takes `consistent`; PISO shares this setup and has no such keyword
     consistent_kwarg = solver_variant === SIMPLE ? (; consistent) : (;)
     residuals  = solver_variant(
-        model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
+        model, turbulenceModel, ∇p, U_eqn, p_eqn, config; gradU=gradU,
         output=output,
         pref=pref,
         ncorrectors=ncorrectors,
@@ -126,9 +130,10 @@ end # end function
 function SIMPLE(
     model, turbulenceModel, ∇p, U_eqn, p_eqn, config;
     output=VTK(), pref=nothing, ncorrectors=0, inner_loops=0, progress=true, restart=nothing,
+    gradU=Grad{config.schemes.U.gradient}(model.momentum.U),
     transpose_stress=true, consistent=false
     )
-    
+
     # Extract model variables and configuration
     (; U, p, Uf, pf) = model.momentum
     (; nu) = model.fluid
@@ -138,7 +143,7 @@ function SIMPLE(
     (; backend) = hardware
 
     # wrapped eqns solve through the seam (serial identity / DistributedEqn); the raw eqns
-    # are assembled/discretised in-place below. distributed skips ProgressMeter/postprocess.
+    # are assembled/discretised in-place below. distributed skips ProgressMeter.
     U_deqn, p_deqn = U_eqn, p_eqn
     U_eqn, p_eqn = unwrap_eqn(U_eqn), unwrap_eqn(p_eqn)
     distributed = is_distributed_mesh(mesh)
@@ -147,7 +152,6 @@ function SIMPLE(
     dt_cpu = zeros(_get_float(mesh), 1)
     copyto!(dt_cpu, config.runtime.dt)
 
-    _warn_skipped_postprocess(mesh, postprocess)
     postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
@@ -162,7 +166,6 @@ function SIMPLE(
     @info "Allocating working memory..."
 
     # Define aux fields
-    gradU = Grad{schemes.U.gradient}(U)
     gradUT = T(gradU)
     S = StrainRate(gradU, gradUT, U, Uf)
 
@@ -212,7 +215,7 @@ function SIMPLE(
 
         # gradU and nueff of the current velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
-            divτT, nueff, gradU, boundaries.U, config; cell_mueff=nueffc)
+            divτT, nueff, gradU, boundaries.U, time, config; cell_mueff=nueffc)
 
         rx, ry, rz = solve_equation!(U_deqn, U, boundaries.U, solvers.U, xdir, ydir, zdir, config)
 
@@ -301,7 +304,7 @@ function SIMPLE(
             is_report_rank(mesh) && @info "Simulation converged in $iteration iterations!"
             if !signbit(write_interval)
                 outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-                distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+                save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
             end
             break
         end
@@ -317,11 +320,11 @@ function SIMPLE(
                 ]
             )
 
-        distributed || runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
+        runtime_postprocessing!(postprocess,iteration,iterations,S,time,config)
 
         if iteration%write_interval + signbit(write_interval) == 0
             outputWriter === nothing || save_output(model, outputWriter, iteration, time, config)
-            distributed || save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
+            save_postprocessing(postprocess,iteration,time,mesh,outputWriter,config.boundaries)
         end
 
     end # end for loop
@@ -348,41 +351,48 @@ end
 
 function nonorthogonal_face_correction(eqn, grad, flux, config; correction=nothing)
     mesh = grad.mesh
-    (; faces, cells, boundary_cellsID) = mesh
+    (; faces, cells, cell_faces, cell_nsign) = mesh
 
     (; hardware) = config
     (; backend, workgroup) = hardware
 
     (; b) = eqn.equation
-    
-    n_faces = length(faces)
-    n_bfaces = length(boundary_cellsID)
-    n_ifaces = n_faces - n_bfaces
 
-    ndrange = n_ifaces
+    # each cell sums the corrections of its internal faces (no atomics): the sum is the same
+    # whatever the thread count, and each face's correction is evaluated alike from both cells
+    ndrange = length(cells)
     kernel! = _sized(_nonorthogonal_face_correction, backend, workgroup, ndrange)
-    kernel!(b, correction, grad, flux, faces, cells, n_bfaces)
+    kernel!(b, correction, grad, flux, faces, cells, cell_faces, cell_nsign)
 end
 
 @kernel function _nonorthogonal_face_correction(
-    b, correction, grad, flux, faces, cells, n_bfaces)
+    b, correction, grad, flux, faces, cells, cell_faces, cell_nsign)
     i = @index(Global)
-    fID = i + n_bfaces
-    face = faces[fID]
-    (; ownerCells, area, normal, weight) = face
-    cID1 = ownerCells[1]
-    cID2 = ownerCells[2]
+    @inbounds begin
+        source = zero(eltype(b))
+        for fi ∈ cells.faces_range[i]
+            fID = cell_faces[fi]
+            face = faces[fID]
+            (; ownerCells, area, normal, weight) = face
+            cID1 = ownerCells[1]
+            cID2 = ownerCells[2]
 
-    gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
-    dPN = cells[cID2].centre - cells[cID1].centre
-    projected_delta = max(
-        dPN⋅normal, oftype(area, MIN_PROJECTED_DELTA_RATIO)*norm(dPN))
-    correction_vector = normal - dPN/projected_delta
-    face_correction = flux[fID]*area*(gradi⋅correction_vector)
+            gradi = weight*grad[cID1] + (one(weight) - weight)*grad[cID2]
+            dPN = cells[cID2].centre - cells[cID1].centre
+            projected_delta = max(
+                dPN⋅normal, oftype(area, MIN_PROJECTED_DELTA_RATIO)*norm(dPN))
+            correction_vector = normal - dPN/projected_delta
+            face_correction = flux[fID]*area*(gradi⋅correction_vector)
 
-    store_face_correction!(correction, fID, face_correction)
-    Atomix.@atomic b[cID1] += face_correction
-    Atomix.@atomic b[cID2] -= face_correction
+            if cID1 == i
+                store_face_correction!(correction, fID, face_correction)
+                source += face_correction
+            else
+                source -= face_correction
+            end
+        end
+        b[i] += source
+    end
 end
 
 ### TEMP LOCATION FOR PROTOTYPING
@@ -395,10 +405,6 @@ function correct_mass_flux!(
 
     p = p_eqn.model.terms[1].phi
     (; faces, cells, boundary_cellsID) = p.mesh
-    A = _A(p_eqn)
-    nzval = _nzval(A)
-    colval = _colval(A)
-    rowptr = _rowptr(A)
 
     n_faces = length(faces)
     n_bfaces = length(boundary_cellsID)
@@ -415,8 +421,7 @@ function correct_mass_flux!(
 
     p_BCs = config.boundaries.p
     for BC ∈ p_BCs
-        correct_mass_periodic(
-            BC, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+        correct_mass_periodic(BC, mdotf, p, pterm, cells, faces, backend, workgroup)
         KernelAbstractions.synchronize(backend)
     end
 
@@ -456,36 +461,39 @@ end
 
 correct_mass_periodic(arg...) = nothing
 
+# The face coefficient of the PeriodicParent Laplacian, not the matrix entry: where the periodic
+# partner cell is also an interior neighbour (two cells across) the entry sums both faces, and in
+# the compressible solvers it also holds the pressure-convection coefficients
 function correct_mass_periodic(
-    BC::PeriodicParent, mdotf, p, nzval, colval, rowptr, cells, faces, backend, workgroup)
+    BC::PeriodicParent, mdotf, p, pterm, cells, faces, backend, workgroup)
     (; IDs_range, value) = BC
-    (; face_map) = value
+    (; face_map, transform) = value
     ndrange = length(IDs_range)
     kernel! = _correct_mass_periodic(backend)
-    kernel!(mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map;
-        _dynamic_setup(backend, workgroup, ndrange)...)
+    kernel!(mdotf, p, pterm.flux, pterm.sign, cells, faces, IDs_range, face_map,
+        transform.distance; _dynamic_setup(backend, workgroup, ndrange)...)
 end
 
 @kernel function _correct_mass_periodic(
-    mdotf, p, nzval, colval, rowptr, cells, faces, IDs_range, face_map)
+    mdotf, p, rhorDf, psign, cells, faces, IDs_range, face_map, distance)
     i = @index(Global)
     fID = IDs_range[i]
     pfID = face_map[i]
 
-    face = faces[fID]
-    pface = faces[pfID]
-    cID1 = face.ownerCells[1]
-    cID2 = pface.ownerCells[1]
+    cID1 = faces.ownerCells[fID][1]
+    cID2 = faces.ownerCells[pfID][1]
+    Ef_mag, Δ = periodic_face_distance(faces, cells, fID, cID1, cID2, distance)
+    aN = psign*(rhorDf[fID]*Ef_mag)/Δ
+    mdotf[fID] += aN*(p[cID2] - p[cID1])
+    mdotf[pfID] = -mdotf[fID]
+end
 
-    p1 = p[cID1]
-    p2 = p[cID2]
-    # need to get aN from sparse system
-    zID = spindex(rowptr, colval, cID1, cID2)
-    aN = nzval[zID]
-    correction = aN*(p2 - p1)
-    mdotf[fID] += correction
-    mdotf[pfID] = -mdotf[fID] 
-    
+# |E_f| and the cell distance Δ of a periodic face pair, as in the PeriodicParent Laplacian
+@inline function periodic_face_distance(faces, cells, fID, cID, pcID, distance)
+    Sf = faces.area[fID]*faces.normal[fID]
+    e = faces.e[fID]
+    Ef = ((Sf⋅Sf)/(Sf⋅e))*e
+    norm(Ef), norm((cells.centre[pcID] - distance) - cells.centre[cID])
 end
 
 ### Correct interpolation at periodic boundaries

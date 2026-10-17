@@ -1,5 +1,5 @@
-# Distributed KOmegaSST with wall functions vs serial simple!, per rank under mpiexec. The
-# motorBike configuration: :wall and :top carry K/Omega/Nut wall functions. At three ranks the
+# Distributed KOmegaSST with wall functions vs serial simple!, per rank under mpiexec.
+# :wall and :top carry K/Omega/Nut wall functions. At three ranks the
 # partition is three y-bands, so :top and :wall each empty out on some rank by construction.
 using XCALibre, PETSc, MPI, Test
 

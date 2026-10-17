@@ -24,9 +24,8 @@ _index_type(A) = eltype(_rowptr(A))
 
 # NEW SECTION: shadow-vector breakdown
 
-# BiCGStab/CGS take ⟨c, r⟩/⟨c, Ap⟩ for the shadow c: 0/0 once r ⟂ c (b - Ax₀ in a few cells, coupled
-# one way as by upwinding). Krylov.jl flags it after the 0/0 step reached x, so callers re-solve
-# from x₀ with the dense shadow `_fallback_shadow!`
+# BiCGStab/CGS take ⟨c, r⟩/⟨c, Ap⟩: 0/0 once r ⟂ shadow c (b - Ax₀ in few cells, one-way coupling);
+# Krylov.jl flags it after the 0/0 step reached x, so callers re-solve with `_fallback_shadow!`
 const _ShadowWorkspace = Union{BicgstabWorkspace, CgsWorkspace}
 
 _broke_down(workspace, itmax) = false

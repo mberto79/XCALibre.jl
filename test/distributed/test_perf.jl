@@ -95,6 +95,7 @@ make_symmetric!(p_eqn, config2)
 correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
 cCo = KernelAbstractions.zeros(backend, Float64, length(dm2.cells))
 max_courant_number!(cCo, model2, config2)
+sync!(U, dm2, config2)
 
 a_ueqn = @allocated usolve!()
 a_peqn = @allocated psolve_eqn!()

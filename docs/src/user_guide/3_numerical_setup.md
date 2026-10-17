@@ -184,6 +184,14 @@ Linear solvers in XCALibre.jl are provided by [Krylov.jl](https://github.com/Jul
 
 `Bicgstab()` and `Cgs()` break down when the residual becomes orthogonal to their shadow vector, which can happen when the initial residual is nonzero in a few cells only and the matrix couples them one way (upwind convection). Such a solve is repeated from its initial guess with a fixed, dense shadow vector; if it breaks down again, the field keeps its previous values and a warning is printed. Distributed solves continue from the last iterate instead, which restarts BiCGStab with the current residual as the shadow vector.
 
+A linear solve that stops without meeting its `atol` or `rtol` prints a warning naming the method, the equation (its label on distributed meshes, e.g. `[p]`, or the vector component in serial runs), why it stopped, the number of iterations and the final residual norm, next to the tolerances, e.g.
+
+```
+┌ Warning: Cg solve [p] did not converge in 1000 iterations (KSP_DIVERGED_ITS): KSP residual norm = 3.1e-7, atol = 1.0e-7, rtol = 0.0 (shown at most 10 times per equation)
+```
+
+This covers every solve path: Krylov.jl (the reason is Krylov.jl's status, e.g. `maximum number of iterations exceeded`), `AMG`, mixed precision (`MixedF32`, `MixedF16`) and PETSc, where every negative `KSPConvergedReason` is reported (iteration limit, divergence, breakdown, indefinite preconditioner, NaN). Serial solves report ‖b − Ax‖₂ of the returned solution; PETSc solves report the norm their stopping test used (the preconditioned natural norm for `Cg`). When a mixed-precision solve refines its correction (`rtol` below what the low precision attains), the warning is given when the refinement ends without meeting `rtol`, with ‖b − Ax‖₂ in full precision, and not for the individual corrections. Each equation shows at most 10 such warnings; on a distributed mesh rank 0 prints them.
+
 For more information on these solvers you can review the excellent documentation provided by the [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl) team. 
 
 XCALibre.jl provides the `SolverSetup` convenience function for setting solvers. See details below. 

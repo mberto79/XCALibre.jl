@@ -40,7 +40,7 @@ unit/Solvers: test_reconstruct (face fluxes), test_potential_flow, test_run_cont
 unit/ModelPhysics: test_wall_function_* and test_wall_production_density (wall functions), test_viscosity_models, test_parallel_cell_updates, test_lke_diffusion, test_lke_production, test_transpose_stress, test_viscous_work, test_kinetic_energy_flux, test_thermo_psi_time, test_fluidProperties (NIST), test_turbulence_float_types
 unit/Postprocess: test_field_average, test_field_rms, test_reynolds_stress, test_qcriterion_window, test_post_process_transient, test_post_process_steady, test_viscous_force_bcs, test_probe
 cases: test_2d_laplace_*, test_transient_verification_examples (runs examples/transient_verification/heat_decay.jl), test_adaptive_dt, test_*incompressible* (pitzdaily_LES: KEquation+Smagorinsky; transient_laminar_BFS: Euler+CrankNicolson), test_2d_taylor_couette_laminar, test_*compressible* (flatplate files hold viscosity/wall-BC variants), test_2d_godunov_supersonic_cylinder (+ _RANS), test_2d_multiphase_*, test_2d_EFM
-distributed: gate.jl (MPI gate: one 2-rank gate_session.jl including each file in its own module; test_halo, test_halo_subcomm and test_turbulence_sst_wallfn at 3 ranks, skipped unless `XCALIBRE_TEST_MAX_RANKS` >= 3). Other files and rank counts: `runtests_mpi.jl`
+distributed: gate.jl (MPI gate: one 2-rank gate_session.jl including each file in its own module; test_halo, test_halo_subcomm and test_turbulence_sst_wallfn at 3 ranks, skipped unless `XCALIBRE_TEST_MAX_RANKS` >= 3, which CI sets). Other files and rank counts: `runtests_mpi.jl`
 
 ## Not registered (known issues)
 - unit/ModelPhysics/test_mixture_multiphase.jl: needs `examples/0_GRIDS/unit_test_stage2.unv` (missing)

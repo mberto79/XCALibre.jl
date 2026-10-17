@@ -145,6 +145,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
     @testset "Parallel cell updates Unit Test" begin
         include("unit_test_parallel_cell_updates.jl")
     end
+
+    @testset "Deterministic boundary accumulation" begin
+        include("unit_test_boundary_accumulation.jl")
+    end
   
     @testset "KOmegaLKE Diffusion Unit Test" begin
         include("unit_test_lke_diffusion.jl")

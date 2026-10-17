@@ -1,8 +1,8 @@
 # A film run to a steady state must not depend on Δt: inclined plate, prescribed h and U at
 # the inlet, σ = 0. Main fef95b73 gave max|Δh|/h_N = 1.06e-3 and max|ΔUx|/U_N = 5.5e-4
 # between Δt = 5e-5 and 6e-4; this fix gives 5.8e-5 and 5.7e-7.
-function film_dt_steady(dt; tend=1.0, σ=0.0)
-    nx, ny = 50, 4
+function film_dt_steady(dt; tend=1.0, σ=0.0, nx=50)
+    ny = 4
     L, W = 0.05, 0.004
     P = XCALibre.Point
     pts = [P(0.0, 0.0, 0.0), P(L, 0.0, 0.0), P(0.0, W, 0.0), P(L, W, 0.0)]
@@ -54,4 +54,14 @@ end
     @test all(isfinite, h1) && all(isfinite, h2)
     @test maximum(abs.(h1 .- h2)) < 2e-4
     @test maximum(abs.(u1 .- u2)) < 1e-5
+end
+
+# the uniform start is an exact discrete steady state away from the inlet, so the first momentum
+# solve starts from a residual nonzero in a few cells only, which broke BiCGStab down (NaN on main)
+@testset "Film with σ = 0 survives a localised initial residual" begin
+    h0, u0 = film_dt_steady(2.5e-5; tend=5e-5, nx=100)
+    h1, u1 = film_dt_steady(2.5e-5; tend=5e-5, nx=100, σ=1e-12)
+    @test all(isfinite, h0) && all(isfinite, u0)
+    @test maximum(abs.(h0 .- h1)) < 1e-9
+    @test maximum(abs.(u0 .- u1)) < 1e-9
 end

@@ -133,6 +133,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_bicgstab_shadow.jl")
     end
 
+    @testset "Krylov shadow-vector breakdown" begin
+        include("unit_test_krylov_breakdown.jl")
+    end
+
     @testset "Mixed-precision linear solves" begin
         include("unit_test_mixed_precision.jl")
     end

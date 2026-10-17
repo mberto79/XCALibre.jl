@@ -106,7 +106,7 @@ function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, 
         _diagonal_positions(A), (; diag, ad=similar(b)), _shadow_buffer(krylov, r))
 end
 
-_shadow_buffer(::BicgstabWorkspace, r) = similar(r)
+_shadow_buffer(::_ShadowWorkspace, r) = similar(r)
 _shadow_buffer(_, r) = nothing
 
 # as _shadow for full-precision solves: BiCGStab's shadow vector M⁻¹r, r being the initial residual
@@ -114,6 +114,14 @@ _shadow_buffer(_, r) = nothing
 _mixed_shadow(ws::MixedWorkspace{PR,<:BicgstabWorkspace}, M, ldiv) where PR =
     (ldiv ? ldiv!(ws.c, M, ws.r) : mul!(ws.c, M, ws.r); (; c=ws.c))
 _mixed_shadow(ws, M, ldiv) = (;)
+
+# the correction d starts from 0, so a shadow-vector breakdown is retried in `_mixed_correction!`
+# with the dense shadow; a second breakdown leaves the field unchanged
+function _correction_broke_down(ws, itmax)
+    _broke_down(ws.krylov, itmax) || return false
+    @warn "$(nameof(typeof(ws.krylov))) broke down twice; the field keeps its previous values" maxlog=10
+    return true
+end
 
 function _diagonal_positions(A)
     rowptr = _rowptr(A)
@@ -220,8 +228,11 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, rtol, ta
     # A is unchanged by later corrections of the same solve
     (isnothing(target) || iszero(target)) && update_preconditioner!(ws.P, mesh, config)
     ldiv = is_ldiv(ws.P)
-    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws, ws.P.P, ldiv)..., M=ws.P.P, itmax=itmax,
-        atol=Float32(atol), rtol=Float32(_correction_rtol(rtol, target, rnorm)), ldiv=ldiv, history=false)
+    kw = (; M=ws.P.P, itmax=itmax, atol=Float32(atol),
+        rtol=Float32(_correction_rtol(rtol, target, rnorm)), ldiv=ldiv, history=false)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws, ws.P.P, ldiv)..., kw...)
+    _broke_down(ws.krylov, itmax) && krylov_solve!(ws.krylov, ws.opA, ws.r; c=_fallback_shadow!(ws.c), kw...)
+    _correction_broke_down(ws, itmax) && return Krylov.iteration_count(ws.krylov), rnorm
     kernel! = _sized(_add_correction!, backend, workgroup, n)
     kernel!(values, ws.krylov.x, one(eltype(values)))
     Krylov.iteration_count(ws.krylov), rnorm
@@ -248,8 +259,11 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, rtol, ta
     sr = inv(rnorm)
     kernel! = _sized(_scale_cast!, backend, workgroup, n)
     kernel!(ws.r, ws.rfull, sr)
-    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws, ws.P, false)..., M=ws.P, itmax=itmax,
-        atol=T(atol*sr), rtol=T(_correction_rtol(rtol, target, rnorm)), ldiv=false, history=false)
+    kw = (; M=ws.P, itmax=itmax, atol=T(atol*sr), rtol=T(_correction_rtol(rtol, target, rnorm)),
+        ldiv=false, history=false)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws, ws.P, false)..., kw...)
+    _broke_down(ws.krylov, itmax) && krylov_solve!(ws.krylov, ws.opA, ws.r; c=_fallback_shadow!(ws.c), kw...)
+    _correction_broke_down(ws, itmax) && return Krylov.iteration_count(ws.krylov), rnorm
     d = ws.krylov.x
     ω = _step_length(ws, A, d, hardware)
     kernel! = _sized(_add_scaled_correction!, backend, workgroup, n)

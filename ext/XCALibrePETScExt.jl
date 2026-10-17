@@ -425,7 +425,17 @@ end
 function psolve!(s::XPETScSolver, x::AbstractVector)
     _maybe_freeze_pc!(s)
     _with_placed(_ksp_solve, s, x)
+    # a shadow-vector breakdown (BiCGStab) stops at the last finite iterate; solving again from
+    # there restarts with the current residual as the shadow, as the serial solves retry theirs
+    for _ ∈ 1:2
+        _broke_down(s) || break
+        _with_placed(_ksp_solve, s, x)
+    end
+    x
 end
+
+_broke_down(s::XPETScSolver) = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp) ∈
+    (LibPETSc.KSP_DIVERGED_BREAKDOWN, LibPETSc.KSP_DIVERGED_BREAKDOWN_BICG)
 
 psolve_transpose!(s::XPETScSolver, x::AbstractVector) = _with_placed(_ksp_solve_transpose, s, x)
 

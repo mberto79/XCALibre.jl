@@ -141,6 +141,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_mixed_precision.jl")
     end
 
+    @testset "Unconverged linear solves warn" begin
+        include("unit_test_solve_warning.jl")
+    end
+
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
     end

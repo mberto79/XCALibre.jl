@@ -454,7 +454,9 @@ meaning:
   closest relative, block Jacobi with an ILU(0) (`DILU`, `ILU0GPU`) or ICC(0) (`IC0GPU`)
   factorisation of each rank's block. Each warns once that it is a substitute.
 - `atol`, `rtol`, `itmax`: the stopping tolerances and iteration limit of each linear solve, as in
-  serial.
+  serial. A solve that stops without meeting them warns, as in serial, with the equation label,
+  the `KSPConvergedReason`, the iteration count and PETSc's residual norm (see the linear solvers
+  section of the numerical setup page).
 - `convergence`: the residual target that stops the outer iteration, as in serial. It does not
   affect the linear solver.
 

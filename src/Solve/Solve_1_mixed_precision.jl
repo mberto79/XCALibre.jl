@@ -197,34 +197,45 @@ end
 # NEW SECTION: correction solve
 
 # x += d per correction until ‖b - Ax‖ ≤ max(atol, rtol·‖b - Ax₀‖); a single correction unless rtol
-# is below what the low precision attains; returns the total Krylov iteration count
+# is below what the low precision attains. Returns the total Krylov iteration count, whether the
+# tolerance was met and, when not, why
 function mixed_solve!(ws::MixedWorkspace, A, b, values, setup, config, mesh)
     (; atol, rtol) = setup
     inner_rtol = max(rtol, _attainable_rtol(ws.precision))
-    inner_rtol == rtol && return first(_mixed_correction!(ws, A, b, values, inner_rtol, nothing, setup, config, mesh))
+    if inner_rtol == rtol
+        its, _ = _mixed_correction!(ws, A, b, values, inner_rtol, nothing, setup, config, mesh)
+        # a zero residual returns before the Krylov solve
+        converged = iszero(its) || Krylov.issolved(ws.krylov)
+        return its, converged, ws.krylov.stats.status
+    end
     iterations, rnorm = _mixed_correction!(ws, A, b, values, inner_rtol, 0.0, setup, config, mesh)
     target = max(atol, rtol*rnorm)
     for _ ∈ 2:MAX_REFINEMENTS
         its, rnorm = _mixed_correction!(ws, A, b, values, inner_rtol, target, setup, config, mesh)
         iterations += its
-        rnorm ≤ target && break
+        rnorm ≤ target && return iterations, true, ""
     end
-    iterations
+    # the last correction is checked without solving again
+    _, rnorm = _mixed_correction!(ws, A, b, values, inner_rtol, target, setup, config, mesh; solve=false)
+    iterations, rnorm ≤ target, _refinement_reason()
 end
+
+_refinement_reason() = "iterative refinement stopped after $MAX_REFINEMENTS corrections"
 
 # solves A·d = b - Ax from d = 0 and adds d unless ‖b - Ax‖ ≤ target (`nothing` skips the norm);
 # returns the Krylov count and ‖b - Ax‖ before the correction. Later corrections reduce only to the
 # target: the outer convergence check reads the post-solve residual (overshooting rtol stops a run)
 _correction_rtol(rtol, target, rnorm) = isnothing(target) || iszero(target) ? rtol : max(rtol, target/rnorm)
 
-function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, rtol, target, setup, config, mesh)
+function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, rtol, target, setup, config, mesh;
+        solve=true)
     (; itmax, atol) = setup
     (; backend, workgroup) = config.hardware
     n = length(values)
     kernel! = _sized(_mixed_residual!, backend, workgroup, n)
     kernel!(ws.r, ws.nzval, _rowptr(A), _colval(A), _nzval(A), values, b)
     rnorm = isnothing(target) ? 0.0 : Float64(norm(ws.r))
-    !isnothing(target) && rnorm ≤ target && return 0, rnorm
+    (!solve || !isnothing(target) && rnorm ≤ target) && return 0, rnorm
     # A is unchanged by later corrections of the same solve
     (isnothing(target) || iszero(target)) && update_preconditioner!(ws.P, mesh, config)
     ldiv = is_ldiv(ws.P)
@@ -241,7 +252,8 @@ end
 # scaling to unit diagonal fits Float16's range; half-width rounding perturbs A by more than the
 # smallest eigenvalues of a pressure matrix, so the diagonal is compensated to keep A's action on
 # constant fields, and the minimal-residual step keeps the full-precision residual from growing
-function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, rtol, target, setup, config, mesh)
+function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, rtol, target, setup, config, mesh;
+        solve=true)
     (; itmax, atol) = setup
     hardware = config.hardware
     (; backend, workgroup) = hardware
@@ -255,7 +267,7 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, rtol, ta
     kernel!(ws.rfull, ws.nzval, ws.comp.diag, ws.dinv, rowptr, colval, nzval, values, b, ws.s)
     # unit 2-norm: Krylov's dot products return T and n·max² overflows Float16
     rnorm = norm(ws.rfull)
-    (iszero(rnorm) || rnorm ≤ something(target, 0.0)) && return 0, rnorm
+    (!solve || iszero(rnorm) || rnorm ≤ something(target, 0.0)) && return 0, rnorm
     sr = inv(rnorm)
     kernel! = _sized(_scale_cast!, backend, workgroup, n)
     kernel!(ws.r, ws.rfull, sr)

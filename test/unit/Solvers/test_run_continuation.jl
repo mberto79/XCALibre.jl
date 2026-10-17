@@ -92,7 +92,7 @@ snapshot(model) = copy.((model.momentum.U.x.values, model.momentum.U.y.values,
     model.momentum.p.values, hasproperty(model.energy, :T) ? model.energy.T.values : Float64[]))
 
 # Every kernel sums in a fixed order (boundary faces per owner cell, see
-# unit_test_boundary_accumulation.jl), so a continued run retraces the uninterrupted one exactly,
+# test_boundary_accumulation.jl), so a continued run retraces the uninterrupted one exactly,
 # at any thread count.
 fields_match(m1, m2) = snapshot(m1) == snapshot(m2)
 residuals_match(r1, r2) = all(r1[k] == r2[k] for k ∈ (:Ux, :Uy, :p))

@@ -93,7 +93,7 @@ u_rms = sum(postprocess[2].rms.x.values[end-25:end-15])/length(postprocess[2].rm
 v_rms = sum(postprocess[2].rms.y.values[end-25:end-15])/length(postprocess[2].rms.y.values[end-25:end-15])
 
 # sanity bound only: the analytic value is the RMS of the inlet face, the samples are the first
-# cells (FieldRMS itself is checked exactly in unit_test_field_rms.jl; the Reynolds stresses are
+# cells (FieldRMS itself is checked exactly in test_field_rms.jl; the Reynolds stresses are
 # checked against it below)
 @test u_rms ≈ u_rms_exact rtol = 0.1
 @test v_rms ≈ v_rms_exact atol = 0.03

@@ -1,6 +1,6 @@
 using XCALibre
 using Accessors
-using Logging
+using Base.CoreLogging: Warn, with_logger
 using Test
 
 # A linear solve that stops without meeting atol/rtol warns on every serial path (Krylov, mixed
@@ -55,14 +55,14 @@ end
 @testset "converged $(nameof(typeof(s))) $(nameof(typeof(p))) solve is silent" for (s, p, rtol) ∈ (
         (Cg(), FullPrecision(), 1e-8), (Cg(), MixedF32(), 1e-3), (Cg(), MixedF32(), 1e-8),
         (AMG_SOLVER, FullPrecision(), 1e-8))
-    @test_logs min_level=Logging.Warn laplace_solve(s, p; itmax=1000, rtol=rtol, atol=0.0)
+    @test_logs min_level=Warn laplace_solve(s, p; itmax=1000, rtol=rtol, atol=0.0)
 end
 
 # rate limited per equation: a second equation still reports after the first one's limit
 @testset "unconverged-solve warnings are rate limited per equation" begin
     nmax = XCALibre.Solve.UNCONVERGED_MAXLOG
     sys1, sys2 = (laplace_system(Cg(), FullPrecision(); itmax=2, rtol=0.0, atol=1e-14) for _ ∈ 1:2)
-    logger = Test.TestLogger(min_level=Logging.Warn)
+    logger = Test.TestLogger(min_level=Warn)
     with_logger(logger) do
         foreach(_ -> solve_from_zero!(sys1), 1:nmax + 5)
         solve_from_zero!(sys2)

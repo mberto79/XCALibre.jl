@@ -1,7 +1,8 @@
 # Distributed linear solves that stop without meeting atol/rtol warn once, from rank 0, with the
 # equation label, the KSPConvergedReason, the iteration count and the residual norm: plain PETSc
 # solves (also after a BiCGStab retry and in the transpose solve) and MixedF32 corrections.
-using XCALibre, PETSc, MPI, Test, Logging
+using XCALibre, PETSc, MPI, Test
+using Base.CoreLogging: Warn
 import XCALibre.Distribute: _solve_owned!, passemble!, psolve_transpose!
 
 MPI.Init()
@@ -34,8 +35,8 @@ setup(; solver=Cg(), itmax=2, rtol=0.0, precision=FullPrecision()) = SolverSetup
 
 # rank 0 emits exactly one warning per solve; the other ranks stay silent (the reason is global)
 expect_warning(f, msg) = rank == 0 ?
-    (@test_logs (:warn, msg) min_level=Logging.Warn f()) : (@test_logs min_level=Logging.Warn f())
-expect_silence(f) = @test_logs min_level=Logging.Warn f()
+    (@test_logs (:warn, msg) min_level=Warn f()) : (@test_logs min_level=Warn f())
+expect_silence(f) = @test_logs min_level=Warn f()
 
 const ITS = r"\[T\] did not converge in 2 iterations \(KSP_DIVERGED_ITS\): KSP residual norm = "
 

@@ -36,5 +36,5 @@ patterns (they need an internal post-processing hook; `test/unit_test_crank_nico
 them), the Re 100 cylinder (no order to measure), and the
 3D isotropic-turbulence WALE case (a copy of `test/0_TEST_CASES/3d_incompressible_isotropic_turbulence_WALE.jl`).
 
-`heat_decay.jl` and `shear_wave_piso.jl` are run by the test suite
-(`test/unit_test_transient_verification_examples.jl`).
+`heat_decay.jl` is run by the test suite (`test/unit_test_transient_verification_examples.jl`);
+the shear wave of `shear_wave_piso.jl` is tested in `test/unit_test_crank_nicolson.jl`.

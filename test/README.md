@@ -23,8 +23,8 @@
 3. Load grids via `pkgdir(XCALibre, ...)`; `workgroupsize(mesh)` comes from `runtests.jl`
 
 ## Budget and conventions
-- Whole suite under 10 min per Julia version on CI, no coverage
-- Unit files take seconds; each case under ~15 s (cases tier ~2.5 min)
+- CI, no coverage, per Julia version: unit ~12 min, cases ~8 min, distributed ~6 min (whole suite ~25 min); keep new files within these
+- Most unit files take seconds (solver-based checks such as test_crank_nicolson up to ~1 min); each case under ~15 s on a desktop CPU
 - Unit: tiny meshes, assert the property (exactness, conservation, sign, types)
 - Cases: assert physics (convergence, reference values), not just "it ran"
 

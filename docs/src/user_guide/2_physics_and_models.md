@@ -439,6 +439,14 @@ modelled rather than resolved, so a wall temperature recovered from the first
 cell inherits that treatment. Use `FixedTemperature` instead when the wall
 temperature is the quantity being imposed and the flux should follow.
 
+### `Robin` condition
+
+`Robin` imposes the mixed constraint `a·φ + b·∇φ·n = value` on a scalar field, e.g. a convective heat-transfer condition. `a=1, b=0` recovers `Dirichlet` and `a=0, b=1` recovers `Neumann`.
+
+```@docs; canonical=false
+Robin
+```
+
 ### `AbstractPhysicalConstraint` conditions
 
 `Wall` boundary conditions can be used to provide a boundary with a wall constraint. This boundary type, at present, can only be used to define vectors. For scalar quantities in wall regions a `Extrapolated` (zero gradient) should be imposed.

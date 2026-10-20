@@ -7,7 +7,7 @@ ncells = length(mesh.cells)
 n_bfaces = length(mesh.boundary_cellsID)
 total_volume = sum(c.volume for c ∈ mesh.cells)
 
-@testset "Phase 1 partition nparts=$nparts" for nparts ∈ (1, 2, 4)
+@testset "Phase 1 partition nparts=$nparts" for nparts ∈ (1, 2, 3, 4)
     parts = partition_cells(mesh, nparts)
     dms = [extract_subdomain(mesh, parts, r) for r ∈ 1:nparts]
 

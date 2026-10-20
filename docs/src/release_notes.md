@@ -1,5 +1,5 @@
 ```@meta
-EditURL = "https://github.com/mberto79/XCALibre.jl/blob/master/CHANGELOG.md"
+EditURL = "https://github.com/github.com/mberto79/XCALibre.jl/blob/master/CHANGELOG.md"
 ```
 
 # Release notes
@@ -7,168 +7,60 @@ EditURL = "https://github.com/mberto79/XCALibre.jl/blob/master/CHANGELOG.md"
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.7.0-DEV] - 2026-10-20
-
-### Fixed
-* Every dependency now has a `[compat]` entry, including the standard libraries `LinearAlgebra`, `Logging`, `Printf` and `SparseArrays`, as the General registry requires. [#242](@ref)
-* Documentation: the release notes link to the correct repository, and `Robin`, `volume_integral`, `weighted_volume_integral`, `volume_average` and `total_volume` are now documented. [#242](@ref)
-* `ConstantViscosity` is initialised correctly and its test is registered in the suite. [#204](@ref)
-* Tests: `test/distributed/test_perf.jl` now checks the correct halo-exchange budget and converged solves, and runs in the two-rank gate session [#240](@ref)
-* Distributed linear solves that stop without meeting `atol` or `rtol` now warn with the method, equation, reason and residual, at most 10 times per equation; converged solves print nothing. [#239](@ref)
-* Linear solves with `Bicgstab()` or `Cgs()` no longer return NaN on breakdown; a broken-down solve is repeated from its initial guess with a fixed shadow vector, and warns if it breaks down again. [#238](@ref)
-* Results no longer change from run to run with thread scheduling: boundary-face contributions are summed per owner cell in face order, so two identical runs on the same thread count are bit for bit identical. [#232](@ref)
-* `bounding_box(mesh)` is a reduction over the mesh nodes returning `SVector`s, and the `Empty` distance is the node extent along the patch normal, fixing crashes and wrong LES filter widths. [#233](@ref)
-* The thin-film solver (`Momentum{EFM}`, `filmModel!`) now gives a steady state that does not depend on the time step, with prescribed inflow fluxes honoured exactly. [#231](@ref)
-* `Qcriterion` now honours its `start`, `stop` and `update_interval` keywords, computing Q only inside its window. [#229](@ref)
-* The Laplace example and tests pass `Schemes(...)` and `SolverSetup(...)` directly instead of a named tuple. [#235](@ref)
-* The kinetic-energy face interpolation of the enthalpy equation works on KernelAbstractions 0.9.25 and later, as the compat range allows. [#236](@ref)
-* `viscous_force` and `wall_shear_stress` work on `DirichletFunction`, `RotatingWall` and zero-gradient patches, and `viscous_force`, `wall_shear_stress` and `stress_tensor` take a `time` keyword. [#230](@ref)
-* The explicit viscous stress and viscous work use the boundary-face velocity gradient of every velocity condition, and periodic faces are treated conservatively. [#227](@ref)
-* `CrankNicolson` is now the second-order trapezoidal rule inside `Time`, with `CrankNicolson(ψ)` setting the off-centring; it raises an `ArgumentError` in `multiphase!`, `filmModel!`, `godunov!` and steady solvers. Euler and steady results are unchanged. [#226](@ref)
-* The periodic face-flux correction uses the face coefficient of the periodic Laplacian, so continuity holds where the partner cell is also a neighbour; other periodic incompressible results are unchanged. [#226](@ref)
-* Transient `piso!`, `cpiso!` and `multiphase!` runs reach the same steady state for different time steps, with a bounded blend of the old face flux. Euler results change slightly; temporal order is unchanged. [#225](@ref)
-* `godunov!` with `LocalTimeStepping` compiles on GPUs, as `turbulence_dt` is now a singleton type; the `:min`, `:mean` and `:max` inputs are unchanged. [#218](@ref)
+## Version [v0.6.1-DEV] - 2026-09-11
 
 ### Added
-* Added `examples/transient_verification/`, six small cases comparing `Euler` with `CrankNicolson` against exact or reference solutions and printing the observed temporal order. [#228](@ref)
-* Runtime post-processing (`postprocess`) runs on distributed meshes in `piso!`, `simple!` and `laplace!`, and `laplace!` post-processed scalars are written to OpenFOAM output with zero-gradient patches. [#234](@ref)
-* Distributed gate tests share one `mpiexec` session, and rank counts above `XCALIBRE_TEST_MAX_RANKS` (default 2) are skipped. [#225](@ref)
-* Added the test grid `test/grids/OF_graded_channel`, a 700-cell 2-D OpenFOAM channel with streamwise grading for transient tests. [#237](@ref)
-* The density-based solver `godunov!` runs on distributed meshes with all flux, reconstruction and time-stepping schemes and the `Laminar`, `KOmega` and `KOmegaSST` models. [#222](@ref)
-* Added a characteristic far-field treatment in `godunov!` for patches where `U`, `p` and `T` are all `Dirichlet` or `DirichletFunction`, so acoustic waves leave the domain. [#217](@ref)
-* Added local pseudo-time stepping `Runtime(adaptive=LocalTimeStepping(maxCo, startCo, ramp))` and the Jameson multistage schemes `RK3()`, `RK4()` and `RK5()`, with `rhoU` and `rhoE` residuals and force histories. [#216](@ref)
-* Added the `LeastSquares` gradient scheme, selected with `Schemes(gradient=...)`, which is exact for linear fields on skewed meshes; it is off by default. [#215](@ref)
-* Added consistent (SIMPLEC) coupling with `run!(model, config; consistent=true)` for `simple!` and `csimple!`; it is off by default. [#147](@ref)
-* Added the second-order upwind divergence schemes `LinearUpwind` and `LimitedLinearUpwind`, which keep the matrix diagonally dominant; other equations fall back to `Upwind` with a warning. [#169](@ref)
-* `he` can be convected with `LinearUpwind` and `LimitedLinearUpwind`, instead of stopping with an `ArgumentError`. [#207](@ref)
-* Added the divergence scheme `LUSTDC`, a deferred-correction form of `LUST` for steady runs that do not converge with `LUST`; `LUST` is unchanged. [#211](@ref)
-* Added the divergence scheme `LUSTLU`, an opt-in second-order variant of `LUST` for transient and LES runs; it is not available for `he`. [#213](@ref)
-* Added the `Venkatakrishnan` gradient limiter, `Schemes(limiter=Venkatakrishnan(K))`, next to `CellBased`. [#206](@ref)
-* Added `reorder_mesh!`, which renumbers cells, faces and nodes for memory locality; it is opt-in and mesh files are not touched. [#188](@ref)
-* Added mixed-precision linear solves with `SolverSetup(...; precision=MixedF32())` and `MixedF16()`, which solve corrections in lower precision while the fields stay in full precision. [#189](@ref)
-* `activate_multithread(CPU(static=true))` and `first_touch(mesh)` place memory by parallel first touch on NUMA nodes; call `mesh = first_touch(mesh)` before building the model. [#167](@ref), [#190](@ref)
-* Added `volume_integral`, `weighted_volume_integral`, `volume_average` and `total_volume` for backend-agnostic volume integration. [#137](@ref)
-* Added the `Robin` boundary condition for mixed constraints `a·φ + b·∇φ·n = value`. [#138](@ref)
-* Added the `WALE` LES model, `LES{WALE}()`, which also runs on distributed meshes. [#177](@ref)
-* `run!` takes a `progress` keyword (default `true`); set `progress=false` to hide the progress bar, e.g. for batch jobs. [#162](@ref)
-* Added distributed (MPI) simulation: `distribute` gives each rank its partition from the same serial case setup, with PETSc linear solves and OpenFOAM decomposed output. [#162](@ref)
-* Added `partition_mesh` for offline decomposition and `distribute(dir)` to load one part per rank. [#162](@ref)
-* Added restart for distributed incompressible runs with `run!(...; restart=...)`, using OpenFOAM binary output. [#162](@ref)
-* Added `distribute(FOAMCase(dir))` to read a `decomposePar` case, and `repartition` to rebalance a distributed mesh. [#162](@ref)
-* Added `is_root`, which is true on rank 0 and in serial runs. [#162](@ref)
-* Added `BoomerAMG` and `GAMG` pressure preconditioners for distributed solves, and `petsc_options` on `run!`. [#162](@ref)
-* Distributed solves map `Cgs` to PETSc `cgs`, and `DILU`, `ILU0GPU` and `IC0GPU` to per-rank block ILU(0) or ICC(0) with a warning; `PETSc.set_petscint!(Int32)` selects 32-bit indices. [#162](@ref)
-* Distributed GPU runs detect whether MPI is CUDA-aware and stage through host memory with a warning when it is not. [#162](@ref)
-
-* Added the `wall_distance` keyword for `KOmegaSST` and `KOmegaLKE`, with `MeshWave()` (the new default) or `Poisson()`. [#170](@ref)
-* Added `div!(phi::VectorField, Γf, tensor, BCs, config)`, the divergence of a cell tensor scaled by a face coefficient, and the lazy `Dev2(A)` tensor. [#168](@ref)
-
-### Fixed
-* `pressure_force` and `viscous_force` return the whole-patch force on every rank of a distributed mesh. [#219](@ref)
-* Ghost cells of bounded turbulence fields hold the owners' values on distributed meshes, as they are exchanged after clipping. [#220](@ref)
-* `output=OpenFOAM()` writes fields without their own boundary conditions, such as `rho` and `y`, with zero-gradient patches. [#221](@ref)
-* `viscous_force` and the `forces=` history of `godunov!` return zero viscous force on `Slip` and `Symmetry` patches. [#223](@ref)
-* `godunov!` runs the `KOmega`, `KOmegaSST` and `LKE` RANS models, which previously failed at initialisation. [#214](@ref)
-* Documentation: the numerical setup page no longer shows the divergence-scheme text in the navigation bar, and describes the `SupersonicFlow` options. [#209](@ref).
-* `godunov!` defaults `reconstruction` to `Upwind()` when it is not given. [#210](@ref).
-* Fixed the `Smagorinsky`, `WALE` and `KEquation` LES models failing on GPUs with "Scalar indexing is disallowed". [#212](@ref)
-* Fixed the sensible-enthalpy equation creating total enthalpy when `he` uses a scheme other than `Upwind` or `BoundedUpwind`; schemes without a defined face value raise an `ArgumentError`. [#203](@ref)
-* Fixed the face mass flux of `simple!`, `piso!`, `csimple!`, `cpiso!`, the MRF `simple!` and `potential_flow!` not conserving mass when `ncorrectors > 0`; results of such runs change. [#199](@ref)
-* Fixed the viscous work of the sensible-enthalpy equation of `csimple!` and `cpiso!` creating energy in wall cells. [#198](@ref)
-* Fixed the `examples/2D_cylinder_heated.jl` example failing with `UndefKeywordError`, as `cp` is now supplied. [#200](@ref)
-* Fixed continued runs not retracing the uninterrupted run, as the last face mass flux is now reused. [#196](@ref)
-* Fixed the distributed continuation test failing under multithreading; residual histories are compared to 1e-5. [#201](@ref)
-* Fixed the face mass flux of `csimple!` and `cpiso!` for `Compressible` fluids differing from the flux the pressure equation balances. [#195](@ref)
-* Fixed the sensible-enthalpy equation of `csimple!` and `cpiso!` counting viscous heating twice. [#194](@ref)
-* Fixed compressible solvers evaluating energy boundary values at the wrong time. [#192](@ref)
-* Fixed `FOAM3D_mesh` failing on meshes whose neighbour list pads boundary faces with `-1`. [#193](@ref)
-* Fixed the explicit viscous stress destabilising turbulent runs on skewed near-wall cells; turbulent results change slightly. [#180](@ref)
-* Fixed the incompressible momentum equation missing the `dev2` part of the viscous stress, now included as an explicit source. [#168](@ref)
-* Fixed warm-started serial `Bicgstab` solves degrading as steady runs converge. [#166](@ref)
-* Fixed `bound!` giving schedule-dependent results, now deterministic on every backend. [#174](@ref)
-* Fixed the `KOmegaLKE` diffusion terms, which now include the intermittency factor and use boundary values of the fields. [#173](@ref)
-* Fixed the `KOmegaLKE` production term, now the double contraction of the velocity gradient; results in flows with shear and strain change. [#172](@ref)
-* Fixed `Neumann` `Laplacian{Linear}` ignoring the sign of the Laplacian term. [#164](@ref)
-* Fixed CPU linear solves failing when called inside threaded loops or concurrent tasks. [#162](@ref)
-* Fixed `AutoTune()` launches over an empty range failing. [#162](@ref)
-* Fixed distributed runs hanging when one rank fails; the error is now raised on every rank. [#162](@ref)
-* Fixed `distribute(reader; dir)` silently reusing another mesh's parts; `key` repartitions when it differs. [#162](@ref)
-* Fixed mesh readers failing or writing out of bounds on connectivity overflow; the error asks for `integer_type=Int64`. [#162](@ref)
-* Fixed an intermittent segmentation fault in distributed GPU runs. [#162](@ref)
-* Fixed turbulence models computing in Float64 on Float32 meshes, which now use the mesh float type. [#176](@ref)
-* Fixed wall functions using the floored boundary distance; they now use `wall_normal_distance`. [#183](@ref)
-* Fixed the AMG zero-allocation coarse-solve test failing intermittently. [#185](@ref)
-
-### Changed
-* The CI and documentation workflows cancel superseded pull request runs and queue runs for `main` and tags. [#202](@ref)
-* The explicit viscous stress and `div!` of cell tensors run faster on GPUs, with unchanged results. [#187](@ref)
-* `xcal_foreach` on `CPU(static=true)` uses fixed chunks matching the threaded SpMV and vector operations. [#167](@ref)
-* Threaded loops start their chunk tasks as a tree, which speeds up many-thread solves; results are unchanged. [#191](@ref)
-* `activate_multithread(backend::CPU)` defaults `nthreads` back to 1, as Krylov vector operations use Julia threads rather than BLAS. [#162](@ref)
-* The multiphase and thin-film solvers no longer print an `@time` summary of their iteration loop. [#162](@ref)
-* `run!` with a negative `write_interval` builds no output writer, reducing run start-up cost. [#162](@ref)
-* Kernels compile once for any mesh size, patch count or rank count. [#162](@ref)
-* The minimum supported Julia version is 1.10, and CI runs on Julia 1.10 and 1.13. [#162](@ref), [#165](@ref)
-* Distributed VTK output stops with an error; OpenFOAM fields carry `dimensions` entries. [#162](@ref)
-* `Mesh2` and `Mesh3` store each property as its own array field; `mesh.cells`, `mesh.faces` and `mesh.nodes` still index as before. [#162](@ref)
-* Custom `@define_boundary` bodies and `scheme!` methods receive `cells` and `faces` arrays instead of one `cell` and `face`. [#162](@ref)
-* Discretisation kernels receive equation terms and arrays without the mesh, reducing GPU per-thread memory. [#162](@ref)
-* On the CPU, Krylov vector operations, SpMV and Jacobi run on Julia threads over a fixed row split. [#162](@ref)
-* Periodic boundary conditions keep an `Int32` mesh's equation matrix at `Int32`. [#162](@ref)
-* The AMG hierarchy uses the index type of the equation matrix. [#162](@ref)
-* Global cell and face ids of distributed meshes are `Int64`; older part files must be regenerated with `partition_mesh`. [#162](@ref)
-* The explicit viscous stress takes boundary-face gradients from the boundary condition. [#181](@ref), [#186](@ref)
+* `run!` takes a `progress` keyword (default `true`); `progress=false` turns off the progress bar, which we recommend for large-scale runs that are not on a local PC, such as cluster batch jobs. The test suite runs with `progress=false` [#162](@ref)
+* Added FixedHeatFlux boundary condition [#149](https://github.com/github.com/mberto79/XCALibre.jl/issues/149)
+* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150](https://github.com/github.com/mberto79/XCALibre.jl/issues/150)
+* Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
+* Added distributed (MPI) simulation. A case is set up exactly as in serial and differs only in how the mesh is obtained and how the run is launched: `distribute` takes the mesh reader, runs it on rank 0 alone and hands every rank its own partition, so no script contains a rank guard. Metis partitions the dual graph, ghost cells are exchanged through a halo built once per mesh (a SIMPLE iteration makes five exchanges and two global reductions), and the linear solves go to PETSc, which is a weak dependency loaded through an extension. Periodic patches are colocated so matched cells share a rank and the serial periodic kernels run unchanged. Results are written in OpenFOAM's decomposed layout. Supports steady and transient incompressible flow, `Laminar`, `KOmega` and `KOmegaSST`, and CPU and GPU backends (GPU runs need a CUDA GPU and a CUDA-enabled PETSc, keep the linear system on the device, and never fall back to the host); `KOmegaLKE` and the LES models are not distributed yet, and runtime post-processing (`postprocess` in the `Configuration`) is skipped on a distributed mesh with a warning [#162](@ref)
+* Added `partition_mesh` to decompose a mesh offline, and `distribute(dir)` to load one part per rank, so no rank ever holds the global mesh. Passing `dir` to `distribute` does both in one call, reusing a decomposition already present for the same rank count [#162](@ref)
+* Added restart for distributed incompressible runs: `run!(model, config; restart=<iteration or time>)` resumes from results written with `output=OpenFOAM()` and retraces the uninterrupted run; decomposed output is now OpenFOAM binary and includes the face flux `phi` and `uniform/time`, and the OpenFOAM mesh reader reads binary meshes [#162](@ref)
+* Added `distribute(FOAMCase(dir))` to read an OpenFOAM case decomposed with `decomposePar`, each rank reading only its own `processor<rank>` directory, and `repartition` to rebalance a distributed mesh in parallel through PETSc's PT-Scotch or ParMETIS partitioners, so a mesh never has to fit in one process [#162](@ref)
+* Added `is_root`, true on rank 0 and also true in a serial run where MPI was never initialised, so one guard serves both [#162](@ref)
+* Added `BoomerAMG` and `GAMG` pressure preconditioners for distributed solves, with curated keywords forwarded to PETSc's options system and a `freeze` count that holds the preconditioner fixed between rebuilds (`GAMG` defaults to 25, `BoomerAMG` to 10; `BoomerAMG` defaults are tuned for 3D, including `P_max = 4`), and `petsc_options` on `run!` for anything not exposed. The same string also configures PETSc's start-up, so options such as `-log_view` need no environment variable [#162](@ref)
+* Distributed solves map `Cgs` to PETSc `cgs`, and `DILU`, `ILU0GPU` and `IC0GPU` to per-rank block ILU(0) or ICC(0) with a one-time warning each, so serial solver settings run unchanged on a distributed mesh; a type with no PETSc mapping can be named through `petsc_options`, which also accepts a named tuple (`all`, `U`, `p`, `k`, `omega`, `T`, `y`) to configure one equation. `atol`, `rtol` and `itmax` reach PETSc as they reach Krylov.jl: `rtol` is relative to the initial residual and CG stops on the same preconditioned norm, and `convergence` is only the outer-iteration target on both paths. PETSc uses the 32-bit-index library whenever the global system fits it. A script run with plain `julia` and a `distribute`d mesh solves through PETSc on a single rank [#162](@ref)
+* Distributed GPU runs detect whether MPI is CUDA-aware and report it once: device buffers pass directly when it is, and PETSc's and XCALibre's messages are staged through host memory with a warning when it is not, instead of PETSc aborting at start-up. An explicit `-use_gpu_aware_mpi` in `petsc_options` still decides PETSc's path. The distributed documentation gains a setup guide for system MPI, custom PETSc builds and a prebuilt conda-forge CUDA PETSc that needs no compiling [#162](@ref)
 
 ### Breaking
-* `CrankNicolson` is the trapezoidal rule inside `Time` and raises an `ArgumentError` in `multiphase!`, `filmModel!`, `godunov!` and steady solvers. [#226](@ref)
-* Results change by design with the corrected mass flux of runs with `ncorrectors > 0` [#199](@ref), transient `piso!`, `cpiso!` and `multiphase!` [#225](@ref), compressible viscous heating [#194](@ref), `KOmegaLKE` production [#172](@ref), and the explicit viscous stress [#180](@ref).
-* Turbulence models on `Float32` meshes compute in `Float32`, so their results change. [#176](@ref)
-* Distributed part files written by earlier versions must be regenerated with `partition_mesh`, and distributed VTK output raises an error. [#162](@ref)
-* `activate_multithread(backend::CPU)` defaults `nthreads` to 1. [#162](@ref)
-* `potential_flow!` starts from rest by default (`from_rest=true`); `from_rest=false` keeps the previous behaviour. [#182](@ref)
-* `KOmegaSST` and `KOmegaLKE` default to the `MeshWave()` wall distance, changing their results; `wall_distance=Poisson()` restores the previous method. [#170](@ref)
-* `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!` and `setField_Expression!` take a required `config` keyword and run on CPU and GPU. [#137](@ref)
-* Hand-written boundary-condition functors and `scheme!` methods take `cells` and `faces` and must index them. [#162](@ref)
-* The `Mesh2` and `Mesh3` type parameters changed, so code dispatching on them must be updated; `mesh.cell_nsign` is `Int8`. [#162](@ref)
-* PETSc.jl 0.4.14 and 0.5 are both supported, resolved by Julia version. [#165](@ref)
-* `MPI` and `Metis` are hard dependencies. [#162](@ref)
-* Mesh readers default to `integer_type=Int32`; meshes exceeding 2^31 need `integer_type=Int64`. [#162](@ref)
-
-### Deprecated
-* No functions deprecated
-
-### Removed
-* Removed the unused `xmul` and `xmul!` methods. [#162](@ref)
-
-
-## Version [v0.6.1](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.6.1) - 2026-09-25
-
-### Added
-* Added FixedHeatFlux boundary condition [#149](https://github.com/mberto79/XCALibre.jl/issues/149)
-* Added AMG-preconditioned stabilized biconjugate gradient for solving non-symmetric equations/ [#150](https://github.com/mberto79/XCALibre.jl/issues/150)
-* Added `potential_flow!` to initialise a simulation from a divergence-free potential-flow field. Velocity boundary conditions supply the initial face flux, and velocity-potential boundary conditions are inferred from the pressure boundary conditions: fixed pressure becomes fixed zero potential, periodic patches stay periodic, and every other patch uses zero normal gradient. Supports non-orthogonal correctors through `ncorrectors` [#158](@ref)
+* Hand-written boundary-condition functors and `scheme!` methods receive the mesh `cells` and `faces` arrays and must index them: a functor typed `cell::Cell{TF}, face` or a `scheme!` method reading `face.weight` now fails with a `MethodError`. Replace `(bc::MyBC)(term, colval, rowptr, nzval, cellID, zcellID, cell::Cell{TF}, face, fID, i, component, time)` by the same signature with `cells, faces` in place of `cell, face`, and read `faces.area[fID]`, `faces.weight[fID]` or `cells.volume[cellID]`; `scheme!(term, nzval, cell, face, ...)` becomes `scheme!(term, nzval, cells, faces, ...)`. Bodies written with `@define_boundary` are unaffected, since the macro still builds `cell` and `face` when a body names them [#162](@ref)
+* `Mesh2` and `Mesh3` have different type parameters (one per stored array type), so code dispatching on their parameters must be updated; `mesh.cell_nsign` is `Int8` [#162](@ref)
+* `MPI` and `Metis` are now hard dependencies of XCALibre (PETSc stays a weak dependency loaded through an extension) [#162](@ref)
 
 ### Changed
-* 3D mesh geometry is now computed by a single shared routine used by both the UNV3 and OpenFOAM readers, which previously disagreed on cell centroids and volumes for the same mesh [#153](@ref)
-* The OpenFOAM writer now preserves a complete existing `constant/polyMesh` instead of overwriting it, so results can be written alongside the original mesh [#153](@ref)
-* The OpenFOAM writer compares the point and face counts declared by an existing `constant/polyMesh` with the simulation mesh, and warns and rewrites the mesh files when they disagree [#153](@ref)
-* `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` now use `Slip` on patches that are physically symmetry planes or inviscid walls, replacing `Zerogradient` [#156](@ref)
-* `_nonorthogonal_face_correction` now builds the correction from a projected-delta correction vector rather than the over-relaxed `Ef`/`T_hat` decomposition, and `correction_weight` is no longer needed [#158](@ref)
-* `CSIMPLE` now relaxes pressure explicitly for `Compressible` fluids, as it already did for `WeaklyCompressible` ones, instead of relaxing the pressure equation implicitly through `irelax`. Relaxation had to move after the mass-flux correction so that the flux is built from the unrelaxed solution, and implicit relaxation cannot be deferred in the same way because it alters the matrix the flux is reconstructed from. Compressible cases converge along a different path and may need their pressure relaxation factor retuned [#158](@ref)
-* `2D_bump_NASA_kwSST.jl`, `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` solver tolerances and relaxation factors retuned for the corrected fluxes [#158](@ref)
+* `activate_multithread(backend::CPU)` defaults `nthreads` back to 1, reverting [#161](@ref): the CPU Krylov solvers now run their vector operations on Julia's own threads (`-t`) rather than through BLAS, so BLAS needs no threads of its own and more would oversubscribe the cores [#162](@ref)
+* The multiphase and thin-film solvers no longer print an `@time` summary of their iteration loop, matching the other solvers, whose progress output already reports the run time [#162](@ref)
+* `run!` with a negative `write_interval` (SIMPLE and PISO) no longer builds an output writer, which for VTK copied the mesh to the host and prepared its output strings, about 2.5 s per run on the motorBike case (GPU 500 iterations 17.2 s to 14.0 s). The equation assembly no longer clears matrix entries that it then overwrites, and the pressure copies, the k-omega eddy viscosity and the wall-function scratch reset run threaded [#162](@ref)
+* Kernels are compiled once for any mesh size, boundary-patch size and rank count: the launch range is no longer part of a kernel's type, so a case with many patches, a refined mesh or a new rank count no longer recompiles every kernel (a second mesh size in one session compiled in 0.01 s instead of 3.3 s), and a per-case precompile package stays valid across mesh resolution and rank count [#162](@ref)
+* The minimum supported Julia version is 1.10. The distributed module loads PETSc through a package extension, which needs Julia 1.9 or later, and 1.10 is the oldest long-term-support release [#162](@ref)
+* Distributed runs that ask for VTK output now stop with an error at the first write instead of silently writing nothing, since VTK has no decomposed writer; use `output=OpenFOAM()` or `write_interval=-1`. `BoomerAMG()` on GPU fields errors, naming `GAMG()` and `Jacobi()`, when PETSc's hypre executes on the host, where it previously crashed; `BoomerAMG(device=true)` skips the check. Partition files written by `partition_mesh` are a binary format (`rank_<r>.xdm`) with a header read by `mesh_info`; they survive package upgrades, and a part of another format or rank count is regenerated or refused at load. OpenFOAM field files now carry a `dimensions` entry with each field's units (pressure kinematic in incompressible runs, in Pa when density is written alongside it; unknown fields dimensionless), so `reconstructPar` and other OpenFOAM utilities read them, and the decomposed writer writes points at full precision and `cellProcAddressing`. The communicator given to `distribute` is stored on the mesh and used by every exchange and reduction, so sub-communicator runs work. `bind_device!(backend)` binds by the rank's position on its own node rather than its global rank [#162](@ref)
 * Cached the sparse index maps the assembly writes through. The CSR sparsity pattern is fixed for the life of an equation, so `ScalarEquation` and `VectorEquation` now carry `diag_nz` and `face_nz`, the `nzval` index of the diagonal and of each cell-neighbour coefficient, resolved once at construction instead of searched for on every assembly. Both types gain a type parameter and two fields [#161](@ref)
 * Cached the Laplacian face coefficient on the mesh. `Mesh2` and `Mesh3` gain a type parameter and the `face_gDiff` field, derived from the face geometry at construction rather than passed in, and refreshed by `update_face_gDiff!` for readers that fill the geometry afterwards. The internal-face form `norm(((Sf⋅Sf)/(Sf⋅e))*e)/delta` reduces exactly to `area/(|normal⋅e|*delta)`, and boundary faces keep `area/delta`, which is what every `@define_boundary` Laplacian block already uses. A mesh serialised with an earlier version can no longer be loaded and must be regenerated [#161](@ref)
 * Turbulence models now build the wall-function accumulators once in `initialise` instead of allocating and zeroing two cell-sized arrays on every outer iteration. The pair is `nothing` when no patch uses a wall function [#161](@ref)
 * Threaded the diagonal preconditioner application. `LinearOperators`' `opDiagonal` applies the diagonal with a serial broadcast, once (`Cg`) or twice (`Bicgstab`) per Krylov iteration, and threading it is worth about 6% of every Krylov iteration on the `motorBike` case [#161](@ref)
 * The SIMPLE and KOmega flux fields are built without a mesh reference, and their consumers take the mesh from the cell field. A field struct that stores a mesh costs 416 bytes of per-thread local memory (an adapted `Mesh3`) in every GPU kernel whose argument aggregate is not scalarised, which is 13.6% of a `motorBike` GPU run [#161](@ref)
 * The KOmega cell and face loops keep the mesh out of the kernel. `xcal_foreach` dispatches on the backend so the GPU path calls the closure directly, where `AcceleratedKernels` passed it to a callee that is not inlined and spilled the captured environment, and both loops bind their fields to their bare storage. The production loop drops from 7112 bytes of stack frame and 11.0 ms per launch to none and 0.20 ms, the viscosity loop from 1840 bytes and 8.86 ms to none and 0.12 ms. On the CPU the `AcceleratedKernels` task partitioning is unchanged. Together with the field change above, `motorBike` runs 500 iterations in 21.0 s against 26.3 s [#161](@ref)
+* `Mesh2` and `Mesh3` store every cell, face and node property as its own array field (`cell_volume`, `face_area`, `node_coords`, ...), so kernels load only the properties they read. `mesh.cells`, `mesh.faces` and `mesh.nodes` still index as `Cell`, `Face2D`/`Face3D` and `Node` elements, so existing code keeps working, and `mesh.faces.area[fID]` reads a single array. First-run compilation is about a quarter shorter on the 3D motorBike and 2D backward-facing-step cases. `get_float` and `get_int` are now one-element arrays that only carry the mesh float and integer types [#162](@ref)
+* Custom boundary conditions and discretisation schemes receive the mesh `cells` and `faces` instead of one `cell` and `face` element: `@define_boundary` bodies read `faces.area[fID]` or `cells.volume[cellID]`, and a body that still names `face` or `cell` gets the element built for it, so existing `@define_boundary` definitions compile unchanged (hand-written functors do not, see Breaking). `scheme!` methods take `cells, faces` in place of `cell, face` [#162](@ref)
+* The discretisation kernels receive the terms, sources and fields of an equation without their mesh, plus only the cell and face arrays they read. Every by-value kernel argument is copied into per-thread local memory on the GPU, and the equation's model and mesh were passed whole; the scalar and vector discretise kernels run 5.3x and 2.9x faster per call on the motorBike case. `VectorField` no longer requires its mesh parameter to be an `AbstractMesh`, as `FaceVectorField` already did [#162](@ref)
+* Removed the unused `xmul(y, A, x)` and `xmul!(A, x)` methods, which could not run, and replaced the broken `SparseMatrixCSR * SparseXCSR` product with a threaded `SparseXCSR * vector` product [#162](@ref)
+* On the CPU, the Krylov solvers' vector operations, the sparse matrix-vector product and the Jacobi preconditioner run on Julia's threads over one fixed row split instead of in OpenBLAS, so the vector half of each linear solve scales with `-t`; operations on fewer than 2^16 elements stay serial. The 8-thread motorBike benchmark runs 13% faster; residuals move only by summation order [#162](@ref)
+* Periodic boundary conditions keep an `Int32` mesh's equation matrix at `Int32`; their connectivity was built with `Int` and widened the matrix to `Int64` [#162](@ref)
+* The AMG hierarchy stores its matrix, diagonal and aggregation indices in the index type of the equation matrix, so an `Int32` mesh gives an `Int32` hierarchy. `_workspace` takes that index type as a third argument [#162](@ref)
+* Global cell and face ids of a distributed mesh (`Partition.local_to_global`, `orig_cells`, `orig_faces`) are `Int64` whatever the mesh index type, so an `Int32` part of a mesh with more than 2^31 cells or faces keeps exact global ids. Part files moved to format 5 (6 since the fix below); parts written earlier are refused at load and must be regenerated with `partition_mesh` [#162](@ref)
 * Removed the unused `kf` and `omegaf` fields from `KOmega`. They were allocated and destructured but never read, and were carried into every kernel that takes the turbulence model [#161](@ref)
 * Removed the undocumented `XCALIBRE_AMG_DEVICE_COARSE_SOLVE`, `XCALIBRE_AMG_DEVICE_COARSE_MAXITER` and `XCALIBRE_AMG_DEVICE_COARSE_RTOL` environment variables. They enabled a second, parallel device coarse-solve path that duplicated `coarse_solve = OnDeviceKrylov()` and reached it only with `mode = Cg()`, the one combination the `AMG` constructor rejects because an inner Krylov solve is nonlinear in its right-hand side and breaks the fixed-operator assumption of preconditioned CG. The documented `coarse_solve` keyword is now the only way to choose how the coarsest level is solved, and it is described in the user guide [#159](@ref)
 * Removed the `coarse_tmp` scratch vector from `AMGLevel`. It was written only by the removed path, so every level allocated a full-length vector on the device that nothing read [#159](@ref)
 
 ### Fixed
-* Fixed mesh readers orienting some face normals into their owner cell. The orientation was decided by testing each normal against an estimated cell centre, which lies on the wrong side of a face in skewed or concave cells: 39 cells of a 0.6M-cell and 92 of a 10M-cell snappyHexMesh motorBike mesh did not close (sum of outward face areas up to 52% of the cell surface), and a concave 2D cell got wrong `nsign` entries and a wrong area. Faces are now oriented from each cell's topology (edges traversed in opposite directions by adjacent faces, overall sign from the divergence theorem), which is exact for any closed cell, in `UNV3D_mesh`, `UNV2D_mesh` and `BlockMesher2D`; `FOAM3D_mesh` keeps OpenFOAM's own orientation, which the format defines. `nsign` is now set from ownership in 2D, as in 3D, and 2D cell areas no longer depend on the orientation test. The VTK writer orders polyhedral face nodes from the same orientation instead of its own centre test [#163](@ref)
-* Fixed missing density term in set_production! needed for cases with non-unity density [#151](https://github.com/mberto79/XCALibre.jl/issues/151)
+* Fixed CPU linear solves failing with "`@threads :static` cannot be used concurrently or nested" when `run!` or a Krylov solve is called from inside another `Threads.@threads` loop or from concurrent tasks; the threaded vector operations fall back to dynamic scheduling over the same chunks there, with unchanged results [#162](@ref)
+* Fixed `AutoTune()` launches over an empty range failing with a `DivideError` or `ArgumentError` [#162](@ref)
+* Fixed distributed runs hanging when one rank fails: an error in the mesh reader or partitioning on rank 0, a missing or unreadable part, a missing restart field or a broken `processor<rank>` directory now raises an error on every rank, naming the ranks that failed. `distribute(FOAMCase(dir))` also checks that `cellProcAddressing` matches the mesh beside it [#162](@ref)
+* Fixed `distribute(reader; dir)` silently reusing another mesh's parts left in `dir`: parts record the mesh they were cut from and an optional `key`, `distribute(reader; dir, key)` repartitions when the key differs, and parts of different meshes mixed in one directory are refused at load. Part files move to format 6 and must be regenerated [#162](@ref)
+* Fixed mesh readers failing with an unrelated error, or writing out of bounds, when a connectivity total exceeds the mesh integer type: totals are checked before they are narrowed, and the error asks for `integer_type=Int64` [#162](@ref)
+* Fixed an intermittent segmentation fault in distributed GPU runs. PETSc's CUDA device initialisation, reached when the first device matrix is created, resets the process's fatal-signal handlers to their defaults, and Julia relies on its own SIGSEGV handler for garbage-collection safepoints: whenever a collection started while the interactive thread was awake, the safepoint fault killed the process with no message. The handlers in force before the PETSc solver is built are now restored after it [#162](@ref)
+* Fixed missing density term in set_production! needed for cases with non-unity density [#151](https://github.com/github.com/mberto79/XCALibre.jl/issues/151)
 * Fixed `wall_shear_stress` to apply the effective viscosity (`nueff`) scaling to the x-component of the shear stress vector - previously only the y and z components were scaled [#152](@ref)
 * Fixed OpenFOAM `boundary` file parsing so that patch groups (`inGroups`) no longer corrupt the patch list. The parser is now token based, ignores unknown dictionary entries, and reports malformed files with an `ArgumentError` [#153](@ref)
 * Fixed OpenFOAM mesh writer truncating point coordinates to six significant figures, which prevented a written mesh from round-tripping [#153](@ref)
@@ -185,20 +77,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed the pressure flux at `Extrapolated` pressure patches not being propagated to the boundary mass flux. The patch's Laplacian contribution is assembled from the owner-cell pressure available at assembly time, so once the pressure equation is solved the boundary flux is stale. The correction is now deferred and applied for patches whose velocity boundary condition is pressure-adjustable [#158](@ref)
 * Fixed the non-orthogonal face correction being applied to the pressure equation but not to the mass flux, so continuity did not close on non-orthogonal meshes. The correction is now stored per face and subtracted from the mass flux [#158](@ref)
 
+### Changed
+* 3D mesh geometry is now computed by a single shared routine used by both the UNV3 and OpenFOAM readers, which previously disagreed on cell centroids and volumes for the same mesh [#153](@ref)
+* The OpenFOAM writer now preserves a complete existing `constant/polyMesh` instead of overwriting it, so results can be written alongside the original mesh [#153](@ref)
+* The OpenFOAM writer compares the point and face counts declared by an existing `constant/polyMesh` with the simulation mesh, and warns and rewrites the mesh files when they disagree [#153](@ref)
+* `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` now use `Slip` on patches that are physically symmetry planes or inviscid walls, replacing `Zerogradient` [#156](@ref)
+* `_nonorthogonal_face_correction` now builds the correction from a projected-delta correction vector rather than the over-relaxed `Ef`/`T_hat` decomposition, and `correction_weight` is no longer needed [#158](@ref)
+* `CSIMPLE` now relaxes pressure explicitly for `Compressible` fluids, as it already did for `WeaklyCompressible` ones, instead of relaxing the pressure equation implicitly through `irelax`. Relaxation had to move after the mass-flux correction so that the flux is built from the unrelaxed solution, and implicit relaxation cannot be deferred in the same way because it alters the matrix the flux is reconstructed from. Compressible cases converge along a different path and may need their pressure relaxation factor retuned [#158](@ref)
+* `2D_bump_NASA_kwSST.jl`, `2D_compression_corner.jl` and `2D_cylinder_transonic_RANS.jl` solver tolerances and relaxation factors retuned for the corrected fluxes [#158](@ref)
+
 ### Breaking
+* `UNV2D_mesh`, `UNV3D_mesh`, `FOAM3D_mesh` and `FOAMCase` read meshes with `integer_type=Int32` by default instead of `Int64`, which halves the bytes of every mesh and matrix index. Results are unchanged. A mesh whose faces, face-node entries or matrix entries exceed 2^31 stops with an error asking for `integer_type=Int64`; code that builds boundary conditions or mesh arrays with `Int64` type parameters against a default-read mesh must pass `integer_type=Int64` [#162](@ref)
 * `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)
 
 ### Deprecated
 * No functions deprecated
 
 ### Removed
-+ No functionality has been removed
 
-## Version [v0.6.0](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.6.0) - 2026-07-17
+## Version [v0.6.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.6.0) - 2026-07-17
 
 ### Added
 * Added optional adaptive time stepping based on Courant number control (`AdaptiveTimeStepping`) [#98](@ref)
-* Added runtime calculation of Q-criterion [#107](https://github.com/mberto79/XCALibre.jl/issues/107)
+* Added runtime calculation of Q-criterion [#107](https://github.com/github.com/mberto79/XCALibre.jl/issues/107)
 * Added explicit Godunov-type compressible solver (`godunov!`) for `Supersonic` flows using Rusanov (local Lax-Friedrichs) and HLLC flux schemes with first and second order spatial reconstruction (MinMod, VanLeer, Superbee limiters) and adaptive CFL-based time stepping. This is the recommended solver for high-speed flows in the range 0.8 < M < 5 approximately [#112](@ref)
 * Added experimental incompressible steady MFR solver [#114](@ref)
 * Added runtime probe extraction [#115](@ref)
@@ -244,7 +145,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.5.2](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.5.2) - 2025-01-16
+## Version [v0.5.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.5.2) - 2025-01-16
 
 ### Added
 *  Initial support for mixed precision (UNV meshes only) [#67](@ref)
@@ -255,7 +156,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 *  High fidelity thermal conductivity models for H2 and N2 [#72](@ref)
 *  `SetFields` utility that allows to set a field to desired value within a box / circle / sphere [#73](@ref)
 *  Helmholtz Energy equation of state and supporting framework for it for H2 and N2 [#75](@ref)
-*  `FieldAverage` and `FieldRMS` of Vector and Scalar fields [#78](https://github.com/mberto79/XCALibre.jl/issues/78)
+*  `FieldAverage` and `FieldRMS` of Vector and Scalar fields [#78](https://github.com/github.com/mberto79/XCALibre.jl/issues/78)
 *  Added `RotatingWall` velocity boundary condition [#81](@ref)
 *  Added `KOmegaSST` turbulence model [#82](@ref)
 *  Added capability to write out TensorFields to .vtk/vtu including Reynolds Stress Tensor [#84](@ref)
@@ -289,7 +190,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.5.1](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.5.1) - 2025-07-03
+## Version [v0.5.1](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.5.1) - 2025-07-03
 
 ### Added
 *  New `Empty` boundary condition allowing 2D simulations with OpenFOAM 2D-compatible grids[#63](@ref)
@@ -310,7 +211,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.5.0](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.5.0) - 2025-06-28
+## Version [v0.5.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.5.0) - 2025-06-28
 
 ### Added
 * New boundary conditions `Extrapolated` and `Zerogradient` have been added. Both assign a zero gradient boundary condition, however, their implementation differs. `Extrapolated` assigns the zero gradient condition semi-implicitly (using the cell centre unknown and the cell centre value from the previous iteration). `Zerogradient` assigns the gradient in the boundary faces explicitly [#61](@ref)
@@ -342,7 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * The functions `set_solver`, `set_runtime`, `set_hardware` and the macro `@assign!` have been removed/replaced [#61](@ref)
 
-## Version [v0.4.2](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.4.2) - 2025-04-02
+## Version [v0.4.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.2) - 2025-04-02
 
 ### Added
 * A very simple 2D block mesh generator has been added (not ready for general use as it needs to be documented)[#41](@ref)
@@ -368,7 +269,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.4.1](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.4.1) - 2025-03-06
+## Version [v0.4.1](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.1) - 2025-03-06
 
 ### Added
 * No new functionality has been added
@@ -389,7 +290,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.4.0](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.4.0) - 2025-02-17
+## Version [v0.4.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.4.0) - 2025-02-17
 
 ### Added
 * Implementation of `Symmetry` boundary condition for `ScalarField` types [#30](@ref)
@@ -419,7 +320,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.3.3](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.3.3) - 2024-12-24
+## Version [v0.3.3](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.3) - 2024-12-24
 
 ### Added
 * Added experimental support for NVIDIA ILU0 and IC0 preconditioners [#23](@ref)
@@ -447,7 +348,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * The `ILU0` and `LDL` preconditioners has been temporarily removed [#23](@ref)
 
-## Version [v0.3.2](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.3.2) - 2024-11-08
+## Version [v0.3.2](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.2) - 2024-11-08
 
 ### Added
 * Added support for CI testing, Dependabot, and CompatHelper
@@ -467,7 +368,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.3.1](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.3.1) - 2024-10-18
+## Version [v0.3.1](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.1) - 2024-10-18
 
 ### Added
 * Vastly improved documentation with new examples provided [#12](@ref)
@@ -489,7 +390,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 * No functionality has been removed
 
-## Version [v0.3.0](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.3.0) - 2024-09-21
+## Version [v0.3.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.3.0) - 2024-09-21
 
 * New name - XCALibre.jl - which is now registered in the General Julia registry
 * Can do 3D and GPU accelerated simulations
@@ -505,12 +406,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Mesh boundary struct changes PR fix by @TomMazin in [#8](@ref)
 
 
-## Version [v0.2.0](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.2.0) - 2023-01-23
+## Version [v0.2.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.2.0) - 2023-01-23
 
 * New mesh format and type implemented that are GPU friendly.
 * No functionality changes
 
-## Version [v0.1.0](https://github.com/mberto79/XCALibre.jl/releases/tag/v0.1.0) - 2023-01-23
+## Version [v0.1.0](https://github.com/github.com/mberto79/XCALibre.jl/releases/tag/v0.1.0) - 2023-01-23
 
 ### Initial release
 

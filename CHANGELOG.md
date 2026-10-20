@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed the AMG zero-allocation coarse-solve test failing intermittently. [#185](@ref)
 
 ### Changed
-* `atol` and `rtol` mean the same on every linear-solve path: each solve stops when ‖b − Ax‖₂ ≤ `atol` + `rtol`·‖b − Ax₀‖₂, whatever the solver, preconditioner, precision or backend, and unconverged warnings print that norm. Iteration counts change, since `Bicgstab()`, `Cgs()` and `Gmres()` now precondition on the right and `Gmres()` restarts every 30 iterations. [#242](@ref)
+* `atol` and `rtol` mean the same on every linear-solve path: each solve stops when ‖b − Ax‖₂ ≤ `atol` + `rtol`·‖b − Ax₀‖₂, whatever the solver, preconditioner, precision or backend, and unconverged warnings print that norm. Iteration counts change, since `Bicgstab()`, `Cgs()` and `Gmres()` now precondition on the right and `Gmres()` restarts every 30 iterations. [#245](@ref)
 * The CI and documentation workflows cancel superseded pull request runs and queue runs for `main` and tags. [#202](@ref)
 * The explicit viscous stress and `div!` of cell tensors run faster on GPUs, with unchanged results. [#187](@ref)
 * `xcal_foreach` on `CPU(static=true)` uses fixed chunks matching the threaded SpMV and vector operations. [#167](@ref)

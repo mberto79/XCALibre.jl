@@ -3,9 +3,12 @@
 The format used for this `changelog` is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Notice that until the package reaches version `v1.0.0` minor releases are likely to be `breaking`. Starting from version `v0.3.1` breaking changes will be recorded here. 
 
-## Version [v0.7.0-DEV] - 2026-09-25
+## Version [v0.7.0-DEV] - 2026-10-20
 
 ### Fixed
+* Every dependency now has a `[compat]` entry, including the standard libraries `LinearAlgebra`, `Logging`, `Printf` and `SparseArrays`, as the General registry requires. [#242](@ref)
+* Documentation: the release notes link to the correct repository, and `Robin`, `volume_integral`, `weighted_volume_integral`, `volume_average` and `total_volume` are now documented. [#242](@ref)
+* `ConstantViscosity` is initialised correctly and its test is registered in the suite. [#204](@ref)
 * Tests: `test/distributed/test_perf.jl` now checks the correct halo-exchange budget and converged solves, and runs in the two-rank gate session [#240](@ref)
 * Distributed linear solves that stop without meeting `atol` or `rtol` now warn with the method, equation, reason and residual, at most 10 times per equation; converged solves print nothing. [#239](@ref)
 * Linear solves with `Bicgstab()` or `Cgs()` no longer return NaN on breakdown; a broken-down solve is repeated from its initial guess with a fixed shadow vector, and warns if it breaks down again. [#238](@ref)
@@ -101,12 +104,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The multiphase and thin-film solvers no longer print an `@time` summary of their iteration loop. [#162](@ref)
 * `run!` with a negative `write_interval` builds no output writer, reducing run start-up cost. [#162](@ref)
 * Kernels compile once for any mesh size, patch count or rank count. [#162](@ref)
-* The minimum supported Julia version is 1.10. [#162](@ref)
+* The minimum supported Julia version is 1.10, and CI runs on Julia 1.10 and 1.13. [#162](@ref), [#165](@ref)
 * Distributed VTK output stops with an error; OpenFOAM fields carry `dimensions` entries. [#162](@ref)
 * `Mesh2` and `Mesh3` store each property as its own array field; `mesh.cells`, `mesh.faces` and `mesh.nodes` still index as before. [#162](@ref)
 * Custom `@define_boundary` bodies and `scheme!` methods receive `cells` and `faces` arrays instead of one `cell` and `face`. [#162](@ref)
 * Discretisation kernels receive equation terms and arrays without the mesh, reducing GPU per-thread memory. [#162](@ref)
-* Removed the unused `xmul` and `xmul!` methods. [#162](@ref)
 * On the CPU, Krylov vector operations, SpMV and Jacobi run on Julia threads over a fixed row split. [#162](@ref)
 * Periodic boundary conditions keep an `Int32` mesh's equation matrix at `Int32`. [#162](@ref)
 * The AMG hierarchy uses the index type of the equation matrix. [#162](@ref)
@@ -114,12 +116,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The explicit viscous stress takes boundary-face gradients from the boundary condition. [#181](@ref), [#186](@ref)
 
 ### Breaking
+* `CrankNicolson` is the trapezoidal rule inside `Time` and raises an `ArgumentError` in `multiphase!`, `filmModel!`, `godunov!` and steady solvers. [#226](@ref)
+* Results change by design with the corrected mass flux of runs with `ncorrectors > 0` [#199](@ref), transient `piso!`, `cpiso!` and `multiphase!` [#225](@ref), compressible viscous heating [#194](@ref), `KOmegaLKE` production [#172](@ref), and the explicit viscous stress [#180](@ref).
+* Turbulence models on `Float32` meshes compute in `Float32`, so their results change. [#176](@ref)
+* Distributed part files written by earlier versions must be regenerated with `partition_mesh`, and distributed VTK output raises an error. [#162](@ref)
+* `activate_multithread(backend::CPU)` defaults `nthreads` to 1. [#162](@ref)
 * `potential_flow!` starts from rest by default (`from_rest=true`); `from_rest=false` keeps the previous behaviour. [#182](@ref)
 * `KOmegaSST` and `KOmegaLKE` default to the `MeshWave()` wall distance, changing their results; `wall_distance=Poisson()` restores the previous method. [#170](@ref)
 * `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!` and `setField_Expression!` take a required `config` keyword and run on CPU and GPU. [#137](@ref)
 * Hand-written boundary-condition functors and `scheme!` methods take `cells` and `faces` and must index them. [#162](@ref)
 * The `Mesh2` and `Mesh3` type parameters changed, so code dispatching on them must be updated; `mesh.cell_nsign` is `Int8`. [#162](@ref)
-* PETSc.jl 0.4.14 and 0.5 are both supported, resolved by Julia version. [#162](@ref)
+* PETSc.jl 0.4.14 and 0.5 are both supported, resolved by Julia version. [#165](@ref)
 * `MPI` and `Metis` are hard dependencies. [#162](@ref)
 * Mesh readers default to `integer_type=Int32`; meshes exceeding 2^31 need `integer_type=Int64`. [#162](@ref)
 
@@ -127,7 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * No functions deprecated
 
 ### Removed
-* No functionality has been removed
+* Removed the unused `xmul` and `xmul!` methods. [#162](@ref)
 
 
 ## Version [v0.6.1] - 2026-09-25

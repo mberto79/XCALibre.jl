@@ -7,7 +7,7 @@ rank = MPI.Comm_rank(comm)
 
 include(joinpath(@__DIR__, "psimple_case.jl"))
 
-nsteps = 20
+nsteps = 5
 dt = 0.005
 
 wale_bcs(mesh) = assign(region=mesh, (

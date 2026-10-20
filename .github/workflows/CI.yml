@@ -14,7 +14,7 @@ concurrency:
 jobs:
   test:
     if: github.event.action != 'closed'
-    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: Julia ${{ matrix.version }} - ${{ matrix.tier }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
@@ -25,11 +25,20 @@ jobs:
       matrix:
         version:
           - '1.10'
-          - '1.13'
+          - '1'
         os:
           - ubuntu-latest
         arch:
           - x64
+        # tiers run as parallel jobs: wall-clock is the slowest tier, not the sum
+        tier:
+          - unit
+          - cases
+          - distributed
+        exclude:
+          # MPI gate on the latest Julia release only
+          - version: '1.10'
+            tier: distributed
     steps:
       - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v3
@@ -39,6 +48,10 @@ jobs:
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+        env:
+          # the gate's three-rank files (asymmetric halos, sub-communicator, empty wall-function patch)
+          XCALIBRE_TEST_MAX_RANKS: 3
         with:
-          # Julia 1.12+ coverage instrumentation slows the solver loops ~90x (1.10: ~6x)
-          coverage: ${{ matrix.version == '1.10' }}
+          test_args: ${{ matrix.tier }}
+          # Coverage instrumentation slows the solver loops (~6x on 1.10, ~90x on 1.12+), so it stays off
+          coverage: false

@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-09-25
 
 ### Fixed
+* `atol` and `rtol` mean the same on every linear-solve path: each solve stops when ‖b − Ax‖₂ ≤ `atol` + `rtol`·‖b − Ax₀‖₂, whatever the solver, preconditioner, precision or backend, and unconverged warnings print that norm. Iteration counts change, since `Bicgstab()`, `Cgs()` and `Gmres()` now precondition on the right and `Gmres()` restarts every 30 iterations. [#242](@ref)
 * Tests: `test/distributed/test_perf.jl` now checks the correct halo-exchange budget and converged solves, and runs in the two-rank gate session [#240](@ref)
 * Distributed linear solves that stop without meeting `atol` or `rtol` now warn with the method, equation, reason and residual, at most 10 times per equation; converged solves print nothing. [#239](@ref)
 * Linear solves with `Bicgstab()` or `Cgs()` no longer return NaN on breakdown; a broken-down solve is repeated from its initial guess with a fixed shadow vector, and warns if it breaks down again. [#238](@ref)

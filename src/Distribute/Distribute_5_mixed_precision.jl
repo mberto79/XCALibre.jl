@@ -46,7 +46,7 @@ function _solve_owned!(deqn::DistributedEqn{E,<:MixedPETScSolver}, result, compo
     s.rtol ≥ Solve._attainable_rtol(MixedF32()) && (_correct!(deqn, result, component, nothing); return values)
     rnorm = _correct!(deqn, result, component, 0.0)
     iterations = piterations(s.petsc)
-    target = max(s.atol, s.rtol*rnorm)
+    target = Solve._stop_target(s.atol, s.rtol, rnorm)
     for _ ∈ 2:Solve.MAX_REFINEMENTS
         _correct!(deqn, result, component, target) ≤ target && return values
         iterations += piterations(s.petsc)

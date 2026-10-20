@@ -12,7 +12,7 @@ struct Gmres <: AbstractLinearSolver end
 _workspace(::Cg, b) = CgWorkspace(KrylovConstructor(b))
 _workspace(::Cgs, b) = CgsWorkspace(KrylovConstructor(b))
 _workspace(::Bicgstab, b) = BicgstabWorkspace(KrylovConstructor(b))
-_workspace(::Gmres, b) = GmresWorkspace(KrylovConstructor(b))
+_workspace(::Gmres, b) = GmresWorkspace(KrylovConstructor(b); memory=GMRES_RESTART)
 # equation workspaces hold XVector storage on the CPU so Krylov's vector work runs on Julia's threads
 _workspace(solver::AbstractLinearSolver, b, ::Type) = _workspace(solver, _krylov_vector(b))
 _krylov_vector(v::Vector) = XVector(v)
@@ -21,6 +21,31 @@ _krylov_vector(v) = v
 _like_workspace(::XVector, v::Vector) = XVector(v)
 _like_workspace(_, v) = v
 _index_type(A) = eltype(_rowptr(A))
+
+# NEW SECTION: stopping rule
+
+# Krylov.jl and PETSc both restart GMRES after this many iterations
+const GMRES_RESTART = 30
+
+# every solve path stops when ‖b - Ax‖₂ ≤ atol + rtol·‖b - Ax₀‖₂
+_stop_target(atol, rtol, r0) = atol + rtol*r0
+
+# Krylov.jl monitors ‖b - Ax‖₂ with right preconditioning; CG stops on √(rᵀM⁻¹r), so its own test is
+# disabled and the callback checks its unpreconditioned residual r instead
+_stop_kwargs(::CgWorkspace, P, atol, rtol, r0) = (; M=P, atol=zero(atol), rtol=zero(rtol),
+    callback=_TrueNormStop(_stop_target(atol, rtol, r0)^2))
+_stop_kwargs(::GmresWorkspace, P, atol, rtol, r0) = (; N=P, atol, rtol, restart=true)
+_stop_kwargs(_, P, atol, rtol, r0) = (; N=P, atol, rtol)
+
+# ‖r‖² by a dot product: GPU BLAS nrm2 is several times slower than dot
+struct _TrueNormStop{T}
+    target²::T
+end
+(s::_TrueNormStop)(ws) = Krylov.kdotr(length(ws.r), ws.r, ws.r) ≤ s.target²
+
+# a callback exit is CG meeting the target
+_krylov_converged(ws) = Krylov.issolved(ws)
+_krylov_converged(ws::CgWorkspace) = Krylov.issolved(ws) || ws.stats.status == "user-requested exit"
 
 # NEW SECTION: shadow-vector breakdown
 

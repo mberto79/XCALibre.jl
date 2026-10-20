@@ -84,8 +84,8 @@ function symmetry_report(A)
             structurally_missing = missing_pairs)
 end
 
-# Matches Krylov.jl stopping threshold so swapping Cg()<->AMG keeps tuned tolerances valid
-_amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
+# the stopping rule of every solve path, so swapping Cg()<->AMG keeps tuned tolerances valid
+_amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = _stop_target(T(atol), T(rtol), r0norm)
 
 # scale_correction makes M nonlinear; flexible PR+ beta avoids the FR beta assumption
 _amg_cg_flexible(solver::AMG) = solver.scale_correction

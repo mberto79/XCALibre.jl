@@ -99,6 +99,7 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     tol::NamedTuple{(:atol,:rtol),Tuple{Float64,Float64}}
     report::Bool       # warn on an unconverged solve; false when an outer loop reports instead
     root::Bool         # the reason is global, so one rank reports it
+    rnorm::Base.RefValue{Float64} # ‖b - Ax‖₂ of the last unconverged solve
 end
 
 # one PetscInt width is loaded per process, fixed by PETSc's "PetscInt" preference at precompile
@@ -234,10 +235,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         _pc_options(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
-    # Krylov.jl's CG stops on sqrt(r'Mr), PETSc's natural norm; keyed on the resolved type so a
-    # passthrough -ksp_type never inherits it
-    opts.ksp_type == "cg" && !haskey(opts, :ksp_norm_type) &&
-        (opts = merge(opts, (ksp_norm_type="natural",)))
+    opts = merge(_stop_options(opts.ksp_type, opts), opts)
     isnothing(opts.ksp_type) && error("no PETSc mapping for solver $(typeof(setup.solver)); " *
         "name one with petsc_options=\"-ksp_type ...\"")
     isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
@@ -263,11 +261,11 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
             "the documentation.")
     end
     ksp = PETSc.KSP(Amat; opts...)
-    # tolerances mean what they mean to Krylov.jl: rtol is relative to the warm-started initial
-    # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only
+    # tolerances mean what they mean on serial paths: rtol is relative to the warm-started initial
+    # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only. No dtol stop,
+    # which serial solves lack
     (; atol, rtol) = setup
-    LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol),
-        TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
+    LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol), floatmax(TF), PI(setup.itmax))
     LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)
     LibPETSc.KSPConvergedDefaultSetUIRNorm(petsclib, ksp)
     extra = Base.structdiff(opts, (ksp_type=nothing, pc_type=nothing))
@@ -278,7 +276,18 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
         _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0),
         XCALibre.Solve._solve_name(setup, label), (atol=Float64(atol), rtol=Float64(rtol)), report,
-        MPI.Comm_rank(comm) == 0)
+        MPI.Comm_rank(comm) == 0, Ref(0.0))
+end
+
+# the serial stopping rule, ‖b - Ax‖₂ ≤ atol + rtol·‖b - Ax₀‖₂: unpreconditioned norm (right
+# preconditioning where left supports only the preconditioned one) and the same GMRES restart.
+# Keyed on the resolved type so a passthrough -ksp_type never inherits it; user options win
+function _stop_options(ksp_type, opts)
+    ksp_type == "cg" && return (; ksp_norm_type="unpreconditioned")
+    ksp_type ∈ ("bcgs", "cgs", "gmres") || return (;)
+    side = haskey(opts, :ksp_pc_side) || haskey(opts, :ksp_norm_type) ? (;) :
+        (; ksp_pc_side="right", ksp_norm_type="unpreconditioned")
+    ksp_type == "gmres" ? merge(side, (; ksp_gmres_restart=XCALibre.Solve.GMRES_RESTART)) : side
 end
 
 # NEW SECTION: assembly and solve
@@ -431,25 +440,50 @@ end
 
 function psolve!(s::XPETScSolver, x::AbstractVector)
     _maybe_freeze_pc!(s)
-    _with_placed(_ksp_solve, s, x)
-    # a shadow-vector breakdown (BiCGStab) stops at the last finite iterate; solving again from
-    # there restarts with the current residual as the shadow, as the serial solves retry theirs
-    for _ ∈ 1:2
-        _broke_down(s) || break
-        _with_placed(_ksp_solve, s, x)
-    end
+    _with_placed(_solve_with_retries, s, x)
     _report_unconverged(s)
     x
 end
 
+# a shadow-vector breakdown (BiCGStab) stops at the last finite iterate; solving again from
+# there restarts with the current residual as the shadow, as the serial solves retry theirs
+function _solve_with_retries(s)
+    _ksp_solve(s)
+    for _ ∈ 1:2
+        _broke_down(s) || break
+        _ksp_solve(s)
+    end
+    _measure_unconverged!(s)
+end
+
+_unconverged(s) = s.report && Integer(LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)) < 0
+
+# while x and b are placed; collective, and the reason is the same on every rank
+_measure_unconverged!(s, mult=:MatMult) = _unconverged(s) && (s.rnorm[] = _true_residual_norm(s, mult))
+
+# KSPGetResidualNorm is the norm the KSP monitored, preconditioned if the user asked for it
+function _true_residual_norm(s::XPETScSolver, mult)
+    TR = real(s.petsclib.PetscScalar)
+    sym(f) = _petsc_sym(s.petsclib, f)
+    ok(err, f) = err == 0 || error("PETSc: $f failed")
+    w = Ref{LibPETSc.CVec}(C_NULL)
+    val = Ref{TR}()
+    ok(ccall(sym(:VecDuplicate), Cint, (LibPETSc.CVec, Ptr{LibPETSc.CVec}), s.b, w), :VecDuplicate)
+    try
+        ok(ccall(sym(mult), Cint, (Ptr{Cvoid}, LibPETSc.CVec, LibPETSc.CVec), s.A.ptr, s.x, w[]), mult)
+        ok(ccall(sym(:VecAYPX), Cint, (LibPETSc.CVec, TR, LibPETSc.CVec), w[], -one(TR), s.b), :VecAYPX)
+        ok(ccall(sym(:VecNorm), Cint, (LibPETSc.CVec, Cint, Ptr{TR}), w[], 1, val), :VecNorm) # 1 = NORM_2
+    finally
+        ccall(sym(:VecDestroy), Cint, (Ptr{LibPETSc.CVec},), w)
+    end
+    Float64(val[])
+end
+
 # every negative KSPConvergedReason (iteration cap, divergence, breakdown, indefinite PC, NaN)
 function _report_unconverged(s::XPETScSolver)
-    s.report || return nothing
-    reason = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
-    (Integer(reason) < 0 && s.root) || return nothing
-    XCALibre.Solve._warn_unconverged(s.name, string(reason), piterations(s),
-        LibPETSc.KSPGetResidualNorm(s.petsclib, s.ksp), "KSP residual norm", s.tol,
-        (:unconverged_solve, s.name))
+    (_unconverged(s) && s.root) || return nothing
+    XCALibre.Solve._warn_unconverged(s.name, string(LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)),
+        piterations(s), s.rnorm[], "‖b - Ax‖₂", s.tol, (:unconverged_solve, s.name))
 end
 
 piterations(s::XPETScSolver) = Int(LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp))
@@ -458,7 +492,8 @@ _broke_down(s::XPETScSolver) = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
     (LibPETSc.KSP_DIVERGED_BREAKDOWN, LibPETSc.KSP_DIVERGED_BREAKDOWN_BICG)
 
 psolve_transpose!(s::XPETScSolver, x::AbstractVector) =
-    (_with_placed(_ksp_solve_transpose, s, x); _report_unconverged(s); x)
+    (_with_placed(_solve_transpose_measured, s, x); _report_unconverged(s); x)
+_solve_transpose_measured(s) = (_ksp_solve_transpose(s); _measure_unconverged!(s, :MatMultTranspose))
 
 _ksp_solve(s) = PETSc.solve!(s.x, s.ksp, s.b)
 _ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)

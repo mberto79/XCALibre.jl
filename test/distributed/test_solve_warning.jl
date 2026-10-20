@@ -1,9 +1,10 @@
 # Distributed linear solves that stop without meeting atol/rtol warn once, from rank 0, with the
-# equation label, the KSPConvergedReason, the iteration count and the residual norm: plain PETSc
-# solves (also after a BiCGStab retry and in the transpose solve) and MixedF32 corrections.
+# equation label, the KSPConvergedReason, the iteration count and ‖b - Ax‖₂: plain PETSc solves
+# (also after a BiCGStab retry and in the transpose solve) and MixedF32 corrections. PETSc stops on
+# the serial rule, ‖b - Ax‖₂ ≤ atol + rtol·‖b - Ax₀‖₂, whatever the KSP and PC.
 using XCALibre, PETSc, MPI, Test
 using Base.CoreLogging: Warn
-import XCALibre.Distribute: _solve_owned!, passemble!, psolve_transpose!
+import XCALibre.Distribute: _solve_owned!, passemble!, psolve_transpose!, _local_residual!
 
 MPI.Init()
 comm = MPI.COMM_WORLD
@@ -29,16 +30,16 @@ function wrapped_eqn(setup)
     deqn
 end
 
-setup(; solver=Cg(), itmax=2, rtol=0.0, precision=FullPrecision()) = SolverSetup(solver=solver,
-    preconditioner=Jacobi(), convergence=1e-10, relax=1.0, rtol=rtol, atol=1e-14, itmax=itmax,
-    precision=precision)
+setup(; solver=Cg(), preconditioner=Jacobi(), itmax=2, rtol=0.0, atol=1e-14, precision=FullPrecision()) =
+    SolverSetup(solver=solver, preconditioner=preconditioner, convergence=1e-10, relax=1.0, rtol=rtol,
+        atol=atol, itmax=itmax, precision=precision)
 
 # rank 0 emits exactly one warning per solve; the other ranks stay silent (the reason is global)
 expect_warning(f, msg) = rank == 0 ?
     (@test_logs (:warn, msg) min_level=Warn f()) : (@test_logs min_level=Warn f())
 expect_silence(f) = @test_logs min_level=Warn f()
 
-const ITS = r"\[T\] did not converge in 2 iterations \(KSP_DIVERGED_ITS\): KSP residual norm = "
+const ITS = r"\[T\] did not converge in 2 iterations \(KSP_DIVERGED_ITS\): ‖b - Ax‖₂ = "
 
 @testset "unconverged distributed solves warn (rank $rank)" begin
     deqn = wrapped_eqn(setup())
@@ -70,3 +71,24 @@ if any(l -> l.PetscScalar == Float32, PETSc.petsclibs)
 else
     rank == 0 && println("SKIP MixedF32 part of test_solve_warning: no Float32 PETSc library loaded")
 end
+
+# global ‖b - Ax‖₂ over owned rows, ghosts refreshed first
+function true_residual(deqn)
+    sync!(T, dm, config)
+    _local_residual!(deqn, nothing, config)
+    sqrt(MPI.Allreduce(sum(abs2, view(deqn.eqn.equation.R, 1:deqn.partition.n_owned)), +, comm))
+end
+
+# warm start: rtol is relative to b - Ax₀, not b
+@testset "distributed $(nameof(typeof(s))) $(nameof(typeof(p))) stops at the serial target (rank $rank)" for
+        (s, p) ∈ ((Cg(), Jacobi()), (Cg(), DILU()), (Bicgstab(), Jacobi()), (Bicgstab(), DILU()), (Gmres(), Jacobi()))
+    rtol = 1e-3
+    deqn = wrapped_eqn(setup(solver=s, preconditioner=p, itmax=1000, rtol=rtol, atol=0.0))
+    T.values .= 20 .+ 10 .* cos.(3 .* (1:length(T.values)))
+    r0 = true_residual(deqn)
+    expect_silence(() -> _solve_owned!(deqn, T, nothing))
+    r = true_residual(deqn)
+    @test r ≤ rtol*r0
+    @test r ≥ 1e-3*rtol*r0
+end
+

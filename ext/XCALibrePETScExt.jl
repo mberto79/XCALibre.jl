@@ -463,20 +463,24 @@ _measure_unconverged!(s, mult=:MatMult) = _unconverged(s) && (s.rnorm[] = _true_
 
 # KSPGetResidualNorm is the norm the KSP monitored, preconditioned if the user asked for it
 function _true_residual_norm(s::XPETScSolver, mult)
-    TR = real(s.petsclib.PetscScalar)
     sym(f) = _petsc_sym(s.petsclib, f)
     ok(err, f) = err == 0 || error("PETSc: $f failed")
     w = Ref{LibPETSc.CVec}(C_NULL)
-    val = Ref{TR}()
+    val = Ref{real(s.petsclib.PetscScalar)}()
     ok(ccall(sym(:VecDuplicate), Cint, (LibPETSc.CVec, Ptr{LibPETSc.CVec}), s.b, w), :VecDuplicate)
     try
         ok(ccall(sym(mult), Cint, (Ptr{Cvoid}, LibPETSc.CVec, LibPETSc.CVec), s.A.ptr, s.x, w[]), mult)
-        ok(ccall(sym(:VecAYPX), Cint, (LibPETSc.CVec, TR, LibPETSc.CVec), w[], -one(TR), s.b), :VecAYPX)
-        ok(ccall(sym(:VecNorm), Cint, (LibPETSc.CVec, Cint, Ptr{TR}), w[], 1, val), :VecNorm) # 1 = NORM_2
+        ok(_vec_aypx(sym(:VecAYPX), w[], -one(eltype(val)), s.b), :VecAYPX)
+        ok(_vec_norm2(sym(:VecNorm), w[], val), :VecNorm)
     finally
         ccall(sym(:VecDestroy), Cint, (Ptr{LibPETSc.CVec},), w)
     end
     Float64(val[])
+end
+
+for T ∈ (Float32, Float64)
+    @eval _vec_aypx(f, y, a::$T, x) = ccall(f, Cint, (LibPETSc.CVec, $T, LibPETSc.CVec), y, a, x)
+    @eval _vec_norm2(f, v, val::Ref{$T}) = ccall(f, Cint, (LibPETSc.CVec, Cint, Ptr{$T}), v, 1, val) # 1 = NORM_2
 end
 
 # every negative KSPConvergedReason (iteration cap, divergence, breakdown, indefinite PC, NaN)

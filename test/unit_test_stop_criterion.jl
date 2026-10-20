@@ -57,13 +57,13 @@ const CASES = (
     (Bicgstab(), Jacobi(), FullPrecision()), (Bicgstab(), DILU(), FullPrecision()),
     (Cgs(), Jacobi(), FullPrecision()), (Gmres(), Jacobi(), FullPrecision()), (Gmres(), DILU(), FullPrecision()),
     (Cg(), Jacobi(), MixedF32()), (Cg(), DILU(), MixedF32()), (Bicgstab(), DILU(), MixedF32()))
-name((s, p, pr)) = "$(nameof(typeof(s))) $(nameof(typeof(p))) $(nameof(typeof(pr)))"
+case_name((s, p, pr)) = "$(nameof(typeof(s))) $(nameof(typeof(p))) $(nameof(typeof(pr)))"
 
 # Float32 corrections meet the target of their own Float32 residual; the Float64 one differs by rounding
 slack(::FullPrecision) = 1.0
 slack(_) = 1.05
 
-@testset "$(name(c)) stops at rtol of the true residual" for c ∈ CASES
+@testset "$(case_name(c)) stops at rtol of the true residual" for c ∈ CASES
     rtol = 1e-3
     r0, r = solve_warm!(scaled_system(c...; rtol=rtol, atol=0.0))
     @test r ≤ slack(c[3])*rtol*r0
@@ -76,7 +76,7 @@ const R0 = let (T_eqn, _, T, _) = scaled_system(Cg(), Jacobi(), FullPrecision();
     true_residual(T_eqn, warm!(T))
 end
 
-@testset "$(name(c)) stops at atol of the true residual" for c ∈ CASES
+@testset "$(case_name(c)) stops at atol of the true residual" for c ∈ CASES
     atol = 1e-4*R0
     r0, r = solve_warm!(scaled_system(c...; rtol=0.0, atol=atol))
     @test r0 ≈ R0

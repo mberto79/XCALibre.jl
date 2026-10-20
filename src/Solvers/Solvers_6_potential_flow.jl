@@ -19,7 +19,8 @@ boundary conditions are inferred from pressure: fixed pressure becomes fixed
 zero potential, periodic patches remain periodic, and other patches use zero
 normal gradient.
 
-The corrected face-volume flux is returned with the linear-solver residual.
+The corrected face-volume flux is returned with the residual of the last potential solve, taken
+before that solve.
 """
 function potential_flow!(
     model, config; ncorrectors=0, pref=nothing, time=0, petsc_options="", from_rest=true)

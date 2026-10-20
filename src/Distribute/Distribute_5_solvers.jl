@@ -2,25 +2,19 @@ export DistributedEqn
 
 # serial ModelEquation on the rank-local mesh plus its distributed solver and Partition; the
 # reference cell's local id is cached at construction, 0 when another rank owns it
-struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,V<:AbstractVector,T}
+struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,T}
     eqn::E
     solver::S
     partition::P
     ref_cell::Int
     ref_lid::Int
-    diag::V                   # owned diagonals of the x and y systems, kept for their deferred residuals
     red::Vector{T}            # local (num, den) per component, all-reduced in one call
 end
 DistributedEqn(eqn, solver, partition) = DistributedEqn(eqn, solver, partition, 1,
-    _ref_local(get_phi(eqn).mesh, 1), _diag_store(eqn, partition.n_owned),
-    zeros(eltype(_nzval(_A(eqn))), 2 + 2 * _n_saved(eqn)))
+    _ref_local(get_phi(eqn).mesh, 1), zeros(eltype(_nzval(_A(eqn))), 2 * _n_components(eqn)))
 
-_diag_store(eqn, n) = begin
-    nz = _nzval(_A(eqn))
-    KernelAbstractions.zeros(get_backend(nz), eltype(nz), _n_saved(eqn) * n)
-end
-_n_saved(::ModelEquation{<:VectorModel}) = 2
-_n_saved(_) = 0
+_n_components(::ModelEquation{<:VectorModel}) = 3
+_n_components(_) = 1
 
 # local id of an original global cell id on this rank's owned block, 0 when not owned
 function _ref_local(dm::DistributedMesh, cellID)
@@ -54,44 +48,35 @@ function Solve.solve_equation!(
 end
 
 # mirrors serial VectorModel solve with one width-3 exchange after all components: a component's
-# solve reads only owned rows, and the systems differ only on the diagonal (update_equation!
-# restores A0), so the x and y residuals are taken after the exchange against their saved diagonals
+# solve reads only owned rows, and each residual is taken on x₀ (ghosts current) before its solve
 function Solve.solve_equation!(
     deqn::DistributedEqn, psi, psiBCs, solversetup, xdir::XDir, ydir::YDir, zdir::ZDir, config;
     time=nothing)
     eqn = deqn.eqn
-    n = deqn.partition.n_owned
+    red = deqn.red
     discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux, time=time)
     update_equation!(eqn, config)
     apply_boundary_conditions!(eqn, psiBCs, xdir, time, config)
     implicit_relaxation_diagdom!(eqn, psi.x.values, solversetup.relax, xdir, config)
+    red[1], red[2] = _local_residual!(deqn, xdir, config)
     _solve_owned!(deqn, psi.x, xdir)
-    _save_diag!(deqn, 0, config)
 
     update_equation!(eqn, config)
     apply_boundary_conditions!(eqn, psiBCs, ydir, time, config)
     implicit_relaxation_diagdom!(eqn, psi.y.values, solversetup.relax, ydir, config)
+    red[3], red[4] = _local_residual!(deqn, ydir, config)
     _solve_owned!(deqn, psi.y, ydir)
 
     is3d = psi.mesh.mesh isa Mesh3
+    red[5], red[6] = zero(eltype(red)), zero(eltype(red))
     if is3d
-        _save_diag!(deqn, n, config)
         update_equation!(eqn, config)
         apply_boundary_conditions!(eqn, psiBCs, zdir, time, config)
         implicit_relaxation_diagdom!(eqn, psi.z.values, solversetup.relax, zdir, config)
+        red[5], red[6] = _local_residual!(deqn, zdir, config)
         _solve_owned!(deqn, psi.z, zdir)
     end
     sync!(psi, psi.mesh, config)
-
-    red = deqn.red
-    red[1], red[2] = _residual_saved!(deqn, xdir, 0, config)
-    if is3d
-        red[3], red[4] = _residual_saved!(deqn, ydir, n, config)
-        red[5], red[6] = _local_residual!(deqn, zdir, config)
-    else
-        red[3], red[4] = _local_residual!(deqn, ydir, config)
-        red[5], red[6] = zero(eltype(red)), zero(eltype(red))
-    end
     _allreduce!(deqn)
     resz = is3d ? _scaled(red[5], red[6]) : zero(_get_float(psi.mesh))
     return _scaled(red[1], red[2]), _scaled(red[3], red[4]), resz
@@ -102,47 +87,14 @@ _solve_owned!(deqn, result, component) = begin
     psolve!(deqn.solver, result.values)
 end
 
-function _save_diag!(deqn, off, config)
-    A = _A(deqn.eqn)
-    (; backend, workgroup) = config.hardware
-    kernel! = _sized(_save_diag_kernel!, backend, workgroup, deqn.partition.n_owned)
-    kernel!(deqn.diag, off, _rowptr(A), _colval(A), _nzval(A))
-end
-
-@kernel function _save_diag_kernel!(diag, off, @Const(rowptr), @Const(colval), @Const(nzval))
-    i = @index(Global)
-    @inbounds diag[off + i] = nzval[spindex(rowptr, colval, i, i)]
-end
-
-# same arithmetic, in the same order, as Solve._scaled_residual! with the diagonal read from diag
-@kernel function _scaled_residual_saved!(R, Fx, @Const(rowptr), @Const(colval), @Const(nzval),
-        @Const(values), @Const(b), @Const(diag), off)
-    i = @index(Global)
-    Ax = zero(eltype(R))
-    Dx = zero(eltype(R))
-    xi = values[i]
-
-    @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
-        j = colval[nzi]
-        Aij = j == i ? diag[off + i] : nzval[nzi]
-        Ax += Aij * values[j]
-        if j == i
-            Dx = Aij * xi
-        end
-    end
-
-    @inbounds begin
-        R[i] = abs(b[i] - Ax)
-        Fx[i] = abs(Dx)
-    end
-end
-
 _is_pure_laplacian(eqn) = length(eqn.model.terms) == 1 && eqn.model.terms[1] isa Laplacian
 
+# the residual is taken on x₀, whose ghosts are current (fields are kept synced between solves)
 function Solve.solve_system!(deqn::DistributedEqn, setup, result, component, config)
+    res = residual(deqn, component, config)
     _solve_owned!(deqn, result, component)
     sync!(result, get_phi(deqn.eqn).mesh, config)
-    residual(deqn, component, config)
+    res
 end
 
 # all-reduces issued by the solver seams since load; budgeted per iteration in `test_perf.jl`
@@ -166,16 +118,6 @@ function _local_residual!(deqn::DistributedEqn, component, config)
     n = deqn.partition.n_owned
     kernel! = _sized(Solve._scaled_residual!, backend, workgroup, n)
     kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), values, b)
-    _local_sums(deqn, R, Fx)
-end
-
-function _residual_saved!(deqn::DistributedEqn, component, off, config)
-    eqn = deqn.eqn
-    (; A, R, Fx) = eqn.equation
-    (; backend, workgroup) = config.hardware
-    kernel! = _sized(_scaled_residual_saved!, backend, workgroup, deqn.partition.n_owned)
-    kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), get_values(get_phi(eqn), component),
-        _b(eqn, component), deqn.diag, off)
     _local_sums(deqn, R, Fx)
 end
 

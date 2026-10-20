@@ -121,6 +121,8 @@ On a CPU backend every `OnDevice*` option behaves as `OnHost()`.
 
 In XCALibre.jl the `run!` function is used to start a simulation, which will dispatch to the appropriate flow solver for execution. Once the simulation is complete a `NamedTuple` containing residual information is returned for users to explore the convergence history of the simulation. 
 
+The residual of each field is the normalised residual `Σᵢ|bᵢ - (Ax)ᵢ| / Σᵢ|Aᵢᵢxᵢ|` of its assembled system, evaluated on the current field `x` just before the linear solve, so it measures how far the previous iteration's fields are from satisfying this iteration's equations. It does not depend on the linear solver, its preconditioner, precision or tolerances, nor on whether the run is serial, distributed or on a GPU. When the field is zero everywhere (a common initial pressure), the denominator is zero and the unnormalised `Σᵢ|bᵢ - (Ax)ᵢ|` is reported for that iteration.
+
 ```@docs; canonical=false
 run!()
 ```

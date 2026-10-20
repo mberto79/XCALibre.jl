@@ -5,6 +5,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Version [v0.7.0-DEV] - 2026-09-25
 
+### Changed
+* The residual of each field is evaluated on its value before the linear solve, so residual histories no longer depend on the linear solver, its precision or tolerances, or on serial, distributed or GPU runs. Histories shift by one iteration, and a field that starts at zero reports the unnormalised Σ|b - Ax| on its first iteration. [#PRNUM](@ref)
+
 ### Fixed
 * Tests: `test/distributed/test_perf.jl` now checks the correct halo-exchange budget and converged solves, and runs in the two-rank gate session [#240](@ref)
 * Distributed linear solves that stop without meeting `atol` or `rtol` now warn with the method, equation, reason and residual, at most 10 times per equation; converged solves print nothing. [#239](@ref)

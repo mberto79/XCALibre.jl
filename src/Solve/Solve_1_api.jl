@@ -60,7 +60,7 @@ This function is used to provide solver settings that will be used internally in
 
 - `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
 - `preconditioner`: instance of preconditioner to be used e.g. Jacobi()
-- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`.
+- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`. The residual, `Σ|b - Ax| / Σ|Aᵢᵢxᵢ|`, is taken on the field before the linear solve, so it does not depend on the solver settings.
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
@@ -368,6 +368,7 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
     opA = A
     b = _b(phiEqn, component)
 
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
     ldiv = is_ldiv(precon)
@@ -377,7 +378,7 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
         _shadow(solver, P, ldiv, phiEqn, values, b, config)...,
         M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
         )
-    # values still hold x₀: re-solve from there with a dense shadow (Fx is scratch until `residual`)
+    # values still hold x₀: re-solve from there with a dense shadow (Fx is scratch after `residual`)
     if _broke_down(solver, itmax)
         krylov_solve!(
             solver, opA, bw, x0; c=_fallback_shadow!(_like_workspace(x, phiEqn.equation.Fx)),
@@ -393,9 +394,8 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
         kernel!(values, x)
     end
 
-    res = residual(phiEqn, component, config)
     Krylov.issolved(solver) || _warn_unconverged(phiEqn, setup, component,
-        solver.stats.status, Krylov.iteration_count(solver))
+        solver.stats.status, Krylov.iteration_count(solver), config)
     return res
 end
 
@@ -403,10 +403,10 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     (; values) = result
     A = _A(phiEqn)
     b = _b(phiEqn, component)
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     iterations, converged, reason = mixed_solve!(phiEqn.solver, A, b, values, setup, config, result.mesh)
-    res = residual(phiEqn, component, config)
-    converged || _warn_unconverged(phiEqn, setup, component, reason, iterations)
+    converged || _warn_unconverged(phiEqn, setup, component, reason, iterations, config)
     return res
 end
 
@@ -425,10 +425,14 @@ function _warn_unconverged(name, reason, iterations, rnorm, norm_name, setup, id
         "$UNCONVERGED_MAXLOG times per equation)" maxlog=UNCONVERGED_MAXLOG _id=id
 end
 
-# serial solves report ‖b - Ax‖₂ of the returned iterate, read from `residual`'s |b - Ax| in R
-function _warn_unconverged(eqn::ModelEquation, setup, component, reason, iterations)
+# serial solves report ‖b - Ax‖₂ of the returned iterate, formed in the scratch array R
+function _warn_unconverged(eqn::ModelEquation, setup, component, reason, iterations, config)
+    (; A, R) = eqn.equation
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_initial_residual!, backend, workgroup, length(R))
+    kernel!(R, _rowptr(A), _colval(A), _nzval(A), get_values(get_phi(eqn), component), _b(eqn, component))
     tag = _component_tag(component)
-    _warn_unconverged(_solve_name(setup, tag), reason, iterations, norm(eqn.equation.R),
+    _warn_unconverged(_solve_name(setup, tag), reason, iterations, norm(R),
         "‖b - Ax‖₂", setup, (:unconverged_solve, objectid(eqn.solver), tag))
 end
 
@@ -439,7 +443,7 @@ _component_tag(::ZDir) = "z component"
 
 # BiCGStab shadow vector M⁻¹(b - Ax0), as PETSc bcgs: Krylov.jl's default c = b suits only a zero
 # initial guess, and warm-started iterates degraded as steady runs converged (10M motorBike diverged).
-# Built in the scratch arrays R and Fx, which nothing touches until `residual`.
+# Built in the scratch arrays R and Fx, free once `residual` has summed them.
 _shadow(solver, P, ldiv, eqn, x0, b, config) = (;)
 function _shadow(solver::BicgstabWorkspace, P, ldiv, eqn, x0, b, config)
     (; A, R, Fx) = eqn.equation

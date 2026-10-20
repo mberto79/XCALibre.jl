@@ -111,6 +111,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     b = _b(phiEqn, component)
     workspace = phiEqn.solver
     values = get_values(result, component)
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     update!(workspace, A, solver, config)
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     x = workspace.solution
@@ -120,9 +121,8 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 
     copyto!(values, x)
-    res = residual(phiEqn, component, config)
     workspace.converged || _warn_unconverged(phiEqn, setup, component, _amg_reason(workspace, itmax),
-        workspace.iterations)
+        workspace.iterations, config)
     return res
 end
 

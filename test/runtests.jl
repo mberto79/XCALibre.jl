@@ -145,6 +145,10 @@ TEST_CASES_DIR = pkgdir(XCALibre, "test/0_TEST_CASES")
         include("unit_test_solve_warning.jl")
     end
 
+    @testset "Outer residual is the same on every linear-solve path" begin
+        include("unit_test_residual_parity.jl")
+    end
+
     @testset "Wall Distance Unit Test" begin
         include("unit_test_wall_distance.jl")
     end

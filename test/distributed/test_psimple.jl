@@ -11,15 +11,15 @@ include(joinpath(@__DIR__, "psimple_case.jl"))
 
 function serial_reference(gmesh, bcs, iterations, pref, consistent)
     model, config = incompressible_case(gmesh, bcs; iterations)
-    simple!(model, config; pref=pref, consistent=consistent)
+    R = simple!(model, config; pref=pref, consistent=consistent)
     (collect(model.momentum.U.x.values), collect(model.momentum.U.y.values),
-     collect(model.momentum.p.values))
+     collect(model.momentum.p.values), (collect(R.Ux), collect(R.p)))
 end
 
 function run_case(name, build_mesh, bcs, iterations; pref=nothing, consistent=false)
     gmesh = rank == 0 ? build_mesh() : nothing
     ref = rank == 0 ? serial_reference(gmesh, bcs, iterations, pref, consistent) : nothing
-    Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
+    Us_x, Us_y, ps, (Rs_x, Rs_p) = MPI.bcast(ref, comm; root=0)
 
     dm = distribute(gmesh; comm=comm)
     model, config = incompressible_case(dm, bcs; iterations)
@@ -37,9 +37,9 @@ function run_case(name, build_mesh, bcs, iterations; pref=nothing, consistent=fa
         @test dp < 1e-6
         # ghosts synced to the converged solution
         @test all(abs(px[i] - Us_x[orig[i]]) < 1e-6 for i ∈ n+1:nloc)
-        # distributed residuals settle at solver noise floor
-        @test maximum(residuals.p[iterations÷2:end]) < 1e-6
-        @test maximum(residuals.Ux[iterations÷2:end]) < 1e-6
+        # residuals are taken before each solve, so the history is serial's to solver tolerance
+        @test residuals.p ≈ Rs_p rtol=1e-6
+        @test residuals.Ux ≈ Rs_x rtol=1e-6
     end
     rank == 0 && println("PSIMPLE $name n=$(MPI.Comm_size(comm)) dux=$dux duy=$duy dp=$dp")
 end

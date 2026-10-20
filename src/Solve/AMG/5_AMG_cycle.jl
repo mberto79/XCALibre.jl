@@ -315,12 +315,12 @@ function _push_residual_norm_history!(workspace::AMGWorkspace, residual_norm)
     return workspace
 end
 
-function amg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
+function amg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol, dscale=nothing)
     T = eltype(x)
     bnorm = max(norm(b), eps(T))
     _residual!(hierarchy, workspace.residual, A, x, b)
     _reset_residual_history!(workspace)
-    rnorm = norm(workspace.residual)
+    rnorm = _scaled_norm(workspace.residual, dscale)
     _push_residual_norm_history!(workspace, rnorm)
     ε = _amg_eps(T, atol, rtol, rnorm)
     rel = rnorm / bnorm
@@ -335,7 +335,7 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, so
         KernelAbstractions.synchronize(hierarchy.backend)
         _add_amg!(hierarchy, x, workspace.correction)
         _residual!(hierarchy, workspace.residual, A, x, b)
-        rnorm = norm(workspace.residual)
+        rnorm = _scaled_norm(workspace.residual, dscale)
         _push_residual_norm_history!(workspace, rnorm)
         rel = rnorm / bnorm
         if rnorm < best_rnorm * (one(T) - T(1e-4))

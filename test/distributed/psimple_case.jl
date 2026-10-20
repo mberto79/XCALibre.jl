@@ -21,7 +21,7 @@ cavity_bcs(mesh) = assign(region=mesh, (
          Zerogradient(:top), Zerogradient(:bottom)]))
 
 function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1, backend=CPU(),
-        p_precon=Jacobi(), precision=FullPrecision(), rtol=1e-8)
+        p_precon=Jacobi(), precision=FullPrecision(), rtol=1e-8, workgroup=64)
     model = Physics(
         time = time,
         fluid = Fluid{Incompressible}(nu=1e-3),
@@ -37,7 +37,7 @@ function incompressible_case(mesh, bcs; iterations, time=Steady(), time_step=1, 
                p=Schemes())
     runtime = Runtime(iterations=iterations, time_step=time_step, write_interval=-1)
     config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
-        hardware=Hardware(backend=backend, workgroup=64), boundaries=bcs(mesh))
+        hardware=Hardware(backend=backend, workgroup=workgroup), boundaries=bcs(mesh))
     initialise!(model.momentum.U, [0.0, 0.0, 0.0])
     initialise!(model.momentum.p, 0.0)
     model, config

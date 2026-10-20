@@ -87,3 +87,16 @@ To calculate pressure and viscous forces, the following functions are available:
 pressure_force
 viscous_force
 ```
+
+### Example: Volume integrals and averages
+
+Volume integrals of scalar and vector fields run on the field's backend (CPU or GPU).
+
+```@docs; canonical=false
+volume_integral
+weighted_volume_integral
+volume_average
+total_volume
+```
+
+For example, the volume-averaged velocity of a model is `volume_average(model.momentum.U, config)`.

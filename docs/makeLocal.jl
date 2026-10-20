@@ -11,7 +11,7 @@ Changelog.generate(
     Changelog.Documenter(),
     joinpath(@__DIR__, "..", "CHANGELOG.md"),
     joinpath(@__DIR__, "src", "release_notes.md");
-    repo = "github.com/mberto79/XCALibre.jl",
+    repo = "mberto79/XCALibre.jl",
 )
 
 USER_GUIDE_PAGES = Any[

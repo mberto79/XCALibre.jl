@@ -5,9 +5,7 @@ include(joinpath(@__DIR__, "driver.jl"))
 
 mpiexec_available() && run_mpi_tests(["gate_session.jl"]; ranks=[2], timeout=2400)
 
-# odd rank count: asymmetric halos
-mpiexec_available() && run_mpi_tests(["test_halo.jl"]; ranks=[3])
-
-# no patch of the meshes above empties below six ranks, so the wall-function empty-patch path
-# needs its own rank count (10 mm step: rank 2 holds `top` with no faces at n=6)
-mpiexec_available() && run_mpi_tests(["test_turbulence_sst_wallfn.jl"]; ranks=[6])
+# three ranks: asymmetric halos, a sub-communicator smaller than the world, and the y-band
+# partition that empties a wall-function patch on some rank
+mpiexec_available() && run_mpi_tests(["gate_session.jl"]; ranks=[3],
+    args=["test_halo.jl", "test_halo_subcomm.jl", "test_turbulence_sst_wallfn.jl"])

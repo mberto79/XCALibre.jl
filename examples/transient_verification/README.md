@@ -32,7 +32,7 @@ Orders are those of the finest pairs of time steps. Notes:
   not decrease with Δt (amplitude and phase of the wave are off by an amount independent of Δt).
 
 Variable time-step patterns need an internal post-processing hook to prescribe the steps;
-`test/unit_test_crank_nicolson.jl` covers them.
+`test/unit/Discretise/test_crank_nicolson.jl` covers them.
 
-`heat_decay.jl` is run by the test suite (`test/unit_test_transient_verification_examples.jl`);
-the shear wave of `shear_wave_piso.jl` is tested in `test/unit_test_crank_nicolson.jl`.
+`heat_decay.jl` is run by the test suite (`test/cases/test_transient_verification_examples.jl`);
+the shear wave of `shear_wave_piso.jl` is tested in `test/unit/Discretise/test_crank_nicolson.jl`.

@@ -499,7 +499,8 @@ psolve_transpose!(s::XPETScSolver, x::AbstractVector) =
     (_with_placed(_solve_transpose_measured, s, x); _report_unconverged(s); x)
 _solve_transpose_measured(s) = (_ksp_solve_transpose(s); _measure_unconverged!(s, :MatMultTranspose))
 
-_ksp_solve(s) = PETSc.solve!(s.x, s.ksp, s.b)
+# check=false: unconverged solves are reported by _report_unconverged, not by PETSc.jl 0.5
+_ksp_solve(s) = _V05 ? PETSc.solve!(s.x, s.ksp, s.b; check=false) : PETSc.solve!(s.x, s.ksp, s.b)
 _ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
 
 # NEW SECTION: parallel partitioning (MatPartitioning on the owned-row cell graph)

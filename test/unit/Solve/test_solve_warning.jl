@@ -16,8 +16,8 @@ BCs = assign(region=mesh, (T = [
     Dirichlet(:left_wall, 50.0), Zerogradient(:right_wall), Dirichlet(:bottom_wall, 10.0), Zerogradient(:upper_wall)],))
 schemes = (T = Schemes(laplacian = Linear),)
 
-function laplace_system(solver, precision; itmax, rtol, atol)
-    solvers = (T = SolverSetup(solver=solver, preconditioner=Jacobi(), convergence=1e-8, relax=1.0,
+function laplace_system(solver, precision; itmax, rtol, atol, preconditioner=Jacobi())
+    solvers = (T = SolverSetup(solver=solver, preconditioner=preconditioner, convergence=1e-8, relax=1.0,
         rtol=rtol, atol=atol, itmax=itmax, precision=precision),)
     config = Configuration(solvers=solvers, schemes=schemes,
         runtime=Runtime(iterations=1, write_interval=-1, time_step=1), hardware=hardware, boundaries=BCs)
@@ -40,22 +40,22 @@ end
 
 laplace_solve(solver, precision; kwargs...) = solve_from_zero!(laplace_system(solver, precision; kwargs...))
 
-const AMG_SOLVER = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
+const AMG_PC = AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi())
 
-@testset "unconverged $(nameof(typeof(s))) $(nameof(typeof(p))) solve warns" for (s, p, rtol, msg) ∈ (
-        (Cg(), FullPrecision(), 0.0, r"Cg solve did not converge in 2 iterations \(maximum number of iterations exceeded\): ‖b - Ax‖₂ = "),
-        (Bicgstab(), FullPrecision(), 0.0, r"Bicgstab solve did not converge in 2 iterations \(maximum number of iterations exceeded\)"),
-        (Cg(), MixedF32(), 1e-3, r"Cg \(MixedF32\) solve did not converge in 2 iterations \(maximum number of iterations exceeded\)"),
-        (Cg(), MixedF32(), 1e-12, r"Cg \(MixedF32\) solve did not converge in \d+ iterations \(iterative refinement stopped after 20 corrections\)"),
-        (Cg(), MixedF16(), 1e-12, r"Cg \(MixedF16\) solve did not converge in \d+ iterations \(iterative refinement stopped after 20 corrections\)"),
-        (AMG_SOLVER, FullPrecision(), 0.0, r"AMG solve did not converge in 2 iterations \(maximum number of iterations exceeded\)"))
-    @test_logs (:warn, msg) match_mode=:any laplace_solve(s, p; itmax=2, rtol=rtol, atol=1e-14)
+@testset "unconverged $(nameof(typeof(s))) $(nameof(typeof(p))) solve warns" for (s, p, rtol, msg, pc) ∈ (
+        (Cg(), FullPrecision(), 0.0, r"Cg solve did not converge in 2 iterations \(maximum number of iterations exceeded\): ‖b - Ax‖₂ = ", Jacobi()),
+        (Bicgstab(), FullPrecision(), 0.0, r"Bicgstab solve did not converge in 2 iterations \(maximum number of iterations exceeded\)", Jacobi()),
+        (Cg(), MixedF32(), 1e-3, r"Cg \(MixedF32\) solve did not converge in 2 iterations \(maximum number of iterations exceeded\)", Jacobi()),
+        (Cg(), MixedF32(), 1e-12, r"Cg \(MixedF32\) solve did not converge in \d+ iterations \(iterative refinement stopped after 20 corrections\)", Jacobi()),
+        (Cg(), MixedF16(), 1e-12, r"Cg \(MixedF16\) solve did not converge in \d+ iterations \(iterative refinement stopped after 20 corrections\)", Jacobi()),
+        (Richardson(), FullPrecision(), 0.0, r"Richardson solve did not converge in 2 iterations \(maximum number of iterations exceeded\)", AMG_PC))
+    @test_logs (:warn, msg) match_mode=:any laplace_solve(s, p; itmax=2, rtol=rtol, atol=1e-14, preconditioner=pc)
 end
 
-@testset "converged $(nameof(typeof(s))) $(nameof(typeof(p))) solve is silent" for (s, p, rtol) ∈ (
-        (Cg(), FullPrecision(), 1e-8), (Cg(), MixedF32(), 1e-3), (Cg(), MixedF32(), 1e-8),
-        (AMG_SOLVER, FullPrecision(), 1e-8))
-    @test_logs min_level=Warn laplace_solve(s, p; itmax=1000, rtol=rtol, atol=0.0)
+@testset "converged $(nameof(typeof(s))) $(nameof(typeof(p))) solve is silent" for (s, p, rtol, pc) ∈ (
+        (Cg(), FullPrecision(), 1e-8, Jacobi()), (Cg(), MixedF32(), 1e-3, Jacobi()), (Cg(), MixedF32(), 1e-8, Jacobi()),
+        (Richardson(), FullPrecision(), 1e-8, AMG_PC), (Cg(), FullPrecision(), 1e-8, AMG_PC))
+    @test_logs min_level=Warn laplace_solve(s, p; itmax=1000, rtol=rtol, atol=0.0, preconditioner=pc)
 end
 
 # rate limited per equation: a second equation still reports after the first one's limit

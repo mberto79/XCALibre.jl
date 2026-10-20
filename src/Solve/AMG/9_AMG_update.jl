@@ -105,8 +105,10 @@ function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solve
     return workspace
 end
 
-function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, result, component, config) where {F,I,S1<:AMG,S2,PT}
-    (; itmax, atol, rtol, solver) = setup
+# serial AMG path (AMG, or GAMG/BoomerAMG substituted by the native AMG, see `_native_amg`)
+function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,<:AMGFamily}, result, component, config) where {F,I,S1,S2}
+    (; itmax, atol, rtol) = setup
+    solver = _native_amg(setup)
     A = _A(phiEqn)
     b = _b(phiEqn, component)
     workspace = phiEqn.solver
@@ -129,7 +131,7 @@ end
 _amg_reason(workspace, itmax) = workspace.iterations ≥ itmax ?
     "maximum number of iterations exceeded" : "stagnating, non-finite or indefinite iteration"
 
-function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::AMGSolver, A, b, x; itmax, atol, rtol)
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Richardson, A, b, x; itmax, atol, rtol)
     return amg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 end
 
@@ -137,7 +139,7 @@ function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Bicgstab, A, b, x
     return amg_bicgstab_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 end
 
-function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol)
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Union{Nothing,Cg}, A, b, x; itmax, atol, rtol)
     return amg_cg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
 end
 

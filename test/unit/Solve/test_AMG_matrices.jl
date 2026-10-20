@@ -39,8 +39,8 @@ end
 
 function _make_config()
     setup = SolverSetup(
-        solver=AMG(),
-        preconditioner=Jacobi(),
+        solver=Cg(),
+        preconditioner=AMG(),
         convergence=1e-7,
         relax=1.0,
         rtol=1e-8,
@@ -76,7 +76,7 @@ const _config = _make_config()
     A, b = poisson1d()
 
     # A. CORRECTNESS (smoother sweep lives on poisson2d)
-    for mode in (Cg(), AMGSolver()),
+    for mode in (Cg(), Richardson()),
         coarsening in (SmoothAggregation(), RugeStuben(), Geometric()),
         smoother in (AMGJacobi(),)
         solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)
@@ -105,7 +105,7 @@ end
     grid = Iterators.product((SmoothAggregation(), RugeStuben(), Geometric()),
                              (AMGJacobi(), AMGChebyshev(), AMGGaussSeidel(), AMGSOR(1.0)))
     for (i, (coarsening, smoother)) in enumerate(grid)
-        mode = isodd(i) ? Cg() : AMGSolver()
+        mode = isodd(i) ? Cg() : Richardson()
         solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)
         relres, _ = _solve_amg(A, b, solver, _config)
         @test relres < 1e-7
@@ -122,7 +122,7 @@ end
     A, b = anisotropic1d()
 
     # A. CORRECTNESS
-    for mode in (Cg(), AMGSolver()),
+    for mode in (Cg(), Richardson()),
         coarsening in (SmoothAggregation(), RugeStuben(), Geometric()),
         smoother in (AMGJacobi(),)
         solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)

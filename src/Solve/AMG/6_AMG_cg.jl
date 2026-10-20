@@ -114,7 +114,7 @@ function _cg_symmetry_error(A)
         "non-symmetric - use AMG(mode=AMGSolver()) or Bicgstab() instead."))
 end
 
-function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
+function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol, dscale=nothing)
     if !hierarchy.is_symmetric
         throw(_cg_symmetry_error(_host_operator(hierarchy)))
     end
@@ -130,7 +130,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
 
     _residual!(hierarchy, r, A, x, b)
     _reset_residual_history!(workspace)
-    rnorm = norm(r)
+    rnorm = _scaled_norm(r, dscale)
     _push_residual_norm_history!(workspace, rnorm)
     ε = _amg_eps(T, atol, rtol, rnorm)
     rel = rnorm / bnorm
@@ -174,7 +174,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
         end
         flex && _copy_amg!(hierarchy, r_prev, r)
         _cg_step_amg!(hierarchy, x, r, p, q, α)
-        rnorm = norm(r)
+        rnorm = _scaled_norm(r, dscale)
         _push_residual_norm_history!(workspace, rnorm)
         rel = rnorm / bnorm
         if !isfinite(rnorm) || !isfinite(rel)

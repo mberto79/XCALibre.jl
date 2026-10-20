@@ -5,9 +5,9 @@ using LinearAlgebra
 using SparseArrays
 const Krylov = XCALibre.Solve.Krylov
 
-# Serial BiCGStab is right-preconditioned with the shadow vector c = b - Ax0, as PETSc bcgs with
-# -ksp_pc_side right, not Krylov.jl's default c = b. A warm-started solve_system! must take exactly
-# Krylov.jl's bicgstab iterates with that shadow, and differ from the default's.
+# Serial Jacobi BiCGStab uses the shadow vector c = M⁻¹(b - Ax0), as PETSc bcgs, not Krylov.jl's default c = b.
+# A warm-started solve_system! must take exactly Krylov.jl's bicgstab iterates with that shadow,
+# and differ from the default's.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh = UNV2D_mesh(joinpath(grids_dir, "finer_mesh_laplace.unv"))
@@ -81,8 +81,8 @@ T.values .= x0
 XCALibre.Solve.solve_system!(T_eqn, solvers.T, T, nothing, config)
 
 M = Diagonal(copy(T_eqn.preconditioner.storage))
-reference(c) = Krylov.bicgstab(Acsc, b, x0; c=c, N=M, rtol=rtol, atol=atol, itmax=itmax)[1]
-x_shadow = reference(b - Acsc*x0)
+reference(c) = Krylov.bicgstab(Acsc, b, x0; c=c, M=M, rtol=rtol, atol=atol, itmax=itmax)[1]
+x_shadow = reference(M*(b - Acsc*x0))
 x_default = reference(b)
 
 @test norm(T.values - x_shadow) <= 1e-10*norm(x_shadow - x0)

@@ -59,8 +59,9 @@ const MAX_REFINEMENTS = 20
 _work_type(::MixedF16) = Float32
 
 # low-precision state of a ModelEquation: Krylov workspace, operator sharing A's sparsity and the
-# preconditioner (Preconditioner for MixedF32, Jacobi diagonal for MixedF16); dinv, rfull, s, dptr
-# and comp are `nothing` for MixedF32, c is the BiCGStab/CGS fallback shadow (`nothing` otherwise)
+# preconditioner (Preconditioner for MixedF32, Jacobi diagonal for MixedF16); for MixedF32 dinv is
+# scratch for the scaled residual D⁻¹r and rfull, s and comp are `nothing`; c is the BiCGStab/CGS
+# fallback shadow (`nothing` otherwise)
 struct MixedWorkspace{PR,W,O,V,R,D,P,F,I,B,C}
     precision::PR
     krylov::W
@@ -90,8 +91,8 @@ function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, preconditione
     opA = _lowprecision_operator(A, nzval)
     P = Preconditioner{typeof(preconditioner)}(opA)
     krylov = _workspace(solver, r)
-    MixedWorkspace(p, krylov, opA, nzval, r, nothing, P, nothing, nothing, nothing, nothing,
-        _shadow_buffer(krylov, r))
+    MixedWorkspace(p, krylov, opA, nzval, r, similar(r), P, nothing, nothing, _diagonal_positions(A),
+        nothing, _shadow_buffer(krylov, r))
 end
 
 function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, b)
@@ -108,6 +109,11 @@ end
 
 _shadow_buffer(::_ShadowWorkspace, r) = similar(r)
 _shadow_buffer(_, r) = nothing
+
+# BiCGStab's shadow is Krylov.jl's initial residual D⁻¹r (d starts from 0), kept in dinv until the solve
+_mixed_shadow(ws::MixedWorkspace{MixedF32,<:BicgstabWorkspace}) = (copyto!(ws.c, ws.dinv); (; c=ws.c))
+_mixed_shadow(ws::MixedWorkspace{MixedF16,<:BicgstabWorkspace}) = (mul!(ws.c, ws.P, ws.r); (; c=ws.c))
+_mixed_shadow(ws) = (;)
 
 # the correction d starts from 0, so a shadow-vector breakdown is retried in `_mixed_correction!`
 # with the dense shadow; a second breakdown leaves the field unchanged
@@ -190,12 +196,12 @@ end
 
 # NEW SECTION: correction solve
 
-# x += d per correction until ‖b - Ax‖ ≤ atol + rtol·‖b - Ax₀‖, one unless rtol is below what the
+# x += d per correction until ‖D⁻¹(b - Ax)‖ ≤ atol + rtol·‖D⁻¹(b - Ax₀)‖, one unless rtol is below what the
 # low precision attains; returns the total Krylov iterations, whether the target was met, and why not
 function mixed_solve!(ws::MixedWorkspace, A, b, values, setup, config, mesh)
     (; atol, rtol) = setup
     inner_rtol = max(rtol, _attainable_rtol(ws.precision))
-    if inner_rtol == rtol
+    if inner_rtol == rtol && _trusts_inner_stop(ws.precision)
         its, _ = _mixed_correction!(ws, A, b, values, inner_rtol, nothing, setup, config, mesh)
         # a zero residual returns before the Krylov solve
         converged = iszero(its) || _krylov_converged(ws.krylov)
@@ -213,10 +219,15 @@ function mixed_solve!(ws::MixedWorkspace, A, b, values, setup, config, mesh)
     iterations, rnorm ≤ target, _refinement_reason()
 end
 
+# MixedF16's Krylov.jl solve monitors the S-scaled residual, which can differ widely from D⁻¹(b - Ax), so
+# its result is always checked by a refinement pass
+_trusts_inner_stop(::MixedF32) = true
+_trusts_inner_stop(::MixedF16) = false
+
 _refinement_reason() = "iterative refinement stopped after $MAX_REFINEMENTS corrections"
 
-# solves A·d = b - Ax from d = 0 and adds d unless ‖b - Ax‖ meets target (`nothing`: the setup's own);
-# returns the Krylov count and ‖b - Ax‖ before the correction. Later corrections reduce only to the
+# solves A·d = b - Ax from d = 0 and adds d unless ‖D⁻¹(b - Ax)‖ meets target (`nothing`: the setup's
+# own); returns the Krylov count and ‖D⁻¹(b - Ax)‖ before the correction. Later corrections reduce only to the
 # target: the outer convergence check reads the post-solve residual (overshooting rtol stops a run)
 _correction_tol(atol, rtol, target, rnorm) =
     isnothing(target) || iszero(target) ? (atol, rtol) : (zero(atol), max(rtol, target/rnorm))
@@ -227,16 +238,15 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, rtol, ta
     (; backend, workgroup) = config.hardware
     n = length(values)
     kernel! = _sized(_mixed_residual!, backend, workgroup, n)
-    kernel!(ws.r, ws.nzval, _rowptr(A), _colval(A), _nzval(A), values, b)
-    rnorm = Float64(norm(ws.r))
+    kernel!(ws.r, _data(ws.dinv), ws.nzval, _rowptr(A), _colval(A), _nzval(A), ws.dptr, values, b)
+    rnorm = Float64(norm(ws.dinv))
     (!solve || rnorm ≤ something(target, _stop_target(atol, rtol, rnorm))) && return 0, rnorm
     # A is unchanged by later corrections of the same solve
     (isnothing(target) || iszero(target)) && update_preconditioner!(ws.P, mesh, config)
     atol_c, rtol_c = Float32.(_correction_tol(atol, rtol, target, rnorm))
-    # d starts from 0, so Krylov.jl's default BiCGStab shadow c = b is the initial residual
-    kw = (; _stop_kwargs(ws.krylov, ws.P.P, atol_c, rtol_c, Float32(rnorm))..., itmax=itmax,
-        ldiv=is_ldiv(ws.P), history=false)
-    krylov_solve!(ws.krylov, ws.opA, ws.r; kw...)
+    scale = (; nzval=ws.nzval, dptr=ws.dptr, tmp=ws.dinv)
+    kw = (; _stop_kwargs(ws.krylov, ws.P, scale, atol_c, rtol_c, Float32(rnorm))..., itmax=itmax, history=false)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws)..., kw...)
     _broke_down(ws.krylov, itmax) && krylov_solve!(ws.krylov, ws.opA, ws.r; c=_fallback_shadow!(ws.c), kw...)
     _correction_broke_down(ws, itmax) && return Krylov.iteration_count(ws.krylov), rnorm
     kernel! = _sized(_add_correction!, backend, workgroup, n)
@@ -260,18 +270,18 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, rtol, ta
     kernel!(ws.s, ws.dptr, nzval)
     kernel! = _sized(_mixed_residual_compensated!, backend, workgroup, n)
     kernel!(ws.rfull, ws.comp.ad, ws.nzval, ws.comp.diag, ws.dinv, rowptr, colval, nzval, values, b, ws.s)
-    # tolerances apply to the unscaled residual b - Ax
+    # tolerances apply to D⁻¹(b - Ax), not the scaled residual
     rnorm = norm(ws.comp.ad)
     snorm = norm(ws.rfull)
     (!solve || iszero(snorm) || rnorm ≤ something(target, _stop_target(atol, rtol, rnorm))) && return 0, rnorm
     # unit 2-norm: Krylov's dot products return T and n·max² overflows Float16
     kernel! = _sized(_scale_cast!, backend, workgroup, n)
     kernel!(ws.r, ws.rfull, inv(snorm))
-    # Krylov.jl sees S·(b - Ax)/‖S·(b - Ax)‖, so the unscaled target becomes a relative reduction
+    # Krylov.jl sees S·(b - Ax)/‖S·(b - Ax)‖, so the target becomes a relative reduction
     atol_c, rtol_c = _correction_tol(atol, rtol, target, rnorm)
-    kw = (; _stop_kwargs(ws.krylov, ws.P, T(atol_c/rnorm), T(rtol_c), one(T))..., itmax=itmax,
-        ldiv=false, history=false)
-    krylov_solve!(ws.krylov, ws.opA, ws.r; kw...)
+    kw = (; _stop_kwargs(ws.krylov, ws.P, nothing, T(atol_c/rnorm), T(rtol_c), one(T))..., itmax=itmax,
+        history=false)
+    krylov_solve!(ws.krylov, ws.opA, ws.r; _mixed_shadow(ws)..., kw...)
     _broke_down(ws.krylov, itmax) && krylov_solve!(ws.krylov, ws.opA, ws.r; c=_fallback_shadow!(ws.c), kw...)
     _correction_broke_down(ws, itmax) && return Krylov.iteration_count(ws.krylov), rnorm
     d = ws.krylov.x
@@ -294,9 +304,9 @@ end
 mixed_solve!(ws, A, b, values, setup, config, mesh) =
     throw(ArgumentError("mixed precision is not yet supported by this solver or equation"))
 
-# casts A while forming r = b - Ax in full precision
+# casts A while forming r = b - Ax and w = D⁻¹r in full precision
 @kernel function _mixed_residual!(
-    r, nzval_lo, @Const(rowptr), @Const(colval), @Const(nzval), @Const(x), @Const(b))
+    r, w, nzval_lo, @Const(rowptr), @Const(colval), @Const(nzval), @Const(dptr), @Const(x), @Const(b))
     i = @index(Global)
     Ax = zero(eltype(nzval))
     @inbounds begin
@@ -306,7 +316,9 @@ mixed_solve!(ws, A, b, values, setup, config, mesh) =
             nzval_lo[nzi] = convert(eltype(nzval_lo), a)
             Ax += a*x[c]
         end
-        r[i] = b[i] - Ax
+        ri = b[i] - Ax
+        r[i] = ri
+        w[i] = ri/abs(nzval[dptr[i]])
     end
 end
 
@@ -317,7 +329,7 @@ end
 end
 
 # rounds the scaled off-diagonals and sets the diagonal so the rounded matrix maps S^-1·1 (a
-# constant field) exactly as S·A·S does; diagonal-only, so symmetry is kept. ru = b - Ax unscaled
+# constant field) exactly as S·A·S does; diagonal-only, so symmetry is kept. ru = D⁻¹(b - Ax)
 @kernel function _mixed_residual_compensated!(r, ru, nzval_lo, diag, dinv,
         @Const(rowptr), @Const(colval), @Const(nzval), @Const(x), @Const(b), @Const(s))
     i = @index(Global)
@@ -343,8 +355,8 @@ end
         dii = si*(si*rowsum - offsum)
         diag[i] = convert(eltype(diag), dii)
         dinv[i] = convert(eltype(dinv), inv(abs(dii)))
-        ru[i] = b[i] - Ax
-        r[i] = si*ru[i]
+        r[i] = si*(b[i] - Ax)
+        ru[i] = si*r[i]
     end
 end
 

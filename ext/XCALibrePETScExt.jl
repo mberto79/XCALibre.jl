@@ -99,7 +99,10 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     tol::NamedTuple{(:atol,:rtol),Tuple{Float64,Float64}}
     report::Bool       # warn on an unconverged solve; false when an outer loop reports instead
     root::Bool         # the reason is global, so one rank reports it
-    rnorm::Base.RefValue{Float64} # ‖b - Ax‖₂ of the last unconverged solve
+    rnorm::Base.RefValue{Float64} # ‖D⁻¹(b - Ax)‖₂ of the last unconverged solve
+    rowscale::Bool     # solve D⁻¹A·x = D⁻¹b, so a right-preconditioned KSP monitors ‖D⁻¹(b - Ax)‖
+    dinv::TV           # 1/|diag(A)|, owned storage
+    bs::TV             # D⁻¹b, owned storage
 end
 
 # one PetscInt width is loaded per process, fixed by PETSc's "PetscInt" preference at precompile
@@ -187,7 +190,7 @@ end
 _release!(::Nothing) = nothing
 function _release!(s)
     isnothing(s.ksp.opts) || _destroy!(s.ksp.opts)
-    foreach(_destroy!, (s.ksp, s.A, s.x, s.b))
+    foreach(_destroy!, (s.ksp, s.A, s.x, s.b, s.dinv, s.bs))
 end
 
 # float_type/nzval: a MixedF32 solve selects the Float32 PETSc library and assembles
@@ -235,7 +238,8 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         _pc_options(setup.preconditioner))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
-    opts = merge(_stop_options(opts.ksp_type, opts), opts)
+    stop, rowscale = _stop_options(opts)
+    opts = merge(stop, opts)
     isnothing(opts.ksp_type) && error("no PETSc mapping for solver $(typeof(setup.solver)); " *
         "name one with petsc_options=\"-ksp_type ...\"")
     isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
@@ -276,18 +280,29 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
         _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0),
         XCALibre.Solve._solve_name(setup, label), (atol=Float64(atol), rtol=Float64(rtol)), report,
-        MPI.Comm_rank(comm) == 0, Ref(0.0))
+        MPI.Comm_rank(comm) == 0, Ref(0.0), rowscale, _vec_duplicate(petsclib, b), _vec_duplicate(petsclib, b))
 end
 
-# the serial stopping rule, ‖b - Ax‖₂ ≤ atol + rtol·‖b - Ax₀‖₂: unpreconditioned norm (right
-# preconditioning where left supports only the preconditioned one) and the same GMRES restart.
-# Keyed on the resolved type so a passthrough -ksp_type never inherits it; user options win
-function _stop_options(ksp_type, opts)
-    ksp_type == "cg" && return (; ksp_norm_type="unpreconditioned")
-    ksp_type ∈ ("bcgs", "cgs", "gmres") || return (;)
-    side = haskey(opts, :ksp_pc_side) || haskey(opts, :ksp_norm_type) ? (;) :
-        (; ksp_pc_side="right", ksp_norm_type="unpreconditioned")
-    ksp_type == "gmres" ? merge(side, (; ksp_gmres_restart=XCALibre.Solve.GMRES_RESTART)) : side
+# the serial stopping rule, ‖D⁻¹(b - Ax)‖₂ ≤ atol + rtol·‖D⁻¹(b - Ax₀)‖₂, and the same GMRES restart. Jacobi
+# monitors it as the left-preconditioned norm; other PCs with bcgs/cgs/gmres solve the row-scaled
+# system, right-preconditioned; CG cannot be row-scaled and keeps the preconditioned norm ‖Br‖ (exact
+# for Jacobi). Keyed on the resolved types so passthrough types never inherit it; user options win
+function _stop_options(opts)
+    (; ksp_type, pc_type) = opts
+    own = !(haskey(opts, :ksp_pc_side) || haskey(opts, :ksp_norm_type))
+    restart = ksp_type == "gmres" ? (; ksp_gmres_restart=XCALibre.Solve.GMRES_RESTART) : (;)
+    pc_type == "jacobi" && return merge(restart, (; pc_jacobi_abs="true"),
+        own ? (; ksp_pc_side="left", ksp_norm_type="preconditioned") : (;)), false
+    ksp_type == "cg" && return (own ? (; ksp_norm_type="preconditioned") : (;)), false
+    rowscale = own && ksp_type ∈ ("bcgs", "cgs", "gmres")
+    merge(restart, rowscale ? (; ksp_pc_side="right", ksp_norm_type="unpreconditioned") : (;)), rowscale
+end
+
+function _vec_duplicate(petsclib, v)
+    w = Ref{LibPETSc.CVec}(C_NULL)
+    ccall(_petsc_sym(petsclib, :VecDuplicate), Cint, (LibPETSc.CVec, Ptr{LibPETSc.CVec}), v, w) == 0 ||
+        error("PETSc: VecDuplicate failed")
+    LibPETSc.PetscVec(w[], petsclib)
 end
 
 # NEW SECTION: assembly and solve
@@ -407,8 +422,24 @@ passemble!(s::XPETScSolver, eqn, partition; component=nothing) =
 
 function passemble!(s::XPETScSolver, nzval::AbstractVector, b::AbstractVector)
     _set_values!(s.petsclib, s.A, nzval, s.sync, s.fill)
+    s.rowscale && (_inverse_abs_diagonal!(s); _petsc_ok(s, :MatDiagonalScale, s.A.ptr, s.dinv, C_NULL))
     s.bptr[] = _raw_ptr(b)
     s
+end
+
+_petsc_ok(s, f, args...) = _petsc_call(_petsc_sym(s.petsclib, f), args...) == 0 || error("PETSc: $f failed")
+_petsc_call(f, A::Ptr, v, w) = ccall(f, Cint, (Ptr{Cvoid}, LibPETSc.CVec, Ptr{Cvoid}), A, v, w)
+_petsc_call(f, A::Ptr, v::LibPETSc.PetscVec, w::LibPETSc.PetscVec) =
+    ccall(f, Cint, (Ptr{Cvoid}, LibPETSc.CVec, LibPETSc.CVec), A, v, w)
+_petsc_call(f, v) = ccall(f, Cint, (LibPETSc.CVec,), v)
+_petsc_call(f, A::Ptr, v) = ccall(f, Cint, (Ptr{Cvoid}, LibPETSc.CVec), A, v)
+_petsc_call(f, u, v, w) = ccall(f, Cint, (LibPETSc.CVec, LibPETSc.CVec, LibPETSc.CVec), u, v, w)
+
+# dinv = 1/|diag(A)| of the unscaled matrix
+function _inverse_abs_diagonal!(s)
+    _petsc_ok(s, :MatGetDiagonal, s.A.ptr, s.dinv)
+    _petsc_ok(s, :VecAbs, s.dinv)
+    _petsc_ok(s, :VecReciprocal, s.dinv)
 end
 
 # x and b borrow the field and the right-hand side for the solve only; b's owner is the equation,
@@ -448,6 +479,7 @@ end
 # a shadow-vector breakdown (BiCGStab) stops at the last finite iterate; solving again from
 # there restarts with the current residual as the shadow, as the serial solves retry theirs
 function _solve_with_retries(s)
+    s.rowscale && _petsc_ok(s, :VecPointwiseMult, s.bs, s.dinv, s.b)
     _ksp_solve(s)
     for _ ∈ 1:2
         _broke_down(s) || break
@@ -459,21 +491,34 @@ end
 _unconverged(s) = s.report && Integer(LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)) < 0
 
 # while x and b are placed; collective, and the reason is the same on every rank
-_measure_unconverged!(s, mult=:MatMult) = _unconverged(s) && (s.rnorm[] = _true_residual_norm(s, mult))
+_measure_unconverged!(s, transpose=false) =
+    _unconverged(s) && (s.rnorm[] = _scaled_residual_norm(s, transpose))
 
-# KSPGetResidualNorm is the norm the KSP monitored, preconditioned if the user asked for it
-function _true_residual_norm(s::XPETScSolver, mult)
-    sym(f) = _petsc_sym(s.petsclib, f)
-    ok(err, f) = err == 0 || error("PETSc: $f failed")
-    w = Ref{LibPETSc.CVec}(C_NULL)
+# KSPGetResidualNorm is the norm the KSP monitored; this is ‖D⁻¹(b - Ax)‖₂ (b - Aᵀx when transposed)
+function _scaled_residual_norm(s::XPETScSolver, transpose)
     val = Ref{real(s.petsclib.PetscScalar)}()
-    ok(ccall(sym(:VecDuplicate), Cint, (LibPETSc.CVec, Ptr{LibPETSc.CVec}), s.b, w), :VecDuplicate)
+    w = _vec_duplicate(s.petsclib, s.b)
     try
-        ok(ccall(sym(mult), Cint, (Ptr{Cvoid}, LibPETSc.CVec, LibPETSc.CVec), s.A.ptr, s.x, w[]), mult)
-        ok(_vec_aypx(sym(:VecAYPX), w[], -one(eltype(val)), s.b), :VecAYPX)
-        ok(_vec_norm2(sym(:VecNorm), w[], val), :VecNorm)
+        if s.rowscale && !transpose # s.A is D⁻¹A
+            _petsc_ok(s, :MatMult, s.A.ptr, s.x, w)
+            _vec_aypx(_petsc_sym(s.petsclib, :VecAYPX), w, -one(eltype(val)), s.bs)
+        else
+            s.rowscale || _inverse_abs_diagonal!(s)
+            if transpose && s.rowscale # Aᵀx = (D⁻¹A)ᵀ·Dx
+                _petsc_ok(s, :VecPointwiseDivide, w, s.x, s.dinv)
+                t = _vec_duplicate(s.petsclib, s.b)
+                _petsc_ok(s, :MatMultTranspose, s.A.ptr, w, t)
+                _petsc_ok(s, :VecCopy, t, w)
+                _destroy!(t)
+            else
+                _petsc_ok(s, transpose ? :MatMultTranspose : :MatMult, s.A.ptr, s.x, w)
+            end
+            _vec_aypx(_petsc_sym(s.petsclib, :VecAYPX), w, -one(eltype(val)), s.b)
+            _petsc_ok(s, :VecPointwiseMult, w, w, s.dinv)
+        end
+        _vec_norm2(_petsc_sym(s.petsclib, :VecNorm), w, val) == 0 || error("PETSc: VecNorm failed")
     finally
-        ccall(sym(:VecDestroy), Cint, (Ptr{LibPETSc.CVec},), w)
+        _destroy!(w)
     end
     Float64(val[])
 end
@@ -487,7 +532,7 @@ end
 function _report_unconverged(s::XPETScSolver)
     (_unconverged(s) && s.root) || return nothing
     XCALibre.Solve._warn_unconverged(s.name, string(LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)),
-        piterations(s), s.rnorm[], "‖b - Ax‖₂", s.tol, (:unconverged_solve, s.name))
+        piterations(s), s.rnorm[], "‖D⁻¹(b - Ax)‖₂", s.tol, (:unconverged_solve, s.name))
 end
 
 piterations(s::XPETScSolver) = Int(LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp))
@@ -497,11 +542,17 @@ _broke_down(s::XPETScSolver) = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
 
 psolve_transpose!(s::XPETScSolver, x::AbstractVector) =
     (_with_placed(_solve_transpose_measured, s, x); _report_unconverged(s); x)
-_solve_transpose_measured(s) = (_ksp_solve_transpose(s); _measure_unconverged!(s, :MatMultTranspose))
+_solve_transpose_measured(s) = (_ksp_solve_transpose(s); _measure_unconverged!(s, true))
 
 # check=false: unconverged solves are reported by _report_unconverged, not by PETSc.jl 0.5
-_ksp_solve(s) = _V05 ? PETSc.solve!(s.x, s.ksp, s.b; check=false) : PETSc.solve!(s.x, s.ksp, s.b)
-_ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+_ksp_solve(s) = _V05 ? PETSc.solve!(s.x, s.ksp, _rhs(s); check=false) : PETSc.solve!(s.x, s.ksp, _rhs(s))
+_rhs(s) = s.rowscale ? s.bs : s.b
+# (D⁻¹A)ᵀ·y = b with y = Dx
+function _ksp_solve_transpose(s)
+    s.rowscale && _petsc_ok(s, :VecPointwiseDivide, s.x, s.x, s.dinv)
+    LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+    s.rowscale && _petsc_ok(s, :VecPointwiseMult, s.x, s.x, s.dinv)
+end
 
 # NEW SECTION: parallel partitioning (MatPartitioning on the owned-row cell graph)
 

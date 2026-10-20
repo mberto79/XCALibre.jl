@@ -17,7 +17,7 @@ const _PRECOMPILED = Ref(false)
 # runtests_mpi.jl runs the rank counts it is given.
 max_test_ranks() = parse(Int, get(ENV, "XCALIBRE_TEST_MAX_RANKS", "2"))
 
-function run_mpi_tests(files; ranks=[1, 2], timeout=1200, cap=max_test_ranks())
+function run_mpi_tests(files; ranks=[1, 2], timeout=1200, cap=max_test_ranks(), args=String[])
     skipped = filter(>(cap), ranks)
     ranks = filter(<=(cap), ranks)
     isempty(skipped) || @testset "mpi $file n=$n" for file ∈ files, n ∈ skipped
@@ -35,7 +35,7 @@ function run_mpi_tests(files; ranks=[1, 2], timeout=1200, cap=max_test_ranks())
     # throws at the end of the iteration that fails
     @testset "distributed suite" begin
         @testset "mpi $file n=$n" for file ∈ files, n ∈ ranks
-            cmd = `$(Base.invokelatest(MPI.mpiexec)) -n $n $julia --project=$project --startup-file=no $(joinpath(dir, file))`
+            cmd = `$(Base.invokelatest(MPI.mpiexec)) -n $n $julia --project=$project --startup-file=no $(joinpath(dir, file)) $args`
             out = IOBuffer()
             proc = run(pipeline(cmd; stdout=out, stderr=out); wait=false)
             # a rank left waiting in a collective must fail the file, not hang the suite

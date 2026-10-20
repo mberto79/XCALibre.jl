@@ -176,6 +176,7 @@ end
             new = sparse(rows, colval, nzval, ncells, ncells)\eqn.equation.b
             change = maximum(abs, new - phi.values)
             phi.values .= new
+            change < 1e-10 && break
         end
         overshoot = max(maximum(phi.values) - 1, -minimum(phi.values))
         overshoot, change

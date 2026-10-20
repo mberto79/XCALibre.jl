@@ -123,16 +123,19 @@ isempty(bad) || error("Unknown test tier(s) $(bad). Valid tiers: $(join(valid_ti
 selected = filter(t -> first(t) in requested, TIERS)
 
 # NEW SECTION: run
-timings = Tuple{String,Float64}[]
+Base.cumulative_compile_timing(true)
+timings = Tuple{String,Float64,Float64}[]
 
 @testset verbose = true "Functionality tests" begin
     for (tier, files) in selected
         @testset "$tier" verbose = true begin
             for file in files
                 @testset "$file" begin
+                    c0 = Base.cumulative_compile_time_ns()[1]
                     t = @elapsed include(joinpath(@__DIR__, file))
-                    push!(timings, (file, t))
-                    println("[$tier] $file: $(round(t, digits=1)) s")
+                    tc = (Base.cumulative_compile_time_ns()[1] - c0) / 1e9
+                    push!(timings, (file, t, tc))
+                    println("[$tier] $file: $(round(t, digits=1)) s ($(round(tc, digits=1)) s compiling)")
                 end
             end
         end
@@ -145,7 +148,7 @@ timings = Tuple{String,Float64}[]
 end
 
 # NEW SECTION: timing summary
-println("\nTest timing summary (slowest first), total $(round(sum(last, timings), digits=1)) s")
-for (file, t) in sort(timings; by=last, rev=true)
-    println(rpad(round(t, digits=1), 8), file)
+println("\nTest timing summary (slowest first), total $(round(sum(x -> x[2], timings), digits=1)) s, compiling $(round(sum(x -> x[3], timings), digits=1)) s")
+for (file, t, tc) in sort(timings; by=x -> x[2], rev=true)
+    println(rpad(round(t, digits=1), 8), rpad(round(tc, digits=1), 8), file)
 end

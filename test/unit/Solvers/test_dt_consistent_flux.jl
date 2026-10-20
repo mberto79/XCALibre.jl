@@ -12,7 +12,7 @@ function dt_flux_cavity_mesh(n=16)
         patches, [XCALibre.quad(edges,[1,2,3,4])])), Int64, Float64)
 end
 
-# Lid-driven cavity, steady state with Euler at Δt 100 times apart. Old-time source from the cells:
+# Lid-driven cavity, steady state (reached by t = 8) with Euler at Δt 100 times apart. Old-time source from the cells:
 # they differ by 6.0e-2 of the lid speed (pressure 0.38); weighted face correction: 2.8e-2 (0.18).
 # Carried in full, the face's old flux gives 2.6e-3 but is unstable (graded mesh below).
 @testset "Δt-consistent face flux" begin
@@ -32,7 +32,7 @@ end
         run!(model, config; progress=false, pref=0.0)
         copy(model.momentum.U.x.values), copy(model.momentum.p.values)
     end
-    a, b = cavity(0.002, 20.0), cavity(0.2, 20.0)
+    a, b = cavity(0.002, 8.0), cavity(0.2, 8.0)
     @test maximum(abs.(a[1] .- b[1])) < 3.5e-2
     @test maximum(abs.(a[2] .- b[2])) < 0.25
 end
@@ -59,7 +59,7 @@ end
         run!(model, config; progress=false, pref=0.0)
         copy(model.momentum.U.x.values), copy(model.momentum.p.values)
     end
-    a, b = cavity(0.002, 20.0), cavity(0.2, 20.0)
+    a, b = cavity(0.002, 8.0), cavity(0.2, 8.0)
     @test maximum(abs.(a[1] .- b[1])) < 2.4e-3
     @test maximum(abs.(a[2] .- b[2])) < 1.3e-2
 end
@@ -89,7 +89,7 @@ end
         run!(model, config; progress=false, pref=0.0)
         copy(model.momentum.U.x.values), copy(model.momentum.p.values)
     end
-    a, b = cavity(0.002, 20.0), cavity(0.2, 20.0)
+    a, b = cavity(0.002, 8.0), cavity(0.2, 8.0)
     @test maximum(abs.(a[1] .- b[1])) < 3.5e-2
     @test maximum(abs.(a[2] .- b[2]))/1000 < 0.25
 end
@@ -123,7 +123,7 @@ end
         run!(model, config; progress=false)
         copy(model.momentum.U.x.values), copy(model.momentum.p.values), copy(model.fluid.rho.values)
     end
-    a, b = cavity(0.002, 20.0), cavity(0.2, 20.0)
+    a, b = cavity(0.002, 8.0), cavity(0.2, 8.0)
     @test 0.34 < minimum(a[3]) && maximum(a[3]) < 0.36
     @test maximum(abs.(a[1] .- b[1])) < 3.5e-2
     @test maximum(abs.(a[2] .- b[2]))/a[3][1] < 0.25

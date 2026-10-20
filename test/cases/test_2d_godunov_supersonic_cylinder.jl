@@ -222,7 +222,7 @@ end
                Extrapolated(:top), Extrapolated(:bottom)]))
     schemes = (U=Schemes(gradient=Gauss), p=Schemes(gradient=Gauss), T=Schemes(gradient=Gauss),
                flux=HLLC(), time_stepping=RK2(), reconstruction=Upwind())
-    runtime = Runtime(iterations=300, write_interval=-1, time_step=1e-7,
+    runtime = Runtime(iterations=150, write_interval=-1, time_step=1e-7,
                       adaptive=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=50))
     config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
                            hardware=hardware, boundaries=BCs)

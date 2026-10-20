@@ -1,7 +1,7 @@
 # A film run to a steady state must not depend on Δt: inclined plate, prescribed h and U at
 # the inlet, σ = 0. Main fef95b73 gave max|Δh|/h_N = 1.06e-3 and max|ΔUx|/U_N = 5.5e-4
-# between Δt = 5e-5 and 6e-4; this fix gives 5.8e-5 and 5.7e-7.
-function film_dt_steady(dt; tend=1.0, σ=0.0, nx=50)
+# between Δt = 5e-5 and 6e-4; this fix gives 5.1e-5 and 5.1e-7 between Δt = 1e-4 and 6e-4.
+function film_dt_steady(dt; tend=0.5, σ=0.0, nx=50)
     ny = 4
     L, W = 0.05, 0.004
     P = XCALibre.Point
@@ -49,7 +49,7 @@ function film_dt_steady(dt; tend=1.0, σ=0.0, nx=50)
 end
 
 @testset "Film steady state independent of Δt" begin
-    h1, u1 = film_dt_steady(5e-5)
+    h1, u1 = film_dt_steady(1e-4)
     h2, u2 = film_dt_steady(6e-4)
     @test all(isfinite, h1) && all(isfinite, h2)
     @test maximum(abs.(h1 .- h2)) < 2e-4

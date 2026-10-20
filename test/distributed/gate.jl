@@ -7,5 +7,5 @@ mpiexec_available() && run_mpi_tests(["gate_session.jl"]; ranks=[2], timeout=240
 
 # three ranks: asymmetric halos, a sub-communicator smaller than the world, and the y-band
 # partition that empties a wall-function patch on some rank
-mpiexec_available() && run_mpi_tests(
-    ["test_halo.jl", "test_halo_subcomm.jl", "test_turbulence_sst_wallfn.jl"]; ranks=[3])
+mpiexec_available() && run_mpi_tests(["gate_session.jl"]; ranks=[3],
+    args=["test_halo.jl", "test_halo_subcomm.jl", "test_turbulence_sst_wallfn.jl"])

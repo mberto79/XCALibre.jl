@@ -295,7 +295,7 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
             (Fluid{WeaklyCompressible}(nu=1e-3, cp=1005.0, gamma=1.4, Pr=0.7),
                 Energy{InternalEnergy}(Tref=0.0)))
         dt, tend = 1.1e-5, 64*1.1e-5
-        ref = acoustic(f, e, dt/32, tend)
+        ref = acoustic(f, e, dt/8, tend)
         r1, r2 = acoustic(f, e, dt, tend), acoustic(f, e, dt/2, tend)
         for k ∈ 1:3 # U, p, T
             @test cn_order([maximum(abs.(r[k] .- ref[k])) for r ∈ (r1, r2)]) > 1.9

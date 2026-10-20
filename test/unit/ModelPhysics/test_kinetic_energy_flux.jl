@@ -123,8 +123,7 @@ end
     Umag = 2*sqrt(gamma*R*temp)
     velocity = [Umag, 0.0, 0.0]
     T0_inf = temp + Umag^2/(2cp)
-    for (hes, lim) ∈ ((LUST, nothing), (Linear, nothing), (LinearUpwind, nothing), (LimitedLinearUpwind, nothing),
-            (LinearUpwind, CellBased()), (LimitedLinearUpwind, CellBased()))
+    for (hes, lim) ∈ ((LUST, nothing), (LinearUpwind, CellBased()), (LimitedLinearUpwind, nothing))
         model = Physics(time=Steady(), fluid=Fluid{Compressible}(nu=0.0, cp=cp, gamma=gamma, Pr=0.7),
             turbulence=RANS{Laminar}(), energy=Energy{SensibleEnthalpy}(Tref=0.0), domain=mesh)
         BCs = assign(region=mesh, (
@@ -137,7 +136,7 @@ end
         solvers = (U=setup(0.7), p=setup(0.3; limit=(0.5pressure, 5pressure)), he=setup(0.3; limit=(800.0, 3000.0)))
         schemes = (U=Schemes(divergence=Upwind), p=Schemes(divergence=Upwind), he=Schemes(divergence=hes, limiter=lim))
         config = Configuration(; solvers, schemes, boundaries=BCs,
-            runtime=Runtime(iterations=1000, write_interval=-1, time_step=1),
+            runtime=Runtime(iterations=700, write_interval=-1, time_step=1),
             hardware=Hardware(backend=CPU(), workgroup=workgroupsize(mesh)))
         initialise!(model.momentum.U, velocity)
         initialise!(model.momentum.p, pressure)

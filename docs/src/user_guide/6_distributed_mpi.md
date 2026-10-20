@@ -447,12 +447,14 @@ On a GPU backend, the fields stay on the device and the linear solves need a GPU
 On a distributed mesh the solves go through PETSc. The `SolverSetup` fields keep their serial
 meaning:
 
-- `solver`: `Cg()` → `cg`, `Cgs()` → `cgs`, `Bicgstab()` → `bcgs`, `Gmres()` → `gmres` (PETSc
-  `KSP` type).
+- `solver`: `Cg()` → `cg`, `Cgs()` → `cgs`, `Bicgstab()` → `bcgs`, `Gmres()` → `gmres`,
+  `Richardson()` → `richardson` (PETSc `KSP` type).
 - `preconditioner`: `Jacobi()` → `jacobi`, `GAMG()` → `gamg`, `BoomerAMG()` → `hypre` (PETSc
-  `PC` type). `DILU()`, `ILU0GPU()` and `IC0GPU()` have no PETSc equivalent and map to their
-  closest relative, block Jacobi with an ILU(0) (`DILU`, `ILU0GPU`) or ICC(0) (`IC0GPU`)
-  factorisation of each rank's block. Each warns once that it is a substitute.
+  `PC` type). `DILU()`, `ILU0GPU()`, `IC0GPU()`, `NormDiagonal()` and `AMG()` have no PETSc
+  equivalent and map to their closest relative: block Jacobi with an ILU(0) (`DILU`, `ILU0GPU`) or
+  ICC(0) (`IC0GPU`) factorisation of each rank's block, `jacobi` (`NormDiagonal`) and `GAMG()`
+  with its defaults (`AMG`). Each warns once that it is a substitute. The full table is in the
+  preconditioners section of the numerical setup page.
 - `atol`, `rtol`, `itmax`: the stopping tolerances and iteration limit of each linear solve, as in
   serial. A solve that stops without meeting them warns, as in serial, with the equation label,
   the `KSPConvergedReason`, the iteration count and PETSc's residual norm (see the linear solvers

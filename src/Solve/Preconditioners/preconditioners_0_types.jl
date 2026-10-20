@@ -22,7 +22,8 @@ Adapt.@adapt_structure DILU
 """
     BoomerAMG(; kwargs...) <: PreconditionerType
 
-HYPRE BoomerAMG via PETSc (`-pc_type hypre`). Distributed meshes only; needs a PETSc with hypre,
+HYPRE BoomerAMG via PETSc (`-pc_type hypre`). On a serial mesh XCALibre's native [`AMG`](@ref) runs
+instead, with a one-time warning. Needs a PETSc with hypre,
 which the stock Float64 libraries include (Float32 ones do not). SPD systems only (e.g. pressure).
 Use it where [`GAMG`](@ref) converges poorly or the strongest reduction per solve matters; GAMG
 is the default recommendation, since it needs no special build and is the better AMG on the GPU.
@@ -64,8 +65,9 @@ BoomerAMG(; freeze=10, device=false, kwargs...) =
 """
     GAMG(; kwargs...) <: PreconditionerType
 
-PETSc native aggregation AMG (`-pc_type gamg`). Distributed meshes only; needs `using PETSc`
-(no hypre build required). SPD systems only (e.g. pressure). The recommended AMG for distributed
+PETSc native aggregation AMG (`-pc_type gamg`) on distributed meshes; on a serial mesh XCALibre's
+native [`AMG`](@ref) runs instead, with a one-time warning (GAMG's keywords are not carried over).
+No hypre build required. SPD systems only (e.g. pressure). The recommended AMG for distributed
 pressure solves on large meshes, on CPU and GPU. It needs more memory than `Jacobi` and pays off
 only when each rank holds a large partition. The hierarchy is built per partition, so residuals
 vary slightly with the rank count; use `Jacobi` where results must match across rank counts exactly.
@@ -111,11 +113,10 @@ end
 
 is_ldiv(precon::Preconditioner{T,M,P,S}) where {T,M,P,S} = T <: LDIVPreconditioner
 
-Preconditioner{PT}(A) where {PT<:BoomerAMG} = error(
-    "BoomerAMG runs through PETSc on distributed meshes only; use Jacobi/DILU/etc for serial runs")
-
-Preconditioner{PT}(A) where {PT<:GAMG} = error(
-    "GAMG runs through PETSc on distributed meshes only; use Jacobi/DILU/etc for serial runs")
+# held by an equation whose workspace (mixed precision, AMG) owns its preconditioner
+struct InertPreconditioner <: PreconditionerType end
+_inert_preconditioner() = Preconditioner{InertPreconditioner,Nothing,Nothing,Nothing}(nothing, nothing, nothing)
+update_preconditioner!(::Preconditioner{InertPreconditioner}, mesh, config) = nothing
 
 Preconditioner{NormDiagonal}(A::AbstractSparseArray{F,I}) where {F,I} = begin
     backend = get_backend(A)

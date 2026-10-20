@@ -30,11 +30,13 @@ end
 
 # NEW SECTION: KSP/PC mapping (curated; anything else via petsc_options passthrough)
 
-# unmapped types return nothing and must be named through petsc_options
+# which preconditioners run as named or as a substitute is XCALibre.Solve.PRECONDITIONER_PATHS;
+# this section only spells them for PETSc. Unmapped types must be named through petsc_options.
 _ksp_type(::Cg) = "cg"
 _ksp_type(::Cgs) = "cgs"
 _ksp_type(::Bicgstab) = "bcgs"
 _ksp_type(::Gmres) = "gmres"
+_ksp_type(::Richardson) = "richardson"
 _ksp_type(s) = nothing
 _pc_type(::Jacobi) = "jacobi"
 _pc_type(::Union{DILU,ILU0GPU,IC0GPU}) = "bjacobi" # per-rank incomplete-factorisation blocks
@@ -50,10 +52,10 @@ _pc_options(p::BoomerAMG) =
 _pc_options(p::GAMG) =
     NamedTuple(Symbol("pc_gamg_$k") => v for (k, v) ∈ pairs(p.opts))
 
-# serial PCs whose PETSc mapping is a relative, not the same method
-_substitute(p) = nothing
-_substitute(::Union{DILU,ILU0GPU}) = "per-rank block ILU(0)"
-_substitute(::IC0GPU) = "per-rank block ICC(0)"
+# the PETSc preconditioner standing in for a substitute (DILU/ILU0GPU/IC0GPU map in _pc_type)
+_petsc_pc(p) = p
+_petsc_pc(::AMG) = GAMG()
+_petsc_pc(::NormDiagonal) = Jacobi()
 
 # PCs that manage their own hierarchy across solves carry a `freeze` count (rebuild every N solves)
 _pc_freeze(p) = 1
@@ -230,8 +232,8 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     _set_values!(petsclib, Amat, nzval, sync, fill)
     vec = device_solve ? dev.vec : _HOST_VEC
     x, b = (_vec_without_array(petsclib, comm, n, N, vec.create) for _ ∈ 1:2)
-    curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(setup.preconditioner)),
-        _pc_options(setup.preconditioner))
+    pc = _petsc_pc(setup.preconditioner)
+    curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(pc)), _pc_options(pc))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
     # Krylov.jl's CG stops on sqrt(r'Mr), PETSc's natural norm; keyed on the resolved type so a
@@ -242,10 +244,11 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         "name one with petsc_options=\"-ksp_type ...\"")
     isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
         "$(typeof(setup.preconditioner)); name one with petsc_options=\"-pc_type ...\"")
-    sub = _substitute(setup.preconditioner)
-    !isnothing(sub) && opts.pc_type == "bjacobi" && MPI.Comm_rank(comm) == 0 &&
-        @warn "$(nameof(typeof(setup.preconditioner))) has no PETSc equivalent; substituting " *
-            "$sub (-pc_type bjacobi). Name another with petsc_options=\"-pc_type ...\"" maxlog=1 _id=
+    # a substitute warns unless petsc_options named the PC
+    rule = XCALibre.Solve._pc_rule(setup.preconditioner, :petsc)
+    rule isa XCALibre.Solve.Substitute && opts.pc_type == curated.pc_type && MPI.Comm_rank(comm) == 0 &&
+        @warn "$(nameof(typeof(setup.preconditioner)))() has no PETSc equivalent; substituting " *
+            "$(rule.name) (-pc_type $(opts.pc_type)). Name another with petsc_options=\"-pc_type ...\"" maxlog=1 _id=
             nameof(typeof(setup.preconditioner))
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
@@ -254,7 +257,6 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
             "a PETSc configured with --download-hypre. Use GAMG(), which needs no extra build, " *
             "or see the distributed simulations page of the documentation.")
     end
-    pc = setup.preconditioner
     if pc isa BoomerAMG && device_solve && !pc.device && !_hypre_on_device(petsclib)
         error("PETScSolver: BoomerAMG() with GPU fields needs a hypre built for the device, and " *
             "this PETSc's hypre runs on the host (or exposes no HYPRE_GetExecutionPolicy), which " *
@@ -274,7 +276,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
-    setup_every = _pc_freeze(setup.preconditioner)
+    setup_every = _pc_freeze(pc)
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
         _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0),
         XCALibre.Solve._solve_name(setup, label), (atol=Float64(atol), rtol=Float64(rtol)), report,

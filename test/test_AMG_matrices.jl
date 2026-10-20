@@ -39,8 +39,8 @@ end
 
 function _make_config()
     setup = SolverSetup(
-        solver=AMG(),
-        preconditioner=Jacobi(),
+        solver=Cg(),
+        preconditioner=AMG(),
         convergence=1e-7,
         relax=1.0,
         rtol=1e-8,
@@ -76,7 +76,7 @@ const _config = _make_config()
     A, b = poisson1d()
 
     # A. CORRECTNESS
-    for mode in (Cg(), AMGSolver()),
+    for mode in (Cg(), Richardson()),
         coarsening in (SmoothAggregation(), RugeStuben(), Geometric()),
         smoother in (AMGJacobi(), AMGChebyshev(), AMGGaussSeidel(), AMGSOR(1.0))
         solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)
@@ -101,7 +101,7 @@ end
     A, b = poisson2d()
 
     # A. CORRECTNESS
-    for mode in (Cg(), AMGSolver()),
+    for mode in (Cg(), Richardson()),
         coarsening in (SmoothAggregation(), RugeStuben(), Geometric()),
         smoother in (AMGJacobi(), AMGChebyshev(), AMGGaussSeidel(), AMGSOR(1.0))
         solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)
@@ -120,7 +120,7 @@ end
     A, b = anisotropic1d()
 
     # A. CORRECTNESS
-    for mode in (Cg(), AMGSolver()),
+    for mode in (Cg(), Richardson()),
         coarsening in (SmoothAggregation(), RugeStuben(), Geometric()),
         smoother in (AMGJacobi(), AMGChebyshev(), AMGGaussSeidel(), AMGSOR(1.0))
         solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)

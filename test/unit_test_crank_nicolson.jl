@@ -72,7 +72,7 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
         for setup ∈ (
                 SolverSetup(solver=Cg(), preconditioner=Jacobi(), smoother=smoother,
                     convergence=1e-12, relax=1.0, rtol=1e-12, atol=1e-15),
-                SolverSetup(solver=AMG(), preconditioner=Jacobi(), smoother=smoother,
+                SolverSetup(solver=Cg(), preconditioner=AMG(), smoother=smoother,
                     convergence=1e-12, relax=1.0, rtol=1e-12, atol=1e-15),
                 SolverSetup(solver=Cg(), preconditioner=Jacobi(), smoother=smoother,
                     precision=MixedF32(), convergence=1e-12, relax=1.0, rtol=1e-10, atol=1e-15))

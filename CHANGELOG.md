@@ -6,6 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Version [v0.7.0-DEV] - 2026-10-20
 
 ### Fixed
+* The boundary face `delta`, and with it the wall-function distance `wall_normal_distance`, is the distance from the owner cell centre to the nearest point of the face, set once when the mesh geometry is built by `FOAM3D_mesh`, `UNV3D_mesh`, `UNV2D_mesh` and the 2D block mesher. It equals `(Cf - C)·n` when the normal from the cell centre meets the face, and on skewed near-wall cells it no longer collapses towards zero, which made `y+` vanish and the wall value of `omega` grow by orders of magnitude. [#247](@ref)
 * Every dependency now has a `[compat]` entry, including the standard libraries `LinearAlgebra`, `Logging`, `Printf` and `SparseArrays`, as the General registry requires. [#242](@ref)
 * Documentation: the release notes link to the correct repository, and `Robin`, `volume_integral`, `weighted_volume_integral`, `volume_average` and `total_volume` are now documented. [#242](@ref)
 * `ConstantViscosity` is initialised correctly and its test is registered in the suite. [#204](@ref)

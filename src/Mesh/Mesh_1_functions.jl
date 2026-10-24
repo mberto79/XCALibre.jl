@@ -36,7 +36,7 @@ is_boundary(ownerCells::SVector{2,<:Integer}) = ownerCells[1] == ownerCells[2]
 is_boundary(face::Union{Face2D,Face3D}) = is_boundary(face.ownerCells)
 
 # Laplacian face coefficient: norm(((Sf.Sf)/(Sf.e))*e)/delta reduces to area/(|normal.e|*delta).
-# Boundary faces keep area/delta (delta is already the floored wall-normal distance there),
+# Boundary faces keep area/delta (delta is already the wall distance of the cell centre there),
 # as every @define_boundary Laplacian block does.
 _gDiff(ownerCells, normal, e, area, delta) = begin
     den = is_boundary(ownerCells) ? delta : abs(normal ⋅ e)*delta
@@ -113,28 +113,63 @@ weight_delta_e(C1F1, C2F1, C1C2, normal) = begin
     return weight, delta, e
 end
 
-# Boundary face properties: delta = (Cf - C)·n, floored at 5% of |Cf - C| to keep area/delta
-# bounded. On skewed boundary cells |Cf - C| overstates the normal distance that boundary
-# gradients and Laplacian coefficients need (wall functions use wall_normal_distance).
-weight_delta_e(C1F1, normal) = begin
+# Boundary face properties: delta = distance from the owner cell centre to the nearest point of the
+# face (`boundary_distance`): (Cf - C)·n when the normal from C meets the face, the distance to the
+# face edge on skewed cells, where (Cf - C)·n tends to zero; floored at 0.1% of |Cf - C|.
+weight_delta_e(C1F1, normal, distance) = begin
     weight = one(eltype(C1F1))
-    distance = norm(C1F1)
-    e = distance > zero(distance) ? C1F1/distance : normal
-    delta = max(C1F1⋅normal, oftype(distance, 0.05)*distance)
+    d = norm(C1F1)
+    e = d > zero(d) ? C1F1/d : normal
+    delta = max(distance, oftype(d, 0.001)*d)
     delta = max(delta, eps(one(delta))) # keep delta > 0 for degenerate faces (area is 0 there)
     return weight, delta, e
 end
 
-# Unfloored wall-normal distance |d| e·n for the wall functions (a floored y overestimates y+
-# and nu_t in thin, skewed near-wall cells). |d| is recovered from delta = |d| max(e·n, 0.05);
-# a 0.1% floor keeps the result positive.
-@inline wall_normal_distance(delta, e, normal) = begin
-    en = e⋅normal
-    distance = delta/max(en, oftype(delta, 0.05))
-    distance*max(en, oftype(delta, 0.001))
+# Closest point to p on the segment from a to b
+@inline function _closest_on_segment(p, a, b)
+    ab = b - a
+    l2 = ab⋅ab
+    t = l2 > zero(l2) ? clamp(((p - a)⋅ab)/l2, zero(l2), one(l2)) : zero(l2)
+    return a + t*ab
 end
-@inline wall_normal_distance(face::Union{Face2D,Face3D}) =
-    wall_normal_distance(face.delta, face.e, face.normal)
+
+# Closest point to p on the triangle (a, b, c): the projection on the triangle's plane when it
+# falls inside the triangle, otherwise the closest point of the nearest edge
+@inline function _closest_on_triangle(p, a, b, c)
+    n = (b - a) × (c - a)
+    n2 = n⋅n
+    if n2 > zero(n2)
+        q = p - (((p - a)⋅n)/n2)*n
+        inside = (((b - a) × (q - a))⋅n >= zero(n2)) &
+            (((c - b) × (q - b))⋅n >= zero(n2)) & (((a - c) × (q - c))⋅n >= zero(n2))
+        inside && return q
+    end
+    qab, qbc, qca = _closest_on_segment(p, a, b), _closest_on_segment(p, b, c), _closest_on_segment(p, c, a)
+    dab, dbc, dca = norm(p - qab), norm(p - qbc), norm(p - qca)
+    dab <= dbc && dab <= dca && return qab
+    return dbc <= dca ? qbc : qca
+end
+
+# Distance from point p to a boundary face given by its nodes (`nIDs` into `nodes`) and centre:
+# the smallest distance to the triangles that fan the face about its centre (3D faces)
+function boundary_distance(nodes, nIDs, centre::SVector{3,TF}, p::SVector{3,TF}) where TF
+    distance = typemax(TF)
+    n_nodes = length(nIDs)
+    @inbounds for i in 1:n_nodes
+        inext = i == n_nodes ? 1 : i + 1
+        q = _closest_on_triangle(p, centre, nodes[nIDs[i]].coords, nodes[nIDs[inext]].coords)
+        distance = min(distance, norm(p - q))
+    end
+    return distance
+end
+
+# Distance from point p to the boundary edge from a to b (2D faces)
+boundary_distance(a::SVector{3,TF}, b::SVector{3,TF}, p::SVector{3,TF}) where TF =
+    norm(p - _closest_on_segment(p, a, b))
+
+# Wall distance of the owner cell centre for the wall functions: the boundary face delta, the
+# distance from the cell centre to the nearest point of the face (see `weight_delta_e`)
+@inline wall_normal_distance(face::Union{Face2D,Face3D}) = face.delta
 
 # Orientation from cell topology (exact for any closed cell), not from estimated centres.
 # Returns (signs, ok): signs[i] = +1 if face i in stored order points out of the cell, else -1;
@@ -412,8 +447,11 @@ function compute_3d_geometry!(mesh::Mesh3; orient_faces::Bool=true)
     for (fID, face) in enumerate(faces)
         owner_centre = cells[face.ownerCells[1]].centre
         if fID <= n_bfaces
+            distance = boundary_distance(
+                nodes, view(face_nodes, face.nodes_range), face.centre, owner_centre,
+            )
             weight, delta, direction = weight_delta_e(
-                face.centre - owner_centre, face.normal,
+                face.centre - owner_centre, face.normal, distance,
             )
         else
             neighbour_centre = cells[face.ownerCells[2]].centre

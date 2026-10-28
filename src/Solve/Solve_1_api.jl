@@ -60,7 +60,7 @@ This function is used to provide solver settings that will be used internally in
 
 - `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Cgs()`, `Gmres()` which are re-exported in XCALibre.jl. `Gmres()` restarts every 30 iterations.
 - `preconditioner`: instance of preconditioner to be used e.g. Jacobi()
-- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`.
+- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`. The residual, `Σ|b - Ax| / Σ|Aᵢᵢxᵢ|`, is taken on the field before the linear solve, so it does not depend on the solver settings.
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
@@ -367,14 +367,15 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
     opA = A
     b = _b(phiEqn, component)
 
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
     (; R, Fx, diag_nz) = phiEqn.equation
     bw, x0 = _like_workspace(x, b), _like_workspace(x, values)
     r0 = _initial_residual_norm!(phiEqn, values, b, x, config)
     # x₀ already meets the target: Krylov.jl's iterate would be stale
-    r0 ≤ _stop_target(atol, rtol, r0) && return residual(phiEqn, component, config)
-    # Fx is scratch until `residual`
+    r0 ≤ _stop_target(atol, rtol, r0) && return res
+    # R and Fx are scratch once `residual` has summed them
     scale = (; nzval=_nzval(A), dptr=diag_nz, tmp=_like_workspace(x, Fx))
     kw = (; _stop_kwargs(solver, precon, scale, atol, rtol, r0)..., itmax=itmax, history=false)
     krylov_solve!(solver, opA, bw, x0; _shadow(solver, phiEqn, x)..., kw...)
@@ -391,9 +392,8 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
         kernel!(values, x)
     end
 
-    res = residual(phiEqn, component, config)
     _krylov_converged(solver) || _warn_unconverged(phiEqn, setup, component,
-        solver.stats.status, Krylov.iteration_count(solver))
+        solver.stats.status, Krylov.iteration_count(solver), config)
     return res
 end
 
@@ -401,10 +401,10 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     (; values) = result
     A = _A(phiEqn)
     b = _b(phiEqn, component)
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     iterations, converged, reason = mixed_solve!(phiEqn.solver, A, b, values, setup, config, result.mesh)
-    res = residual(phiEqn, component, config)
-    converged || _warn_unconverged(phiEqn, setup, component, reason, iterations)
+    converged || _warn_unconverged(phiEqn, setup, component, reason, iterations, config)
     return res
 end
 
@@ -423,12 +423,15 @@ function _warn_unconverged(name, reason, iterations, rnorm, norm_name, setup, id
         "$UNCONVERGED_MAXLOG times per equation)" maxlog=UNCONVERGED_MAXLOG _id=id
 end
 
-# serial solves report ‖D⁻¹(b - Ax)‖₂ of the returned iterate, from `residual`'s |b - Ax| in R
-function _warn_unconverged(eqn::ModelEquation, setup, component, reason, iterations)
-    tag = _component_tag(component)
+# serial solves report ‖D⁻¹(b - Ax)‖₂ of the returned iterate, formed in the scratch array R
+function _warn_unconverged(eqn::ModelEquation, setup, component, reason, iterations, config)
     (; A, R, diag_nz) = eqn.equation
-    rnorm = norm(R ./ abs.(_nzval(A)[diag_nz]))
-    _warn_unconverged(_solve_name(setup, tag), reason, iterations, rnorm,
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_initial_residual!, backend, workgroup, length(R))
+    kernel!(R, _rowptr(A), _colval(A), _nzval(A), diag_nz, get_values(get_phi(eqn), component),
+        _b(eqn, component))
+    tag = _component_tag(component)
+    _warn_unconverged(_solve_name(setup, tag), reason, iterations, norm(R),
         "‖D⁻¹(b - Ax)‖₂", setup, (:unconverged_solve, objectid(eqn.solver), tag))
 end
 
@@ -437,7 +440,7 @@ _component_tag(::XDir) = "x component"
 _component_tag(::YDir) = "y component"
 _component_tag(::ZDir) = "z component"
 
-# ‖D⁻¹(b - Ax₀)‖₂, leaving D⁻¹(b - Ax₀) in the scratch array R, which nothing touches until `residual`
+# ‖D⁻¹(b - Ax₀)‖₂, leaving D⁻¹(b - Ax₀) in the scratch array R (scratch once `residual` has run)
 function _initial_residual_norm!(eqn, x0, b, x, config)
     (; A, R, diag_nz) = eqn.equation
     (; backend, workgroup) = config.hardware

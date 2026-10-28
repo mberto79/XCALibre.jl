@@ -111,22 +111,22 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     b = _b(phiEqn, component)
     workspace = phiEqn.solver
     values = get_values(result, component)
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     update!(workspace, A, solver, config)
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     x = workspace.solution
     copyto!(x, values)
 
     outer_A = outer_operator(workspace.hierarchy, A)
-    # |diag(A)| for the stopping norm ‖D⁻¹r‖, in Fx, which is scratch until `residual`
+    # |diag(A)| for the stopping norm ‖D⁻¹r‖, in Fx (scratch once `residual` has run)
     (; Fx, diag_nz) = phiEqn.equation
     Fx .= abs.(view(_nzval(A), diag_nz))
     _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x;
         itmax=itmax, atol=atol, rtol=rtol, dscale=Fx)
 
     copyto!(values, x)
-    res = residual(phiEqn, component, config)
     workspace.converged || _warn_unconverged(phiEqn, setup, component, _amg_reason(workspace, itmax),
-        workspace.iterations)
+        workspace.iterations, config)
     return res
 end
 

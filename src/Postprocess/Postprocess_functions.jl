@@ -139,10 +139,9 @@ end
     end
 end
 
-# Kinematic force per unit area on boundary face fID, -ν_eff (∇U_b + ∇U_bᵀ - ⅔ tr(∇U_b) I)⋅n: the
-# boundary stress of the momentum equation (Laplacian plus the explicit transposed stress, see
-# `_transpose_stress_boundary_kernel!`), with ∇U_b the owner-cell gradient Mc whose normal
-# component is the normal gradient of the velocity condition (`_boundary_sngrad` at `time`)
+# Kinematic force per area on face fID, -ν_eff (∇U_b + ∇U_bᵀ - ⅔ tr(∇U_b) I)⋅n: the momentum boundary
+# stress (Laplacian plus `_transpose_stress_boundary_kernel!`), ∇U_b being the cell gradient Mc with
+# the normal gradient of the velocity condition (`_boundary_sngrad` at `time`) as normal component
 @inline function _wall_traction(BC, Uc, Mc, nueff, faces, fID, time)
     normal = faces.normal[fID]
     Mb = _patch_gradient(Mc, _boundary_sngrad(BC, Uc, faces.delta[fID], normal, faces, fID, time), normal)

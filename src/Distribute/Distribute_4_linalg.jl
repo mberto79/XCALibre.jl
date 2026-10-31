@@ -15,3 +15,6 @@ function psolve_transpose! end
 
 # Krylov iterations of the last solve
 function piterations end
+
+# tolerances of the next solves; a target fixes the stopping value instead of taking it from r₀
+function pset_tolerances! end

@@ -118,7 +118,11 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     copyto!(x, values)
 
     outer_A = outer_operator(workspace.hierarchy, A)
-    _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+    # 1/|diag(A)| for the stopping norm ‖D⁻¹r‖, in Fx (scratch once `residual` has run)
+    (; Fx, diag_nz) = phiEqn.equation
+    _inv_abs_diagonal!(Fx, _nzval(A), diag_nz)
+    _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x;
+        itmax=itmax, atol=atol, rtol=rtol, dscale=Fx)
 
     copyto!(values, x)
     workspace.converged || _warn_unconverged(phiEqn, setup, component, _amg_reason(workspace, itmax),
@@ -129,16 +133,16 @@ end
 _amg_reason(workspace, itmax) = workspace.iterations ≥ itmax ?
     "maximum number of iterations exceeded" : "stagnating, non-finite or indefinite iteration"
 
-function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::AMGSolver, A, b, x; itmax, atol, rtol)
-    return amg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::AMGSolver, A, b, x; itmax, atol, rtol, dscale=nothing)
+    return amg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol, dscale=dscale)
 end
 
-function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Bicgstab, A, b, x; itmax, atol, rtol)
-    return amg_bicgstab_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Bicgstab, A, b, x; itmax, atol, rtol, dscale=nothing)
+    return amg_bicgstab_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol, dscale=dscale)
 end
 
-function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol)
-    return amg_cg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol, dscale=nothing)
+    return amg_cg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol, dscale=dscale)
 end
 
 # Mixed precision / matrix-free: FP32 finest cannot carry the outer residual, so use raw system matrix

@@ -50,21 +50,17 @@ _sides(P::_JacobiLike, scale) = (; M=_prec_op(P), ldiv=false)
 _sides(P, scale) = (; M=_DiagScale(scale.nzval, scale.dptr),
     N=_RightPrec(_prec_op(P), _prec_ldiv(P), scale.nzval, scale.dptr, scale.tmp), ldiv=false)
 
-# Jacobi CG already holds z = D⁻¹r
+# Jacobi CG already holds z = D⁻¹r; otherwise 1/|a_ii| is formed once per solve in tmp
 _cg_scale(P::_JacobiLike, scale) = nothing
-_cg_scale(P, scale) = scale
+_cg_scale(P, scale) = _inv_abs_diagonal!(scale.tmp, scale.nzval, scale.dptr)
 
 # ‖D⁻¹r‖² by a dot product: GPU BLAS nrm2 is several times slower than dot
 struct _ScaledNormStop{T,S}
     target²::T
-    scale::S
+    dinv::S
 end
 (s::_ScaledNormStop{T,Nothing})(ws) where T = Krylov.kdotr(length(ws.z), ws.z, ws.z) ≤ s.target²
-function (s::_ScaledNormStop)(ws)
-    (; tmp, nzval, dptr) = s.scale
-    _scale_rows!(tmp, ws.r, nzval, dptr, Val(true))
-    Krylov.kdotr(length(tmp), tmp, tmp) ≤ s.target²
-end
+(s::_ScaledNormStop)(ws) = _scaled_dot(ws.r, s.dinv) ≤ s.target²
 
 # y = D⁻¹x; the ldiv flag of a Krylov call is shared by M and N, so both apply the same way
 struct _DiagScale{V,I}
@@ -91,9 +87,42 @@ LinearAlgebra.ldiv!(y, N::_RightPrec, x) = mul!(y, N, x)
 _data(v::XVector) = parent(v)
 _data(v) = v
 
-# ‖D⁻¹r‖₂ for d = |diag(A)| (`nothing`: ‖r‖₂)
+# ‖D⁻¹r‖₂ for dinv = 1/|diag(A)| (`nothing`: ‖r‖₂)
 _scaled_norm(r, ::Nothing) = norm(r)
-_scaled_norm(r, d) = sqrt(mapreduce((ri, di) -> abs2(ri/di), +, _data(r), d))
+_scaled_norm(r, dinv) = convert(eltype(r), sqrt(_scaled_dot(r, dinv)))
+
+# Σ(rᵢ·dinvᵢ)² in one pass, writing nothing: GPUArrays' multi-array mapreduce is lazy, Base's is not
+_scaled_dot(r, dinv) = _scaled_dot_data(_data(r), _data(dinv))
+_scaled_dot_data(r, dinv) = mapreduce((ri, di) -> abs2(ri*di), +, r, dinv)
+function _scaled_dot_data(r::Vector{T}, dinv::Vector) where T
+    _reduce_chunks(length(r), _acc_type(T)) do rng
+        # derived from r, not captured: a captured type is a DataType field on Julia 1.10
+        TA = _acc_type(eltype(r))
+        s = zero(TA)
+        @inbounds @simd for i ∈ rng
+            s += abs2(TA(r[i])*TA(dinv[i]))
+        end
+        s
+    end
+end
+
+# dinv = 1/|a_ii|
+_inv_abs_diagonal!(dinv, nzval, dptr) = (_inv_abs_diagonal_data!(_data(dinv), nzval, dptr); dinv)
+function _inv_abs_diagonal_data!(dinv::Vector, nzval, dptr)
+    _foreach_chunk(length(dinv)) do r
+        @inbounds for i ∈ r
+            dinv[i] = convert(eltype(dinv), inv(abs(nzval[dptr[i]])))
+        end
+    end
+end
+function _inv_abs_diagonal_data!(dinv, nzval, dptr)
+    kernel! = _inv_abs_diagonal_kernel!(_setup(get_backend(dinv), 256, length(dinv))...)
+    kernel!(dinv, nzval, dptr)
+end
+@kernel function _inv_abs_diagonal_kernel!(dinv, @Const(nzval), @Const(dptr))
+    i = @index(Global)
+    @inbounds dinv[i] = convert(eltype(dinv), inv(abs(nzval[dptr[i]])))
+end
 
 # y = x./|a_ii| (Val(true)) or x.*|a_ii|; CPU rows in the Krylov vectors' static chunks
 _scale_rows!(y, x, nzval, dptr, inv) = (_scale_rows_data!(_data(y), _data(x), nzval, dptr, inv); y)

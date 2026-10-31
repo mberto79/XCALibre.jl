@@ -84,18 +84,18 @@ struct MixedPrecisionSolve <: PreconditionerType end
 update_preconditioner!(::Preconditioner{MixedPrecisionSolve}, mesh, config) = nothing
 
 # any serial preconditioner, built on the Float32 copy of the matrix and refreshed every solve
-function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, preconditioner::PreconditionerType, A, b)
+function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, preconditioner::PreconditionerType, A, b, dptr)
     nzval = similar(_nzval(A), Float32)
     nzval .= _nzval(A)
     r = _krylov_vector(similar(b, Float32))
     opA = _lowprecision_operator(A, nzval)
     P = Preconditioner{typeof(preconditioner)}(opA)
     krylov = _workspace(solver, r)
-    MixedWorkspace(p, krylov, opA, nzval, r, similar(r), P, nothing, nothing, _diagonal_positions(A),
+    MixedWorkspace(p, krylov, opA, nzval, r, similar(r), P, nothing, nothing, dptr,
         nothing, _shadow_buffer(krylov, r))
 end
 
-function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, b)
+function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, b, dptr)
     T = _work_type(p)
     nzval = similar(_nzval(A), _storage_type(p))
     diag = similar(b, Float32)
@@ -104,7 +104,7 @@ function MixedWorkspace(p::MixedF16, solver::AbstractLinearSolver, ::Jacobi, A, 
     opA = csr_operator(_rowptr(A), _colval(A), nzval, diag, similar(diag, T), Int(_m(A)))
     krylov = _workspace(solver, r)
     MixedWorkspace(p, krylov, opA, nzval, r, dinv, diagonal_operator(dinv), similar(b), similar(b),
-        _diagonal_positions(A), (; diag, ad=similar(b)), _shadow_buffer(krylov, r))
+        dptr, (; diag, ad=similar(b)), _shadow_buffer(krylov, r))
 end
 
 _shadow_buffer(::_ShadowWorkspace, r) = similar(r)

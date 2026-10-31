@@ -66,7 +66,7 @@ This function is used to provide solver settings that will be used internally in
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
 - `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`). Also applies to PETSc solves.
 - `atol`: absolute tolerance of the linear solve, in the field's units (defaults to eps(float_type)^0.9).
-- `rtol`: relative tolerance of the linear solve (defaults to 1e-1). Every solver, preconditioner, precision and backend (including AMG and PETSc) stops when ‖D⁻¹(b - Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b - Ax₀)‖₂, D = |diag(A)|: the size of a Jacobi correction, with `rtol` relative to that of the initial guess x₀ (the current field values), not to ‖b‖. Distributed `Cg()` with a non-Jacobi preconditioner uses PETSc's preconditioned norm instead.
+- `rtol`: relative tolerance of the linear solve (defaults to 1e-1). Every solver, preconditioner, precision and backend (including AMG and PETSc) stops when ‖D⁻¹(b - Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b - Ax₀)‖₂, D = |diag(A)|: the size of a Jacobi correction, with `rtol` relative to that of the initial guess x₀ (the current field values), not to ‖b‖.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
 - `precision`: precision of the linear solve, `FullPrecision()` (default), [`MixedF32`](@ref)`()` or [`MixedF16`](@ref)`()`.
 """
@@ -107,7 +107,7 @@ _workspace(::FullPrecision, setup, eqn, b) = _workspace(setup.solver, b, _index_
 function _workspace(precision::AbstractMixedPrecision, setup, eqn, b)
     precision isa MixedF16 && !(setup.preconditioner isa Jacobi) && throw(ArgumentError(
         "MixedF16 supports the Jacobi preconditioner only; use MixedF32 for $(nameof(typeof(setup.preconditioner)))"))
-    MixedWorkspace(precision, setup.solver, setup.preconditioner, _A(eqn), b)
+    MixedWorkspace(precision, setup.solver, setup.preconditioner, _A(eqn), b, eqn.equation.diag_nz)
 end
 
 # the preconditioner of a SolverSetup: built on the equation's matrix in full precision, inert
@@ -372,9 +372,9 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
 
     (; R, Fx, diag_nz) = phiEqn.equation
     bw, x0 = _like_workspace(x, b), _like_workspace(x, values)
-    r0 = _initial_residual_norm!(phiEqn, values, b, x, config)
+    r0 = _initial_residual_norm!(solver, phiEqn, values, b, x, config)
     # x₀ already meets the target: Krylov.jl's iterate would be stale
-    r0 ≤ _stop_target(atol, rtol, r0) && return res
+    !isnothing(r0) && r0 ≤ _stop_target(atol, rtol, r0) && return res
     # R and Fx are scratch once `residual` has summed them
     scale = (; nzval=_nzval(A), dptr=diag_nz, tmp=_like_workspace(x, Fx))
     kw = (; _stop_kwargs(solver, precon, scale, atol, rtol, r0)..., itmax=itmax, history=false)
@@ -440,8 +440,10 @@ _component_tag(::XDir) = "x component"
 _component_tag(::YDir) = "y component"
 _component_tag(::ZDir) = "z component"
 
-# ‖D⁻¹(b - Ax₀)‖₂, leaving D⁻¹(b - Ax₀) in the scratch array R (scratch once `residual` has run)
-function _initial_residual_norm!(eqn, x0, b, x, config)
+# ‖D⁻¹(b - Ax₀)‖₂, leaving D⁻¹(b - Ax₀) in the scratch array R (scratch once `residual` has run), for
+# CG's target and BiCGStab's shadow. GMRES and CGS take it from their own first residual
+_initial_residual_norm!(solver, eqn, x0, b, x, config) = nothing
+function _initial_residual_norm!(::Union{CgWorkspace,BicgstabWorkspace}, eqn, x0, b, x, config)
     (; A, R, diag_nz) = eqn.equation
     (; backend, workgroup) = config.hardware
     kernel! = _sized(_initial_residual!, backend, workgroup, length(R))

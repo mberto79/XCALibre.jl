@@ -45,13 +45,13 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
     s    = workspace.svec        # NOT workspace.solution - that IS x
     t    = workspace.t
 
-    bnorm = max(norm(b), eps(T))
     _residual!(hierarchy, r, A, x, b)
     _reset_residual_history!(workspace)
     rnorm = _scaled_norm(r, dscale)
+    r0 = max(rnorm, floatmin(T)) # rel is relative to ‖D⁻¹r₀‖, in the stopping norm
     _push_residual_norm_history!(workspace, rnorm)
     eps_target = _amg_eps(T, atol, rtol, rnorm)
-    rel = rnorm / bnorm
+    rel = rnorm / r0
     initial_rel = rel
 
     if rnorm <= eps_target
@@ -149,21 +149,21 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
             _copy_amg!(hierarchy, r, s)
             rnorm = snorm
             _push_residual_norm_history!(workspace, rnorm)
-            rel = rnorm / bnorm
+            rel = rnorm / r0
             break
         end
 
         _bicg_update!(hierarchy, x, r, y, z, s, t, alpha, omega)
         rnorm = _scaled_norm(r, dscale)
         _push_residual_norm_history!(workspace, rnorm)
-        rel = rnorm / bnorm
+        rel = rnorm / r0
         if !isfinite(rnorm) || !isfinite(rel)
             break
         end
         if rnorm <= eps_target
             _residual!(hierarchy, r, A, x, b)
             rnorm = _scaled_norm(r, dscale)
-            rel = rnorm / bnorm
+            rel = rnorm / r0
             true_checked = true
             rnorm <= eps_target && break
             if restarts < max_restarts && isfinite(rnorm)
@@ -194,7 +194,7 @@ function amg_bicgstab_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHier
     if !true_checked
         _residual!(hierarchy, r, A, x, b)
         rnorm = _scaled_norm(r, dscale)
-        rel = rnorm / bnorm
+        rel = rnorm / r0
     end
 
     workspace.iterations = k

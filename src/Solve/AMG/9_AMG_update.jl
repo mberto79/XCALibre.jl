@@ -118,9 +118,9 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,PT}, 
     copyto!(x, values)
 
     outer_A = outer_operator(workspace.hierarchy, A)
-    # |diag(A)| for the stopping norm ‖D⁻¹r‖, in Fx (scratch once `residual` has run)
+    # 1/|diag(A)| for the stopping norm ‖D⁻¹r‖, in Fx (scratch once `residual` has run)
     (; Fx, diag_nz) = phiEqn.equation
-    Fx .= abs.(view(_nzval(A), diag_nz))
+    _inv_abs_diagonal!(Fx, _nzval(A), diag_nz)
     _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x;
         itmax=itmax, atol=atol, rtol=rtol, dscale=Fx)
 

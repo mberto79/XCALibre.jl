@@ -126,14 +126,14 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
     flex = _amg_cg_flexible(solver)
     r_prev = workspace.correction
 
-    bnorm = max(norm(b), eps(T))
 
     _residual!(hierarchy, r, A, x, b)
     _reset_residual_history!(workspace)
     rnorm = _scaled_norm(r, dscale)
+    r0 = max(rnorm, floatmin(T)) # rel is relative to ‖D⁻¹r₀‖, in the stopping norm
     _push_residual_norm_history!(workspace, rnorm)
     ε = _amg_eps(T, atol, rtol, rnorm)
-    rel = rnorm / bnorm
+    rel = rnorm / r0
     initial_rel = rel
     if rnorm <= ε
         workspace.iterations = 0
@@ -176,7 +176,7 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
         _cg_step_amg!(hierarchy, x, r, p, q, α)
         rnorm = _scaled_norm(r, dscale)
         _push_residual_norm_history!(workspace, rnorm)
-        rel = rnorm / bnorm
+        rel = rnorm / r0
         if !isfinite(rnorm) || !isfinite(rel)
             break
         end

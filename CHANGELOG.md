@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The residual of each field is evaluated on its value before the linear solve, so residual histories no longer depend on the linear solver, its precision or tolerances, or on serial, distributed or GPU runs. Histories shift by one iteration, and a field that starts at zero reports the unnormalised Σ|b - Ax| on its first iteration. [#243](@ref)
 
 ### Fixed
+* `viscous_force` and `wall_shear_stress` integrate the boundary viscous stress the momentum equation applies, `-ρ ν_eff (∇U + ∇Uᵀ - ⅔ tr(∇U) I)⋅n` with the boundary-face velocity gradient, instead of its tangential normal-gradient part only. The transposed and normal stress terms now enter the reported forces, which therefore change; zero-gradient patches report the force of their transposed stress, while `Slip` and `Symmetry` patches still report none. [#249](@ref)
 * Every dependency now has a `[compat]` entry, including the standard libraries `LinearAlgebra`, `Logging`, `Printf` and `SparseArrays`, as the General registry requires. [#242](@ref)
 * Documentation: the release notes link to the correct repository, and `Robin`, `volume_integral`, `weighted_volume_integral`, `volume_average` and `total_volume` are now documented. [#242](@ref)
 * `ConstantViscosity` is initialised correctly and its test is registered in the suite. [#204](@ref)

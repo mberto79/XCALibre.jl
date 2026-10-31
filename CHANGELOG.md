@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The residual of each field is evaluated on its value before the linear solve, so residual histories no longer depend on the linear solver, its precision or tolerances, or on serial, distributed or GPU runs. Histories shift by one iteration, and a field that starts at zero reports the unnormalised Σ|b - Ax| on its first iteration. [#243](@ref)
 
 ### Fixed
-* `UNV2D_mesh` cell centres are the area centroids of the cells, and the face `delta`, `e` and interpolation weights are computed from these final centres. Previously the face geometry was built from the vertex-average centres, which were then replaced by a perimeter-weighted average, so the stored face geometry did not match the cell centres on triangular and irregular cells. [#PRNUM](@ref)
+* `UNV2D_mesh` cell centres are the area centroids of the cells, and the face `delta`, `e` and interpolation weights are computed from these final centres. Previously the face geometry was built from the vertex-average centres, which were then replaced by a perimeter-weighted average, so the stored face geometry did not match the cell centres on triangular and irregular cells. [#251](@ref)
 * Every dependency now has a `[compat]` entry, including the standard libraries `LinearAlgebra`, `Logging`, `Printf` and `SparseArrays`, as the General registry requires. [#242](@ref)
 * Documentation: the release notes link to the correct repository, and `Robin`, `volume_integral`, `weighted_volume_integral`, `volume_average` and `total_volume` are now documented. [#242](@ref)
 * `ConstantViscosity` is initialised correctly and its test is registered in the suite. [#204](@ref)

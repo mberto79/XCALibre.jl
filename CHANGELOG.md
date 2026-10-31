@@ -100,6 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed the AMG zero-allocation coarse-solve test failing intermittently. [#185](@ref)
 
 ### Changed
+* Distributed `Bicgstab()` and `Gmres()` solves with `GAMG()`, `BoomerAMG()` or `IC0GPU()` no longer store a second, scaled copy of the matrix, lowering peak memory; the scaled matrix is applied on the fly. [#250](@ref)
 * `atol` and `rtol` mean the same on every linear-solve path: each solve stops when the Jacobi correction ‖D⁻¹(b − Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b − Ax₀)‖₂, so `atol` is in the field's units whatever the solver, preconditioner, precision or backend, and warnings print that norm. Jacobi solves keep their tolerances; `Cg()` stops tighter than before (it used √(rᵀD⁻¹r)), `Gmres()` restarts every 30 iterations, and PETSc adds `atol` and `rtol` instead of taking their maximum. [#245](@ref)
 * The CI and documentation workflows cancel superseded pull request runs and queue runs for `main` and tags. [#202](@ref)
 * The explicit viscous stress and `div!` of cell tensors run faster on GPUs, with unchanged results. [#187](@ref)

@@ -79,12 +79,12 @@ The force of each face is the viscous stress the momentum equation applies there
 `ν_t` on the face, and `∇U_b` is the owner-cell gradient (the gradient scheme of `U` in
 `config.schemes`, `Gauss` if none) with its normal component replaced by the normal gradient of
 the velocity condition, `(U_b - U_c)/δ`. This includes the transposed (explicit) stress term of the
-momentum equation, so the result is the force the solver applies and the one OpenFOAM's `forces`
-function object reports. `U_b` is the face value of the velocity boundary condition: the fixed
-vector of `Wall` and `Dirichlet`, the function of `DirichletFunction` evaluated at the face
-centre and `time`, or the rotation velocity of `RotatingWall`; zero-gradient conditions have a
-zero normal gradient, so only the tangential derivatives of the cell gradient act there. Patches with a `Slip` or `Symmetry` velocity boundary condition exert no
-shear, so their viscous force is zero.
+momentum equation, so the result is the force the solver applies. `U_b` is the face value of the
+velocity boundary condition: the fixed vector of `Wall` and `Dirichlet`, the function of
+`DirichletFunction` evaluated at the face centre and `time`, or the rotation velocity of
+`RotatingWall`. Zero-gradient conditions have a zero normal gradient, so only the tangential
+derivatives of the cell gradient act there. Patches with a `Slip` or `Symmetry` velocity boundary
+condition exert no shear, so their viscous force is zero.
 
 On a distributed mesh the call is collective: every rank must make it, and all ranks return the
 force on the whole patch.

@@ -151,8 +151,9 @@ if any(l -> l.PetscScalar == Float32, PETSc.petsclibs)
         @test r_sum ≈ r_ref rtol=1e-6
     end
 
-    @testset "distributed MixedF32 skips a converged x₀ (rank $rank)" begin
-        deqn = wrapped_eqn(setup(itmax=1000, rtol=1e-3, atol=10*R0, precision=MixedF32()))
+    # rtol = 0 refines: its first correction is skipped too
+    @testset "distributed MixedF32 rtol=$rtol skips a converged x₀ (rank $rank)" for rtol ∈ (1e-3, 0.0)
+        deqn = wrapped_eqn(setup(itmax=1000, rtol=rtol, atol=10*R0, precision=MixedF32()))
         x0 = copy(warm!())
         expect_silence(() -> _solve_owned!(deqn, T, nothing))
         n = deqn.partition.n_owned

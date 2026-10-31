@@ -232,6 +232,10 @@ _refinement_reason() = "iterative refinement stopped after $MAX_REFINEMENTS corr
 _correction_tol(atol, rtol, target, rnorm) =
     isnothing(target) || iszero(target) ? (atol, rtol) : (zero(atol), max(rtol, target/rnorm))
 
+# no correction once ‖D⁻¹(b - Ax)‖ meets the target; the first one checks the setup's own (x₀ converged)
+_skips_correction(rnorm, target, setup) =
+    rnorm ≤ (isnothing(target) || iszero(target) ? _stop_target(setup.atol, setup.rtol, rnorm) : target)
+
 function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, rtol, target, setup, config, mesh;
         solve=true)
     (; itmax, atol) = setup
@@ -240,7 +244,7 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF32}, A, b, values, rtol, ta
     kernel! = _sized(_mixed_residual!, backend, workgroup, n)
     kernel!(ws.r, _data(ws.dinv), ws.nzval, _rowptr(A), _colval(A), _nzval(A), ws.dptr, values, b)
     rnorm = Float64(norm(ws.dinv))
-    (!solve || rnorm ≤ something(target, _stop_target(atol, rtol, rnorm))) && return 0, rnorm
+    (!solve || _skips_correction(rnorm, target, setup)) && return 0, rnorm
     # A is unchanged by later corrections of the same solve
     (isnothing(target) || iszero(target)) && update_preconditioner!(ws.P, mesh, config)
     atol_c, rtol_c = Float32.(_correction_tol(atol, rtol, target, rnorm))
@@ -273,7 +277,7 @@ function _mixed_correction!(ws::MixedWorkspace{MixedF16}, A, b, values, rtol, ta
     # tolerances apply to D⁻¹(b - Ax), not the scaled residual
     rnorm = norm(ws.comp.ad)
     snorm = norm(ws.rfull)
-    (!solve || iszero(snorm) || rnorm ≤ something(target, _stop_target(atol, rtol, rnorm))) && return 0, rnorm
+    (!solve || iszero(snorm) || _skips_correction(rnorm, target, setup)) && return 0, rnorm
     # unit 2-norm: Krylov's dot products return T and n·max² overflows Float16
     kernel! = _sized(_scale_cast!, backend, workgroup, n)
     kernel!(ws.r, ws.rfull, inv(snorm))

@@ -72,12 +72,11 @@ function _correct!(deqn, result, component, target; solve=true)
     kernel! = _sized(Solve._mixed_residual!, backend, workgroup, s.n_owned)
     kernel!(s.r, s.w, s.nzval, _rowptr(A), _colval(A), _nzval(A), eqn.equation.diag_nz, values, _b(eqn, component))
     rnorm = sqrt(MPI.Allreduce(Float64(sum(abs2, s.w)), +, _comm(deqn)))
-    rtol = _inner_rtol(s)
-    (!solve || rnorm ≤ something(target, Solve._stop_target(s.atol, rtol, rnorm))) && return rnorm
+    (!solve || Solve._skips_correction(rnorm, target, s)) && return rnorm
     fill!(s.d, zero(eltype(s.d)))
     # PETSc keeps the matrix between corrections of one solve; s.r stays its right-hand side
     (isnothing(target) || iszero(target)) && passemble!(s.petsc, s.nzval, s.r)
-    atol_c, rtol_c = Solve._correction_tol(s.atol, rtol, target, rnorm)
+    atol_c, rtol_c = Solve._correction_tol(s.atol, _inner_rtol(s), target, rnorm)
     pset_tolerances!(s.petsc, atol_c, rtol_c, Solve._stop_target(atol_c, rtol_c, rnorm))
     psolve!(s.petsc, s.d)
     kernel! = _sized(Solve._add_correction!, backend, workgroup, s.n_owned)

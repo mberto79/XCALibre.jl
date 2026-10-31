@@ -117,6 +117,14 @@ function check_stop_criterion(cases; backend=CPU())
         @test r_sum ≤ slack(c[3])*2ρ*R0
     end
 
+    # x₀ already within atol: the field is returned untouched (Gmres and Cgs leave this to Krylov.jl)
+    @testset "$(case_name(c)) keeps a converged x₀" for c ∈ cases
+        T_eqn, setup, T, config = scaled_system(c...; rtol=0.0, atol=10*R0, backend)
+        x0 = Array(warm!(T))
+        solve_system!(T_eqn, setup, T, nothing, config)
+        @test Array(T.values) == x0
+    end
+
     # MixedF16 solves the system scaled to unit diagonal; atol still applies to D⁻¹(b - Ax). Its Float32
     # corrections reach ~3e-3 of R0 here, where D⁻¹ weights rows over four orders of magnitude
     @testset "MixedF16 Jacobi stops at atol and rtol of the Jacobi-scaled residual" begin

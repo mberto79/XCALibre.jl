@@ -142,6 +142,24 @@ function _petsclib(TF, nnz_global)
     fits[argmin(map(l -> sizeof(l.PetscInt), fits))]
 end
 
+_petsc_version(petsclib) = VersionNumber(Int.(LibPETSc.PetscGetVersionNumber(petsclib)[1:3])...)
+
+# GAMG's aggregation in PETSc releases up to 3.26 sends global row ids through PetscReal vectors, so
+# ids above maxintfloat(PetscReal) (2^24 in Float32) round and PCSetUp fails with "structurally
+# unsymmetric matrix" or "Cannot find gid1 in table"; development builds since 3.26.99 keep them integer
+_gamg_ids_exact(version, ::Type{TR}, N) where TR = version >= v"3.26.99" || N - 1 <= maxintfloat(TR)
+
+_uses_gamg(opts) = any(((k, v),) -> endswith(string(k), "pc_type") && string(v) == "gamg", pairs(opts))
+
+function _check_gamg_ids(version, ::Type{TR}, opts, N) where TR
+    (!_uses_gamg(opts) || _gamg_ids_exact(version, TR, N)) && return nothing
+    error("PETScSolver: GAMG on this $TR PETSc ($version) cannot address $N global rows. PETSc's " *
+        "GAMG passes row ids through $TR values, exact only up to $(Int(maxintfloat(TR))) rows, and " *
+        "setup would fail with an \"unsymmetric matrix\" error. Solve this equation at " *
+        "FullPrecision() on a Float64 mesh, use another preconditioner (e.g. Jacobi()), or use " *
+        "a PETSc development build (3.26.99 or later), which keeps the ids as integers.")
+end
+
 # a String reaches every solve; a NamedTuple keyed by equation label adds per-equation options
 # after `all`. Labels are the ones the solvers pass to `wrap_eqn`.
 const _OPTION_KEYS = (:all, :U, :p, :k, :omega, :T, :y)
@@ -291,6 +309,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
             "BoomerAMG(device=true) to skip this check. See the distributed simulations page of " *
             "the documentation.")
     end
+    _check_gamg_ids(_petsc_version(petsclib), real(petsclib.PetscScalar), opts, N)
     ksp = PETSc.KSP(Amat; opts...)
     # tolerances mean what they mean on serial paths: rtol is relative to the warm-started initial
     # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only. No dtol stop,

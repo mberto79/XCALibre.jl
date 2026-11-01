@@ -1,0 +1,1 @@
+* fixed: `GAMG()` in a Float32 PETSc library (`MixedF32()` or a Float32 mesh) on a distributed matrix above 2^24 + 1 global rows now stops with an error at solver construction naming `FullPrecision()`. Before, PETSc failed in its first setup with "structurally unsymmetric matrix", because PETSc releases up to 3.26 round the global row ids GAMG stores as Float32. [#254](@ref)

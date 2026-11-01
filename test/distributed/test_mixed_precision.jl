@@ -6,6 +6,30 @@ MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
 
+# PETSc's GAMG rounds global row ids held in PetscReal: Float32 builds before 3.26.99 must refuse
+# matrices above 2^24 + 1 rows at setup instead of failing inside PCSetUp
+@testset "GAMG global-id limit (rank $rank)" begin
+    ext = Base.get_extension(XCALibre, :XCALibrePETScExt)
+    gamg = merge((; ksp_type="cg", pc_type=ext._pc_type(GAMG())), ext._pc_options(GAMG()))
+    lim = Int(maxintfloat(Float32)) + 1
+    @test ext._uses_gamg(gamg)
+    @test ext._uses_gamg((pc_type="jacobi", sub_pc_type="gamg"))
+    @test !ext._uses_gamg((pc_type="jacobi",))
+    @test ext._gamg_ids_exact(v"3.22.0", Float32, lim)
+    @test !ext._gamg_ids_exact(v"3.22.0", Float32, lim + 1)
+    @test !ext._gamg_ids_exact(v"3.26.0", Float32, 33_402_240)
+    @test ext._gamg_ids_exact(v"3.26.99", Float32, 33_402_240)
+    @test ext._gamg_ids_exact(v"3.22.0", Float64, 33_402_240)
+    @test isnothing(ext._check_gamg_ids(v"3.22.0", Float32, (pc_type="jacobi",), 33_402_240))
+    @test isnothing(ext._check_gamg_ids(v"3.22.0", Float32, gamg, lim))
+    err = try ext._check_gamg_ids(v"3.22.0", Float32, gamg, lim + 1); nothing catch e e end
+    @test err isa ErrorException && occursin("FullPrecision()", err.msg)
+    @test_throws ErrorException ext._check_gamg_ids(v"3.22.0", Float16, gamg, 4096)
+    lib = ext._petsclib(Float64, 0)
+    PETSc.initialize(lib)
+    @test ext._petsc_version(lib) >= v"3.0"
+end
+
 if !any(l -> l.PetscScalar == Float32, PETSc.petsclibs)
     @testset "MixedF32() distributed BFS (rank $rank)" begin
         @test_skip "no Float32 PETSc library loaded"

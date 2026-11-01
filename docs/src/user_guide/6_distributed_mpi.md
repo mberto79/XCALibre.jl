@@ -706,6 +706,14 @@ exposed as a keyword can still be passed through `petsc_options`.
     custom builds do not, and there the solver raises an error when it is constructed. `GAMG`
     needs no special build and is the safer default in shared scripts.
 
+!!! note
+    In Float32 PETSc libraries (`MixedF32()`, or a Float32 mesh), `GAMG` handles at most
+    2^24 + 1 = 16,777,217 global rows. PETSc releases up to 3.26 pass global row ids through
+    floating-point vectors during GAMG setup, and Float32 holds integers exactly only up to 2^24.
+    Above that size the solver raises an error when it is constructed. Solve that equation at
+    `FullPrecision()` on a Float64 mesh, or with another preconditioner. PETSc development builds
+    from 3.26.99 keep the ids as integers and have no limit.
+
 ### On the GPU
 
 With a CUDA-enabled PETSc, `Jacobi()` and `GAMG()` run on the device and give the same residuals

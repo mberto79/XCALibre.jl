@@ -186,7 +186,7 @@ end
         face = faces[fID]
         nuc = nu[cID]
         (; delta, normal)= face
-        y = wall_normal_distance(face) # wall distance; delta (floored) stays in the face snGrad
+        y = wall_normal_distance(face) # wall distance of the cell centre
         uStar = cmu^eltype(sums)(0.25)*sqrt(k[cID])
         dUdy = uStar/(kappa*y)
         yplus = y_plus(k[cID], nuc, y, cmu)

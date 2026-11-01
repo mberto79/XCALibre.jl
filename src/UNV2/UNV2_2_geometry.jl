@@ -116,7 +116,8 @@ function boundary_face_properties!(mesh::Mesh2{I,F}, owner_signs) where {I,F}
             end
 
             # calculate weight, delta and e 
-            weight, delta, e = Mesh.weight_delta_e(C1F1, normal)
+            distance = Mesh.boundary_distance(p1, p2, C1)
+            weight, delta, e = Mesh.weight_delta_e(C1F1, normal, distance)
 
             # assign values to face
             face = @set face.area = area

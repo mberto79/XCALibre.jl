@@ -96,8 +96,9 @@ mutable struct _StopTest
     bs::LibPETSc.CVec    # D⁻¹b (:rowscale, :shell)
     w::LibPETSc.CVec
     t::LibPETSc.CVec
-    p::LibPETSc.CVec     # D·x in the shell PC
-    As::Ptr{Cvoid}       # D⁻¹A, the KSP's operator (:shell); A stays the PC's
+    p::LibPETSc.CVec     # D·x in the shell PC, D⁻¹x in the shell operator's transpose
+    A::Ptr{Cvoid}        # the unscaled matrix, applied by the shell operator
+    op::Ptr{Cvoid}       # D⁻¹A, the KSP's matrix-free operator (:shell); A stays the PC's
     inner::Ptr{Cvoid}    # the configured PC, applied by the shell after D
     build::Ptr{Cvoid}    # KSPBuildResidual
     pmult::Ptr{Cvoid}    # VecPointwiseMult
@@ -234,7 +235,7 @@ function _release!(s)
     c = s.stop
     foreach(v -> _vec_destroy(s.petsclib, getfield(c, v)), (:dinv, :bs, :w, :t, :p))
     c.inner == C_NULL || _petsc_ok(s, :PCDestroy, Ref(c.inner))
-    c.As == C_NULL || _petsc_ok(s, :MatDestroy, Ref(c.As))
+    c.op == C_NULL || _petsc_ok(s, :MatDestroy, Ref(c.op))
 end
 
 # float_type/nzval: a MixedF32 solve selects the Float32 PETSc library and assembles
@@ -320,7 +321,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     mode === :none || ccall(_petsc_sym(petsclib, :KSPSetConvergenceTest), Cint,
         (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), ksp.ptr, _converged_ptr(PI, real(petsclib.PetscScalar)),
         pointer_from_objref(stop), C_NULL) == 0 || error("PETSc: KSPSetConvergenceTest failed")
-    mode === :shell && _shell_pc!(petsclib, ksp, Amat, stop)
+    mode === :shell && _shell_pc!(petsclib, ksp, Amat, b, stop)
     extra = Base.structdiff(opts, (ksp_type=nothing, pc_type=nothing))
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
@@ -338,8 +339,8 @@ end
 # two), with the serial GMRES restart. How the KSP meets ‖D⁻¹r‖:
 # :monitored  Jacobi, left-preconditioned: the KSP's norm is ‖D⁻¹r‖ (pc_jacobi_abs)
 # :rowscale   PCs that commute with row scaling (block ILU, SOR): D⁻¹A·x = D⁻¹b, right-preconditioned
-# :shell      bcgs/gmres with AMG or ICC PCs, which need A itself: the KSP's operator is a scaled copy D⁻¹A
-#             and a shell PC applies P(A)·D, the serial right preconditioner
+# :shell      bcgs/gmres with AMG or ICC PCs, which need A itself: the KSP's operator is D⁻¹A, matrix-free
+#             over A, and a shell PC applies P(A)·D, the serial right preconditioner
 # :explicit   CG and CGS with another PC and passthrough types: the KSP's cheap norm predicts when
 #             ‖D⁻¹r‖ from KSPBuildResidual (one MatMult, left-preconditioned) is worth computing
 # :none       preonly or no norm: PETSc decides
@@ -373,7 +374,7 @@ function _StopTest(petsclib, b, mode, atol, rtol)
     explicit, shell = mode === :explicit, mode === :shell
     rowscale = shell || mode === :rowscale
     _StopTest(atol, rtol, 0.0, false, false, explicit, rowscale, GATE, 1.0,
-        dup(explicit || rowscale), dup(rowscale), dup(explicit), dup(explicit), dup(shell), C_NULL, C_NULL,
+        dup(explicit || rowscale), dup(rowscale), dup(explicit), dup(explicit), dup(shell), C_NULL, C_NULL, C_NULL,
         (_petsc_sym(petsclib, f) for f ∈ (:KSPBuildResidual, :VecPointwiseMult, :VecNorm))...)
 end
 
@@ -431,12 +432,10 @@ function Distribute.pset_tolerances!(s::XPETScSolver, atol, rtol, target)
 end
 
 # the KSP's configured PC (built from A) moves behind a shell applying it after D; the KSP's operator
-# becomes D⁻¹A, a copy refreshed by passemble!. Options are read at construction, so the swap holds
-function _shell_pc!(petsclib, ksp, Amat, c)
+# becomes D⁻¹A, applied without storing it. Options are read at construction, so the swap holds
+function _shell_pc!(petsclib, ksp, Amat, b, c)
     ok(f, args...) = _ptr_call(_petsc_sym(petsclib, f), args...) == 0 || error("PETSc: $f failed")
-    inner, shell, As, comm = Ref(C_NULL), Ref(C_NULL), Ref(C_NULL), Ref{MPI.MPI_Comm}()
-    ccall(_petsc_sym(petsclib, :MatDuplicate), Cint, (Ptr{Cvoid}, Cint, Ptr{Ptr{Cvoid}}), Amat.ptr, 1, As) == 0 ||
-        error("PETSc: MatDuplicate failed") # 1 = MAT_COPY_VALUES
+    inner, shell, comm = Ref(C_NULL), Ref(C_NULL), Ref{MPI.MPI_Comm}()
     ok(:KSPGetPC, ksp.ptr, inner)
     ok(:PetscObjectReference, inner[])
     ok(:PetscObjectGetComm, ksp.ptr, comm)
@@ -448,31 +447,74 @@ function _shell_pc!(petsclib, ksp, Amat, c)
     PR = real(petsclib.PetscScalar)
     sym(f) = _petsc_sym(petsclib, f)
     _SHELL_OPS[PR][] = (context=sym(:PCShellGetContext), divide=sym(:VecPointwiseDivide), apply=sym(:PCApply),
-        apply_transpose=sym(:PCApplyTranspose), setup=sym(:PCSetUp), reuse=sym(:PCSetReusePreconditioner))
-    apply, apply_transpose, setup = _shell_callbacks(PR)
+        apply_transpose=sym(:PCApplyTranspose), setup=sym(:PCSetUp), reuse=sym(:PCSetReusePreconditioner),
+        mat_context=sym(:MatShellGetContext), mult=sym(:MatMult), mult_transpose=sym(:MatMultTranspose),
+        pmult=sym(:VecPointwiseMult))
+    apply, apply_transpose, setup, mult, mult_transpose = _shell_callbacks(PR)
     ok(:PCShellSetApply, shell[], apply)
     ok(:PCShellSetApplyTranspose, shell[], apply_transpose)
     ok(:PCShellSetSetUp, shell[], setup)
     ok(:KSPSetPC, ksp.ptr, shell[])
     ok(:PCDestroy, shell) # the KSP holds it
-    ok(:KSPSetOperators, ksp.ptr, As[], Amat.ptr)
+    c.A = Amat.ptr
+    c.op = _mat_shell(petsclib, Amat, pointer_from_objref(c), petsclib.PetscInt)
+    _mat_shell_op(_petsc_sym(petsclib, :MatShellSetOperation), c.op, 3, mult) == 0 ||
+        error("PETSc: MatShellSetOperation failed") # 3 = MATOP_MULT
+    _mat_shell_op(_petsc_sym(petsclib, :MatShellSetOperation), c.op, 5, mult_transpose) == 0 ||
+        error("PETSc: MatShellSetOperation failed") # 5 = MATOP_MULT_TRANSPOSE
+    # work vectors the KSP makes from its operator then live where b does (the device on GPU solves)
+    vtype = Ref{Ptr{Cchar}}(C_NULL)
+    ok(:VecGetType, b.ptr, vtype)
+    ok(:MatShellSetVecType, c.op, vtype[])
+    ok(:KSPSetOperators, ksp.ptr, c.op, Amat.ptr)
     ok(:PCSetOperators, inner[], Amat.ptr, Amat.ptr)
-    c.As, c.inner = As[], inner[]
+    c.inner = inner[]
     c
 end
 
+# a shell of A's sizes and communicator, its context the stopping test
+for PI ∈ (Int32, Int64)
+    @eval function _mat_shell(petsclib, Amat, ctx, ::Type{$PI})
+        m, n, M, N = (Ref{$PI}() for _ ∈ 1:4)
+        comm, op = Ref{MPI.MPI_Comm}(), Ref(C_NULL)
+        sym = f -> _petsc_sym(petsclib, f)
+        ccall(sym(:MatGetLocalSize), Cint, (Ptr{Cvoid}, Ptr{$PI}, Ptr{$PI}), Amat.ptr, m, n) == 0 &&
+        ccall(sym(:MatGetSize), Cint, (Ptr{Cvoid}, Ptr{$PI}, Ptr{$PI}), Amat.ptr, M, N) == 0 &&
+        _ptr_call(sym(:PetscObjectGetComm), Amat.ptr, comm) == 0 &&
+        ccall(sym(:MatCreateShell), Cint, (MPI.MPI_Comm, $PI, $PI, $PI, $PI, Ptr{Cvoid}, Ptr{Ptr{Cvoid}}),
+            comm[], m[], n[], M[], N[], ctx, op) == 0 || error("PETSc: MatCreateShell failed")
+        op[]
+    end
+end
+
+_mat_shell_op(f, A, op, fn) = ccall(f, Cint, (Ptr{Cvoid}, Cint, Ptr{Cvoid}), A, op, fn)
+
 # callbacks see only the PC; a process loads one library per scalar type, whose symbols they use
 const _SHELL_OPS = Dict(T => Ref((context=C_NULL, divide=C_NULL, apply=C_NULL, apply_transpose=C_NULL, setup=C_NULL,
-    reuse=C_NULL)) for T ∈ (Float32, Float64))
+    reuse=C_NULL, mat_context=C_NULL, mult=C_NULL, mult_transpose=C_NULL, pmult=C_NULL)) for T ∈ (Float32, Float64))
 
 _ptr_call(f, a) = ccall(f, Cint, (Ptr{Cvoid},), a)
 _ptr_call(f, a, b) = ccall(f, Cint, (Ptr{Cvoid}, Ptr{Cvoid}), a, b)
 _ptr_call(f, a, b, c) = ccall(f, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), a, b, c)
 
-function _shell_context(pc, ops)
+function _shell_context(obj, ops, get=ops.context)
     ctx = Ref(C_NULL)
-    ccall(ops.context, Cint, (Ptr{Cvoid}, Ptr{Ptr{Cvoid}}), pc, ctx)
+    ccall(get, Cint, (Ptr{Cvoid}, Ptr{Ptr{Cvoid}}), obj, ctx)
     unsafe_pointer_to_objref(ctx[])::_StopTest
+end
+
+# y = D⁻¹(A·x)
+function _op_mult(op, x, y, ops)
+    c = _shell_context(op, ops, ops.mat_context)
+    err = _ptr_call(ops.mult, c.A, x, y)
+    err == 0 ? _ptr_call(ops.pmult, y, y, c.dinv) : err
+end
+
+# y = Aᵀ(D⁻¹x)
+function _op_mult_transpose(op, x, y, ops)
+    c = _shell_context(op, ops, ops.mat_context)
+    err = _ptr_call(ops.pmult, c.p, x, c.dinv)
+    err == 0 ? _ptr_call(ops.mult_transpose, c.A, c.p, y) : err
 end
 
 # y = P(D·x), D·x = x/dinv
@@ -500,13 +542,18 @@ function _shell_setup(pc, ops)
 end
 
 for T ∈ (Float32, Float64)
-    apply, transpose, setup = Symbol.((:_shell_apply_, :_shell_apply_transpose_, :_shell_setup_), T)
+    apply, transpose, setup, mult, multt =
+        Symbol.((:_shell_apply_, :_shell_apply_transpose_, :_shell_setup_, :_op_mult_, :_op_mult_transpose_), T)
     @eval begin
         $apply(pc, x, y) = _shell_apply(pc, x, y, _SHELL_OPS[$T][])
         $transpose(pc, x, y) = _shell_apply_transpose(pc, x, y, _SHELL_OPS[$T][])
         $setup(pc) = _shell_setup(pc, _SHELL_OPS[$T][])
+        $mult(op, x, y) = _op_mult(op, x, y, _SHELL_OPS[$T][])
+        $multt(op, x, y) = _op_mult_transpose(op, x, y, _SHELL_OPS[$T][])
         _shell_callbacks(::Type{$T}) = (@cfunction($apply, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid})),
-            @cfunction($transpose, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid})), @cfunction($setup, Cint, (Ptr{Cvoid},)))
+            @cfunction($transpose, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid})), @cfunction($setup, Cint, (Ptr{Cvoid},)),
+            @cfunction($mult, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid})),
+            @cfunction($multt, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid})))
     end
 end
 
@@ -639,9 +686,7 @@ function passemble!(s::XPETScSolver, nzval::AbstractVector, b::AbstractVector)
     _set_values!(s.petsclib, s.A, nzval, s.sync, s.fill)
     c = s.stop
     (c.explicit || c.rowscale) && _inverse_abs_diagonal!(s)
-    c.As == C_NULL || ccall(_petsc_sym(s.petsclib, :MatCopy), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Cint), s.A.ptr, c.As, 2) == 0 ||
-        error("PETSc: MatCopy failed") # 2 = SAME_NONZERO_PATTERN
-    c.rowscale && _petsc_ok(s, :MatDiagonalScale, _operator(s), c.dinv, C_NULL)
+    c.rowscale && c.op == C_NULL && _petsc_ok(s, :MatDiagonalScale, s.A.ptr, c.dinv, C_NULL)
     s.bptr[] = _raw_ptr(b)
     s
 end
@@ -654,8 +699,8 @@ _petsc_call(f, v) = ccall(f, Cint, (LibPETSc.CVec,), v)
 _petsc_call(f, A::Ptr, v) = ccall(f, Cint, (Ptr{Cvoid}, LibPETSc.CVec), A, v)
 _petsc_call(f, u, v, w) = ccall(f, Cint, (LibPETSc.CVec, LibPETSc.CVec, LibPETSc.CVec), u, v, w)
 
-# the KSP's operator: D⁻¹A when row-scaled (A itself, or its copy under :shell)
-_operator(s) = s.stop.As == C_NULL ? s.A.ptr : s.stop.As
+# the KSP's operator: D⁻¹A when row-scaled (A itself, or the matrix-free shell under :shell)
+_operator(s) = s.stop.op == C_NULL ? s.A.ptr : s.stop.op
 
 # dinv = 1/|diag(A)| of the unscaled matrix
 function _inverse_abs_diagonal!(s)

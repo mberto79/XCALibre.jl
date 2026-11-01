@@ -18,12 +18,15 @@ function geometric_centre(nodes, nodeList) # made generic - requires Node type
 end
 
 function geometry!(mesh::Mesh2)
+    # centroids first: face delta, e and weight must be built from the final cell centres
+    cell_faces = all_cell_faces(mesh)
+    cell_centroids!(mesh, cell_faces)
     # normals point out of the owner cell, decided from each cell's topology (exact for any
     # cell shape); a test against cell centres is only the fallback for cells that do not close
     owner_signs = Mesh._owner_outward_signs_2d(mesh.cells, mesh.faces, mesh.boundaries, mesh.nodes)
     internal_face_properties!(mesh, owner_signs)
     boundary_face_properties!(mesh, owner_signs)
-    cell_properties!(mesh)
+    cell_properties!(mesh, cell_faces)
     # correct_boundary_cell_volumes!(mesh)
     nothing
 end
@@ -126,65 +129,52 @@ function boundary_face_properties!(mesh::Mesh2{I,F}, owner_signs) where {I,F}
     end
 end
 
-function cell_properties!(mesh::Mesh2{I,F}) where {I,F}
-    (; boundaries, nodes, faces, cells) = mesh
-
-    # 1. Gather ALL faces (internal + boundary) for every cell
-    # This prevents corner cells from "forgetting" their second boundary face!
-    all_cell_faces = [copy(c.facesID) for c in cells] 
-    
+# Faces of every cell, internal and boundary (corner cells have more than one boundary face)
+function all_cell_faces(mesh::Mesh2)
+    (; boundaries, cells) = mesh
+    cell_faces = [copy(c.facesID) for c in cells]
     for boundary ∈ boundaries
         (; cellsID, facesID) = boundary
         for i ∈ eachindex(cellsID)
-            cID = cellsID[i]
-            fID = facesID[i]
-            push!(all_cell_faces[cID], fID)
+            push!(cell_faces[cellsID[i]], facesID[i])
         end
     end
+    cell_faces
+end
 
-    # 2. Calculate geometrically perfect properties in a single pass
+# Area centroid: area-weighted centroids of the triangles that fan the cell about its vertex average
+function cell_centroids!(mesh::Mesh2{I,F}, cell_faces) where {I,F}
+    (; nodes, faces, cells) = mesh
     for celli ∈ eachindex(cells)
         cell = cells[celli]
-        my_faces = all_cell_faces[celli]
-        
-        # --- A. Calculate True Centroid ---
-        cellSurfaceArea = zero(F)
-        sumCentres = SVector{3, F}(0.0, 0.0, 0.0)
-        
-        for fID ∈ my_faces
-            face = faces[fID]
-            sumCentres += face.centre * face.area 
-            cellSurfaceArea += face.area
+        c0 = cell.centre
+        area = zero(F)
+        moment = zero(c0)
+        for fID ∈ cell_faces[celli]
+            p1, p2 = (nodes[nID].coords for nID ∈ faces[fID].nodesID)
+            a = norm((p1 - c0) × (p2 - c0))/2
+            area += a
+            moment += a*(c0 + p1 + p2)/3
         end
-        true_centre = sumCentres / cellSurfaceArea
-        
-        # --- B. Calculate True Volume & Internal Normal Signs ---
-        volume = zero(F)
-        empty!(cell.nsign) # Clear out any old data if this is re-run
-        
-        for fID ∈ my_faces
-            face = faces[fID]
-            
-            # Use the FIXED true_centre for every single face!
-            d_cf = face.centre - true_centre 
-            
-            # Normals point from owner to neighbour, so they point out of the owner
-            fnsign = face.ownerCells[1] == celli ? one(I) : -one(I)
-            
-            # Only push to the cell's nsign array if it's an internal face
-            # (Preserves XCALibre's internal face loop logic)
-            if fID ∈ cell.facesID
-                push!(cell.nsign, fnsign)
-            end
-            
-            # Accumulate the volume (0.5 * base * height for 2D pyramids)
-            volume += (d_cf ⋅ face.normal * fnsign) * face.area
-        end
-        
-        # --- C. Update the Cell Array ---
-        cell = @set cell.centre = true_centre
-        cell = @set cell.volume = F(0.5) * volume
-        cells[celli] = cell
+        area > zero(F) && (cells[celli] = @set cell.centre = moment/area)
     end
 end
 
+function cell_properties!(mesh::Mesh2{I,F}, cell_faces) where {I,F}
+    (; faces, cells) = mesh
+    for celli ∈ eachindex(cells)
+        cell = cells[celli]
+        volume = zero(F)
+        empty!(cell.nsign)
+        for fID ∈ cell_faces[celli]
+            face = faces[fID]
+            d_cf = face.centre - cell.centre
+            # normals point from owner to neighbour, so they point out of the owner
+            fnsign = face.ownerCells[1] == celli ? one(I) : -one(I)
+            # nsign covers internal faces only, matching the internal face loops
+            fID ∈ cell.facesID && push!(cell.nsign, fnsign)
+            volume += (d_cf ⋅ face.normal * fnsign) * face.area
+        end
+        cells[celli] = @set cell.volume = F(0.5) * volume
+    end
+end

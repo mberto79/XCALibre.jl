@@ -74,11 +74,17 @@ Calculate the viscous force vector `[Fx, Fy, Fz]` acting on a given patch/bounda
   matters only for a `DirichletFunction` whose function depends on time: pass the solution time
   (the iteration number for steady runs), as the solvers do when they evaluate the condition.
 
-The wall velocity of each face is the face value of the velocity boundary condition: the fixed
-vector of `Wall` and `Dirichlet`, the function of `DirichletFunction` evaluated at the face
-centre and `time`, or the rotation velocity of `RotatingWall`. Patches with a `Slip`,
-`Symmetry` or zero-gradient velocity boundary condition exert no shear, so their viscous force
-is zero.
+The force of each face is the viscous stress the momentum equation applies there,
+`-ρ ν_eff (∇U_b + ∇U_bᵀ - ⅔ tr(∇U_b) I)⋅n A`. `ν_eff = ν + ν_t` uses the wall-function value of
+`ν_t` on the face, and `∇U_b` is the owner-cell gradient (the gradient scheme of `U` in
+`config.schemes`, `Gauss` if none) with its normal component replaced by the normal gradient of
+the velocity condition, `(U_b - U_c)/δ`. This includes the transposed (explicit) stress term of the
+momentum equation, so the result is the force the solver applies. `U_b` is the face value of the
+velocity boundary condition: the fixed vector of `Wall` and `Dirichlet`, the function of
+`DirichletFunction` evaluated at the face centre and `time`, or the rotation velocity of
+`RotatingWall`. Zero-gradient conditions have a zero normal gradient, so only the tangential
+derivatives of the cell gradient act there. Patches with a `Slip` or `Symmetry` velocity boundary
+condition exert no shear, so their viscous force is zero.
 
 On a distributed mesh the call is collective: every rank must make it, and all ranks return the
 force on the whole patch.
@@ -102,13 +108,15 @@ function viscous_force(patch::Symbol, model, config; time=0)
     IDs_range = get_boundaries(mesh.boundaries)[ID].IDs_range
     (; faces, boundary_cellsID) = mesh
 
+    gradU = _velocity_gradient(U, TF(time), config)
+
     n = length(IDs_range)
     fx = KernelAbstractions.zeros(backend, TF, n)
     fy = KernelAbstractions.zeros(backend, TF, n)
     fz = KernelAbstractions.zeros(backend, TF, n)
 
     kernel! = _viscous_force!(backend)
-    kernel!(fx, fy, fz, U, BC, nu, nut, rho, faces, boundary_cellsID, IDs_range, TF(time);
+    kernel!(fx, fy, fz, U, gradU, BC, nu, nut, rho, faces, boundary_cellsID, IDs_range, TF(time);
         _dynamic_setup(backend, workgroup, n)...)
     KernelAbstractions.synchronize(backend)
 
@@ -118,26 +126,39 @@ function viscous_force(patch::Symbol, model, config; time=0)
 end
 
 @kernel function _viscous_force!(
-    fx, fy, fz, U, BC, nu, nut, rho, faces, boundary_cellsID, IDs_range, time)
+    fx, fy, fz, U, gradU, BC, nu, nut, rho, faces, boundary_cellsID, IDs_range, time)
     i = @index(Global)
     @inbounds begin
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
-        area = faces.area[fID]
-        snGrad = _wall_shear_gradient(BC, U[cID], faces, fID, time)
-        coeff = rho[cID]*area*(nu[cID] + nut[fID]) # nut is wall-face value νtf (wall funcs)
-        fx[i] = snGrad[1]*coeff
-        fy[i] = snGrad[2]*coeff
-        fz[i] = snGrad[3]*coeff
+        nueff = nu[cID] + nut[fID] # nut is wall-face value νtf (wall funcs)
+        F = rho[cID]*faces.area[fID]*_wall_traction(BC, U[cID], gradU[cID], nueff, faces, fID, time)
+        fx[i] = F[1]
+        fy[i] = F[2]
+        fz[i] = F[3]
     end
 end
 
-# Tangential part of (U_c - U_b)/delta at boundary face fID, from the boundary-face normal
-# gradient of the velocity condition (U_b - U_c)/delta (`_boundary_sngrad`, value at `time`)
-@inline function _wall_shear_gradient(BC, Uc, faces, fID, time)
+# Kinematic force per area on face fID, -ν_eff (∇U_b + ∇U_bᵀ - ⅔ tr(∇U_b) I)⋅n: the momentum boundary
+# stress (Laplacian plus `_transpose_stress_boundary_kernel!`), ∇U_b being the cell gradient Mc with
+# the normal gradient of the velocity condition (`_boundary_sngrad` at `time`) as normal component
+@inline function _wall_traction(BC, Uc, Mc, nueff, faces, fID, time)
     normal = faces.normal[fID]
-    g = _boundary_sngrad(BC, Uc, faces.delta[fID], normal, faces, fID, time)
-    return (g⋅normal)*normal - g
+    Mb = _patch_gradient(Mc, _boundary_sngrad(BC, Uc, faces.delta[fID], normal, faces, fID, time), normal)
+    TF = typeof(nueff)
+    return -nueff*((Mb + Mb' - (TF(2)/3)*tr(Mb)*I)*normal)
+end
+
+# Cell gradient of U as the solvers compute it (gradient scheme and limiter of U in
+# `config.schemes`, Gauss without a limiter if the configuration has no U schemes); returns
+# the mesh-free values for the kernels
+function _velocity_gradient(U, time, config)
+    schemes = config.schemes
+    hasU = schemes isa NamedTuple && haskey(schemes, :U)
+    gradU = hasU ? Grad{schemes.U.gradient}(U) : Grad{Gauss}(U)
+    grad!(gradU, FaceVectorField(U.mesh), U, config.boundaries.U, time, config)
+    hasU && limit_gradient!(schemes.U.limiter, gradU, U, config)
+    return field_values(gradU.result)
 end
 
 # Host-side lookup of the velocity condition of a boundary ID (BCs is a heterogeneous tuple);
@@ -219,9 +240,10 @@ end
     wall_shear_stress(patch::Symbol, model, config; time=0)
 
 Function to calculate the wall shear stress acting on a given patch/boundary. Returns the
-kinematic wall shear stress of each face of the patch, `ν_eff (U_c - U_b)_t/δ` (`U_b` the face
-value of the velocity condition, `t` the part tangential to the face), as a `FaceVectorField`
-of the patch length, and the face centres as a vector.
+kinematic viscous stress acting on each face of the patch, `-ν_eff (∇U_b + ∇U_bᵀ - ⅔ tr(∇U_b) I)⋅n`
+(the face values of [`viscous_force`](@ref) per unit area and density; zero on `Slip` and
+`Symmetry` patches), as a `FaceVectorField` of the patch length, and the face centres as a
+vector.
 
 # Input arguments
 
@@ -253,23 +275,26 @@ wall_shear_stress(patch::Symbol, model, config; time=0) = begin
     z = FaceScalarField(KernelAbstractions.zeros(backend, TF, n), mesh)
     tauw = FaceVectorField(x, y, z, mesh)
 
-    kernel! = _wall_shear_stress!(backend)
-    kernel!(tauw, U, BC, nu, nut, faces, boundary_cellsID, IDs_range, TF(time);
-        _dynamic_setup(backend, workgroup, n)...)
-    KernelAbstractions.synchronize(backend)
+    if !(BC isa Union{Slip,Symmetry}) # mirror conditions carry no shear (as in viscous_force)
+        gradU = _velocity_gradient(U, TF(time), config)
+        kernel! = _wall_shear_stress!(backend)
+        kernel!(tauw, U, gradU, BC, nu, nut, faces, boundary_cellsID, IDs_range, TF(time);
+            _dynamic_setup(backend, workgroup, n)...)
+        KernelAbstractions.synchronize(backend)
+    end
 
     pos = Array(faces.centre[IDs_range])
     return tauw, pos
 end
 
 @kernel function _wall_shear_stress!(
-    tauw, U, BC, nu, nut, faces, boundary_cellsID, IDs_range, time)
+    tauw, U, gradU, BC, nu, nut, faces, boundary_cellsID, IDs_range, time)
     i = @index(Global)
     @inbounds begin
         fID = IDs_range[i]
         cID = boundary_cellsID[fID]
         nueff = nu[cID] + nut[fID] # nut is wall-face value νtf (wall funcs)
-        tauw[i] = nueff*_wall_shear_gradient(BC, U[cID], faces, fID, time)
+        tauw[i] = _wall_traction(BC, U[cID], gradU[cID], nueff, faces, fID, time)
     end
 end
 """

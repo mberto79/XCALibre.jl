@@ -21,6 +21,7 @@ const TIERS = [
         "unit/Mesh/test_mesh_reorder.jl",
         "unit/Mesh/test_face_orientation.jl",
         "unit/Mesh/test_bounding_box.jl",
+        "unit/Mesh/test_unv2d_geometry.jl",
         "unit/IOFormats/test_foam_writer_unset_bcs.jl",
         "unit/Multithread/test_kernel_index_pattern.jl",
         "unit/Preprocess/test_setFields.jl",

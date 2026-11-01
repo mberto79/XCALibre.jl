@@ -26,6 +26,11 @@ To help use keep the codebase consistent and allow us to merge future Pull Reque
 * For contributions that may require code reorganisation please do get in touch to ensure this aligns with any planned changes (open an issue). PRs will likely be requested against the current `dev` branch
 * Ideally, all contributions will also include basic documentation and tests.
 
+### Changelog entries
+* Do not edit `CHANGELOG.md`. Instead, add one file per PR, `changelog/unreleased/<branch-name>.md`, with one line per entry starting with its category, e.g. `* fixed: ...` or `* added: ...`
+* Categories are `added`, `changed`, `fixed`, `breaking`, `deprecated` and `removed`; one file can hold entries of several categories
+* The PR link `[#N](@ref)` is added automatically at release time. Small changes users would not notice need no entry. See `changelog/README.md` for details
+
 ### Help wanted
 * If you have specific expertise in MPI or Multi-GPU implementation and wish to get involved please get in touch.
 

@@ -70,7 +70,7 @@ end
     @test_throws ArgumentError mp_solve_T(MixedF16(), 1; preconditioner=DILU())
     @test SolverSetup(solver=Cg(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0).precision isa FullPrecision
     @test_throws ArgumentError SolverSetup(
-        solver=AMG(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, precision=MixedF16())
+        solver=Cg(), preconditioner=AMG(), convergence=1e-7, relax=1.0, precision=MixedF16())
 end
 
 @testset "half-precision XVector dot accumulates in Float32" begin

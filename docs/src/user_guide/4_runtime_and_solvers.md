@@ -49,19 +49,18 @@ residuals = run!(model, config)
 
 On meshes with appreciable non-orthogonality, pass `ncorrectors` to run non-orthogonal correctors on the potential equation. Set it to zero for orthogonal meshes.
 
-## AMG solver
+## AMG preconditioner
 ---
 
-The `AMG` linear solver can be selected directly in `SolverSetup`. It supports `mode=AMGSolver()` for a standalone multigrid solve and `mode=Cg()` for AMG-preconditioned conjugate gradient on symmetric systems such as pressure equations. `mode` takes an instance, not a symbol: `mode=:cg` throws an `ArgumentError`.
+XCALibre's native algebraic multigrid is a preconditioner: `solver` picks the outer iteration and `preconditioner = AMG(...)` the multigrid. Use `solver = Cg()` for symmetric systems such as pressure equations, `solver = Bicgstab()` for non-symmetric ones, and `solver = Richardson()` for a standalone multigrid solve (repeated V-cycles with no Krylov acceleration).
 
 ```julia
 SolverSetup(
-    solver = AMG(
-        mode = Cg(),
+    solver = Cg(),
+    preconditioner = AMG(
         coarsening = SmoothAggregation(),
         smoother = AMGJacobi()
     ),
-    preconditioner = Jacobi(),
     convergence = 1e-7,
     relax = 1.0,
     rtol = 0.0,
@@ -69,7 +68,12 @@ SolverSetup(
 )
 ```
 
-For non-symmetric systems use `mode=Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix. `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` uses it for the pressure equation of a transonic RANS case.
+The same settings run on a distributed mesh, where PETSc's `GAMG()` takes the place of `AMG()` with a one-time warning (the `AMG` keywords are not carried over). The other way round, `GAMG()` or `BoomerAMG()` on a serial mesh runs the native `AMG()`. The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
+
+!!! note "Earlier spelling"
+    `SolverSetup(solver = AMG(mode = Cg()), preconditioner = Jacobi())` still works, with a deprecation warning: it becomes `solver = Cg(), preconditioner = AMG()`, and the `preconditioner` it was given, which was never used, is dropped. `AMG(mode = ...)` inside `preconditioner` is ignored with a warning, and `AMGSolver()` is now `Richardson()`.
+
+For non-symmetric systems use `solver = Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix. `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` uses it for the pressure equation of a transonic RANS case.
 
 Choice of coarsening for non-symmetric operators: `Bicgstab()` has been tested with the default `SmoothAggregation()`. `RugeStuben()` and `Geometric()` are accepted but have not been validated on non-symmetric operators - `RugeStuben()` builds its strength of connection from each row's entries only, not from the transpose - so prefer the default unless you have checked the alternative on your case.
 
@@ -79,11 +83,8 @@ If `Bicgstab()` breaks down - the shadow residual going orthogonal, or the stabi
 
 ```julia
 SolverSetup(
-    solver = AMG(
-        mode = Bicgstab(),
-        smoother = AMGGaussSeidel(sweep = AMGForwardSweep())
-        ),
-    preconditioner=DILU(),
+    solver = Bicgstab(),
+    preconditioner = AMG(smoother = AMGGaussSeidel(sweep = AMGForwardSweep())),
     convergence = 1e-7,
     relax = 1.0,
     rtol = 0.0,
@@ -103,15 +104,15 @@ default host round trip can dominate. `coarse_solve` selects how it is solved:
   written `coarse_solve = CPU()`.
 - `OnDeviceJacobi(; omega, iterations)` and `OnDeviceChebyshev(; degree, eig_ratio, lambda_scale)` — apply a
   fixed number of smoother sweeps on the device instead of solving. Both are constant linear
-  operators, so they are valid with `mode = Cg()` as well as `mode = AMGSolver()`.
+  operators, so they are valid with `solver = Cg()` as well as `solver = Richardson()`.
 - `OnDeviceKrylov(; solver, rtol, atol, itmax)` — run an inner Krylov solve on the device. An
   inner Krylov solve is nonlinear in its right-hand side, which breaks the fixed-operator
-  assumption of preconditioned CG, so this one requires `mode = AMGSolver()` and is rejected with
-  `mode = Cg()`. Passing a GPU backend, as in `coarse_solve = CUDABackend()`, selects it.
+  assumption of preconditioned CG, so this one requires `solver = Richardson()` and is rejected with
+  `solver = Cg()`. Passing a GPU backend, as in `coarse_solve = CUDABackend()`, selects it.
 
 ```julia
-AMG(mode = AMGSolver(), coarsening = SmoothAggregation(), smoother = AMGJacobi(),
-    coarse_solve = OnDeviceChebyshev(degree = 8))
+SolverSetup(solver = Richardson(), preconditioner = AMG(coarsening = SmoothAggregation(),
+    smoother = AMGJacobi(), coarse_solve = OnDeviceChebyshev(degree = 8)), convergence = 1e-7, relax = 1.0)
 ```
 
 On a CPU backend every `OnDevice*` option behaves as `OnHost()`.

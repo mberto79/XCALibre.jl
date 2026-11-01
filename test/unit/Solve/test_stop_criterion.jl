@@ -70,7 +70,7 @@ function solve_warm!((T_eqn, setup, T, config))
 end
 
 # stationary AMG needs constant near-null vectors, which the scaling removes: it runs unscaled below
-const AMG_MODES = (AMG(mode=Cg()), AMG(mode=Bicgstab()))
+const AMG_MODES = (Cg(), Bicgstab())
 const CASES = (
     (Cg(), Jacobi(), FullPrecision()), (Cg(), DILU(), FullPrecision()),
     (Bicgstab(), Jacobi(), FullPrecision()), (Bicgstab(), DILU(), FullPrecision()),
@@ -78,8 +78,8 @@ const CASES = (
     (Gmres(), Jacobi(), FullPrecision()), (Gmres(), DILU(), FullPrecision()),
     (Cg(), Jacobi(), MixedF32()), (Cg(), DILU(), MixedF32()), (Bicgstab(), DILU(), MixedF32()),
     (Cgs(), DILU(), MixedF32()), (Gmres(), DILU(), MixedF32()),
-    ((s, Jacobi(), FullPrecision()) for s ∈ AMG_MODES)...)
-case_name((s, p, pr)) = s isa AMG ? "AMG $(nameof(typeof(s.mode)))" :
+    ((s, AMG(), FullPrecision()) for s ∈ AMG_MODES)...)
+case_name((s, p, pr)) = p isa AMG ? "AMG $(nameof(typeof(s)))" :
     "$(nameof(typeof(s))) $(nameof(typeof(p))) $(nameof(typeof(pr)))"
 
 # Float32 corrections meet the target of their own Float32 residual; the Float64 one differs by rounding
@@ -113,7 +113,7 @@ function check_stop_criterion(cases; backend=CPU())
         ρ = 1e-3
         _, r_sum = solve_warm!(scaled_system(c...; rtol=ρ, atol=ρ*R0, backend))
         _, r_ref = solve_warm!(scaled_system(c...; rtol=2ρ, atol=0.0, backend))
-        (backend isa CPU || !(c[1] isa AMG)) && @test r_sum ≈ r_ref rtol=1e-6
+        (backend isa CPU || !(c[2] isa AMG)) && @test r_sum ≈ r_ref rtol=1e-6
         @test r_sum ≤ slack(c[3])*2ρ*R0
     end
 
@@ -136,8 +136,8 @@ function check_stop_criterion(cases; backend=CPU())
 end
 
 function check_amg_solver(; backend=CPU())
-    @testset "AMG AMGSolver stops at the target (unscaled system)" begin
-        sys(rtol, atol) = scaled_system(AMG(mode=AMGSolver()), Jacobi(), FullPrecision(); rtol, atol, backend, scaled=false)
+    @testset "AMG Richardson stops at the target (unscaled system)" begin
+        sys(rtol, atol) = scaled_system(Richardson(), AMG(), FullPrecision(); rtol, atol, backend, scaled=false)
         r0, r = solve_warm!(sys(1e-3, 0.0))
         @test 1e-6*r0 ≤ r ≤ 1e-3*r0
         _, r = solve_warm!(sys(0.0, 1e-4*r0))

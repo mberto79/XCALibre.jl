@@ -1,10 +1,9 @@
-export AMG, AMGSolver, VCycle, SmoothAggregation, RugeStuben, Geometric, AMGJacobi, AMGChebyshev
+export AMG, VCycle, SmoothAggregation, RugeStuben, Geometric, AMGJacobi, AMGChebyshev
 export AMGGaussSeidel, AMGSOR, AMGSymmetricSweep, AMGForwardSweep, AMGBackwardSweep
 export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother, OnDevice, OnHost, OnDeviceKrylov
 export OnDeviceJacobi, OnDeviceChebyshev
 export AMGWorkspace, AMGHierarchy, AMGLevel, AMGRAPPlanCPU
 
-abstract type AbstractAMGMode end
 abstract type AbstractAMGCoarsening end
 abstract type AbstractAMGSmoother end
 abstract type AbstractAMGCPUSmoother <: AbstractAMGSmoother end
@@ -18,7 +17,8 @@ abstract type AbstractAMGHierarchy end
 struct MaterialisedAMG end
 struct MatrixFreeAMG end
 
-struct AMGSolver <: AbstractAMGMode end
+# AMG's standalone V-cycle iteration is now spelled `solver=Richardson()`
+Base.@deprecate_binding AMGSolver Richardson
 struct VCycle <: AbstractAMGCycle end
 
 """
@@ -54,8 +54,8 @@ GPU strategy: truncate the hierarchy at a LARGE coarsest level (set `max_coarse_
 4000-8000) so every level has enough work for good GPU occupancy, then solve that coarsest level
 with an in-place Krylov solver (Cg/Bicgstab) + Jacobi preconditioner — the configuration GPUs
 parallelise best. Reuses XCALibre's Krylov.jl infrastructure (no host round-trip, no extra alloc).
-`solver=nothing` auto-picks Cg (symmetric coarsest) or Bicgstab. GATED to `mode=AMGSolver()`: an
-inner Krylov solve is nonlinear in b, which breaks PCG's fixed-SPD-preconditioner assumption. On a
+`solver=nothing` auto-picks Cg (symmetric coarsest) or Bicgstab. Requires `SolverSetup(solver=Richardson())`:
+an inner Krylov solve is nonlinear in b, which breaks PCG's fixed-SPD-preconditioner assumption. On a
 CPU backend this is equivalent to `OnHost`.
 """
 struct OnDeviceKrylov{S,F,I} <: AbstractAMGCoarseSolve
@@ -80,7 +80,7 @@ _amg_krylov_solver(s) =
 GPU coarse solve: apply a FIXED number of weighted-Jacobi sweeps (x init 0) to the truncated,
 large coarsest level instead of a direct factor. A fixed-sweep Jacobi is a constant linear operator
 `p(A_c)·b`, so — unlike [`OnDeviceKrylov`](@ref) — it is valid as an outer-CG preconditioner: allowed
-in BOTH `mode=Cg()` and `mode=AMGSolver()`. Fully on device (no host round-trip), removing the coarse
+with `solver=Cg()` as well as `solver=Richardson()`. Fully on device (no host round-trip), removing the coarse
 host sync point at MPI/multi-GPU scale. Cheaper per cycle than a direct solve but only approximate, so
 outer iterations may rise; best when the coarsest is large and well-conditioned (huge coarsening
 ratio). On a CPU backend this is equivalent to `OnHost`.
@@ -100,8 +100,8 @@ Adapt.@adapt_structure OnDeviceJacobi
     OnDeviceChebyshev(; degree=10, eig_ratio=10.0, lambda_scale=1.1)
 
 GPU coarse solve: apply a FIXED-degree Chebyshev polynomial smoother (x init 0) to the coarsest
-level. Like [`OnDeviceJacobi`](@ref) it is a constant linear operator (b-independent), so valid in
-BOTH `mode=Cg()` and `mode=AMGSolver()`; fully on device. Chebyshev targets the spectrum
+level. Like [`OnDeviceJacobi`](@ref) it is a constant linear operator (b-independent), so valid with
+`solver=Cg()` as well as `solver=Richardson()`; fully on device. Chebyshev targets the spectrum
 `[lambda_max/eig_ratio, lambda_max]` (lambda_max estimated per level; `lambda_scale` inflates the
 upper bound), giving faster coarse error reduction per matvec than Jacobi at equal cost. On a CPU
 backend this is equivalent to `OnHost`.
@@ -259,7 +259,7 @@ AMGSOR(omega; sweep=AMGSymmetricSweep(), iterations=1) = AMGSOR(; omega, sweep, 
 AMGSOR(omega, sweep::AbstractAMGSweep; iterations=1) = AMGSOR(; omega, sweep, iterations)
 Adapt.@adapt_structure AMGSOR
 
-struct AMG{M,C,S,Y,CS,I} <: AbstractLinearSolver
+struct AMG{M,C,S,Y,CS,I} <: PreconditionerType
     mode::M
     coarsening::C
     smoother::S
@@ -287,12 +287,21 @@ _effective_storage(::Type{T}, ::Type{TS}) where {T,TS} = sizeof(TS) >= sizeof(T)
 _coarse_direct_eltype(::Type{Float32}) = Float64
 _coarse_direct_eltype(::Type{T}) where {T} = T
 
-_amg_mode(mode::AMGSolver) = mode
-_amg_mode(mode::Cg) = mode
-_amg_mode(mode::Bicgstab) = mode
-_amg_mode(mode) = throw(ArgumentError("AMG mode must be AMGSolver(), Cg() or Bicgstab()"))
+# `nothing` = taken from SolverSetup's `solver`; standalone (no SolverSetup) use reads it as Cg
+_amg_mode(mode::Union{Nothing,Richardson,Cg,Bicgstab}) = mode
+_amg_mode(mode) = throw(ArgumentError("AMG outer iteration must be Cg(), Bicgstab() or Richardson()"))
 
-_amg_mode_name(::AMGSolver) = "solve"
+_check_amg_mode(::Union{Nothing,Cg}, ::OnDeviceKrylov) = throw(ArgumentError(
+    "coarse_solve=OnDeviceKrylov requires solver=Richardson() (an inner Krylov coarse solve is nonlinear and breaks AMG-preconditioned CG)"))
+_check_amg_mode(mode, coarse_solve) = mode
+
+# the AMG configuration with its outer iteration set
+_amg_with_mode(a::AMG, mode) = AMG(_check_amg_mode(_amg_mode(mode), a.coarse_solve), a.coarsening, a.smoother,
+    a.cycle, a.coarse_solve, a.scale_correction, a.pre_sweeps, a.post_sweeps, a.max_levels,
+    a.min_coarse_rows, a.max_coarse_rows, a.coarse_refresh_interval, a.fuse_levels, a.coarse_storage)
+
+_amg_mode_name(::Nothing) = "cg"
+_amg_mode_name(::Richardson) = "solve"
 _amg_mode_name(::Cg) = "cg"
 _amg_mode_name(::Bicgstab) = "bicgstab"
 _amg_mode_name(mode) = string(nameof(typeof(mode)))
@@ -328,8 +337,17 @@ function _validate_amg_smoother_backend(backend, smoother::AbstractAMGCPUSmoothe
     ))
 end
 
+"""
+    AMG(; coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_solve=OnDevice(), kwargs...) <: PreconditionerType
+
+XCALibre's native algebraic multigrid, used as `SolverSetup(solver=Cg(), preconditioner=AMG(...))`
+(symmetric systems such as pressure), with `solver=Bicgstab()` (non-symmetric systems) or with
+`solver=Richardson()` (repeated V-cycles, no Krylov acceleration). On a distributed mesh PETSc's
+`GAMG()` is used instead, with a one-time warning. Mixed precision comes from
+`coarse_storage=Float32`, not from `precision`. See the AMG section of the user guide for the keywords.
+"""
 function AMG(;
-    mode=Cg(),
+    mode=nothing,
     coarsening=SmoothAggregation(),
     smoother=AMGJacobi(),
     cycle=VCycle(),
@@ -349,9 +367,7 @@ function AMG(;
     smoother = _amg_smoother(smoother)
     cycle = _amg_cycle(cycle)
     coarse_solve = _amg_coarse_solve(coarse_solve)
-    if coarse_solve isa OnDeviceKrylov && mode isa Cg
-        throw(ArgumentError("coarse_solve=OnDeviceKrylov requires mode=AMGSolver() (an inner Krylov coarse solve is nonlinear and breaks AMG-preconditioned CG)"))
-    end
+    isnothing(mode) || _check_amg_mode(mode, coarse_solve)
     # Jacobi defaults to V(2,2): standalone V-cycle needs extra smoothing; GPU launch overhead favours it
     default_sweeps = smoother isa Union{AMGChebyshev,AMGGaussSeidel,AMGSOR} ? 1 : 2
     pre_sweeps = isnothing(pre_sweeps) ? default_sweeps : pre_sweeps
@@ -379,6 +395,9 @@ function AMG(;
 end
 
 Adapt.@adapt_structure AMG
+
+# preconditioners a serial mesh solves with the native AMG
+const AMGFamily = Union{AMG,GAMG,BoomerAMG}
 
 struct AMGMatrixCSR{RP,CV,NZ}
     rowptr::RP

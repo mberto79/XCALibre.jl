@@ -58,13 +58,13 @@ This function is used to provide solver settings that will be used internally in
 
 # Input arguments
 
-- `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Cgs()`, `Gmres()` which are re-exported in XCALibre.jl. `Gmres()` restarts every 30 iterations.
-- `preconditioner`: instance of preconditioner to be used e.g. Jacobi()
+- `solver`: the outer iteration, one of `Cg()`, `Cgs()`, `Bicgstab()`, `Gmres()` (Krylov.jl, re-exported in XCALibre.jl) or `Richardson()` (with `AMG` only). `Gmres()` restarts every 30 iterations.
+- `preconditioner`: the method, e.g. `Jacobi()`, `DILU()`, `AMG()`, `GAMG()`. Where a preconditioner is not available (e.g. `AMG` on a distributed mesh) a named substitute runs with a one-time warning; see the preconditioners section of the numerical setup page
 - `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`. The residual, `Σ|b - Ax| / Σ|Aᵢᵢxᵢ|`, is taken on the field before the linear solve, so it does not depend on the solver settings.
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
-- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`). Also applies to PETSc solves.
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 with `preconditioner=AMG()`). Also applies to PETSc solves.
 - `atol`: absolute tolerance of the linear solve, in the field's units (defaults to eps(float_type)^0.9).
 - `rtol`: relative tolerance of the linear solve (defaults to 1e-1). Every solver, preconditioner, precision and backend (including AMG and PETSc) stops when ‖D⁻¹(b - Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b - Ax₀)‖₂, D = |diag(A)|: the size of a Jacobi correction, with `rtol` relative to that of the initial guess x₀ (the current field values), not to ‖b‖.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
@@ -72,19 +72,20 @@ This function is used to provide solver settings that will be used internally in
 """
 SolverSetup(;
         float_type=Float64,
-        solver::S1, 
+        solver, 
         smoother::S2=nothing,
-        preconditioner::PT, 
+        preconditioner, 
         convergence, 
         relax, 
         limit=nothing,
-        itmax::I=(solver isa AMG ? 200 : 1000),
+        itmax::I=(solver isa AMG || preconditioner isa AMG ? 200 : 1000),
         atol=(eps(float_type))^0.9,
         rtol=1e-1 |> float_type,
         precision::PR=FullPrecision()
-        ) where{S1,S2,PT,I,PR} = begin
-        _check_precision(precision, solver, preconditioner)
-        SolverSetup{float_type,I,S1,S2,PT,PR}(
+        ) where{S2,I,PR} = begin
+        solver, preconditioner = _deprecated_amg_solver(solver, preconditioner)
+        preconditioner = _resolve_amg(preconditioner, solver)
+        setup = SolverSetup{float_type,I,typeof(solver),S2,typeof(preconditioner),PR}(
             solver, smoother,preconditioner, 
             float_type(convergence), 
             float_type(relax), 
@@ -93,15 +94,12 @@ SolverSetup(;
             float_type(atol),
             float_type(rtol),
             precision)
+        _check_any_path(setup)
     end
 
-_check_precision(::FullPrecision, solver, preconditioner) = nothing
-_check_precision(::AbstractMixedPrecision, solver, preconditioner) =
-    solver isa Union{Cg,Cgs,Bicgstab,Gmres} ||
-        throw(ArgumentError("mixed precision supports Cg, Cgs, Bicgstab and Gmres only"))
-
-# equation workspace honouring the setup's precision
-_workspace(setup::SolverSetup, eqn, dir...) = _workspace(setup.precision, setup, eqn, _b(eqn, dir...))
+# equation workspace honouring the setup's precision; checks the serial path (see PRECONDITIONER_PATHS)
+_workspace(setup::SolverSetup, eqn, dir...) =
+    _workspace(setup.precision, _check_serial(setup), eqn, _b(eqn, dir...))
 _workspace(::FullPrecision, setup, eqn, b) = _workspace(setup.solver, b, _index_type(_A(eqn)))
 # serial meshes only: distributed mixed-precision solves go through PETSc and its preconditioners
 function _workspace(precision::AbstractMixedPrecision, setup, eqn, b)
@@ -114,8 +112,7 @@ end
 # under mixed precision, whose workspace builds its own
 set_preconditioner(setup::SolverSetup, eqn, args...) = _set_preconditioner(setup.precision, setup, eqn, args...)
 _set_preconditioner(::FullPrecision, setup, eqn, args...) = set_preconditioner(setup.preconditioner, eqn, args...)
-_set_preconditioner(::AbstractMixedPrecision, setup, eqn) =
-    Preconditioner{MixedPrecisionSolve,Nothing,Nothing,Nothing}(nothing, nothing, nothing)
+_set_preconditioner(::AbstractMixedPrecision, setup, eqn) = _inert_preconditioner()
 _set_preconditioner(::AbstractMixedPrecision, setup, eqn, BCs, config) =
     set_preconditioner(setup.preconditioner, eqn, BCs, config)
 

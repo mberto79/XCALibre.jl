@@ -16,24 +16,25 @@ struct FakeCoarsening <: XCALibre.Solve.AbstractAMGCoarsening end
 struct FakeSmoother <: XCALibre.Solve.AbstractAMGSmoother end
 
 A, b = amg_test_matrix()
-solver = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
 setup = SolverSetup(
-    solver=solver,
-    preconditioner=Jacobi(),
+    solver=Richardson(),
+    preconditioner=AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi()),
     convergence=1e-7,
     relax=1.0,
     rtol=1e-8,
     atol=1e-8
 )
 
-@test setup.solver isa AMG
+@test setup.solver isa Richardson
+@test setup.preconditioner isa AMG
+@test setup.preconditioner.mode isa Richardson
 @test setup.itmax == 200
-@test setup.solver.pre_sweeps == 2
-@test setup.solver.post_sweeps == 2
-@test setup.solver.cycle isa VCycle
+@test setup.preconditioner.pre_sweeps == 2
+@test setup.preconditioner.post_sweeps == 2
+@test setup.preconditioner.cycle isa VCycle
 
 solver_jacobi_default = AMG()
-@test solver_jacobi_default.mode isa Cg
+@test isnothing(solver_jacobi_default.mode)
 @test solver_jacobi_default.scale_correction == true
 @test AMG(scale_correction=false).scale_correction == false
 @test solver_jacobi_default.pre_sweeps == 2
@@ -156,9 +157,9 @@ ws_rs = XCALibre.Solve.update!(ws_rs, A, solver_rs, config)
 @test ws_rs.hierarchy isa XCALibre.Solve.AMGHierarchy
 @test ws_rs.hierarchy.operator_complexity >= 1
 
-ws = _workspace(setup.solver, b)
+ws = _workspace(setup.preconditioner, b)
 @test ws.solution !== ws.q
-ws = XCALibre.Solve.update!(ws, A, setup.solver, config)
+ws = XCALibre.Solve.update!(ws, A, setup.preconditioner, config)
 hierarchy_build = ws.hierarchy  # captured to verify later refreshes reuse (not rebuild) this object
 @test ws.hierarchy isa XCALibre.Solve.AMGHierarchy
 @test all(isconcretetype, fieldtypes(typeof(ws)))
@@ -168,7 +169,7 @@ hierarchy_build = ws.hierarchy  # captured to verify later refreshes reuse (not 
 
 # an Int32 equation matrix keeps every stored hierarchy index at Int32
 A32, _ = amg_test_matrix(Float64, Int32)
-ws32 = XCALibre.Solve.update!(_workspace(setup.solver, b, XCALibre.Solve._index_type(A32)), A32, setup.solver, config)
+ws32 = XCALibre.Solve.update!(_workspace(setup.preconditioner, b, XCALibre.Solve._index_type(A32)), A32, setup.preconditioner, config)
 lv32 = ws32.hierarchy.host_levels[1]
 @test XCALibre.Solve._index_type(A32) == Int32
 @test eltype(lv32.A.colval) == eltype(lv32.P.rowptr) == eltype(lv32.diagonal_index) == eltype(lv32.aggregate_ids) == Int32
@@ -202,7 +203,7 @@ end
 
 candidate = [1.0, 2.0, 3.0, 4.0, 5.0]
 solver_sa_candidate = AMG(
-    mode=AMGSolver(),
+    mode=Richardson(),
     coarsening=SmoothAggregation(near_nullspace=candidate),
     smoother=AMGJacobi()
 )
@@ -225,7 +226,7 @@ levels_before = length(ws.hierarchy.levels)
 finest_before = copy(XCALibre.Solve._nzval(ws.hierarchy.levels[1].A))
 coarse_before = length(ws.hierarchy.levels) > 1 ? copy(XCALibre.Solve._nzval(ws.hierarchy.levels[2].A)) : nothing
 coarse_object_before = length(ws.hierarchy.levels) > 1 ? ws.hierarchy.levels[2].A : nothing
-ws2 = XCALibre.Solve.update!(ws, A2, setup.solver, config)
+ws2 = XCALibre.Solve.update!(ws, A2, setup.preconditioner, config)
 @test length(ws2.hierarchy.levels) == levels_before
 @test XCALibre.Solve._nzval(ws2.hierarchy.levels[1].A) != finest_before
 @test ws2.refresh_count == 1  # same pattern, changed values: a refresh
@@ -236,7 +237,7 @@ if length(ws2.hierarchy.levels) > 1
     @test XCALibre.Solve._nzval(ws2.hierarchy.levels[2].A) != coarse_before
 end
 
-solver_refresh = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=1)
+solver_refresh = AMG(mode=Richardson(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=1)
 ws_refresh = _workspace(solver_refresh, b)
 ws_refresh = XCALibre.Solve.update!(ws_refresh, A, solver_refresh, config)
 coarse_refresh_before = length(ws_refresh.hierarchy.levels) > 1 ? copy(XCALibre.Solve._nzval(ws_refresh.hierarchy.levels[2].A)) : nothing
@@ -257,7 +258,7 @@ end
 
 # coarse_refresh_interval>1: refresh_count drives the finest-only vs full-coarse-refresh decision.
 # Counter increments every update!; coarse operators only refresh on the interval-th call.
-let solver_iv = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=2)
+let solver_iv = AMG(mode=Richardson(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=2)
     ws_iv = _workspace(solver_iv, b)
     ws_iv = XCALibre.Solve.update!(ws_iv, A, solver_iv, config)
     @test ws_iv.refresh_count == 0
@@ -289,7 +290,7 @@ A_pattern = SparseXCSR(sparsecsr(
     5
 ))
 hierarchy_before = ws2.hierarchy
-ws3 = XCALibre.Solve.update!(ws2, A_pattern, setup.solver, config)
+ws3 = XCALibre.Solve.update!(ws2, A_pattern, setup.preconditioner, config)
 @test ws3.hierarchy !== hierarchy_before
 @test ws3.hierarchy.rowptr_pattern == Int.(XCALibre.ModelFramework._rowptr(A_pattern))
 @test ws3.hierarchy.colval_pattern == Int.(XCALibre.ModelFramework._colval(A_pattern))
@@ -301,7 +302,7 @@ XCALibre.Solve._apply_level_smoother!(ws.hierarchy, AMGJacobi(), ws.hierarchy.le
 rj = norm(b - Array(parent(A)) * ws.hierarchy.levels[1].x)
 @test rj < r0
 
-solver_chebyshev_smooth = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGChebyshev(), max_coarse_rows=2)
+solver_chebyshev_smooth = AMG(mode=Richardson(), coarsening=SmoothAggregation(), smoother=AMGChebyshev(), max_coarse_rows=2)
 ws_chebyshev_smooth = _workspace(solver_chebyshev_smooth, b)
 ws_chebyshev_smooth = XCALibre.Solve.update!(ws_chebyshev_smooth, A, solver_chebyshev_smooth, config)
 fill!(ws_chebyshev_smooth.hierarchy.levels[1].x, 0)
@@ -316,7 +317,7 @@ rc = norm(b - Array(parent(A)) * ws_chebyshev_smooth.hierarchy.levels[1].x)
 @test rc < rj
 
 for smoother in (AMGGaussSeidel(), AMGSOR(1.1, AMGForwardSweep()), AMGSOR(1.1, AMGBackwardSweep()))
-    solver_sweep = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=smoother, max_coarse_rows=2)
+    solver_sweep = AMG(mode=Richardson(), coarsening=SmoothAggregation(), smoother=smoother, max_coarse_rows=2)
     ws_sweep = _workspace(solver_sweep, b)
     ws_sweep = XCALibre.Solve.update!(ws_sweep, A, solver_sweep, config)
     fill!(ws_sweep.hierarchy.levels[1].x, 0)
@@ -326,18 +327,18 @@ for smoother in (AMGGaussSeidel(), AMGSOR(1.1, AMGForwardSweep()), AMGSOR(1.1, A
 end
 
 x = zeros(eltype(b), length(b))
-ws_solve = _workspace(setup.solver, b)
-ws_solve = XCALibre.Solve.update!(ws_solve, A, setup.solver, config)
-XCALibre.Solve.amg_solve!(ws_solve, ws_solve.hierarchy, setup.solver, ws_solve.hierarchy.levels[1].A, b, x; itmax=100, atol=1e-8, rtol=1e-8)
+ws_solve = _workspace(setup.preconditioner, b)
+ws_solve = XCALibre.Solve.update!(ws_solve, A, setup.preconditioner, config)
+XCALibre.Solve.amg_solve!(ws_solve, ws_solve.hierarchy, setup.preconditioner, ws_solve.hierarchy.levels[1].A, b, x; itmax=100, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x) / norm(b) < 1e-8
 @test ws_solve.hierarchy.last_cycle_factor >= 0
 @test ws_solve.iterations > 0
 @test length(ws_solve.residual_history) == ws_solve.iterations + 1
 @test ws_solve.residual_history[end] <= ws_solve.residual_history[1]
 
-# scale_correction: AMGSolver converges to the same solution with sc on/off; Cg uses flexible PR+ β when sc is on
+# scale_correction: Richardson converges to the same solution with sc on/off; Cg uses flexible PR+ β when sc is on
 for sc in (false, true)
-    solver_sc = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), scale_correction=sc, max_coarse_rows=2)
+    solver_sc = AMG(mode=Richardson(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), scale_correction=sc, max_coarse_rows=2)
     ws_sc = _workspace(solver_sc, b)
     ws_sc = XCALibre.Solve.update!(ws_sc, A, solver_sc, config)
     x_sc = zeros(eltype(b), length(b))
@@ -399,7 +400,7 @@ ws_bad = XCALibre.Solve.update!(ws_bad, A_bad, solver_cg, config)
 @test !ws_bad.hierarchy.is_symmetric
 @test_throws ArgumentError XCALibre.Solve.amg_cg_solve!(ws_bad, ws_bad.hierarchy, solver_cg, ws_bad.hierarchy.levels[1].A, b_bad, zeros(2); itmax=10, atol=1e-8, rtol=1e-8)
 
-solver_nonsymmetric_solve = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), max_coarse_rows=2)
+solver_nonsymmetric_solve = AMG(mode=Richardson(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), max_coarse_rows=2)
 ws_nonsymmetric_solve = _workspace(solver_nonsymmetric_solve, b_bad)
 ws_nonsymmetric_solve = XCALibre.Solve.update!(ws_nonsymmetric_solve, A_bad, solver_nonsymmetric_solve, config)
 x_bad = zeros(eltype(b_bad), length(b_bad))
@@ -494,7 +495,7 @@ XCALibre.Solve.amg_bicgstab_solve!(
     ws_bicg_sym.hierarchy.levels[1].A, b, x_bicg_sym; itmax=100, atol=1e-10, rtol=1e-10)
 @test norm(b - Array(parent(A)) * x_bicg_sym) / norm(b) < 1e-8
 
-# ===== Gauss-Seidel smoother, reached through a mode (7-8 BiCGStab, 9 AMGSolver) =====
+# ===== Gauss-Seidel smoother, reached through a mode (7-8 BiCGStab, 9 Richardson) =====
 # --- 7. every sweep direction converges. Sweeps scan the row and skip `j == i`, so a
 # mishandled diagonal - which still converges, to the wrong answer - is caught here.
 for sweep in (AMGForwardSweep(), AMGBackwardSweep(), AMGSymmetricSweep())
@@ -543,7 +544,7 @@ for (sweep, orders) in ((AMGForwardSweep(),   (1:4,)),
                         (AMGBackwardSweep(),  (4:-1:1,)),
                         (AMGSymmetricSweep(), (1:4, 4:-1:1)))
     smoother_md = AMGGaussSeidel(sweep=sweep, iterations=1)
-    solver_md = AMG(mode=AMGSolver(), smoother=smoother_md, max_coarse_rows=10)
+    solver_md = AMG(mode=Richardson(), smoother=smoother_md, max_coarse_rows=10)
     ws_md = _workspace(solver_md, b_md)
     ws_md = XCALibre.Solve.update!(ws_md, A_md, solver_md, config)
     lvl_md = ws_md.hierarchy.levels[1]
@@ -615,7 +616,7 @@ XCALibre.Solve.amg_bicgstab_solve!(
 @test AMG(coarse_storage=Float32).coarse_storage === Float32
 @test AMG().coarse_storage === Float64
 @test_throws ArgumentError AMG(coarse_storage=Int)
-for mode in (Cg(), AMGSolver())
+for mode in (Cg(), Richardson())
     sref = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi())
     s32  = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=Float32)
     runamg(s) = begin
@@ -631,7 +632,7 @@ for mode in (Cg(), AMGSolver())
     @test rref.store === Float64 && !rref.mixed
     @test r32.store === Float32 && r32.mixed          # FP32 hierarchy actually built
     @test r32.res < 1e-8                              # FP64 outer correction reaches FP64 tol
-    # Cg = fixed SPD preconditioner → exact iteration parity. AMGSolver = FP64 IR around an FP32
+    # Cg = fixed SPD preconditioner → exact iteration parity. Richardson = FP64 IR around an FP32
     # cycle → may differ by a few at tight tol (both converge); allow a small band.
     if mode isa Cg
         @test r32.it == rref.it
@@ -665,8 +666,8 @@ function amg_test_matrix_i32(::Type{T}) where {T}
     return SparseXCSR(sparsecsr(i, j, v, 5, 5)), T[200 * 500, 0, 0, 0, 200 * 100]
 end
 # every index type, storage and mode appears twice; the full cross product only repeats these paths
-for (makeA, storage, mode) in ((amg_test_matrix, Float32, Cg()), (amg_test_matrix, Float64, AMGSolver()),
-                               (amg_test_matrix_i32, Float32, AMGSolver()), (amg_test_matrix_i32, Float64, Cg()))
+for (makeA, storage, mode) in ((amg_test_matrix, Float32, Cg()), (amg_test_matrix, Float64, Richardson()),
+                               (amg_test_matrix_i32, Float32, Richardson()), (amg_test_matrix_i32, Float64, Cg()))
     Af, bf = makeA(Float32)
     @test eltype(XCALibre.Solve._nzval(Af)) === Float32
     s = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=storage)
@@ -696,17 +697,17 @@ try
         A_gpu = XCALibre.ModelFramework._build_A(backend_gpu, ig, jg, vg, size(A, 1))
         b_gpu = adapt(backend_gpu, b)
         x_gpu = KernelAbstractions.zeros(backend_gpu, eltype(b), length(b))
-        ws_gpu = _workspace(setup.solver, b_gpu)
-        ws_gpu = XCALibre.Solve.update!(ws_gpu, A_gpu, setup.solver, config_gpu)
+        ws_gpu = _workspace(setup.preconditioner, b_gpu)
+        ws_gpu = XCALibre.Solve.update!(ws_gpu, A_gpu, setup.preconditioner, config_gpu)
         @test XCALibre.Solve._nzval(ws_gpu.hierarchy.levels[1].A) isa CuArray
         @test ws_gpu.hierarchy.coarse_cpu.rhs isa Vector
 
         i2, j2, v2 = findnz(parent(A2))
         A2_gpu = XCALibre.ModelFramework._build_A(backend_gpu, i2, j2, v2, size(A2, 1))
-        ws_gpu = XCALibre.Solve.update!(ws_gpu, A2_gpu, setup.solver, config_gpu)
+        ws_gpu = XCALibre.Solve.update!(ws_gpu, A2_gpu, setup.preconditioner, config_gpu)
         @test Array(XCALibre.Solve._nzval(ws_gpu.hierarchy.levels[1].A)) == Array(XCALibre.ModelFramework._nzval(A2))
 
-        XCALibre.Solve.amg_solve!(ws_gpu, ws_gpu.hierarchy, setup.solver, ws_gpu.hierarchy.levels[1].A, b_gpu, x_gpu; itmax=20, atol=1e-8, rtol=1e-8)
+        XCALibre.Solve.amg_solve!(ws_gpu, ws_gpu.hierarchy, setup.preconditioner, ws_gpu.hierarchy.levels[1].A, b_gpu, x_gpu; itmax=20, atol=1e-8, rtol=1e-8)
         @test norm(Array(b_gpu) - Array(parent(A2)) * Array(x_gpu)) / norm(Array(b_gpu)) < 1e-6
 
         solver_cg_gpu = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
@@ -717,7 +718,7 @@ try
         @test norm(Array(b_gpu) - Array(parent(A)) * Array(x_cg_gpu)) / norm(Array(b_gpu)) < 1e-6
 
         # mixed precision on device: FP32 cuSPARSE hierarchy + FP64 outer (raw A) reaches FP64 tol
-        for mode_gpu in (Cg(), AMGSolver())
+        for mode_gpu in (Cg(), Richardson())
             s32g = AMG(mode=mode_gpu, coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=Float32)
             w32g = _workspace(s32g, b_gpu)
             w32g = XCALibre.Solve.update!(w32g, A_gpu, s32g, config_gpu)

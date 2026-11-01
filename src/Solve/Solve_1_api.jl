@@ -45,8 +45,8 @@ end
             smoother=nothing,
             limit=nothing,
             itmax::Integer=1000, 
-            atol=(eps(_get_float(region)))^0.9,
-            rtol=_get_float(region)(1e-1),
+            atol=(eps(float_type))^0.9,
+            rtol=float_type(1e-1),
             precision=FullPrecision()
 
         ) where {S,PT<:PreconditionerType} = begin
@@ -58,15 +58,15 @@ This function is used to provide solver settings that will be used internally in
 
 # Input arguments
 
-- `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Gmres()` which are re-exported in XCALibre.jl
+- `solver`: solver object from Krylov.jl and it could be one of `Bicgstab()`, `Cg()`, `Cgs()`, `Gmres()` which are re-exported in XCALibre.jl. `Gmres()` restarts every 30 iterations.
 - `preconditioner`: instance of preconditioner to be used e.g. Jacobi()
-- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`.
+- `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`. The residual, `Σ|b - Ax| / Σ|Aᵢᵢxᵢ|`, is taken on the field before the linear solve, so it does not depend on the solver settings.
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
 - `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 for `AMG`). Also applies to PETSc solves.
-- `atol`: absolute tolerance for the solver (default to eps(FloatType)^0.9). Also applies to PETSc solves.
-- `rtol`: set relative tolerance for the solver (defaults to 1e-1). Also applies to PETSc solves.
+- `atol`: absolute tolerance of the linear solve, in the field's units (defaults to eps(float_type)^0.9).
+- `rtol`: relative tolerance of the linear solve (defaults to 1e-1). Every solver, preconditioner, precision and backend (including AMG and PETSc) stops when ‖D⁻¹(b - Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b - Ax₀)‖₂, D = |diag(A)|: the size of a Jacobi correction, with `rtol` relative to that of the initial guess x₀ (the current field values), not to ‖b‖.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
 - `precision`: precision of the linear solve, `FullPrecision()` (default), [`MixedF32`](@ref)`()` or [`MixedF16`](@ref)`()`.
 """
@@ -107,7 +107,7 @@ _workspace(::FullPrecision, setup, eqn, b) = _workspace(setup.solver, b, _index_
 function _workspace(precision::AbstractMixedPrecision, setup, eqn, b)
     precision isa MixedF16 && !(setup.preconditioner isa Jacobi) && throw(ArgumentError(
         "MixedF16 supports the Jacobi preconditioner only; use MixedF32 for $(nameof(typeof(setup.preconditioner)))"))
-    MixedWorkspace(precision, setup.solver, setup.preconditioner, _A(eqn), b)
+    MixedWorkspace(precision, setup.solver, setup.preconditioner, _A(eqn), b, eqn.equation.diag_nz)
 end
 
 # the preconditioner of a SolverSetup: built on the equation's matrix in full precision, inert
@@ -356,7 +356,6 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
 
     (; itmax, atol, rtol) = setup
     precon = phiEqn.preconditioner
-    (; P) = precon 
     solver = phiEqn.solver
     (; x) = solver
     
@@ -368,21 +367,21 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
     opA = A
     b = _b(phiEqn, component)
 
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     apply_smoother!(setup.smoother, values, A, b, hardware)
 
-    ldiv = is_ldiv(precon)
+    (; R, Fx, diag_nz) = phiEqn.equation
     bw, x0 = _like_workspace(x, b), _like_workspace(x, values)
-    krylov_solve!(
-        solver, opA, bw, x0;
-        _shadow(solver, P, ldiv, phiEqn, values, b, config)...,
-        M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
-        )
-    # values still hold x₀: re-solve from there with a dense shadow (Fx is scratch until `residual`)
+    r0 = _initial_residual_norm!(solver, phiEqn, values, b, x, config)
+    # x₀ already meets the target: Krylov.jl's iterate would be stale
+    !isnothing(r0) && r0 ≤ _stop_target(atol, rtol, r0) && return res
+    # R and Fx are scratch once `residual` has summed them
+    scale = (; nzval=_nzval(A), dptr=diag_nz, tmp=_like_workspace(x, Fx))
+    kw = (; _stop_kwargs(solver, precon, scale, atol, rtol, r0)..., itmax=itmax, history=false)
+    krylov_solve!(solver, opA, bw, x0; _shadow(solver, phiEqn, x)..., kw...)
+    # values still hold x₀: re-solve from there with a dense shadow in R, whose shadow role is over
     if _broke_down(solver, itmax)
-        krylov_solve!(
-            solver, opA, bw, x0; c=_fallback_shadow!(_like_workspace(x, phiEqn.equation.Fx)),
-            M=P, itmax=itmax, atol=atol, rtol=rtol, ldiv=ldiv, history=false
-            )
+        krylov_solve!(solver, opA, bw, x0; c=_fallback_shadow!(_like_workspace(x, R)), kw...)
     end
 
     if _broke_down(solver, itmax)
@@ -393,9 +392,8 @@ function _solve_system!(::FullPrecision, phiEqn, setup, result, component, confi
         kernel!(values, x)
     end
 
-    res = residual(phiEqn, component, config)
-    Krylov.issolved(solver) || _warn_unconverged(phiEqn, setup, component,
-        solver.stats.status, Krylov.iteration_count(solver))
+    _krylov_converged(solver) || _warn_unconverged(phiEqn, setup, component,
+        solver.stats.status, Krylov.iteration_count(solver), config)
     return res
 end
 
@@ -403,10 +401,10 @@ function _solve_system!(::AbstractMixedPrecision, phiEqn, setup, result, compone
     (; values) = result
     A = _A(phiEqn)
     b = _b(phiEqn, component)
+    res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     iterations, converged, reason = mixed_solve!(phiEqn.solver, A, b, values, setup, config, result.mesh)
-    res = residual(phiEqn, component, config)
-    converged || _warn_unconverged(phiEqn, setup, component, reason, iterations)
+    converged || _warn_unconverged(phiEqn, setup, component, reason, iterations, config)
     return res
 end
 
@@ -425,11 +423,16 @@ function _warn_unconverged(name, reason, iterations, rnorm, norm_name, setup, id
         "$UNCONVERGED_MAXLOG times per equation)" maxlog=UNCONVERGED_MAXLOG _id=id
 end
 
-# serial solves report ‖b - Ax‖₂ of the returned iterate, read from `residual`'s |b - Ax| in R
-function _warn_unconverged(eqn::ModelEquation, setup, component, reason, iterations)
+# serial solves report ‖D⁻¹(b - Ax)‖₂ of the returned iterate, formed in the scratch array R
+function _warn_unconverged(eqn::ModelEquation, setup, component, reason, iterations, config)
+    (; A, R, diag_nz) = eqn.equation
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_initial_residual!, backend, workgroup, length(R))
+    kernel!(R, _rowptr(A), _colval(A), _nzval(A), diag_nz, get_values(get_phi(eqn), component),
+        _b(eqn, component))
     tag = _component_tag(component)
-    _warn_unconverged(_solve_name(setup, tag), reason, iterations, norm(eqn.equation.R),
-        "‖b - Ax‖₂", setup, (:unconverged_solve, objectid(eqn.solver), tag))
+    _warn_unconverged(_solve_name(setup, tag), reason, iterations, norm(R),
+        "‖D⁻¹(b - Ax)‖₂", setup, (:unconverged_solve, objectid(eqn.solver), tag))
 end
 
 _component_tag(::Nothing) = ""
@@ -437,27 +440,32 @@ _component_tag(::XDir) = "x component"
 _component_tag(::YDir) = "y component"
 _component_tag(::ZDir) = "z component"
 
-# BiCGStab shadow vector M⁻¹(b - Ax0), as PETSc bcgs: Krylov.jl's default c = b suits only a zero
-# initial guess, and warm-started iterates degraded as steady runs converged (10M motorBike diverged).
-# Built in the scratch arrays R and Fx, which nothing touches until `residual`.
-_shadow(solver, P, ldiv, eqn, x0, b, config) = (;)
-function _shadow(solver::BicgstabWorkspace, P, ldiv, eqn, x0, b, config)
-    (; A, R, Fx) = eqn.equation
+# ‖D⁻¹(b - Ax₀)‖₂, leaving D⁻¹(b - Ax₀) in the scratch array R (scratch once `residual` has run), for
+# CG's target and BiCGStab's shadow. GMRES and CGS take it from their own first residual
+_initial_residual_norm!(solver, eqn, x0, b, x, config) = nothing
+function _initial_residual_norm!(::Union{CgWorkspace,BicgstabWorkspace}, eqn, x0, b, x, config)
+    (; A, R, diag_nz) = eqn.equation
     (; backend, workgroup) = config.hardware
     kernel! = _sized(_initial_residual!, backend, workgroup, length(R))
-    kernel!(R, _rowptr(A), _colval(A), _nzval(A), x0, b)
-    r0, c = _like_workspace(solver.x, R), _like_workspace(solver.x, Fx)
-    ldiv ? ldiv!(c, P, r0) : mul!(c, P, r0)
-    return (; c)
+    kernel!(R, _rowptr(A), _colval(A), _nzval(A), diag_nz, x0, b)
+    r0 = _like_workspace(x, R)
+    sqrt(Krylov.kdotr(length(R), r0, r0))
 end
 
-@kernel function _initial_residual!(R, @Const(rowptr), @Const(colval), @Const(nzval), @Const(x), @Const(b))
+# BiCGStab shadow vector D⁻¹(b - Ax₀), Krylov.jl's initial residual under M = D⁻¹ (as PETSc bcgs with
+# Jacobi): its default c = b suits only a zero initial guess, and warm-started iterates degraded as
+# steady runs converged
+_shadow(solver, eqn, x) = (;)
+_shadow(::BicgstabWorkspace, eqn, x) = (; c=_like_workspace(x, eqn.equation.R))
+
+@kernel function _initial_residual!(
+        R, @Const(rowptr), @Const(colval), @Const(nzval), @Const(dptr), @Const(x), @Const(b))
     i = @index(Global)
     Ax = zero(eltype(R))
     @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
         Ax += nzval[nzi]*x[colval[nzi]]
     end
-    @inbounds R[i] = b[i] - Ax
+    @inbounds R[i] = (b[i] - Ax)/abs(nzval[dptr[i]])
 end
 
 @kernel function _copy!(a, b)

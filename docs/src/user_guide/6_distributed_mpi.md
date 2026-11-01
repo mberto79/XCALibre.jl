@@ -458,7 +458,7 @@ meaning:
   the `KSPConvergedReason`, the iteration count and PETSc's residual norm (see the linear solvers
   section of the numerical setup page).
 - `convergence`: the residual target that stops the outer iteration, as in serial. It does not
-  affect the linear solver.
+  affect the linear solver, and the residual, taken before each linear solve, matches serial.
 
 When each solver is built, rank 0 prints the configuration PETSc received:
 

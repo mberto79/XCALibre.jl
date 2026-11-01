@@ -48,6 +48,8 @@ const TIERS = [
         "unit/Solve/test_krylov_breakdown.jl",
         "unit/Solve/test_solve_warning.jl",
         "unit/Solve/test_mixed_precision.jl",
+        "unit/Solve/test_stop_criterion.jl",
+        "unit/Solve/test_residual_parity.jl",
         "unit/Solvers/test_reconstruct.jl",
         "unit/Solvers/test_potential_flow.jl",
         "unit/Solvers/test_run_continuation.jl",

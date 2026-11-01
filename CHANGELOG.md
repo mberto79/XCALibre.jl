@@ -27,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `godunov!` with `LocalTimeStepping` compiles on GPUs, as `turbulence_dt` is now a singleton type; the `:min`, `:mean` and `:max` inputs are unchanged. [#218](@ref)
 
 ### Added
-* `AMG()` is a preconditioner, `SolverSetup(solver=Cg(), preconditioner=AMG())`, run with `Cg()`, `Bicgstab()` or the new `Richardson()` (repeated V-cycles). The same settings run on every path: `AMG()` maps to PETSc `GAMG()` on distributed meshes and `GAMG()` or `BoomerAMG()` to the native AMG on serial meshes, each with a one-time warning. [#244](@ref)
 * Added `examples/transient_verification/`, six small cases comparing `Euler` with `CrankNicolson` against exact or reference solutions and printing the observed temporal order. [#228](@ref)
 * Runtime post-processing (`postprocess`) runs on distributed meshes in `piso!`, `simple!` and `laplace!`, and `laplace!` post-processed scalars are written to OpenFOAM output with zero-gradient patches. [#234](@ref)
 * Distributed gate tests share one `mpiexec` session, and rank counts above `XCALIBRE_TEST_MAX_RANKS` (default 2) are skipped. [#225](@ref)
@@ -98,7 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed the AMG zero-allocation coarse-solve test failing intermittently. [#185](@ref)
 
 ### Changed
-* With an AMG preconditioner, equations no longer build and refresh an unused second preconditioner. Which preconditioner runs on which solve path is defined in one table, and `NormDiagonal()` maps to PETSc `jacobi` on distributed meshes. [#244](@ref)
 * The CI and documentation workflows cancel superseded pull request runs and queue runs for `main` and tags. [#202](@ref)
 * The explicit viscous stress and `div!` of cell tensors run faster on GPUs, with unchanged results. [#187](@ref)
 * `xcal_foreach` on `CPU(static=true)` uses fixed chunks matching the threaded SpMV and vector operations. [#167](@ref)
@@ -134,7 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Mesh readers default to `integer_type=Int32`; meshes exceeding 2^31 need `integer_type=Int64`. [#162](@ref)
 
 ### Deprecated
-* `SolverSetup(solver=AMG(mode=...))` warns and runs as `solver=<mode>, preconditioner=AMG(...)`. `AMG(mode=...)` is ignored in favour of `solver`, and `AMGSolver()` is now `Richardson()`. [#244](@ref)
+* No functions deprecated
 
 ### Removed
 * Removed the unused `xmul` and `xmul!` methods. [#162](@ref)

@@ -263,11 +263,14 @@ function compare_amg_paths(A, b, backend; mode=Cg(), merge_levels=1, fuse_levels
                                 coarse_storage=Float64, itmax=200, rtol=1e-8, atol=1e-8,
                                 workgroup=64, scale_correction=true, n_update=1)
     config = (hardware=(backend=backend, workgroup=workgroup),)
+    # the stopping norm of production solves, ‖D⁻¹r‖
+    dinv = _inv_abs_diagonal!(similar(b), _nzval(A), _diagonal_positions(A))
     run_one = (solver) -> begin
         ws = _workspace(solver, b)
         for _ in 1:n_update; update!(ws, A, solver, config); end
         x = similar(b); fill!(x, 0)
-        _amg_solve_mode!(ws, ws.hierarchy, solver, solver.mode, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
+        _amg_solve_mode!(ws, ws.hierarchy, solver, solver.mode, A, b, x; itmax=itmax, atol=atol, rtol=rtol,
+            dscale=dinv)
         (iters=ws.iterations, converged=ws.converged, relres=ws.last_relative_residual,
          factor=ws.hierarchy.last_cycle_factor, matrix_free=(ws.hierarchy isa MatrixFreeHierarchy))
     end

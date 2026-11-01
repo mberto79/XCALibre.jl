@@ -54,7 +54,7 @@ end
     @test norm(x - mp_reference)/norm(mp_reference) < 1e-10
 end
 
-# BiCGStab takes the shadow vector M⁻¹r as in full-precision solves
+# BiCGStab takes the shadow vector b - Ax₀ (the correction's right-hand side) as in full-precision solves
 @testset "$p with Bicgstab refines to the Float64 solution" for p ∈ (MixedF32(), MixedF16())
     x = mp_solve_T(p, 20; solver=Bicgstab())
     @test norm(x - mp_reference)/norm(mp_reference) < 1e-10

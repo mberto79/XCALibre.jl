@@ -21,7 +21,7 @@ struct Richardson <: AbstractLinearSolver end
 _workspace(::Cg, b) = CgWorkspace(KrylovConstructor(b))
 _workspace(::Cgs, b) = CgsWorkspace(KrylovConstructor(b))
 _workspace(::Bicgstab, b) = BicgstabWorkspace(KrylovConstructor(b))
-_workspace(::Gmres, b) = GmresWorkspace(KrylovConstructor(b))
+_workspace(::Gmres, b) = GmresWorkspace(KrylovConstructor(b); memory=GMRES_RESTART)
 _workspace(::Richardson, b) = throw(ArgumentError(
     "Richardson() runs only with preconditioner=AMG(...) on a serial mesh"))
 # equation workspaces hold XVector storage on the CPU so Krylov's vector work runs on Julia's threads
@@ -32,6 +32,132 @@ _krylov_vector(v) = v
 _like_workspace(::XVector, v::Vector) = XVector(v)
 _like_workspace(_, v) = v
 _index_type(A) = eltype(_rowptr(A))
+
+# NEW SECTION: stopping rule
+
+# Krylov.jl and PETSc both restart GMRES after this many iterations
+const GMRES_RESTART = 30
+
+# every solve path stops when ‖D⁻¹(b - Ax)‖₂ ≤ atol + rtol·‖D⁻¹(b - Ax₀)‖₂, D = |diag(A)|: the size of a
+# Jacobi correction, in the field's units, whatever the preconditioner
+_stop_target(atol, rtol, r0) = atol + rtol*r0
+
+# Jacobi-like preconditioners apply D⁻¹ themselves (a Preconditioner{Jacobi}, or MixedF16's diagonal)
+const _JacobiLike = Union{Preconditioner{Jacobi}, LinearOperator}
+_prec_op(P::Preconditioner) = P.P
+_prec_op(P) = P
+_prec_ldiv(P::Preconditioner) = is_ldiv(P)
+_prec_ldiv(P) = false
+
+# Krylov.jl monitors M·(b - Ax), so M = D⁻¹ (left) gives the stopping norm; the right preconditioner then
+# approximates (D⁻¹A)⁻¹ = P∘D, the identity for Jacobi. CG must keep P on the left for symmetry: its own
+# test is disabled and a callback checks ‖D⁻¹r‖. scale = (; nzval, dptr, tmp) reads D from A
+_stop_kwargs(::CgWorkspace, P, scale, atol, rtol, r0) = (; M=_prec_op(P), ldiv=_prec_ldiv(P),
+    atol=zero(atol), rtol=zero(rtol), callback=_ScaledNormStop(_stop_target(atol, rtol, r0)^2, _cg_scale(P, scale)))
+_stop_kwargs(ws::GmresWorkspace, P, scale, atol, rtol, r0) = (; _sides(P, scale)..., atol, rtol, restart=true)
+_stop_kwargs(ws, P, scale, atol, rtol, r0) = (; _sides(P, scale)..., atol, rtol)
+
+_sides(P::_JacobiLike, scale) = (; M=_prec_op(P), ldiv=false)
+_sides(P, scale) = (; M=_DiagScale(scale.nzval, scale.dptr),
+    N=_RightPrec(_prec_op(P), _prec_ldiv(P), scale.nzval, scale.dptr, scale.tmp), ldiv=false)
+
+# Jacobi CG already holds z = D⁻¹r; otherwise 1/|a_ii| is formed once per solve in tmp
+_cg_scale(P::_JacobiLike, scale) = nothing
+_cg_scale(P, scale) = _inv_abs_diagonal!(scale.tmp, scale.nzval, scale.dptr)
+
+# ‖D⁻¹r‖² by a dot product: GPU BLAS nrm2 is several times slower than dot
+struct _ScaledNormStop{T,S}
+    target²::T
+    dinv::S
+end
+(s::_ScaledNormStop{T,Nothing})(ws) where T = Krylov.kdotr(length(ws.z), ws.z, ws.z) ≤ s.target²
+(s::_ScaledNormStop)(ws) = _scaled_dot(ws.r, s.dinv) ≤ s.target²
+
+# y = D⁻¹x; the ldiv flag of a Krylov call is shared by M and N, so both apply the same way
+struct _DiagScale{V,I}
+    nzval::V
+    dptr::I
+end
+LinearAlgebra.mul!(y, S::_DiagScale, x) = _scale_rows!(y, x, S.nzval, S.dptr, Val(true))
+LinearAlgebra.ldiv!(y, S::_DiagScale, x) = mul!(y, S, x)
+
+# y = P(Dx)
+struct _RightPrec{P,V,I,T}
+    P::P
+    ldiv::Bool
+    nzval::V
+    dptr::I
+    tmp::T
+end
+function LinearAlgebra.mul!(y, N::_RightPrec, x)
+    _scale_rows!(N.tmp, x, N.nzval, N.dptr, Val(false))
+    N.ldiv ? ldiv!(y, N.P, N.tmp) : mul!(y, N.P, N.tmp)
+end
+LinearAlgebra.ldiv!(y, N::_RightPrec, x) = mul!(y, N, x)
+
+_data(v::XVector) = parent(v)
+_data(v) = v
+
+# ‖D⁻¹r‖₂ for dinv = 1/|diag(A)| (`nothing`: ‖r‖₂)
+_scaled_norm(r, ::Nothing) = norm(r)
+_scaled_norm(r, dinv) = convert(eltype(r), sqrt(_scaled_dot(r, dinv)))
+
+# Σ(rᵢ·dinvᵢ)² in one pass, writing nothing: GPUArrays' multi-array mapreduce is lazy, Base's is not
+_scaled_dot(r, dinv) = _scaled_dot_data(_data(r), _data(dinv))
+_scaled_dot_data(r, dinv) = mapreduce((ri, di) -> abs2(ri*di), +, r, dinv)
+function _scaled_dot_data(r::Vector{T}, dinv::Vector) where T
+    _reduce_chunks(length(r), _acc_type(T)) do rng
+        # derived from r, not captured: a captured type is a DataType field on Julia 1.10
+        TA = _acc_type(eltype(r))
+        s = zero(TA)
+        @inbounds @simd for i ∈ rng
+            s += abs2(TA(r[i])*TA(dinv[i]))
+        end
+        s
+    end
+end
+
+# dinv = 1/|a_ii|
+_inv_abs_diagonal!(dinv, nzval, dptr) = (_inv_abs_diagonal_data!(_data(dinv), nzval, dptr); dinv)
+function _inv_abs_diagonal_data!(dinv::Vector, nzval, dptr)
+    _foreach_chunk(length(dinv)) do r
+        @inbounds for i ∈ r
+            dinv[i] = convert(eltype(dinv), inv(abs(nzval[dptr[i]])))
+        end
+    end
+end
+function _inv_abs_diagonal_data!(dinv, nzval, dptr)
+    kernel! = _inv_abs_diagonal_kernel!(_setup(get_backend(dinv), 256, length(dinv))...)
+    kernel!(dinv, nzval, dptr)
+end
+@kernel function _inv_abs_diagonal_kernel!(dinv, @Const(nzval), @Const(dptr))
+    i = @index(Global)
+    @inbounds dinv[i] = convert(eltype(dinv), inv(abs(nzval[dptr[i]])))
+end
+
+# y = x./|a_ii| (Val(true)) or x.*|a_ii|; CPU rows in the Krylov vectors' static chunks
+_scale_rows!(y, x, nzval, dptr, inv) = (_scale_rows_data!(_data(y), _data(x), nzval, dptr, inv); y)
+function _scale_rows_data!(y::Vector, x, nzval, dptr, inv)
+    _foreach_chunk(length(y)) do r
+        @inbounds for i ∈ r
+            y[i] = _scale_row(x[i], nzval[dptr[i]], inv)
+        end
+    end
+end
+function _scale_rows_data!(y, x, nzval, dptr, inv)
+    kernel! = _scale_rows_kernel!(_setup(get_backend(y), 256, length(y))...)
+    kernel!(y, x, nzval, dptr, inv)
+end
+@kernel function _scale_rows_kernel!(y, @Const(x), @Const(nzval), @Const(dptr), inv)
+    i = @index(Global)
+    @inbounds y[i] = _scale_row(x[i], nzval[dptr[i]], inv)
+end
+@inline _scale_row(x, a, ::Val{true}) = convert(typeof(x), x/abs(a))
+@inline _scale_row(x, a, ::Val{false}) = convert(typeof(x), x*abs(a))
+
+# a callback exit is CG meeting the target
+_krylov_converged(ws) = Krylov.issolved(ws)
+_krylov_converged(ws::CgWorkspace) = Krylov.issolved(ws) || ws.stats.status == "user-requested exit"
 
 # NEW SECTION: shadow-vector breakdown
 

@@ -5,7 +5,7 @@ using Test
 
 # A linear solve that stops without meeting atol/rtol warns on every serial path (Krylov, mixed
 # precision with one correction or with iterative refinement, AMG), with the reason, iteration
-# count and ‖b - Ax‖₂; a solve that converges does not warn.
+# count and ‖D⁻¹(b - Ax)‖₂; a solve that converges does not warn.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh = UNV2D_mesh(joinpath(grids_dir, "finer_mesh_laplace.unv"))
@@ -43,7 +43,7 @@ laplace_solve(solver, precision; kwargs...) = solve_from_zero!(laplace_system(so
 const AMG_PC = AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi())
 
 @testset "unconverged $(nameof(typeof(s))) $(nameof(typeof(p))) solve warns" for (s, p, rtol, msg, pc) ∈ (
-        (Cg(), FullPrecision(), 0.0, r"Cg solve did not converge in 2 iterations \(maximum number of iterations exceeded\): ‖b - Ax‖₂ = ", Jacobi()),
+        (Cg(), FullPrecision(), 0.0, r"Cg solve did not converge in 2 iterations \(maximum number of iterations exceeded\): ‖D⁻¹\(b - Ax\)‖₂ = ", Jacobi()),
         (Bicgstab(), FullPrecision(), 0.0, r"Bicgstab solve did not converge in 2 iterations \(maximum number of iterations exceeded\)", Jacobi()),
         (Cg(), MixedF32(), 1e-3, r"Cg \(MixedF32\) solve did not converge in 2 iterations \(maximum number of iterations exceeded\)", Jacobi()),
         (Cg(), MixedF32(), 1e-12, r"Cg \(MixedF32\) solve did not converge in \d+ iterations \(iterative refinement stopped after 20 corrections\)", Jacobi()),

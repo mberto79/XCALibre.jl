@@ -84,8 +84,8 @@ function symmetry_report(A)
             structurally_missing = missing_pairs)
 end
 
-# Matches Krylov.jl stopping threshold so swapping Cg()<->AMG keeps tuned tolerances valid
-_amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
+# the stopping rule of every solve path, so swapping Cg()<->AMG keeps tuned tolerances valid
+_amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = _stop_target(T(atol), T(rtol), r0norm)
 
 # scale_correction makes M nonlinear; flexible PR+ beta avoids the FR beta assumption
 _amg_cg_flexible(solver::AMG) = solver.scale_correction
@@ -114,7 +114,7 @@ function _cg_symmetry_error(A)
         "non-symmetric - use solver=Bicgstab() or Richardson() instead."))
 end
 
-function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
+function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol, dscale=nothing)
     if !hierarchy.is_symmetric
         throw(_cg_symmetry_error(_host_operator(hierarchy)))
     end
@@ -126,14 +126,14 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
     flex = _amg_cg_flexible(solver)
     r_prev = workspace.correction
 
-    bnorm = max(norm(b), eps(T))
 
     _residual!(hierarchy, r, A, x, b)
     _reset_residual_history!(workspace)
-    rnorm = norm(r)
+    rnorm = _scaled_norm(r, dscale)
+    r0 = max(rnorm, floatmin(T)) # rel is relative to ‖D⁻¹r₀‖, in the stopping norm
     _push_residual_norm_history!(workspace, rnorm)
     ε = _amg_eps(T, atol, rtol, rnorm)
-    rel = rnorm / bnorm
+    rel = rnorm / r0
     initial_rel = rel
     if rnorm <= ε
         workspace.iterations = 0
@@ -174,9 +174,9 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
         end
         flex && _copy_amg!(hierarchy, r_prev, r)
         _cg_step_amg!(hierarchy, x, r, p, q, α)
-        rnorm = norm(r)
+        rnorm = _scaled_norm(r, dscale)
         _push_residual_norm_history!(workspace, rnorm)
-        rel = rnorm / bnorm
+        rel = rnorm / r0
         if !isfinite(rnorm) || !isfinite(rel)
             break
         end

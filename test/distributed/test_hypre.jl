@@ -50,11 +50,11 @@ else
     iterations = 300
     ref = rank == 0 ? begin
         model, config = incompressible_case(gmesh, cavity_bcs; iterations)
-        simple!(model, config; pref=0.0)
+        res = simple!(model, config; pref=0.0)
         (collect(model.momentum.U.x.values), collect(model.momentum.U.y.values),
-         collect(model.momentum.p.values))
+         collect(model.momentum.p.values), res.p[1:6])
     end : nothing
-    Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
+    Us_x, Us_y, ps, hist_p = MPI.bcast(ref, comm; root=0)
 
     dm = distribute(gmesh; comm=comm)
     # tuned form exercises the curated kwarg -> -pc_hypre_boomeramg_strong_threshold expansion
@@ -67,7 +67,8 @@ else
         @test dux < 1e-6
         @test duy < 1e-6
         @test dp < 1e-6
-        @test maximum(residuals.p[iterations÷2:end]) < 1e-6
+        # early residual history retraces the serial run whatever the preconditioner
+        @test residuals.p[1:6] ≈ hist_p rtol = 1e-5
     end
     rank == 0 && println("HYPRE cavity n=$(MPI.Comm_size(comm)) dux=$dux duy=$duy dp=$dp")
 end

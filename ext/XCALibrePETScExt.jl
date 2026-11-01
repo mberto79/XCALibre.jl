@@ -83,6 +83,29 @@ end
 
 # NEW SECTION: solver type
 
+# the KSP's context for _ksp_converged; vectors are raw handles (C_NULL until needed)
+mutable struct _StopTest
+    atol::Float64
+    rtol::Float64
+    target::Float64
+    preset::Bool       # target set by the caller (MixedF32 corrections), not from r₀
+    keep::Bool         # the target survives it = 0 (a BiCGStab retry continues the same solve)
+    explicit::Bool     # ‖D⁻¹r‖ is formed by KSPBuildResidual
+    rowscale::Bool     # the KSP solves D⁻¹A·x = D⁻¹b
+    gate::Float64
+    ratio::Float64     # ‖D⁻¹r‖ over the KSP's norm at the last explicit check
+    dinv::LibPETSc.CVec  # 1/|diag(A)| of the unscaled matrix
+    bs::LibPETSc.CVec    # D⁻¹b (:rowscale, :shell)
+    w::LibPETSc.CVec
+    t::LibPETSc.CVec
+    p::LibPETSc.CVec     # D·x in the shell PC
+    As::Ptr{Cvoid}       # D⁻¹A, the KSP's operator (:shell); A stays the PC's
+    inner::Ptr{Cvoid}    # the configured PC, applied by the shell after D
+    build::Ptr{Cvoid}    # KSPBuildResidual
+    pmult::Ptr{Cvoid}    # VecPointwiseMult
+    norm::Ptr{Cvoid}     # VecNorm
+end
+
 struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     petsclib::PL
     A::TM
@@ -101,6 +124,9 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     tol::NamedTuple{(:atol,:rtol),Tuple{Float64,Float64}}
     report::Bool       # warn on an unconverged solve; false when an outer loop reports instead
     root::Bool         # the reason is global, so one rank reports it
+    rnorm::Base.RefValue{Float64} # ‖D⁻¹(b - Ax)‖₂ of the last unconverged solve
+    nwarn::Base.RefValue{Int}     # unconverged solves measured; none after the warning's maxlog
+    stop::_StopTest
 end
 
 # one PetscInt width is loaded per process, fixed by PETSc's "PetscInt" preference at precompile
@@ -189,6 +215,10 @@ _release!(::Nothing) = nothing
 function _release!(s)
     isnothing(s.ksp.opts) || _destroy!(s.ksp.opts)
     foreach(_destroy!, (s.ksp, s.A, s.x, s.b))
+    c = s.stop
+    foreach(v -> _vec_destroy(s.petsclib, getfield(c, v)), (:dinv, :bs, :w, :t, :p))
+    c.inner == C_NULL || _petsc_ok(s, :PCDestroy, Ref(c.inner))
+    c.As == C_NULL || _petsc_ok(s, :MatDestroy, Ref(c.As))
 end
 
 # float_type/nzval: a MixedF32 solve selects the Float32 PETSc library and assembles
@@ -236,10 +266,8 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(pc)), _pc_options(pc))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
-    # Krylov.jl's CG stops on sqrt(r'Mr), PETSc's natural norm; keyed on the resolved type so a
-    # passthrough -ksp_type never inherits it
-    opts.ksp_type == "cg" && !haskey(opts, :ksp_norm_type) &&
-        (opts = merge(opts, (ksp_norm_type="natural",)))
+    stop_opts, mode = _stop_options(opts)
+    opts = merge(stop_opts, opts)
     isnothing(opts.ksp_type) && error("no PETSc mapping for solver $(typeof(setup.solver)); " *
         "name one with petsc_options=\"-ksp_type ...\"")
     isnothing(opts.pc_type) && error("no PETSc mapping for preconditioner " *
@@ -265,13 +293,17 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
             "the documentation.")
     end
     ksp = PETSc.KSP(Amat; opts...)
-    # tolerances mean what they mean to Krylov.jl: rtol is relative to the warm-started initial
-    # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only
+    # tolerances mean what they mean on serial paths: rtol is relative to the warm-started initial
+    # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only. No dtol stop,
+    # which serial solves lack. _StopTest replaces PETSc's test; the tolerances set here are for -ksp_view
     (; atol, rtol) = setup
-    LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol),
-        TF(-2), PI(setup.itmax)) # -2 = PETSC_DEFAULT (dtol)
+    LibPETSc.KSPSetTolerances(petsclib, ksp, TF(rtol), TF(atol), floatmax(TF), PI(setup.itmax))
     LibPETSc.KSPSetInitialGuessNonzero(petsclib, ksp, LibPETSc.PETSC_TRUE)
-    LibPETSc.KSPConvergedDefaultSetUIRNorm(petsclib, ksp)
+    stop = _StopTest(petsclib, b, mode, atol, rtol)
+    mode === :none || ccall(_petsc_sym(petsclib, :KSPSetConvergenceTest), Cint,
+        (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), ksp.ptr, _converged_ptr(PI, real(petsclib.PetscScalar)),
+        pointer_from_objref(stop), C_NULL) == 0 || error("PETSc: KSPSetConvergenceTest failed")
+    mode === :shell && _shell_pc!(petsclib, ksp, Amat, stop)
     extra = Base.structdiff(opts, (ksp_type=nothing, pc_type=nothing))
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
@@ -280,8 +312,196 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
         _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0),
         XCALibre.Solve._solve_name(setup, label), (atol=Float64(atol), rtol=Float64(rtol)), report,
-        MPI.Comm_rank(comm) == 0)
+        MPI.Comm_rank(comm) == 0, Ref(0.0), Ref(0), stop)
 end
+
+# NEW SECTION: stopping rule
+
+# every path stops when ‖D⁻¹(b - Ax)‖₂ ≤ atol + rtol·‖D⁻¹(b - Ax₀)‖₂ (PETSc's own test takes the max of the
+# two), with the serial GMRES restart. How the KSP meets ‖D⁻¹r‖:
+# :monitored  Jacobi, left-preconditioned: the KSP's norm is ‖D⁻¹r‖ (pc_jacobi_abs)
+# :rowscale   PCs that commute with row scaling (block ILU, SOR): D⁻¹A·x = D⁻¹b, right-preconditioned
+# :shell      bcgs/gmres with AMG or ICC PCs, which need A itself: the KSP's operator is a scaled copy D⁻¹A
+#             and a shell PC applies P(A)·D, the serial right preconditioner
+# :explicit   CG and CGS with another PC and passthrough types: the KSP's cheap norm predicts when
+#             ‖D⁻¹r‖ from KSPBuildResidual (one MatMult, left-preconditioned) is worth computing
+# :none       preonly or no norm: PETSc decides
+# keyed on the resolved types; user side or norm options keep the KSP's norm and go :explicit
+function _stop_options(opts)
+    (; ksp_type, pc_type) = opts
+    restart = ksp_type == "gmres" ? (; ksp_gmres_restart=XCALibre.Solve.GMRES_RESTART) : (;)
+    jacobi = pc_type == "jacobi" ? (; pc_jacobi_abs="true") : (;)
+    (ksp_type == "preonly" || get(opts, :ksp_norm_type, "") == "none") && return merge(restart, jacobi), :none
+    own = !(haskey(opts, :ksp_pc_side) || haskey(opts, :ksp_norm_type))
+    (own && ksp_type ∈ ("cg", "bcgs", "cgs", "gmres")) || return merge(restart, jacobi), :explicit
+    pc_type == "jacobi" &&
+        return merge(restart, jacobi, (; ksp_pc_side="left", ksp_norm_type="preconditioned")), :monitored
+    ksp_type == "cg" && return (; ksp_norm_type="natural"), :explicit
+    # cgs unwinds a right preconditioner over the whole iterate, warm start included
+    ksp_type == "cgs" && return (; ksp_pc_side="left", ksp_norm_type="preconditioned"), :explicit
+    right = merge(restart, (; ksp_pc_side="right", ksp_norm_type="unpreconditioned"))
+    right, _commutes_with_rowscale(opts) ? :rowscale : :shell
+end
+
+# ILU(k)(D⁻¹A) = D⁻¹·ILU(k)(A) and SOR likewise; ICC, Cholesky and AMG need a symmetric matrix
+_commutes_with_rowscale(opts) = opts.pc_type ∈ ("bjacobi", "asm", "ilu", "sor", "none") &&
+    string(get(opts, :sub_pc_type, "ilu")) ∈ ("ilu", "sor", "none")
+
+# the explicit check runs once the predicted ‖D⁻¹r‖ is within GATE of the target, then whenever it
+# meets it; each check refreshes the prediction's ratio
+const GATE = 10.0
+
+function _StopTest(petsclib, b, mode, atol, rtol)
+    dup(need) = need ? _vec_duplicate(petsclib, b).ptr : C_NULL
+    explicit, shell = mode === :explicit, mode === :shell
+    rowscale = shell || mode === :rowscale
+    _StopTest(atol, rtol, 0.0, false, false, explicit, rowscale, GATE, 1.0,
+        dup(explicit || rowscale), dup(rowscale), dup(explicit), dup(explicit), dup(shell), C_NULL, C_NULL,
+        (_petsc_sym(petsclib, f) for f ∈ (:KSPBuildResidual, :VecPointwiseMult, :VecNorm))...)
+end
+
+# ‖D⁻¹r‖₂ from KSPBuildResidual (b - Ax, of Aᵀ in a transpose solve) or a PETSc error code
+function _explicit_norm(c::_StopTest, ksp, ::Type{PR}) where PR
+    V = Ref(c.w)
+    err = ccall(c.build, Cint, (Ptr{Cvoid}, LibPETSc.CVec, LibPETSc.CVec, Ptr{LibPETSc.CVec}), ksp, c.t, c.w, V)
+    err == 0 || return err, 0.0
+    err = ccall(c.pmult, Cint, (LibPETSc.CVec, LibPETSc.CVec, LibPETSc.CVec), V[], V[], c.dinv)
+    err == 0 || return err, 0.0
+    val = Ref{PR}()
+    err = ccall(c.norm, Cint, (LibPETSc.CVec, Cint, Ptr{PR}), V[], 1, val) # 1 = NORM_2
+    err, Float64(val[])
+end
+
+function _ksp_converged(ksp, it, m, reason, ctx, ::Type{PR}) where PR
+    c = unsafe_pointer_to_objref(ctx)::_StopTest
+    m = Float64(m)
+    r = m
+    if c.explicit && isfinite(m)
+        if it == 0
+            c.gate = GATE
+        elseif c.ratio*m > c.gate*c.target
+            unsafe_store!(reason, Cint(LibPETSc.KSP_CONVERGED_ITERATING))
+            return Cint(0)
+        end
+        err, r = _explicit_norm(c, ksp, PR)
+        err == 0 || return err
+        c.ratio = r/max(m, floatmin(Float64))
+        it == 0 || (c.gate = 1.0)
+    end
+    it == 0 && !c.keep && (c.target = XCALibre.Solve._stop_target(c.atol, c.rtol, r))
+    code = !isfinite(r) ? LibPETSc.KSP_DIVERGED_NANORINF :
+        r > c.target ? LibPETSc.KSP_CONVERGED_ITERATING :
+        r ≤ c.atol ? LibPETSc.KSP_CONVERGED_ATOL : LibPETSc.KSP_CONVERGED_RTOL
+    unsafe_store!(reason, Cint(code))
+    Cint(0)
+end
+
+for PI ∈ (Int32, Int64), PR ∈ (Float32, Float64)
+    @eval begin
+        _ksp_converged(ksp, it::$PI, m::$PR, reason, ctx) = _ksp_converged(ksp, it, m, reason, ctx, $PR)
+        _converged_ptr(::Type{$PI}, ::Type{$PR}) =
+            @cfunction(_ksp_converged, Cint, (Ptr{Cvoid}, $PI, $PR, Ptr{Cint}, Ptr{Cvoid}))
+    end
+end
+
+# a MixedF32 correction stops at the refinement's own target, in place of one taken from its r₀
+function Distribute.pset_tolerances!(s::XPETScSolver, atol, rtol, target)
+    c = s.stop
+    c.atol, c.rtol = atol, rtol
+    c.preset = !isnothing(target)
+    c.preset && (c.target = target)
+    s
+end
+
+# the KSP's configured PC (built from A) moves behind a shell applying it after D; the KSP's operator
+# becomes D⁻¹A, a copy refreshed by passemble!. Options are read at construction, so the swap holds
+function _shell_pc!(petsclib, ksp, Amat, c)
+    ok(f, args...) = _ptr_call(_petsc_sym(petsclib, f), args...) == 0 || error("PETSc: $f failed")
+    inner, shell, As, comm = Ref(C_NULL), Ref(C_NULL), Ref(C_NULL), Ref{MPI.MPI_Comm}()
+    ccall(_petsc_sym(petsclib, :MatDuplicate), Cint, (Ptr{Cvoid}, Cint, Ptr{Ptr{Cvoid}}), Amat.ptr, 1, As) == 0 ||
+        error("PETSc: MatDuplicate failed") # 1 = MAT_COPY_VALUES
+    ok(:KSPGetPC, ksp.ptr, inner)
+    ok(:PetscObjectReference, inner[])
+    ok(:PetscObjectGetComm, ksp.ptr, comm)
+    ccall(_petsc_sym(petsclib, :PCCreate), Cint, (MPI.MPI_Comm, Ptr{Ptr{Cvoid}}), comm[], shell) == 0 ||
+        error("PETSc: PCCreate failed")
+    ccall(_petsc_sym(petsclib, :PCSetType), Cint, (Ptr{Cvoid}, Cstring), shell[], "shell") == 0 ||
+        error("PETSc: PCSetType failed")
+    ok(:PCShellSetContext, shell[], pointer_from_objref(c))
+    PR = real(petsclib.PetscScalar)
+    sym(f) = _petsc_sym(petsclib, f)
+    _SHELL_OPS[PR][] = (context=sym(:PCShellGetContext), divide=sym(:VecPointwiseDivide), apply=sym(:PCApply),
+        apply_transpose=sym(:PCApplyTranspose), setup=sym(:PCSetUp), reuse=sym(:PCSetReusePreconditioner))
+    apply, apply_transpose, setup = _shell_callbacks(PR)
+    ok(:PCShellSetApply, shell[], apply)
+    ok(:PCShellSetApplyTranspose, shell[], apply_transpose)
+    ok(:PCShellSetSetUp, shell[], setup)
+    ok(:KSPSetPC, ksp.ptr, shell[])
+    ok(:PCDestroy, shell) # the KSP holds it
+    ok(:KSPSetOperators, ksp.ptr, As[], Amat.ptr)
+    ok(:PCSetOperators, inner[], Amat.ptr, Amat.ptr)
+    c.As, c.inner = As[], inner[]
+    c
+end
+
+# callbacks see only the PC; a process loads one library per scalar type, whose symbols they use
+const _SHELL_OPS = Dict(T => Ref((context=C_NULL, divide=C_NULL, apply=C_NULL, apply_transpose=C_NULL, setup=C_NULL,
+    reuse=C_NULL)) for T ∈ (Float32, Float64))
+
+_ptr_call(f, a) = ccall(f, Cint, (Ptr{Cvoid},), a)
+_ptr_call(f, a, b) = ccall(f, Cint, (Ptr{Cvoid}, Ptr{Cvoid}), a, b)
+_ptr_call(f, a, b, c) = ccall(f, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), a, b, c)
+
+function _shell_context(pc, ops)
+    ctx = Ref(C_NULL)
+    ccall(ops.context, Cint, (Ptr{Cvoid}, Ptr{Ptr{Cvoid}}), pc, ctx)
+    unsafe_pointer_to_objref(ctx[])::_StopTest
+end
+
+# y = P(D·x), D·x = x/dinv
+function _shell_apply(pc, x, y, ops)
+    c = _shell_context(pc, ops)
+    err = _ptr_call(ops.divide, c.p, x, c.dinv)
+    err == 0 ? _ptr_call(ops.apply, c.inner, c.p, y) : err
+end
+
+# y = D·Pᵀ(x)
+function _shell_apply_transpose(pc, x, y, ops)
+    c = _shell_context(pc, ops)
+    err = _ptr_call(ops.apply_transpose, c.inner, x, c.p)
+    err == 0 ? _ptr_call(ops.divide, y, c.p, c.dinv) : err
+end
+
+# PCApply sets the inner PC up again once A changes; it rebuilds only here, when the KSP (and its
+# freeze count) sets up the shell
+function _shell_setup(pc, ops)
+    inner = _shell_context(pc, ops).inner
+    ccall(ops.reuse, Cint, (Ptr{Cvoid}, Cint), inner, 0)
+    err = ccall(ops.setup, Cint, (Ptr{Cvoid},), inner)
+    ccall(ops.reuse, Cint, (Ptr{Cvoid}, Cint), inner, 1)
+    err
+end
+
+for T ∈ (Float32, Float64)
+    apply, transpose, setup = Symbol.((:_shell_apply_, :_shell_apply_transpose_, :_shell_setup_), T)
+    @eval begin
+        $apply(pc, x, y) = _shell_apply(pc, x, y, _SHELL_OPS[$T][])
+        $transpose(pc, x, y) = _shell_apply_transpose(pc, x, y, _SHELL_OPS[$T][])
+        $setup(pc) = _shell_setup(pc, _SHELL_OPS[$T][])
+        _shell_callbacks(::Type{$T}) = (@cfunction($apply, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid})),
+            @cfunction($transpose, Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid})), @cfunction($setup, Cint, (Ptr{Cvoid},)))
+    end
+end
+
+function _vec_duplicate(petsclib, v)
+    w = Ref{LibPETSc.CVec}(C_NULL)
+    ccall(_petsc_sym(petsclib, :VecDuplicate), Cint, (LibPETSc.CVec, Ptr{LibPETSc.CVec}), v, w) == 0 ||
+        error("PETSc: VecDuplicate failed")
+    LibPETSc.PetscVec(w[], petsclib)
+end
+
+_vec_destroy(petsclib, v) = v == C_NULL ||
+    ccall(_petsc_sym(petsclib, :VecDestroy), Cint, (Ptr{LibPETSc.CVec},), Ref(v)) == 0 || error("PETSc: VecDestroy failed")
 
 # NEW SECTION: assembly and solve
 
@@ -400,8 +620,41 @@ passemble!(s::XPETScSolver, eqn, partition; component=nothing) =
 
 function passemble!(s::XPETScSolver, nzval::AbstractVector, b::AbstractVector)
     _set_values!(s.petsclib, s.A, nzval, s.sync, s.fill)
+    c = s.stop
+    (c.explicit || c.rowscale) && _inverse_abs_diagonal!(s)
+    c.As == C_NULL || ccall(_petsc_sym(s.petsclib, :MatCopy), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Cint), s.A.ptr, c.As, 2) == 0 ||
+        error("PETSc: MatCopy failed") # 2 = SAME_NONZERO_PATTERN
+    c.rowscale && _petsc_ok(s, :MatDiagonalScale, _operator(s), c.dinv, C_NULL)
     s.bptr[] = _raw_ptr(b)
     s
+end
+
+_petsc_ok(s, f, args...) = _petsc_call(_petsc_sym(s.petsclib, f), args...) == 0 || error("PETSc: $f failed")
+_petsc_call(f, A::Ptr, v, w) = ccall(f, Cint, (Ptr{Cvoid}, LibPETSc.CVec, Ptr{Cvoid}), A, v, w)
+_petsc_call(f, A::Ptr, v::LibPETSc.PetscVec, w::LibPETSc.PetscVec) =
+    ccall(f, Cint, (Ptr{Cvoid}, LibPETSc.CVec, LibPETSc.CVec), A, v, w)
+_petsc_call(f, v) = ccall(f, Cint, (LibPETSc.CVec,), v)
+_petsc_call(f, A::Ptr, v) = ccall(f, Cint, (Ptr{Cvoid}, LibPETSc.CVec), A, v)
+_petsc_call(f, u, v, w) = ccall(f, Cint, (LibPETSc.CVec, LibPETSc.CVec, LibPETSc.CVec), u, v, w)
+
+# the KSP's operator: D⁻¹A when row-scaled (A itself, or its copy under :shell)
+_operator(s) = s.stop.As == C_NULL ? s.A.ptr : s.stop.As
+
+# dinv = 1/|diag(A)| of the unscaled matrix
+function _inverse_abs_diagonal!(s)
+    dinv = s.stop.dinv
+    _petsc_ok(s, :MatGetDiagonal, s.A.ptr, dinv)
+    _petsc_ok(s, :VecAbs, dinv)
+    _petsc_ok(s, :VecReciprocal, dinv)
+end
+
+# the vectors :monitored solves need only to measure an unconverged solve, kept once made
+function _work_vectors!(s)
+    c = s.stop
+    c.dinv == C_NULL && (c.dinv = _vec_duplicate(s.petsclib, s.b).ptr)
+    c.w == C_NULL && (c.w = _vec_duplicate(s.petsclib, s.b).ptr)
+    c.t == C_NULL && (c.t = _vec_duplicate(s.petsclib, s.b).ptr)
+    c
 end
 
 # x and b borrow the field and the right-hand side for the solve only; b's owner is the equation,
@@ -433,25 +686,71 @@ end
 
 function psolve!(s::XPETScSolver, x::AbstractVector)
     _maybe_freeze_pc!(s)
-    _with_placed(_ksp_solve, s, x)
-    # a shadow-vector breakdown (BiCGStab) stops at the last finite iterate; solving again from
-    # there restarts with the current residual as the shadow, as the serial solves retry theirs
-    for _ ∈ 1:2
-        _broke_down(s) || break
-        _with_placed(_ksp_solve, s, x)
-    end
+    _with_placed(_solve_with_retries, s, x)
     _report_unconverged(s)
     x
 end
 
+# a shadow-vector breakdown (BiCGStab) stops at the last finite iterate; solving again from
+# there restarts with the current residual as the shadow, as the serial solves retry theirs. The
+# retry keeps the first solve's target
+function _solve_with_retries(s)
+    c = s.stop
+    c.rowscale && _petsc_ok(s, :VecPointwiseMult, c.bs, c.dinv, s.b)
+    c.keep = c.preset
+    _ksp_solve(s)
+    for _ ∈ 1:2
+        _broke_down(s) || break
+        c.keep = true
+        _ksp_solve(s)
+    end
+    _measure_unconverged!(s)
+end
+
+_unconverged(s) = s.report && Integer(LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)) < 0
+
+# while x and b are placed; collective, and the reason is the same on every rank. The norm costs a
+# MatMult, so it stops once the warning has reached its maxlog
+function _measure_unconverged!(s, transpose=false)
+    _unconverged(s) || return false
+    s.nwarn[] += 1
+    s.rnorm[] = s.nwarn[] ≤ XCALibre.Solve.UNCONVERGED_MAXLOG ? _scaled_residual_norm(s, transpose) : NaN
+    true
+end
+
+# KSPGetResidualNorm is the norm the KSP monitored; this is ‖D⁻¹(b - Ax)‖₂ (b - Aᵀx when transposed)
+function _scaled_residual_norm(s::XPETScSolver, transpose)
+    c = _work_vectors!(s)
+    PR = real(s.petsclib.PetscScalar)
+    val = Ref{PR}()
+    if c.rowscale && !transpose # the operator is D⁻¹A
+        _petsc_ok(s, :MatMult, _operator(s), s.x, c.w)
+        _vec_aypx(_petsc_sym(s.petsclib, :VecAYPX), c.w, -one(PR), c.bs)
+    else
+        c.rowscale || c.explicit || _inverse_abs_diagonal!(s)
+        if transpose && c.rowscale # Aᵀx = (D⁻¹A)ᵀ·Dx
+            _petsc_ok(s, :VecPointwiseDivide, c.t, s.x, c.dinv)
+            _petsc_ok(s, :MatMultTranspose, _operator(s), c.t, c.w)
+        else
+            _petsc_ok(s, transpose ? :MatMultTranspose : :MatMult, s.A.ptr, s.x, c.w)
+        end
+        _vec_aypx(_petsc_sym(s.petsclib, :VecAYPX), c.w, -one(PR), s.b)
+        _petsc_ok(s, :VecPointwiseMult, c.w, c.w, c.dinv)
+    end
+    _vec_norm2(_petsc_sym(s.petsclib, :VecNorm), c.w, val) == 0 || error("PETSc: VecNorm failed")
+    Float64(val[])
+end
+
+for T ∈ (Float32, Float64)
+    @eval _vec_aypx(f, y, a::$T, x) = ccall(f, Cint, (LibPETSc.CVec, $T, LibPETSc.CVec), y, a, x)
+    @eval _vec_norm2(f, v, val::Ref{$T}) = ccall(f, Cint, (LibPETSc.CVec, Cint, Ptr{$T}), v, 1, val) # 1 = NORM_2
+end
+
 # every negative KSPConvergedReason (iteration cap, divergence, breakdown, indefinite PC, NaN)
 function _report_unconverged(s::XPETScSolver)
-    s.report || return nothing
-    reason = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
-    (Integer(reason) < 0 && s.root) || return nothing
-    XCALibre.Solve._warn_unconverged(s.name, string(reason), piterations(s),
-        LibPETSc.KSPGetResidualNorm(s.petsclib, s.ksp), "KSP residual norm", s.tol,
-        (:unconverged_solve, s.name))
+    (_unconverged(s) && s.root) || return nothing
+    XCALibre.Solve._warn_unconverged(s.name, string(LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)),
+        piterations(s), s.rnorm[], "‖D⁻¹(b - Ax)‖₂", s.tol, (:unconverged_solve, s.name))
 end
 
 piterations(s::XPETScSolver) = Int(LibPETSc.KSPGetIterationNumber(s.petsclib, s.ksp))
@@ -460,11 +759,27 @@ _broke_down(s::XPETScSolver) = LibPETSc.KSPGetConvergedReason(s.petsclib, s.ksp)
     (LibPETSc.KSP_DIVERGED_BREAKDOWN, LibPETSc.KSP_DIVERGED_BREAKDOWN_BICG)
 
 psolve_transpose!(s::XPETScSolver, x::AbstractVector) =
-    (_with_placed(_ksp_solve_transpose, s, x); _report_unconverged(s); x)
+    (_with_placed(_solve_transpose_measured, s, x); _report_unconverged(s); x)
+_solve_transpose_measured(s) = (_ksp_solve_transpose(s); _measure_unconverged!(s, true))
 
 # check=false: unconverged solves are reported by _report_unconverged, not by PETSc.jl 0.5
-_ksp_solve(s) = _V05 ? PETSc.solve!(s.x, s.ksp, s.b; check=false) : PETSc.solve!(s.x, s.ksp, s.b)
-_ksp_solve_transpose(s) = LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+_ksp_solve(s) = _V05 ? PETSc.solve!(s.x, s.ksp, _rhs(s); check=false) : PETSc.solve!(s.x, s.ksp, _rhs(s))
+_rhs(s) = s.stop.rowscale ? LibPETSc.PetscVec(s.stop.bs, s.petsclib) : s.b
+# (D⁻¹A)ᵀ·y = b with y = Dx; the KSP's norm is then ‖b - Aᵀx‖, so ‖D⁻¹r‖ is checked explicitly
+function _ksp_solve_transpose(s)
+    c = s.stop
+    c.keep = c.preset
+    c.rowscale || return LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+    _work_vectors!(s)
+    _petsc_ok(s, :VecPointwiseDivide, s.x, s.x, c.dinv)
+    c.explicit = true
+    try
+        LibPETSc.KSPSolveTranspose(s.petsclib, s.ksp, s.b, s.x)
+    finally
+        c.explicit = false
+    end
+    _petsc_ok(s, :VecPointwiseMult, s.x, s.x, c.dinv)
+end
 
 # NEW SECTION: parallel partitioning (MatPartitioning on the owned-row cell graph)
 

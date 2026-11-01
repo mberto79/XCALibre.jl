@@ -1,9 +1,9 @@
 using XCALibre
 using StaticArrays
 using LinearAlgebra
-# viscous_force and wall_shear_stress take the wall velocity of each face from the velocity
-# condition of the patch: a fixed vector (Wall, Dirichlet), a user function evaluated at the
-# face centre and `time` (DirichletFunction) or the rotation velocity (RotatingWall).
+# viscous_force and wall_shear_stress integrate the boundary viscous stress of the momentum equation,
+# taking the wall velocity of each face from the velocity condition of the patch: a fixed vector
+# (Wall, Dirichlet), a user function at the face centre and `time`, or a rotation velocity.
 
 grids_dir = pkgdir(XCALibre, "examples/0_GRIDS")
 mesh = UNV2D_mesh(joinpath(grids_dir, "quad40.unv"), scale=0.001)
@@ -43,15 +43,22 @@ config_funt = vf_config(DirichletFunction(:bottom, (c, t, i) -> t*SVector(0.3, -
 
 Fwall = viscous_force(:bottom, model, config_wall)
 @test norm(Fwall) > 0
-# direct sum of ρ ν A (U_c - U_w)_t/δ over the patch faces
-let IDs_range = mesh_dev.boundaries[boundary_index(mesh_dev.boundaries, :bottom)].IDs_range
+# direct sum of -ρ ν A (∇U_b + ∇U_bᵀ - ⅔ tr(∇U_b) I)⋅n over the patch faces, with ∇U_b the Gauss
+# cell gradient whose normal part is the normal gradient of the wall condition, (U_w - U_c)/δ
+vf_reference = function (patch, Ub, config)
+    gradU = Grad{Gauss}(U)
+    grad!(gradU, FaceVectorField(mesh_dev), U, config.boundaries.U, 0.0, config)
+    IDs_range = mesh_dev.boundaries[boundary_index(mesh_dev.boundaries, patch)].IDs_range
     (; faces, boundary_cellsID) = mesh_dev
-    F = sum(IDs_range) do fID
-        n, d = faces.normal[fID], U[boundary_cellsID[fID]] - Uw
-        model.fluid.rho[1]*1e-3*faces.area[fID]*(d - (d⋅n)*n)/faces.delta[fID]
+    sum(IDs_range) do fID
+        cID, n = boundary_cellsID[fID], faces.normal[fID]
+        Mc = gradU[cID]
+        sngrad = Ub === nothing ? zero(U[cID]) : (Ub - U[cID])/faces.delta[fID] # zero gradient: 0
+        Mb = Mc + (sngrad - Mc*n)*n'
+        -model.fluid.rho[1]*1e-3*faces.area[fID]*((Mb + Mb' - (2/3)*tr(Mb)*I)*n)
     end
-    @test Fwall ≈ F rtol=1e-12
 end
+@test Fwall ≈ vf_reference(:bottom, SVector{3}(Uw), config_wall) rtol=1e-12
 @test viscous_force(:bottom, model, config_dir) == Fwall
 @test viscous_force(:bottom, model, config_fun) ≈ Fwall rtol=1e-12
 # the user function is evaluated at the time given (default 0)
@@ -70,8 +77,39 @@ Frot = viscous_force(:bottom, model, config_rot)
 @test norm(Frot - Fwall) > 0
 @test Frot ≈ viscous_force(:bottom, model, config_rotf) rtol=1e-12
 
-# a zero-gradient patch carries no shear
-@test all(iszero, viscous_force(:top, model, config_wall))
+# a zero-gradient patch has no normal gradient, but the transposed cell gradient acts on the face;
+# a mirror (Slip, Symmetry) patch carries no shear
+@test viscous_force(:top, model, config_wall) ≈ vf_reference(:top, nothing, config_wall) rtol=1e-12
+config_slip = Configuration(
+    solvers=(;), schemes=(;), runtime=Runtime(iterations=1, time_step=1, write_interval=-1),
+    hardware=hardware, postprocess=nothing,
+    boundaries=assign(region=mesh_dev, (
+        U=[Zerogradient(:inlet), Zerogradient(:outlet), Wall(:bottom, Uw), Slip(:top)], p=pBCs)))
+@test all(iszero, viscous_force(:top, model, config_slip))
+@test all(iszero, wall_shear_stress(:top, model, config_slip)[1].x.values)
+
+# exact linear fields with exact values on every patch, so the Gauss gradient is exact: pure
+# shear U = (γy, 0) gives ρνγ per unit area; U = (0, βx) is only seen through the transposed term
+vf_exact = function (Ufun)
+    for i ∈ eachindex(U.x.values)
+        u = Ufun(mesh_dev.cells.centre[i])
+        U.x.values[i], U.y.values[i], U.z.values[i] = u
+    end
+    bc = name -> DirichletFunction(name, (c, t, i) -> Ufun(c))
+    config = Configuration(
+        solvers=(;), schemes=(;), runtime=Runtime(iterations=1, time_step=1, write_interval=-1),
+        hardware=hardware, postprocess=nothing,
+        boundaries=assign(region=mesh_dev, (U=[bc(:inlet), bc(:outlet), bc(:bottom), bc(:top)], p=pBCs)))
+    IDs_range = mesh_dev.boundaries[boundary_index(mesh_dev.boundaries, :bottom)].IDs_range
+    viscous_force(:bottom, model, config), sum(mesh_dev.faces.area[IDs_range])
+end
+Usaved = (copy(U.x.values), copy(U.y.values), copy(U.z.values))
+γ, β = 150.0, 80.0
+F, A = vf_exact(c -> SVector(γ*c[2], 0.0, 0.0))
+@test F ≈ [model.fluid.rho[1]*1e-3*γ*A, 0.0, 0.0] rtol=1e-10 atol=1e-14
+F, A = vf_exact(c -> SVector(0.0, β*c[1], 0.0))
+@test F ≈ [model.fluid.rho[1]*1e-3*β*A, 0.0, 0.0] rtol=1e-10 atol=1e-14
+U.x.values .= Usaved[1]; U.y.values .= Usaved[2]; U.z.values .= Usaved[3]
 
 # wall_shear_stress uses the same face values; its integral is the viscous force
 vf_shear_force = function (config; kw...)

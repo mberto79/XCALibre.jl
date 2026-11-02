@@ -28,7 +28,7 @@ setup = SolverSetup(
 @test setup.solver isa Richardson
 @test setup.preconditioner isa AMG
 @test setup.preconditioner.mode isa Richardson
-@test setup.itmax == 200
+@test setup.itmax == 1000
 @test setup.preconditioner.pre_sweeps == 2
 @test setup.preconditioner.post_sweeps == 2
 @test setup.preconditioner.cycle isa VCycle

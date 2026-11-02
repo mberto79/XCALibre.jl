@@ -64,7 +64,7 @@ This function is used to provide solver settings that will be used internally in
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
 - `limit`: used in some solvers to bound the solution within these limits e.g. (min, max). It defaults to `nothing`
-- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000, or 200 with `preconditioner=AMG()`). Also applies to PETSc solves.
+- `itmax`: maximum number of iterations in a single solver pass (defaults to 1000). Also applies to PETSc solves.
 - `atol`: absolute tolerance of the linear solve, in the field's units (defaults to eps(float_type)^0.9).
 - `rtol`: relative tolerance of the linear solve (defaults to 1e-1). Every solver, preconditioner, precision and backend (including AMG and PETSc) stops when ‖D⁻¹(b - Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b - Ax₀)‖₂, D = |diag(A)|: the size of a Jacobi correction, with `rtol` relative to that of the initial guess x₀ (the current field values), not to ‖b‖.
 - `float_type`: specifies the floating point type to be used by the solver. It is also used to estimate the absolute tolerance for the solver (defaults to `Float64`)
@@ -78,7 +78,7 @@ SolverSetup(;
         convergence, 
         relax, 
         limit=nothing,
-        itmax::I=(solver isa AMG || preconditioner isa AMG ? 200 : 1000),
+        itmax::I=1000,
         atol=(eps(float_type))^0.9,
         rtol=1e-1 |> float_type,
         precision::PR=FullPrecision()

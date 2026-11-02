@@ -600,6 +600,7 @@ _amg_empty_hierarchy(::MaterialisedAMG, backend, ::Type{T}, ::Type{TS}, ::Type{T
 # the hierarchy stores indices in the equation matrix index type, which the workspace type fixes here
 _workspace(solver::AMG, b) = _workspace(solver, b, Int)
 function _workspace(solver::AMG, b, ::Type{TI}) where {TI<:Integer}
+    _check_amg_mode(solver.mode, solver.coarse_solve)
     T = eltype(b)
     TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     backend = KernelAbstractions.get_backend(b)

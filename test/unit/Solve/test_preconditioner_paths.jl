@@ -54,7 +54,9 @@ end
         @test_throws ArgumentError SV._check_serial(s)
     end
     @test mksetup(Richardson(), AMG(coarse_solve=OnDeviceKrylov())).preconditioner.mode isa Richardson
-    @test mksetup(Cg(), AMG()).itmax == 200 && mksetup(Cg(), GAMG()).itmax == 1000
+    @test all(mksetup(s, pc).itmax == 1000 for (s, pc) ∈ ((Cg(), AMG()), (Cg(), GAMG()), (Cg(), Jacobi())))
+    # unset mode is solved as CG, so the OnDeviceKrylov guard also runs when the workspace is built
+    @test_throws r"OnDeviceKrylov requires solver=Richardson" _workspace(AMG(coarse_solve=OnDeviceKrylov()), zeros(4))
 end
 
 @testset "GAMG and BoomerAMG on a serial mesh run the native AMG" begin
@@ -74,6 +76,11 @@ end
     @test (@test_logs (:warn, r"AMG\(mode=Bicgstab\(\)\) is deprecated and ignored") mksetup(
         Cg(), AMG(mode=Bicgstab()))).preconditioner.mode isa Cg
     @test AMGSolver === Richardson
+    # deprecation warnings print on the logging rank only (SolverSetup is built on every rank)
+    SV._LOG_RANK[] = () -> false
+    @test_logs mksetup(AMG(mode=Bicgstab()), Jacobi())
+    @test_logs mksetup(Cg(), AMG(mode=Bicgstab()))
+    SV._LOG_RANK[] = () -> true
 end
 
 # NEW SECTION: solves
@@ -102,14 +109,12 @@ function laplace_values(s)
     T_eqn, copy(T.values)
 end
 
-@testset "AMG as the preconditioner matches solver=AMG" begin
+@testset "AMG as the preconditioner solves the system" begin
+    _, x_ref = laplace_values(mksetup(Cg(), Jacobi(); rtol=1e-12, atol=0.0))
     for mode ∈ (Cg(), Bicgstab(), Richardson())
         amg = AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi())
-        new = mksetup(mode, amg; rtol=1e-10, atol=0.0)
-        old = mksetup(SV._amg_with_mode(amg, mode), Jacobi(); rtol=1e-10, atol=0.0)
-        eqn, x_new = laplace_values(new)
-        _, x_old = laplace_values(old)
-        @test x_new == x_old
+        eqn, x_new = laplace_values(mksetup(mode, amg; rtol=1e-10, atol=0.0))
+        @test isapprox(x_new, x_ref; rtol=1e-6)
         # AMG owns its preconditioner: the equation's is inert, so nothing is built or refreshed
         @test eqn.preconditioner isa Preconditioner{SV.InertPreconditioner}
         @test eqn.solver isa AMGWorkspace && eqn.solver.converged

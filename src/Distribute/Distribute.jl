@@ -44,4 +44,6 @@ include("Distribute_7_io.jl")
 include("Distribute_8_foam.jl")
 include("Distribute_9_repartition.jl")
 
+__init__() = (Solve._LOG_RANK[] = is_root)
+
 end # module

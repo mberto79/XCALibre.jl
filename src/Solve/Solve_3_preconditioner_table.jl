@@ -99,9 +99,12 @@ _native_amg(setup) = _native_amg(setup.preconditioner, setup.solver)
 _native_amg(pc::AMG, solver) = pc
 _native_amg(::Union{GAMG,BoomerAMG}, solver) = _amg_with_mode(_DEFAULT_AMG, solver)
 
+# SolverSetup is built on every rank; Distribute points this at its is_root
+const _LOG_RANK = Ref{Function}(() -> true)
+
 # the outer iteration is `solver=`; AMG(mode=...) is the old spelling
 function _resolve_amg(pc::AMG, solver)
-    isnothing(pc.mode) || pc.mode isa typeof(solver) ||
+    isnothing(pc.mode) || pc.mode isa typeof(solver) || !_LOG_RANK[]() ||
         @warn "AMG(mode=$(nameof(typeof(pc.mode)))()) is deprecated and ignored: the outer iteration " *
             "is SolverSetup's solver=$(nameof(typeof(solver)))()" maxlog=1
     solver isa Union{Cg,Bicgstab,Richardson} ? _amg_with_mode(pc, solver) : pc
@@ -112,7 +115,7 @@ _resolve_amg(pc, solver) = pc
 _deprecated_amg_solver(solver, preconditioner) = (solver, preconditioner)
 function _deprecated_amg_solver(amg::AMG, preconditioner)
     solver = something(amg.mode, Cg())
-    @warn "SolverSetup(solver=AMG(...)) is deprecated; use SolverSetup(solver=" *
+    _LOG_RANK[]() && @warn "SolverSetup(solver=AMG(...)) is deprecated; use SolverSetup(solver=" *
         "$(nameof(typeof(solver)))(), preconditioner=AMG(...)). The `preconditioner` given is unused." maxlog=1
     return solver, _amg_with_mode(amg, solver)
 end

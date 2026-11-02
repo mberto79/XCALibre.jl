@@ -102,7 +102,8 @@ function boundary_face_properties!(mesh::Mesh2{I,F}, owner_signs) where {I,F}
             elseif d_cf⋅normal < zero(F)
                 normal = -1.0*normal
             end
-            _, delta, e = XMesh.weight_delta_e(d_cf, normal) # wall-normal distance, as other meshes
+            distance = XMesh.boundary_distance(p1, p2, cc)
+            _, delta, e = XMesh.weight_delta_e(d_cf, normal, distance) # as other meshes
 
             # assign values to face
             face = @set face.area = area

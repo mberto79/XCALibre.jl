@@ -5,7 +5,7 @@ export mesh_info
 # layout: magic, header (Int64 per key), mesh block (raw isbits arrays), partition block (empty
 # when serial); one code path for both kinds, only the format number is checked for layout
 const _XDM_MAGIC = b"XCALMESH"
-const _XDM_FORMAT = 6
+const _XDM_FORMAT = 1
 const _XDM_BOM = 0x0102030405060708
 const _XDM_KEYS = (:bom, :format, :xcalibre_major, :xcalibre_minor, :xcalibre_patch,
     :julia_major, :julia_minor, :julia_patch, :kind, :dim, :TI, :TF,

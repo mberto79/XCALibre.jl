@@ -1,0 +1,1 @@
+* changed: Distributed `Bicgstab()` and `Gmres()` solves with `GAMG()`, `BoomerAMG()` or `IC0GPU()` no longer store a second, scaled copy of the matrix, lowering peak memory; the scaled matrix is applied on the fly. [#250](@ref)

@@ -154,7 +154,7 @@ _uses_gamg(opts) = any(((k, v),) -> endswith(string(k), "pc_type") && string(v) 
 function _check_gamg_ids(version, ::Type{TR}, opts, N) where TR
     (!_uses_gamg(opts) || _gamg_ids_exact(version, TR, N)) && return nothing
     error("PETScSolver: GAMG on this $TR PETSc ($version) cannot address $N global rows. PETSc's " *
-        "GAMG passes row ids through $TR values, exact only up to $(Int(maxintfloat(TR))) rows, and " *
+        "GAMG passes row ids through $TR values, exact only up to $(Int(maxintfloat(TR)) + 1) rows, and " *
         "setup would fail with an \"unsymmetric matrix\" error. Solve this equation at " *
         "FullPrecision() on a Float64 mesh, use another preconditioner (e.g. Jacobi()), or use " *
         "a PETSc development build (3.26.99 or later), which keeps the ids as integers.")

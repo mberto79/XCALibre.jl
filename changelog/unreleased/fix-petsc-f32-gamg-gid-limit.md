@@ -1,0 +1,1 @@
+* fixed: Float32 `GAMG()` on distributed matrices above 2^24 + 1 global rows now stops at solver construction with an error naming `FullPrecision()`, instead of failing inside PETSc setup. [#254](@ref)

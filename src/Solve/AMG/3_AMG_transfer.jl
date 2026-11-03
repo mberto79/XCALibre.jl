@@ -50,12 +50,12 @@ function _matvec!(hierarchy::AMGHierarchy, y, A::AMGMatrixCSR, x)
     return y
 end
 
-function _matvec!(hierarchy::AMGHierarchy, y, A::SparseXCSR, x)
+function _matvec!(hierarchy::AbstractAMGHierarchy, y, A::Union{SparseXCSR,SparseMatricesCSR.SparseMatrixCSR}, x)
     _launch_amg_kernel!(hierarchy, _amg_csr_matvec_kernel!, _m(A), y, _rowptr(A), _colval(A), _nzval(A), x)
     return y
 end
 
-function _residual!(hierarchy::AMGHierarchy, r, A::SparseXCSR, x, b)
+function _residual!(hierarchy::AbstractAMGHierarchy, r, A::Union{SparseXCSR,SparseMatricesCSR.SparseMatrixCSR}, x, b)
     _launch_amg_kernel!(hierarchy, _amg_csr_residual_kernel!, _m(A), r, _rowptr(A), _colval(A), _nzval(A), x, b)
     return r
 end

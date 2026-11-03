@@ -163,24 +163,27 @@ end
 end
 
 _matrix_free_omega(s::Jacobi) = s.weight
+_matrix_free_omega(s) = 4 / 3
 
 # NEW SECTION
 
 function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, hardware)
     backend = hardware.backend
+    _check_smoother_backend(backend, solver.smoother)
     setup_matrix = _amg_setup_matrix(A, _amg_setup_backend(backend))  # host CSR at finest precision T
     T = eltype(_nzval(_amg_matrix(setup_matrix)))
     TS = _effective_storage(T, _amg_storage(solver))
-    fused_top = max(solver.native.fuse - 1, 0)
+    coarse = solver.native.coarse
     handle = build_matrix_free_hierarchy(setup_matrix, solver.coarsening.merges, backend;
-                          sweeps=solver.sweeps,
+                          sweeps=solver.sweeps, smoother=solver.smoother,
                           omega_nominal=_matrix_free_omega(solver.smoother),
-                          max_coarse=solver.coarsest, fused_top=fused_top,
-                          coarse_max_rows=solver.native.coarse.max_rows,
+                          max_coarse=solver.coarsest, fused_top=solver.native.fuse,
+                          coarse_max_rows=coarse isa Direct ? coarse.max_rows : 0,
                           scale_correction=solver.native.scale_correction,
                           coarse_storage=TS)
     st = handle.st
     st.refresh_plan[] = build_refresh_plan(handle)
+    st.coarse_inv[] = _mf_coarse_solver(coarse, st, st.refresh_plan[].coarsest_csr, backend)
     st.workgroup = workspace.hierarchy.workgroup
     _amg_log_hierarchy(solver, backend, vcat([lv.n for lv in st.levels], st.coarse_n); matrix_free=true)
     workspace.hierarchy = st

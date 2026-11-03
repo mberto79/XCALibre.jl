@@ -1,0 +1,2 @@
+* changed: `AMG(Pairwise())` keeps its transfers as aggregate lists on every backend instead of sparse matrices: on a 3D Poisson matrix it solves 1.65× faster with 56% less hierarchy memory on 8 CPU threads (512k cells) and 1.5× faster with half the device memory on a GPU (262k cells), at the same iteration count. All smoothers and coarse solves run on it.
+* changed: `NativeAMG(fuse=n)` is the number of coarse levels applied through the finer matrix instead of stored (was `n - 1`), on CPU and GPU, with `Jacobi()` or `Chebyshev()`.

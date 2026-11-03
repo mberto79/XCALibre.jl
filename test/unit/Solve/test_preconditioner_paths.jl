@@ -4,7 +4,7 @@ using Test
 
 # `solver` is the outer iteration and `preconditioner` the method on every path; each preconditioner
 # runs as named, as a named substitute (one warning) or stops with guidance (PRECONDITIONER_PATHS).
-# AMG runs natively on a serial mesh and as PETSc's GAMG on a distributed one; BoomerAMG only in PETSc.
+# AMG runs natively on a serial mesh and in PETSc (PCMG or GAMG) on a distributed one; BoomerAMG only in PETSc.
 const SV = XCALibre.Solve
 
 mksetup(solver, pc, precision=FullPrecision(); kw...) =
@@ -76,23 +76,30 @@ end
     @test SV._amg_storage(SV._with_storage(a, Float32)) === Float32
 end
 
-@testset "AMG settings PETSc's GAMG cannot run" begin
-    refused(a, solver=Cg()) = last(SV._lower_gamg(a, solver))
-    options(a, solver=Cg()) = first(SV._lower_gamg(a, solver))
+@testset "AMG settings on PETSc" begin
+    refused(a, solver=Cg()) = last(SV._lower_petsc_amg(a, solver))
+    options(a, solver=Cg()) = first(SV._lower_petsc_amg(a, solver))
     @test isempty(refused(AMG()))
     @test isempty(refused(AMG(SmoothedAggregation(threshold=0.05f0))))
     @test isempty(refused(AMG(smoother=Chebyshev(), sweeps=1)))
     @test isempty(refused(AMG(smoother=GaussSeidel())))
     @test isempty(refused(AMG(sweeps=(1, 2))))
-    for a ∈ (AMG(RugeStuben()), AMG(Pairwise(2)), AMG(SmoothedAggregation(weight=1.0)),
+    @test isempty(refused(AMG(Pairwise(2))))
+    for a ∈ (AMG(RugeStuben()), AMG(SmoothedAggregation(weight=1.0)),
             AMG(smoother=Chebyshev(), sweeps=2), AMG(smoother=SSOR(1.2)), AMG(sweeps=Sweeps(1, 1; grow=1)))
         @test length(refused(a)) == 1
     end
-    # aggressive coarsening off mirrors the native levels; non-symmetric systems symmetrise the graph
-    @test options(AMG()).pc_gamg_aggressive_coarsening == 0 && options(AMG()).pc_gamg_agg_nsmooths == 0
-    @test !haskey(options(AMG()), :pc_gamg_graph_symmetrize)
-    @test options(AMG(), Bicgstab()).pc_gamg_graph_symmetrize
-    @test options(AMG(coarsest=100)).pc_gamg_coarse_eq_limit == 100
+    # Pairwise() is PCMG over the native aggregates, whatever the outer iteration
+    o = options(AMG(), Bicgstab())
+    @test o.pc_type == "mg" && o.pc_mg_galerkin == "both" && o.mg_coarse_pc_type == "redundant"
+    @test !any(k -> startswith(string(k), "pc_gamg"), keys(o))
+    # SmoothedAggregation() is GAMG: aggressive coarsening off mirrors the native levels; non-symmetric
+    # systems symmetrise the graph
+    sa = AMG(SmoothedAggregation())
+    @test options(sa).pc_type == "gamg" && options(sa).pc_gamg_aggressive_coarsening == 0
+    @test options(sa).pc_gamg_agg_nsmooths == 1 && !haskey(options(sa), :pc_gamg_graph_symmetrize)
+    @test options(sa, Bicgstab()).pc_gamg_graph_symmetrize
+    @test options(AMG(SmoothedAggregation(); coarsest=100)).pc_gamg_coarse_eq_limit == 100
     o = options(AMG(sweeps=(1, 3)))
     @test o.pc_mg_distinct_smoothup && o.mg_levels_ksp_max_it == 1 && o.mg_levels_up_ksp_max_it == 3
     @test options(AMG(smoother=SymGaussSeidel())).mg_levels_pc_sor_local_symmetric

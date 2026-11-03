@@ -21,7 +21,7 @@ const PRECONDITIONER_PATHS = (
     DILU         = (full=:same,      f32=:same,      f16=_F16_JACOBI, petsc=Substitute("per-rank block ILU(0)")),
     ILU0GPU      = (full=:same,      f32=:same,      f16=_F16_JACOBI, petsc=Substitute("per-rank block ILU(0)")),
     IC0GPU       = (full=:same,      f32=:same,      f16=_F16_JACOBI, petsc=Substitute("per-rank block ICC(0)")),
-    AMG          = (full=:same,      f32=:same,      f16=_AMG_F16,    petsc=:same), # PETSc: GAMG, see _lower_gamg
+    AMG          = (full=:same,      f32=:same,      f16=_AMG_F16,    petsc=:same), # PETSc: PCMG or GAMG, see _lower_petsc_amg
     BoomerAMG    = (full=_HYPRE_ONLY, f32=_HYPRE_ONLY, f16=_HYPRE_ONLY, petsc=:same),
 )
 
@@ -49,8 +49,8 @@ _pc_rule(pc, col::Symbol) = begin
     col === :petsc ? Unsupported("no PETSc mapping for preconditioner $name; name one with " *
         "petsc_options=\"-pc_type ...\"") : :same
 end
-_pc_rule(pc::AMG, col::Symbol) = col === :petsc && !isempty(last(_lower_gamg(pc))) ?
-    Unsupported(join(last(_lower_gamg(pc)), "; ")) : PRECONDITIONER_PATHS.AMG[col]
+_pc_rule(pc::AMG, col::Symbol) = col === :petsc && !isempty(last(_lower_petsc_amg(pc))) ?
+    Unsupported(join(last(_lower_petsc_amg(pc)), "; ")) : PRECONDITIONER_PATHS.AMG[col]
 
 function _solver_rule(solver, col::Symbol)
     allowed = SOLVER_PATHS[col]
@@ -93,53 +93,78 @@ _warn_substitute(pc, rule::Substitute, where) =
 
 # NEW SECTION: AMG on PETSc
 
-# AMG on a distributed mesh is PETSc's GAMG. One function translates every setting into PETSc options
-# or refuses it, so the two cannot drift apart; NativeAMG settings apply to serial meshes only.
-function _lower_gamg(a::AMG, solver=Cg())
+# distributed AMG: Pairwise() is PCMG over the native pairwise aggregates (built per rank in the PETSc
+# ext), SmoothedAggregation() is GAMG. One function returns the options and refusals, so they cannot
+# drift apart; NativeAMG settings apply to serial meshes only.
+function _lower_petsc_amg(a::AMG, solver=Cg())
     refused = String[]
     refuse(msg) = push!(refused, msg)
     s = a.sweeps
-    s.grow == 0 || refuse("Sweeps(grow) has no PETSc counterpart: GAMG fixes its level count during setup")
-    opts = (pc_gamg_reuse_interpolation=true, pc_mg_cycle_type="v", pc_gamg_coarse_eq_limit=a.coarsest,
-        pc_gamg_aggressive_coarsening=0)
-    # GAMG aggregates on a symmetric graph; a non-symmetric matrix must be symmetrised first
-    solver isa Cg || (opts = merge(opts, (pc_gamg_graph_symmetrize=true,)))
-    opts = merge(opts, _gamg_coarsening(a.coarsening, refuse), _gamg_smoother(a.smoother, s, refuse))
+    s.grow == 0 || refuse("Sweeps(grow) has no PETSc counterpart: PETSc fixes its level count during setup")
+    opts = merge((pc_mg_cycle_type="v",), _petsc_coarsening(a.coarsening, a, solver, refuse),
+        _mg_smoother(a.smoother, s, refuse))
     return opts, refused
 end
 
-function _gamg_coarsening(c::SmoothedAggregation, refuse)
+# PETSc forms the coarse operators from the pairwise interpolation (kept across refreshes) and
+# solves the coarsest level by LU, as the native Direct() coarse solve
+_petsc_coarsening(::Pairwise, a, solver, refuse) = (pc_type="mg", pc_mg_type="multiplicative",
+    pc_mg_galerkin="both", mg_coarse_ksp_type="preonly", mg_coarse_pc_type="redundant",
+    mg_coarse_redundant_pc_type="lu")
+function _petsc_coarsening(c::SmoothedAggregation, a, solver, refuse)
     c.weight == oftype(c.weight, 4/3) || refuse("SmoothedAggregation(weight) has no PETSc counterpart")
     isnothing(c.near_nullspace) || refuse("SmoothedAggregation(near_nullspace) has no PETSc counterpart")
-    (pc_gamg_agg_nsmooths=1, pc_gamg_threshold=c.threshold)
+    opts = (pc_type="gamg", pc_gamg_reuse_interpolation=true, pc_gamg_coarse_eq_limit=a.coarsest,
+        pc_gamg_aggressive_coarsening=0, pc_gamg_agg_nsmooths=1, pc_gamg_threshold=c.threshold)
+    # GAMG aggregates on a symmetric graph; a non-symmetric matrix must be symmetrised first
+    solver isa Cg ? opts : merge(opts, (pc_gamg_graph_symmetrize=true,))
 end
-function _gamg_coarsening(c::Pairwise, refuse)
-    c.merges == 1 || refuse("Pairwise(merges > 1) has no PETSc counterpart")
-    (pc_gamg_agg_nsmooths=0,)
-end
-_gamg_coarsening(::RugeStuben, refuse) =
-    (refuse("RugeStuben() has no PETSc counterpart; use BoomerAMG() for classical AMG on a distributed mesh"); (;))
+_petsc_coarsening(::RugeStuben, a, solver, refuse) =
+    (refuse("RugeStuben() has no PETSc counterpart; use BoomerAMG() for classical AMG on a distributed mesh");
+    (pc_type="gamg",))
 
 # down sweeps on every level; unequal up sweeps through a separate up smoother
-_gamg_sweeps(s::Sweeps) = s.pre == s.post ? (mg_levels_ksp_max_it=s.pre,) :
+_mg_sweeps(s::Sweeps) = s.pre == s.post ? (mg_levels_ksp_max_it=s.pre,) :
     (pc_mg_distinct_smoothup=true, mg_levels_ksp_max_it=s.pre, mg_levels_up_ksp_max_it=s.post)
 
 # Jacobi damps by weight/λmax per level; PETSc's Richardson scale is fixed, so weight/2 assumes λmax ≈ 2
-_gamg_smoother(j::Jacobi, s, refuse) = merge((mg_levels_ksp_type="richardson", mg_levels_pc_type="jacobi",
-    mg_levels_ksp_richardson_scale=j.weight / 2), _gamg_sweeps(s))
-function _gamg_smoother(c::Chebyshev, s, refuse)
+_mg_smoother(j::Jacobi, s, refuse) = merge((mg_levels_ksp_type="richardson", mg_levels_pc_type="jacobi",
+    mg_levels_ksp_richardson_scale=j.weight / 2), _mg_sweeps(s))
+function _mg_smoother(c::Chebyshev, s, refuse)
     s.pre == s.post == 1 || refuse("Chebyshev() with PETSc takes sweeps = 1; raise degree instead")
     (mg_levels_ksp_type="chebyshev", mg_levels_pc_type="jacobi", mg_levels_ksp_max_it=c.degree,
         mg_levels_ksp_chebyshev_esteig="0,$(c.lambda_scale/c.eig_ratio),0,$(c.lambda_scale)")
 end
 # PETSc's SOR sweeps within each rank
-function _gamg_smoother(g::SweepSmoother, s, refuse)
-    _sweep_omega(g) == 1 || refuse("PETSc's SOR smoother in GAMG takes omega = 1; use GaussSeidel() or SymGaussSeidel()")
+function _mg_smoother(g::SweepSmoother, s, refuse)
+    _sweep_omega(g) == 1 || refuse("PETSc's SOR smoother takes omega = 1; use GaussSeidel() or SymGaussSeidel()")
     merge((mg_levels_ksp_type="richardson", mg_levels_pc_type="sor", mg_levels_pc_sor_its=1),
-        _sor_order(_sweep_order(g)), _gamg_sweeps(s))
+        _sor_order(_sweep_order(g)), _mg_sweeps(s))
 end
 _sor_order(::_Forward) = (mg_levels_pc_sor_local_forward=true,)
 _sor_order(::_Symmetric) = (mg_levels_pc_sor_local_symmetric=true,)
+
+# interpolations of the serial pairwise AMG on one rank's owned block (rows × owned columns), coarsest
+# last. `total(x)` sums x over ranks, so every rank stops where the serial AMG stops on the global counts
+function _pairwise_transfers(A, a::AMG, total)
+    A = _amg_matrix(A, Int)
+    T = eltype(_nzval(A))
+    Ps = SparseMatrixCSC{T,Int}[]
+    N, level = total(_m(A)), 1
+    while level < _AMG_MAX_LEVELS
+        n = _m(A)
+        _, P, _ = build_prolongation(A, a.coarsening)
+        # a rank too small to coarsen keeps its rows
+        P = something(P, sparse(1:n, 1:n, ones(T, n), n, n))
+        Nc = total(size(P, 2))
+        Nc < N || break
+        push!(Ps, P)
+        (Nc <= a.coarsest || _should_stop_coarsening(N, Nc, a, level)) && break
+        A = _amg_matrix(sparse(transpose(P)) * _csr_to_csc(A) * P, Int)
+        N, level = Nc, level + 1
+    end
+    Ps
+end
 
 # NativeAMG settings changed from their defaults, which PETSc does not use
 function _native_only(a::AMG)

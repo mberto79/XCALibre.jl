@@ -273,8 +273,9 @@ momentum), `solver=Richardson()` for plain V-cycles.
   aggregates and interpolation are kept while the sparsity pattern is unchanged
 - `native`: [`NativeAMG`](@ref) settings used on serial meshes only
 
-A serial mesh runs XCALibre's own AMG; a distributed mesh runs PETSc's GAMG with the same coarsening
-family, smoother and sweeps (see the AMG section of the user guide for what differs). Settings a
+A serial mesh runs XCALibre's own AMG; a distributed mesh runs it in PETSc with the same smoother and
+sweeps: `Pairwise()` as PETSc's multigrid over the same pairwise aggregates, built per rank, and
+`SmoothedAggregation()` as GAMG (see the AMG section of the user guide for what differs). Settings a
 path cannot honour stop the run there. `SolverSetup(precision=MixedF32())` stores the coarse levels
 in Float32.
 """

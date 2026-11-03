@@ -449,8 +449,9 @@ meaning:
 
 - `solver`: `Cg()` → `cg`, `Cgs()` → `cgs`, `Bicgstab()` → `bcgs`, `Gmres()` → `gmres`,
   `Richardson()` → `richardson` (PETSc `KSP` type).
-- `preconditioner`: `Jacobi()` → `jacobi`, `AMG(...)` → `gamg` with the same coarsening, smoother
-  and sweeps (see the AMG section of the runtime and solvers page), `BoomerAMG()` → `hypre` (PETSc
+- `preconditioner`: `Jacobi()` → `jacobi`, `AMG(...)` → `mg` over XCALibre's pairwise aggregates
+  (`Pairwise()`) or `gamg` (`SmoothedAggregation()`), with the same smoother and sweeps (see the AMG
+  section of the runtime and solvers page), `BoomerAMG()` → `hypre` (PETSc
   `PC` type). `DILU()`, `ILU0GPU()`, `IC0GPU()` and `NormDiagonal()` have no PETSc equivalent and
   map to their closest relative: block Jacobi with an ILU(0) (`DILU`, `ILU0GPU`) or ICC(0)
   (`IC0GPU`) factorisation of each rank's block, and `jacobi` (`NormDiagonal`). Each warns once
@@ -511,10 +512,10 @@ grows, so Jacobi-preconditioned CG needs more iterations on larger meshes. Algeb
 iterations that is roughly independent of mesh size. Two AMG preconditioners are available on a
 distributed mesh:
 
-- `AMG(...)`: the same settings as on a serial mesh, run as PETSc's GAMG (`-pc_type gamg`). No
-  extra build needed. With an outer iteration other than `Cg()` the aggregation graph is
-  symmetrised, so non-symmetric systems work with `Bicgstab()`. `RugeStuben()` is not supported;
-  use `BoomerAMG()`.
+- `AMG(...)`: the same settings as on a serial mesh. No extra build needed. `Pairwise()` (the
+  default) runs PETSc's multigrid (`-pc_type mg`) over XCALibre's own pairwise aggregates, built
+  per rank; `SmoothedAggregation()` runs PETSc's GAMG (`-pc_type gamg`). Both handle
+  non-symmetric systems with `Bicgstab()`. `RugeStuben()` is not supported; use `BoomerAMG()`.
 - `BoomerAMG()`: the hypre library (`-pc_type hypre`). It needs a PETSc built with hypre; the stock
   Float64 libraries include it.
 
@@ -671,8 +672,8 @@ residual reduction per outer iteration. The defaults balance the two.
 
 
 **AMG** takes the same keywords on every mesh (see the AMG section of the runtime and solvers
-page). Other GAMG options go through `petsc_options`, e.g.
-`petsc_options = (p = "-pc_gamg_square_graph 1",)`.
+page). Other PETSc multigrid or GAMG options go through `petsc_options`, e.g.
+`petsc_options = (p = "-pc_mg_cycle_type w",)`.
 
 **BoomerAMG** takes typed keywords, translated to `-pc_hypre_boomeramg_*` options. The defaults
 are tuned for 3D; PETSc's own BoomerAMG defaults (Falgout coarsening, classical interpolation,
@@ -699,7 +700,7 @@ Any other hypre option goes through `petsc_options`, e.g.
     needs no special build and is the safer default in shared scripts.
 
 !!! note
-    In Float32 PETSc libraries (`MixedF32()`, or a Float32 mesh), `AMG(...)` (GAMG) handles at most
+    In Float32 PETSc libraries (`MixedF32()`, or a Float32 mesh), `AMG(SmoothedAggregation())` (GAMG) handles at most
     2^24 + 1 = 16,777,217 global rows. PETSc releases up to 3.26 pass global row ids through
     floating-point vectors during GAMG setup, and Float32 holds integers exactly only up to 2^24.
     Above that size the solver raises an error when it is constructed. Solve that equation at
@@ -709,7 +710,8 @@ Any other hypre option goes through `petsc_options`, e.g.
 ### On the GPU
 
 With a CUDA-enabled PETSc, `Jacobi()` and `AMG(...)` run on the device and give the same residuals
-as on the CPU; GAMG builds part of its hierarchy on the host, which `refresh` amortises. Use
+as on the CPU; the pairwise aggregates and part of GAMG's hierarchy are built on the host, which
+`refresh` amortises. Use
 `Jacobi()` or `Chebyshev()` on the GPU; the Gauss-Seidel and SOR smoothers are CPU only.
 `BoomerAMG()` runs on the device only if PETSc's hypre was itself built with CUDA. There PETSc
 switches it to the GPU-capable variants (PMIS coarsening, `ext+i` interpolation, l1-Jacobi

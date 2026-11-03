@@ -68,11 +68,11 @@ SolverSetup(
 `AMG(coarsening; smoother, sweeps, coarsest, refresh, native)`:
 
 - `coarsening`: how cells are grouped into coarse levels.
-  - `Pairwise(merges=1)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level, as OpenFOAM's `algebraicPair` agglomeration. Piecewise-constant transfer between levels. Cheap to build, light on memory and robust for non-symmetric matrices.
+  - `Pairwise(merges=1)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level. Piecewise-constant transfer between levels. Cheap to build, light on memory and robust for non-symmetric matrices.
   - `SmoothedAggregation(; threshold=0.0)`: larger aggregates with a smoothed interpolation; fewer iterations on hard symmetric problems at a higher setup and memory cost.
   - `RugeStuben(; threshold=0.25)`: classical AMG, serial meshes only (on a distributed mesh use `BoomerAMG()`).
 - `smoother`: `Jacobi()` (default), `Chebyshev(; degree=3)`, and on the CPU `GaussSeidel()`, `SymGaussSeidel()`, `SOR(ω)`, `SSOR(ω)`. `Jacobi(weight=4/3)` relaxes each level by `weight/λmax`, with λmax the largest eigenvalue of D⁻¹A there; `SOR` and `SSOR` take the relaxation factor `ω` directly.
-- `sweeps`: smoother sweeps before and after the coarse correction on each level. `sweeps = 2` means two before and two after, `sweeps = (0, 2)` none before and two after, and `Sweeps(pre, post; grow, max)` adds `grow` sweeps per level down to at most `max`, as OpenFOAM's GAMG. Defaults to 2 for `Jacobi()` and 1 otherwise.
+- `sweeps`: smoother sweeps before and after the coarse correction on each level. `sweeps = 2` means two before and two after, `sweeps = (0, 2)` none before and two after, and `Sweeps(pre, post; grow, max)` adds `grow` sweeps per level down to at most `max`; more sweeps on coarse levels, where they are cheap, strengthen the cycle at little cost. Defaults to 2 for `Jacobi()` and 1 otherwise.
 - `coarsest = 4096`: coarsening stops once a level has at most this many rows.
 - `refresh = 5`: the coarse levels are recomputed from the current matrix every `refresh` solves. The aggregates and interpolation are kept while the sparsity pattern is unchanged; natively the finest level always uses the current matrix. Use `refresh = 1` to recompute every solve.
 - `native = NativeAMG(...)`: settings of XCALibre's own AMG, which a distributed mesh does not use (below).

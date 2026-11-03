@@ -74,9 +74,8 @@ Adapt.@adapt_structure Iterative
 
 Pairwise agglomeration: each cell is paired with the neighbour it is most strongly coupled to
 (largest `|aᵢⱼ|`), `merges` times per level, so clusters hold about `2^merges` cells. Transfer
-between levels is piecewise constant and coarse matrices are Galerkin products. The same idea as
-OpenFOAM's `algebraicPair` agglomeration. Cheap to set up, light on memory and robust for
-non-symmetric matrices; the default.
+between levels is piecewise constant and coarse matrices are Galerkin products. Cheap to set up,
+light on memory and robust for non-symmetric matrices; the default.
 """
 struct Pairwise <: AbstractAMGCoarsening
     merges::Int
@@ -197,8 +196,8 @@ _check_smoother_backend(backend::KernelAbstractions.GPU, smoother::SweepSmoother
 """
     Sweeps(pre, post; grow=0, max=Base.max(pre, post, 4))
 
-Smoother sweeps before (`pre`) and after (`post`) the coarse correction on each level, as in
-OpenFOAM's GAMG: level `l` (finest `l = 1`) runs `min(pre + grow*(l-1), max)` sweeps before and the
+Smoother sweeps before (`pre`) and after (`post`) the coarse correction on each level: level `l`
+(finest `l = 1`) runs `min(pre + grow*(l-1), max)` sweeps before and the
 same rule for `post` after. `AMG(sweeps=2)` is `Sweeps(2, 2)` and `AMG(sweeps=(0, 2))` is
 `Sweeps(0, 2)`. Unequal `pre` and `post` make the V-cycle non-symmetric, which `Cg()` tolerates
 through its flexible update; a symmetric V-cycle remains the better partner for `Cg()`.
@@ -313,7 +312,7 @@ _with_storage(a::AMG{C,S,N}, ::Type{TS}) where {C,S,N,TS} =
 # Clamp to min(T,TS): storing hierarchy at higher precision than working matrix wastes memory
 _effective_storage(::Type{T}, ::Type{TS}) where {T,TS} = sizeof(TS) >= sizeof(T) ? T : TS
 
-# coarsening also stops here (OpenFOAM's GAMG limit); `coarsest` normally stops it first
+# a safety limit on the level count; `coarsest` normally stops coarsening first
 const _AMG_MAX_LEVELS = 50
 
 # SuiteSparse rejects Float32 sparse factorizations; coarsest direct solve always runs Float64

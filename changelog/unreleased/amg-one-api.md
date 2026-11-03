@@ -1,10 +1,10 @@
-* breaking: `AMG(coarsening=Pairwise(); smoother=Jacobi(), sweeps, coarsest=4096, refresh=5, native=NativeAMG())` replaces the earlier keywords: `pre_sweeps`/`post_sweeps` → `sweeps` (`n`, `(pre, post)` or `Sweeps(pre, post; grow, max)`), `max_coarse_rows` → `coarsest`, `coarse_refresh_interval` → `refresh` (default 5 instead of 1), `coarse_solve`/`scale_correction`/`fuse_levels` → `NativeAMG(coarse, scale_correction, fuse)`; `min_coarse_rows`, `max_levels` and `cycle` are removed. The old keywords still work with a deprecation warning.
-* breaking: AMG names: `Geometric()` → `Pairwise(merges)`, `SmoothAggregation(strength_threshold, smoother_weight)` → `SmoothedAggregation(threshold, weight)`, `RugeStuben(strength_threshold)` → `RugeStuben(threshold)`, `AMGJacobi(omega)` → `Jacobi(weight)`, `AMGChebyshev()` → `Chebyshev()`, `AMGGaussSeidel()`/`AMGSOR()` → `GaussSeidel()`, `SymGaussSeidel()`, `SOR(ω)`, `SSOR(ω)`, `OnDevice`/`OnHost` → `Direct(max_rows)`, `OnDeviceJacobi`/`OnDeviceChebyshev` → `Smoothed(smoother; sweeps)`, `OnDeviceKrylov` → `Iterative(solver)`. The old names still work with a deprecation warning; backward-only sweeps and smoother `iterations` are removed.
-* breaking: `AMG()` defaults to `Pairwise()` coarsening instead of smoothed aggregation.
-* breaking: `AMG(coarse_storage=Float32)` is now `SolverSetup(precision=MixedF32())`, which stores the AMG coarse levels in Float32.
-* breaking: `BoomerAMG()` takes typed keywords (`threshold`, `coarsen=HMIS()`, `interpolation=ExtI()`, `max_interp`, `aggressive`, `smoother`, `sweeps`, `refresh`); `freeze` is `refresh`, and other hypre options go through `petsc_options`.
-* changed: On a distributed mesh `AMG(...)` runs as PETSc's GAMG with the same coarsening family, smoother and sweeps, aggressive coarsening off; settings GAMG cannot express stop the run, and `NativeAMG` settings are reported once.
-* added: `AMG(...)` with `Bicgstab()` on a distributed mesh symmetrises GAMG's aggregation graph, so non-symmetric systems run on every path.
-* added: `AMG(sweeps=(pre, post))` with unequal sweeps, and `Sweeps(pre, post; grow, max)` adding sweeps on coarser levels, as OpenFOAM's GAMG; `Cg()` switches to its flexible form when the V-cycle is not symmetric.
-* changed: `BoomerAMG()` always runs hypre through PETSc; on a serial mesh it errors and points to `distribute(mesh)` instead of running the native AMG.
-* deprecated: `GAMG(...)` returns the `AMG(...)` of PETSc's GAMG defaults (`Chebyshev(degree=2)`, `coarsest=50`, `freeze` as `refresh`); other GAMG settings go through `petsc_options`.
+* breaking: `AMG(coarsening; smoother, sweeps, coarsest, refresh, native=NativeAMG(coarse, scale_correction, fuse))` replaces `pre_sweeps`, `post_sweeps`, `max_coarse_rows`, `coarse_refresh_interval`, `coarse_solve` and `fuse_levels`. Old keywords still work, with a warning.
+* breaking: AMG types renamed: `Pairwise`, `SmoothedAggregation`, `Jacobi(weight)`, `Chebyshev`, `GaussSeidel`, `SymGaussSeidel`, `SOR`, `SSOR`, `Direct`, `Smoothed`, `Iterative`. Old names still work, with a warning.
+* breaking: `AMG()` defaults to `Pairwise()` coarsening and `refresh=5`.
+* breaking: `AMG(coarse_storage=Float32)` is now `SolverSetup(precision=MixedF32())`.
+* breaking: `BoomerAMG()` takes typed keywords (`threshold`, `coarsen`, `interpolation`, `max_interp`, `aggressive`, `smoother`, `sweeps`, `refresh`); `freeze` is `refresh`.
+* changed: On a distributed mesh `AMG(...)` runs as PETSc's GAMG with its settings translated; settings GAMG cannot express stop the run.
+* added: `AMG(...)` with `Bicgstab()` runs on distributed meshes for non-symmetric systems.
+* added: `Sweeps(pre, post; grow, max)` for unequal sweeps and more sweeps on coarser levels.
+* changed: `BoomerAMG()` always runs hypre through PETSc; on a serial mesh it errors and points to `distribute(mesh)`.
+* deprecated: `GAMG(...)` returns the `AMG(...)` of PETSc's GAMG defaults.

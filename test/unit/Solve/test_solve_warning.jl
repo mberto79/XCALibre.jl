@@ -40,7 +40,7 @@ end
 
 laplace_solve(solver, precision; kwargs...) = solve_from_zero!(laplace_system(solver, precision; kwargs...))
 
-const AMG_PC = AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi())
+const AMG_PC = AMG(SmoothedAggregation())
 
 @testset "unconverged $(nameof(typeof(s))) $(nameof(typeof(p))) solve warns" for (s, p, rtol, msg, pc) ∈ (
         (Cg(), FullPrecision(), 0.0, r"Cg solve did not converge in 2 iterations \(maximum number of iterations exceeded\): ‖D⁻¹\(b - Ax\)‖₂ = ", Jacobi()),

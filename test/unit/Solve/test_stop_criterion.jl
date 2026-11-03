@@ -78,7 +78,7 @@ const CASES = (
     (Gmres(), Jacobi(), FullPrecision()), (Gmres(), DILU(), FullPrecision()),
     (Cg(), Jacobi(), MixedF32()), (Cg(), DILU(), MixedF32()), (Bicgstab(), DILU(), MixedF32()),
     (Cgs(), DILU(), MixedF32()), (Gmres(), DILU(), MixedF32()),
-    ((s, AMG(coarsening=SmoothAggregation()), FullPrecision()) for s ∈ AMG_MODES)...)
+    ((s, AMG(SmoothedAggregation()), FullPrecision()) for s ∈ AMG_MODES)...)
 case_name((s, p, pr)) = p isa AMG ? "AMG $(nameof(typeof(s)))" :
     "$(nameof(typeof(s))) $(nameof(typeof(p))) $(nameof(typeof(pr)))"
 
@@ -137,7 +137,7 @@ end
 
 function check_amg_solver(; backend=CPU())
     @testset "AMG Richardson stops at the target (unscaled system)" begin
-        sys(rtol, atol) = scaled_system(Richardson(), AMG(coarsening=SmoothAggregation()), FullPrecision(); rtol, atol, backend, scaled=false)
+        sys(rtol, atol) = scaled_system(Richardson(), AMG(SmoothedAggregation()), FullPrecision(); rtol, atol, backend, scaled=false)
         r0, r = solve_warm!(sys(1e-3, 0.0))
         @test 1e-6*r0 ≤ r ≤ 1e-3*r0
         _, r = solve_warm!(sys(0.0, 1e-4*r0))

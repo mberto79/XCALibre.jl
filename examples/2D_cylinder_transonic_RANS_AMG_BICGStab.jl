@@ -103,7 +103,7 @@ solvers = (
         solver=Bicgstab(), preconditioner=Jacobi(), convergence=convergence, relax=relax_U, rtol=1e-2
         ),
     p = SolverSetup(
-        solver=Bicgstab(), preconditioner=AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi()),
+        solver=Bicgstab(), preconditioner=AMG(SmoothedAggregation()),
         convergence=convergence, relax=relax_p,
         limit=(0.02*p_inf, 50*p_inf), rtol=1e-2 # clamps bound the startup transient
         ),

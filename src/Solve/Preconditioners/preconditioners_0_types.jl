@@ -12,78 +12,102 @@ abstract type MULPreconditioner <: PreconditionerType end
 struct NormDiagonal <: MULPreconditioner end
 Adapt.@adapt_structure NormDiagonal
 
-struct Jacobi <: MULPreconditioner end
+"""
+    Jacobi(; weight=4/3)
+
+Diagonal (Jacobi) preconditioner, and the Jacobi smoother of [`AMG`](@ref). As a smoother each sweep
+relaxes by `weight/λmax`, with λmax the largest eigenvalue of D⁻¹A on that level, so the default
+gives the usual 2/3 damping on Poisson-like levels (λmax ≈ 2); values are clamped below 2 for
+stability. As a preconditioner `weight` plays no role.
+"""
+struct Jacobi <: MULPreconditioner
+    weight::Float64
+end
+Jacobi(; weight=4/3) = (weight > 0 || throw(ArgumentError("Jacobi weight must be positive")); Jacobi(Float64(weight)))
 Adapt.@adapt_structure Jacobi
 
 
 struct DILU <: LDIVPreconditioner end
 Adapt.@adapt_structure DILU
 
+export HMIS, PMIS, Falgout, ExtI, Classical
+
+abstract type HypreCoarsening end
+abstract type HypreInterpolation end
+struct HMIS <: HypreCoarsening end
+struct PMIS <: HypreCoarsening end
+struct Falgout <: HypreCoarsening end
+struct ExtI <: HypreInterpolation end
+struct Classical <: HypreInterpolation end
+
 """
-    BoomerAMG(; kwargs...) <: PreconditionerType
+    BoomerAMG(; threshold=0.7, coarsen=HMIS(), interpolation=ExtI(), max_interp=4, aggressive=1,
+        smoother=SymGaussSeidel(), sweeps=1, refresh=10, device=false) <: PreconditionerType
 
-HYPRE BoomerAMG via PETSc (`-pc_type hypre`), on every mesh: a serial mesh runs it through PETSc in a
-single process after `distribute(mesh)`. Needs a PETSc with hypre,
-which the stock Float64 libraries include (Float32 ones do not). SPD systems only (e.g. pressure).
-Use it where [`AMG`](@ref) (PETSc's GAMG on a distributed mesh) converges poorly or the strongest
-reduction per solve matters; `AMG` is the default recommendation, since it needs no special build
-and is the better AMG on the GPU.
-Like any AMG, results vary slightly with the rank count, and it needs more memory than `Jacobi`.
+hypre's classical AMG (BoomerAMG) through PETSc; it needs PETSc, so a serial mesh runs it after
+`distribute(mesh)`. The stock Float64 PETSc libraries include hypre (Float32 ones do not). Use it
+where [`AMG`](@ref) converges poorly or the strongest reduction per solve matters.
 
-Defaults are tuned for 3D (`BOOMERAMG_3D_DEFAULTS`): PETSc's own BoomerAMG defaults build a
-high-complexity hierarchy in 3D that degrades as the mesh grows. On a GPU with a CUDA-built hypre,
-PETSc switches to PMIS coarsening and l1-Jacobi smoothing, so GPU and CPU residuals differ.
+- `threshold`: strength of connection (0.5-0.7 in 3D)
+- `coarsen`: `HMIS()`, `PMIS()` or `Falgout()`; `interpolation`: `ExtI()` or `Classical()`
+- `max_interp`: interpolation entries per row; `aggressive`: levels of aggressive coarsening
+- `smoother`: `SymGaussSeidel()` or `GaussSeidel()` (hybrid: Gauss-Seidel within each rank, Jacobi
+  across ranks); `sweeps`: `n` or `(pre, post)`
+- `refresh`: hypre cannot keep its interpolation, so the whole preconditioner is rebuilt from the
+  current matrix every `refresh` solves; in between it is applied as built
+- `device`: on GPU fields `BoomerAMG()` is refused unless PETSc's hypre reports device execution;
+  `device=true` skips that check for a build the query misreads
 
-`freeze=N` holds the whole preconditioner fixed for `N` solves and rebuilds it from the current
-matrix on the `N`th (default 10); in between, Krylov iterates on the current matrix with a
-hierarchy built from an older one. In SIMPLE the pressure matrix changes VALUES only, so a stale
-hierarchy stays a good preconditioner, and a full hypre rebuild every solve otherwise dominates
-runtime. `freeze=1` rebuilds every solve. Longer freezes cut setup cost further but let the
-stale hierarchy degrade the pressure residual.
-
-On GPU fields the solver refuses `BoomerAMG()` unless PETSc's hypre reports device execution, since
-a host-only hypre crashes there; `device=true` skips that check for a build the query misreads.
-
-Each other keyword `k=v` overrides a default and is passed to PETSc as `-pc_hypre_boomeramg_<k> v`.
-Common knobs: `strong_threshold` (0.5-0.7 in 3D), `coarsen_type` ("HMIS"/"PMIS"/"Falgout"),
-`interp_type` ("ext+i"/"classical"), `P_max` (interpolation entries per row), `agg_nl` (aggressive-coarsening levels), `relax_type_all`
-(smoother, e.g. "SOR/Jacobi"/"Chebyshev"), `grid_sweeps_all` (smoother sweeps). See the PETSc
-`-pc_hypre_boomeramg_*` options for the full list; anything else can go through `petsc_options`.
+The defaults keep operator complexity low in 3D. On a GPU with a CUDA-built hypre, PETSc switches to
+PMIS coarsening and l1-Jacobi smoothing, so GPU and CPU residuals differ. Any other hypre option
+goes through `petsc_options`.
 """
-struct BoomerAMG{NT<:NamedTuple} <: PreconditionerType
-    opts::NT
-    freeze::Int
-    device::Bool # skip the hypre device-execution check on GPU fields
+struct BoomerAMG{F,C<:HypreCoarsening,I<:HypreInterpolation,S} <: PreconditionerType
+    threshold::F
+    coarsen::C
+    interpolation::I
+    max_interp::Int
+    aggressive::Int
+    smoother::S
+    sweeps::Tuple{Int,Int}
+    refresh::Int
+    device::Bool
 end
 
-# 3D CFD-Poisson defaults: low operator complexity that scales with mesh size
-const BOOMERAMG_3D_DEFAULTS = (
-    strong_threshold = 0.7, coarsen_type = "HMIS", interp_type = "ext+i", P_max = 4,
-    agg_nl = 1, agg_num_paths = 2)
-BoomerAMG(; freeze=10, device=false, kwargs...) =
-    BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), freeze, device)
+function BoomerAMG(; threshold=0.7, coarsen=HMIS(), interpolation=ExtI(), max_interp=4, aggressive=1,
+    smoother=SymGaussSeidel(), sweeps=1, refresh=10, device=false, legacy...)
+    isempty(legacy) || throw(ArgumentError("BoomerAMG keywords are now typed (threshold, coarsen, interpolation, " *
+        "max_interp, aggressive, smoother, sweeps, refresh); pass $(join(keys(legacy), ", ")) through " *
+        "petsc_options=\"-pc_hypre_boomeramg_...\""))
+    smoother isa Union{GaussSeidel,SymGaussSeidel} ||
+        throw(ArgumentError("BoomerAMG smoother must be GaussSeidel() or SymGaussSeidel()"))
+    s = sweeps isa Integer ? (sweeps, sweeps) : sweeps
+    (all(>(0), s) && length(s) == 2) || throw(ArgumentError("BoomerAMG sweeps must be n > 0 or (pre, post) > 0"))
+    refresh > 0 || throw(ArgumentError("BoomerAMG refresh must be positive"))
+    return BoomerAMG(float(threshold), coarsen, interpolation, Int(max_interp), Int(aggressive), smoother,
+        (Int(s[1]), Int(s[2])), Int(refresh), Bool(device))
+end
 
 """
     GAMG(; freeze=25, agg_nsmooths=1, threshold=0.0)
 
 Deprecated: use [`AMG`](@ref), which runs as PETSc's GAMG on a distributed mesh. `GAMG(...)` returns
-the `AMG` settings of PETSc's GAMG defaults: `SmoothAggregation(strength_threshold=threshold)`
-(`Geometric()` with `agg_nsmooths=0`), `AMGChebyshev(degree=2, eig_ratio=11)`, `max_coarse_rows=50`
-and `coarse_refresh_interval=freeze`. Other GAMG settings go through `petsc_options`.
+the `AMG` of PETSc's GAMG defaults: `AMG(SmoothedAggregation(threshold=threshold), smoother=Chebyshev(degree=2,
+eig_ratio=11), sweeps=1, coarsest=50, refresh=freeze)`, with `Pairwise()` for `agg_nsmooths=0`.
 """
 function GAMG(; freeze=25, agg_nsmooths=1, threshold=0.0, reuse_interpolation=true, kwargs...)
-    isempty(kwargs) || throw(ArgumentError("GAMG() is deprecated; pass $(join(keys(kwargs), ", ")) " *
-        "with petsc_options=\"-pc_gamg_...\" and use AMG(coarsening=...)"))
+    isempty(kwargs) || throw(ArgumentError("GAMG() is deprecated; use AMG(...) and pass $(join(keys(kwargs), ", ")) " *
+        "with petsc_options=\"-pc_gamg_...\""))
     string(reuse_interpolation) == "true" || throw(ArgumentError("GAMG(reuse_interpolation=false) has no AMG equivalent"))
     string(agg_nsmooths) ∈ ("0", "1") || throw(ArgumentError("GAMG(agg_nsmooths) must be 0 or 1"))
     unsmoothed = string(agg_nsmooths) == "0"
     unsmoothed && threshold != 0 && throw(ArgumentError("GAMG(threshold) applies with agg_nsmooths=1 only"))
-    coarsening = unsmoothed ? Geometric() : SmoothAggregation(strength_threshold=threshold)
-    _LOG_RANK[]() && @warn "GAMG() is deprecated; it returns AMG(coarsening=$(nameof(typeof(coarsening)))(), " *
-        "smoother=AMGChebyshev(degree=2, eig_ratio=11), max_coarse_rows=50, coarse_refresh_interval=$freeze), " *
-        "PETSc's GAMG defaults" maxlog=1
+    coarsening = unsmoothed ? "Pairwise()" : "SmoothedAggregation(threshold=$threshold)"
+    _LOG_RANK[]() && @warn "GAMG() is deprecated; use AMG(...). This GAMG() is AMG($coarsening, " *
+        "smoother=Chebyshev(degree=2, eig_ratio=11), sweeps=1, coarsest=50, refresh=$freeze)" maxlog=1
     # PETSc's GAMG defaults: Chebyshev degree 2 on [0.1, 1.1]·λmax, coarsest at most 50 rows
-    AMG(; coarsening, smoother=AMGChebyshev(degree=2, eig_ratio=11), max_coarse_rows=50, coarse_refresh_interval=freeze)
+    AMG(unsmoothed ? Pairwise() : SmoothedAggregation(; threshold); smoother=Chebyshev(degree=2, eig_ratio=11),
+        sweeps=1, coarsest=50, refresh=freeze)
 end
 
 struct IC0GPU <: MULPreconditioner end

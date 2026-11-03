@@ -89,9 +89,9 @@ const HYPRE = ext._petsc_has_pkg(ext._petsclib(Float64, 0), "hypre")
 
 # warm start: rtol is relative to D⁻¹(b - Ax₀), not b. Jacobi monitors ‖D⁻¹r‖, block ILU solves the
 # row-scaled system, CG with another PC and AMG PCs check ‖D⁻¹r‖ explicitly near the target
-const CASES = ((Cg(), Jacobi()), (Cg(), DILU()), (Cg(), AMG(coarsening=SmoothAggregation())),
-    (Bicgstab(), Jacobi()), (Bicgstab(), DILU()), (Bicgstab(), AMG(coarsening=SmoothAggregation())), (Cgs(), Jacobi()), (Cgs(), DILU()),
-    (Gmres(), Jacobi()), (Gmres(), DILU()), (Gmres(), AMG(coarsening=SmoothAggregation())),
+const CASES = ((Cg(), Jacobi()), (Cg(), DILU()), (Cg(), AMG(SmoothedAggregation())),
+    (Bicgstab(), Jacobi()), (Bicgstab(), DILU()), (Bicgstab(), AMG(SmoothedAggregation())), (Cgs(), Jacobi()), (Cgs(), DILU()),
+    (Gmres(), Jacobi()), (Gmres(), DILU()), (Gmres(), AMG(SmoothedAggregation())),
     (HYPRE ? ((Cg(), BoomerAMG()), (Bicgstab(), BoomerAMG())) : ())...)
 case_name((s, p)) = "$(nameof(typeof(s))) $(nameof(typeof(p)))"
 
@@ -140,7 +140,7 @@ end
 if any(l -> l.PetscScalar == Float32, PETSc.petsclibs)
     # the serial MixedF32 rule: corrections stop at the refinement's target, x₀ already converged skips the solve
     @testset "distributed MixedF32 $(case_name(c)) stops at the serial target (rank $rank)" for
-            c ∈ ((Cg(), Jacobi()), (Cg(), AMG(coarsening=SmoothAggregation())), (Bicgstab(), DILU()))
+            c ∈ ((Cg(), Jacobi()), (Cg(), AMG(SmoothedAggregation())), (Bicgstab(), DILU()))
         r0, r = solve_warm(c...; rtol=1e-3, atol=0.0, precision=MixedF32())
         @test r ≤ 1.05e-3*r0
         @test r ≥ 1e-6*r0

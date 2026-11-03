@@ -1,15 +1,10 @@
-export AMG, VCycle, SmoothAggregation, RugeStuben, Geometric, AMGJacobi, AMGChebyshev
-export AMGGaussSeidel, AMGSOR, AMGSymmetricSweep, AMGForwardSweep, AMGBackwardSweep
-export AbstractAMGCPUSmoother, AbstractAMGGPUSmoother, OnDevice, OnHost, OnDeviceKrylov
-export OnDeviceJacobi, OnDeviceChebyshev
+export AMG, Sweeps, NativeAMG, Pairwise, SmoothedAggregation, RugeStuben
+export Chebyshev, GaussSeidel, SymGaussSeidel, SOR, SSOR
+export Direct, Smoothed, Iterative
 export AMGWorkspace, AMGHierarchy, AMGLevel, AMGRAPPlanCPU
 
 abstract type AbstractAMGCoarsening end
 abstract type AbstractAMGSmoother end
-abstract type AbstractAMGCPUSmoother <: AbstractAMGSmoother end
-abstract type AbstractAMGGPUSmoother <: AbstractAMGSmoother end
-abstract type AbstractAMGSweep end
-abstract type AbstractAMGCycle end
 abstract type AbstractAMGCoarseSolve end
 abstract type AbstractAMGWorkspace end
 abstract type AbstractAMGHierarchy end
@@ -19,389 +14,323 @@ struct MatrixFreeAMG end
 
 # AMG's standalone V-cycle iteration is now spelled `solver=Richardson()`
 Base.@deprecate_binding AMGSolver Richardson
-struct VCycle <: AbstractAMGCycle end
+
+# NEW SECTION: coarsest-level solves
 
 """
-    OnHost()
+    Direct(; max_rows=512)
 
-Solve the coarsest level on the host (sparse LU/QR). On a GPU backend the per-cycle coarse solve
-copies the rhs to host and the solution back — fastest single-device for a largish coarsest.
+Solve the coarsest level exactly. On a GPU the factor stays on the device while the coarsest level
+has at most `max_rows` rows, and is solved on the host otherwise (`max_rows=0` always uses the
+host). On a CPU backend `max_rows` has no effect.
 """
-struct OnHost <: AbstractAMGCoarseSolve end
+struct Direct <: AbstractAMGCoarseSolve
+    max_rows::Int
+end
+Direct(; max_rows=512) = (max_rows >= 0 || throw(ArgumentError("Direct max_rows must be non-negative"));
+    Direct(Int(max_rows)))
 
 """
-    OnDevice(; max_rows=512)
+    Smoothed(smoother=Chebyshev(degree=10); sweeps=1)
 
-Solve the coarsest level on the device (no host round-trip): a device-resident factorization
-(Cholesky/LU on CUDA; generic backends use a device dense inverse + GEMV fallback). Eliminates a
-per-cycle fine→coarse host sync/transfer (the win at MPI/multi-GPU scale). The factor is rebuilt
-each coarse refresh (~n^3), so coarsest levels larger than `max_rows` fall back to `OnHost` —
-`max_rows=512` is a conservative no-regression default (well-coarsened 3D reaches a tiny coarsest).
-On a CPU backend this is equivalent to `OnHost`.
+Approximate the coarsest solve on the device by a fixed number of smoother sweeps from zero, a
+fixed linear operator, so it is valid inside `Cg()`. Suits a large coarsest level (big
+`coarsest`) on a GPU, where a factorisation would not fit. On a CPU backend it is a `Direct()` solve.
 """
-struct OnDevice{I} <: AbstractAMGCoarseSolve
-    max_rows::I
+struct Smoothed{S} <: AbstractAMGCoarseSolve
+    smoother::S
+    sweeps::Int
 end
 
-OnDevice(; max_rows=512) = OnDevice(Int(max_rows))
-Adapt.@adapt_structure OnDevice
-Adapt.@adapt_structure OnHost
-
 """
-    OnDeviceKrylov(; solver=nothing, rtol=1e-2, atol=0.0, itmax=50)
+    Iterative(solver=Bicgstab(); rtol=1e-2, atol=0.0, itmax=50)
 
-GPU strategy: truncate the hierarchy at a LARGE coarsest level (set `max_coarse_rows` high, e.g.
-4000-8000) so every level has enough work for good GPU occupancy, then solve that coarsest level
-with an in-place Krylov solver (Cg/Bicgstab) + Jacobi preconditioner — the configuration GPUs
-parallelise best. Reuses XCALibre's Krylov.jl infrastructure (no host round-trip, no extra alloc).
-`solver=nothing` auto-picks Cg (symmetric coarsest) or Bicgstab. Requires `SolverSetup(solver=Richardson())`:
-an inner Krylov solve is nonlinear in b, which breaks PCG's fixed-SPD-preconditioner assumption. On a
-CPU backend this is equivalent to `OnHost`.
+Solve the coarsest level on the device with a Jacobi-preconditioned Krylov solver (`Cg()` for
+symmetric matrices, `Bicgstab()` for any). The result depends on the right-hand side, so it needs
+`SolverSetup(solver=Richardson())`. On a CPU backend it is a `Direct()` solve.
 """
-struct OnDeviceKrylov{S,F,I} <: AbstractAMGCoarseSolve
+struct Iterative{S,F} <: AbstractAMGCoarseSolve
     solver::S
     rtol::F
     atol::F
-    itmax::I
+    itmax::Int
 end
 
-OnDeviceKrylov(; solver=nothing, rtol=1e-2, atol=0.0, itmax=50) =
-    OnDeviceKrylov(_amg_krylov_solver(solver), float(rtol), float(atol), Int(itmax))
-Adapt.@adapt_structure OnDeviceKrylov
+function Iterative(solver=Bicgstab(); rtol=1e-2, atol=0.0, itmax=50)
+    solver isa Union{Cg,Bicgstab} || throw(ArgumentError("Iterative coarse solve takes Cg() or Bicgstab()"))
+    itmax > 0 || throw(ArgumentError("Iterative itmax must be positive"))
+    rtol, atol = promote(float(rtol), float(atol))
+    return Iterative(solver, rtol, atol, Int(itmax))
+end
 
-_amg_krylov_solver(::Nothing) = nothing
-_amg_krylov_solver(s::Union{Cg,Bicgstab}) = s
-_amg_krylov_solver(s) =
-    throw(ArgumentError("OnDeviceKrylov solver must be Cg(), Bicgstab(), or nothing (auto)"))
+Adapt.@adapt_structure Direct
+Adapt.@adapt_structure Smoothed
+Adapt.@adapt_structure Iterative
+
+# NEW SECTION: coarsening
 
 """
-    OnDeviceJacobi(; omega=4/3, iterations=10)
+    Pairwise(merges=1)
 
-GPU coarse solve: apply a FIXED number of weighted-Jacobi sweeps (x init 0) to the truncated,
-large coarsest level instead of a direct factor. A fixed-sweep Jacobi is a constant linear operator
-`p(A_c)·b`, so — unlike [`OnDeviceKrylov`](@ref) — it is valid as an outer-CG preconditioner: allowed
-with `solver=Cg()` as well as `solver=Richardson()`. Fully on device (no host round-trip), removing the coarse
-host sync point at MPI/multi-GPU scale. Cheaper per cycle than a direct solve but only approximate, so
-outer iterations may rise; best when the coarsest is large and well-conditioned (huge coarsening
-ratio). On a CPU backend this is equivalent to `OnHost`.
+Pairwise agglomeration: each cell is paired with the neighbour it is most strongly coupled to
+(largest `|aᵢⱼ|`), `merges` times per level, so clusters hold about `2^merges` cells. Transfer
+between levels is piecewise constant and coarse matrices are Galerkin products. The same idea as
+OpenFOAM's `algebraicPair` agglomeration. Cheap to set up, light on memory and robust for
+non-symmetric matrices; the default.
 """
-struct OnDeviceJacobi{F,I} <: AbstractAMGCoarseSolve
-    omega::F
-    iterations::I
+struct Pairwise <: AbstractAMGCoarsening
+    merges::Int
+    function Pairwise(merges::Integer=1)
+        merges > 0 || throw(ArgumentError("Pairwise merges must be positive"))
+        return new(Int(merges))
+    end
 end
-
-function OnDeviceJacobi(; omega=4/3, iterations=10)
-    iterations > 0 || throw(ArgumentError("OnDeviceJacobi iterations must be positive"))
-    return OnDeviceJacobi(float(omega), Int(iterations))
-end
-Adapt.@adapt_structure OnDeviceJacobi
 
 """
-    OnDeviceChebyshev(; degree=10, eig_ratio=10.0, lambda_scale=1.1)
+    SmoothedAggregation(; threshold=0.0, weight=4/3, near_nullspace=nothing)
 
-GPU coarse solve: apply a FIXED-degree Chebyshev polynomial smoother (x init 0) to the coarsest
-level. Like [`OnDeviceJacobi`](@ref) it is a constant linear operator (b-independent), so valid with
-`solver=Cg()` as well as `solver=Richardson()`; fully on device. Chebyshev targets the spectrum
-`[lambda_max/eig_ratio, lambda_max]` (lambda_max estimated per level; `lambda_scale` inflates the
-upper bound), giving faster coarse error reduction per matvec than Jacobi at equal cost. On a CPU
-backend this is equivalent to `OnHost`.
+Smoothed-aggregation AMG: aggregates of strongly coupled cells (`|aᵢⱼ|² ≥ threshold²·|aᵢᵢ aⱼⱼ|`) with
+a Jacobi-smoothed interpolation (`weight` scaled by the largest eigenvalue of D⁻¹A). Fewer
+iterations than `Pairwise` on hard symmetric problems, at a higher setup and memory cost.
 """
-struct OnDeviceChebyshev{I,F} <: AbstractAMGCoarseSolve
-    degree::I
-    eig_ratio::F
-    lambda_scale::F
-end
-
-function OnDeviceChebyshev(; degree=10, eig_ratio=10.0, lambda_scale=1.1)
-    degree > 0 || throw(ArgumentError("OnDeviceChebyshev degree must be positive"))
-    eig_ratio > 1 || throw(ArgumentError("OnDeviceChebyshev eig_ratio must be greater than one"))
-    lambda_scale > 0 || throw(ArgumentError("OnDeviceChebyshev lambda_scale must be positive"))
-    return OnDeviceChebyshev(Int(degree), float(eig_ratio), float(lambda_scale))
-end
-Adapt.@adapt_structure OnDeviceChebyshev
-
-_amg_coarse_solve(cs::AbstractAMGCoarseSolve) = cs
-_amg_coarse_solve(::CPU) = OnHost()  # convenience: coarse_solve=CPU() means host solve
-_amg_coarse_solve(::KernelAbstractions.GPU) = OnDeviceKrylov()  # coarse_solve=CUDABackend()
-_amg_coarse_solve(cs) =
-    throw(ArgumentError("AMG coarse_solve must be OnDevice(...), OnDeviceJacobi(...), OnDeviceChebyshev(...), OnDeviceKrylov(...), OnHost(), CPU(), or a GPU backend"))
-struct AMGSymmetricSweep <: AbstractAMGSweep end
-struct AMGForwardSweep <: AbstractAMGSweep end
-struct AMGBackwardSweep <: AbstractAMGSweep end
-
-Adapt.@adapt_structure AMGSymmetricSweep
-Adapt.@adapt_structure AMGForwardSweep
-Adapt.@adapt_structure AMGBackwardSweep
-
-struct SmoothAggregation{F,C} <: AbstractAMGCoarsening
-    strength_threshold::F
-    smoother_weight::F
+struct SmoothedAggregation{F,C} <: AbstractAMGCoarsening
+    threshold::F
+    weight::F
     near_nullspace::C
 end
+SmoothedAggregation(; threshold=0.0, weight=4/3, near_nullspace=nothing) =
+    SmoothedAggregation(promote(float(threshold), float(weight))..., near_nullspace)
 
-function SmoothAggregation(;
-    strength_threshold=0.0,
-    smoother_weight=4/3,
-    near_nullspace=nothing,
-)
-    return SmoothAggregation{typeof(float(strength_threshold)), typeof(near_nullspace)}(
-        float(strength_threshold),
-        float(smoother_weight),
-        near_nullspace
-    )
-end
+"""
+    RugeStuben(; threshold=0.25)
 
-Adapt.@adapt_structure SmoothAggregation
-
+Classical (Ruge-Stüben) AMG with direct interpolation. Serial meshes only; on a distributed mesh use
+`BoomerAMG()`.
+"""
 struct RugeStuben{F} <: AbstractAMGCoarsening
-    strength_threshold::F
+    threshold::F
+end
+function RugeStuben(; threshold=0.25, legacy...)
+    isempty(legacy) || (_amg_deprecated("RugeStuben(strength_threshold)", "RugeStuben(threshold)");
+        threshold = legacy[:strength_threshold])
+    RugeStuben(float(threshold))
 end
 
-RugeStuben(; strength_threshold=0.25) = RugeStuben(float(strength_threshold))
+Adapt.@adapt_structure Pairwise
+Adapt.@adapt_structure SmoothedAggregation
 Adapt.@adapt_structure RugeStuben
 
-"""
-    Geometric(; merge_levels=1)
-
-OpenFOAM-style geometric agglomeration (`faceAreaPair`): cells are merged pairwise into
-coarse clusters by greatest face weight, using `|a_ij|` as the face weight (proportional to
-face-area/delta in FVM). `merge_levels` sets the number of pairwise passes per coarse level,
-giving cluster size ~`2^merge_levels`. Prolongation is unsmoothed piecewise-constant injection
-(additive correction); coarse operators are formed algebraically by Galerkin RAP.
-"""
-struct Geometric{I} <: AbstractAMGCoarsening
-    merge_levels::I
-end
-
-function Geometric(; merge_levels=1)
-    merge_levels > 0 || throw(ArgumentError("Geometric merge_levels must be positive"))
-    return Geometric(Int(merge_levels))
-end
-
-Adapt.@adapt_structure Geometric
+# NEW SECTION: smoothers
 
 """
-    AMGJacobi(; omega=4/3)
+    Chebyshev(; degree=3, eig_ratio=10.0, lambda_scale=1.1)
 
-Weighted-Jacobi AMG smoother. `omega` is a **lambda_max-scaled** coefficient: the effective
-relaxation factor applied each sweep is `ω_eff = omega / lambda_max`, where `lambda_max` is
-the spectral radius of `D⁻¹A` at that level. The default `omega=4/3` gives `ω_eff ≈ 2/3`
-for Poisson-like operators (where `lambda_max ≈ 2`), which damps the upper half of the
-spectrum optimally. Valid scaled range: `(0, 2)` — values ≥ 2 are clamped for SPD stability.
-Note: unlike [`AMGSOR`](@ref), `omega` here is NOT a direct relaxation factor.
+Chebyshev polynomial smoother of the given `degree` on Jacobi-scaled levels, targeting the spectrum
+`[λmax/eig_ratio, λmax]` (λmax estimated per level, inflated by `lambda_scale`). Runs on CPU and GPU.
 """
-struct AMGJacobi{F} <: AbstractAMGGPUSmoother
-    omega::F
-end
-
-AMGJacobi(; omega=4/3) = AMGJacobi(float(omega))
-Adapt.@adapt_structure AMGJacobi
-
-struct AMGChebyshev{F,I} <: AbstractAMGGPUSmoother
-    degree::I
+struct Chebyshev{F} <: AbstractAMGSmoother
+    degree::Int
     eig_ratio::F
     lambda_scale::F
 end
 
-function AMGChebyshev(; degree=3, eig_ratio=10.0, lambda_scale=1.1)
-    degree > 0 || throw(ArgumentError("AMGChebyshev degree must be positive"))
-    eig_ratio > 1 || throw(ArgumentError("AMGChebyshev eig_ratio must be greater than one"))
-    lambda_scale > 0 || throw(ArgumentError("AMGChebyshev lambda_scale must be positive"))
-    return AMGChebyshev(Int(degree), float(eig_ratio), float(lambda_scale))
+function Chebyshev(; degree=3, eig_ratio=10.0, lambda_scale=1.1)
+    degree > 0 || throw(ArgumentError("Chebyshev degree must be positive"))
+    eig_ratio > 1 || throw(ArgumentError("Chebyshev eig_ratio must be greater than one"))
+    lambda_scale > 0 || throw(ArgumentError("Chebyshev lambda_scale must be positive"))
+    return Chebyshev(Int(degree), promote(float(eig_ratio), float(lambda_scale))...)
 end
 
-Adapt.@adapt_structure AMGChebyshev
+"""
+    GaussSeidel()
+    SymGaussSeidel()
+
+Forward Gauss-Seidel, or a forward then a backward sweep. CPU only.
+"""
+struct GaussSeidel <: AbstractAMGSmoother end
+struct SymGaussSeidel <: AbstractAMGSmoother end
 
 """
-    AMGGaussSeidel(; sweep=AMGSymmetricSweep(), iterations=1)
+    SOR(omega=1.0)
+    SSOR(omega=1.0)
 
-Gauss-Seidel AMG smoother (CPU only). `sweep` selects the traversal order:
-`AMGSymmetricSweep()` (forward + backward), `AMGForwardSweep()`, or `AMGBackwardSweep()`.
-`iterations` sets the number of sweeps per smoother call. `omega` is fixed at 1 (no
-relaxation); use [`AMGSOR`](@ref) for a tunable direct relaxation factor.
+Successive over-relaxation with the direct factor `omega` in (0, 2), forward (`SOR`) or forward then
+backward (`SSOR`); `omega=1` is `GaussSeidel()`/`SymGaussSeidel()`. CPU only.
 """
-struct AMGGaussSeidel{SW,I} <: AbstractAMGCPUSmoother
-    sweep::SW
-    iterations::I
-end
-
-function AMGGaussSeidel(; sweep=AMGSymmetricSweep(), iterations=1)
-    sweep isa AbstractAMGSweep || throw(ArgumentError("AMGGaussSeidel sweep must be AMGSymmetricSweep(), AMGForwardSweep(), or AMGBackwardSweep()"))
-    iterations > 0 || throw(ArgumentError("AMGGaussSeidel iterations must be positive"))
-    return AMGGaussSeidel(sweep, Int(iterations))
-end
-
-AMGGaussSeidel(sweep::AbstractAMGSweep; iterations=1) = AMGGaussSeidel(; sweep, iterations)
-Adapt.@adapt_structure AMGGaussSeidel
-
-"""
-    AMGSOR(; omega=1.0, sweep=AMGSymmetricSweep(), iterations=1)
-
-Successive Over-Relaxation AMG smoother (CPU only). `omega` is the **direct** relaxation
-factor applied each sweep: `x_new = (1-omega)*x_old + omega*(D\\(b - L*x))`. Stable range
-`(0, 2)`; `omega=1` recovers Gauss-Seidel. Unlike [`AMGJacobi`](@ref), `omega` is NOT
-scaled by `lambda_max` — it is used as-is.
-"""
-struct AMGSOR{SW,F,I} <: AbstractAMGCPUSmoother
-    sweep::SW
+struct SOR{F} <: AbstractAMGSmoother
     omega::F
-    iterations::I
+    SOR(omega::Real=1.0) = (0 < omega < 2 || throw(ArgumentError("SOR omega must lie in (0, 2)"));
+        new{typeof(float(omega))}(float(omega)))
+end
+struct SSOR{F} <: AbstractAMGSmoother
+    omega::F
+    SSOR(omega::Real=1.0) = (0 < omega < 2 || throw(ArgumentError("SSOR omega must lie in (0, 2)"));
+        new{typeof(float(omega))}(float(omega)))
 end
 
-function AMGSOR(; omega=1.0, sweep=AMGSymmetricSweep(), iterations=1)
-    sweep isa AbstractAMGSweep || throw(ArgumentError("AMGSOR sweep must be AMGSymmetricSweep(), AMGForwardSweep(), or AMGBackwardSweep()"))
-    omega > 0 || throw(ArgumentError("AMGSOR omega must be positive"))
-    iterations > 0 || throw(ArgumentError("AMGSOR iterations must be positive"))
-    return AMGSOR(sweep, float(omega), Int(iterations))
+Adapt.@adapt_structure Chebyshev
+Adapt.@adapt_structure GaussSeidel
+Adapt.@adapt_structure SymGaussSeidel
+Adapt.@adapt_structure SOR
+Adapt.@adapt_structure SSOR
+
+const AMGSmoother = Union{Jacobi,Chebyshev,GaussSeidel,SymGaussSeidel,SOR,SSOR}
+const SweepSmoother = Union{GaussSeidel,SymGaussSeidel,SOR,SSOR} # sequential, CPU only
+
+# sweep order and relaxation factor of the sequential smoothers
+struct _Forward end
+struct _Symmetric end
+_sweep_order(::Union{GaussSeidel,SOR}) = _Forward()
+_sweep_order(::Union{SymGaussSeidel,SSOR}) = _Symmetric()
+_sweep_omega(::Union{GaussSeidel,SymGaussSeidel}) = 1.0
+_sweep_omega(s::Union{SOR,SSOR}) = s.omega
+
+_smoother_name(s) = string(nameof(typeof(s)))
+
+_check_smoother_backend(backend, smoother) = smoother
+_check_smoother_backend(backend::KernelAbstractions.GPU, smoother::SweepSmoother) = throw(ArgumentError(
+    "$(_smoother_name(smoother))() is a sequential CPU smoother and cannot run on $(nameof(typeof(backend)))(); " *
+    "use Jacobi() or Chebyshev()"))
+
+# NEW SECTION: sweeps
+
+"""
+    Sweeps(pre, post; grow=0, max=Base.max(pre, post, 4))
+
+Smoother sweeps before (`pre`) and after (`post`) the coarse correction on each level, as in
+OpenFOAM's GAMG: level `l` (finest `l = 1`) runs `min(pre + grow*(l-1), max)` sweeps before and the
+same rule for `post` after. `AMG(sweeps=2)` is `Sweeps(2, 2)` and `AMG(sweeps=(0, 2))` is
+`Sweeps(0, 2)`. Unequal `pre` and `post` make the V-cycle non-symmetric, which `Cg()` tolerates
+through its flexible update; a symmetric V-cycle remains the better partner for `Cg()`.
+"""
+struct Sweeps
+    pre::Int
+    post::Int
+    grow::Int
+    max::Int
 end
 
-AMGSOR(omega; sweep=AMGSymmetricSweep(), iterations=1) = AMGSOR(; omega, sweep, iterations)
-AMGSOR(omega, sweep::AbstractAMGSweep; iterations=1) = AMGSOR(; omega, sweep, iterations)
-Adapt.@adapt_structure AMGSOR
+function Sweeps(pre::Integer, post::Integer; grow=0, max=Base.max(pre, post, 4))
+    (pre >= 0 && post >= 0 && pre + post > 0) ||
+        throw(ArgumentError("Sweeps needs pre, post ≥ 0 and at least one sweep"))
+    grow >= 0 || throw(ArgumentError("Sweeps grow must be non-negative"))
+    max >= Base.max(pre, post) || throw(ArgumentError("Sweeps max must be at least pre and post"))
+    return Sweeps(Int(pre), Int(post), Int(grow), Int(max))
+end
+Sweeps(n::Integer) = Sweeps(n, n)
+Sweeps(t::Tuple{Integer,Integer}) = Sweeps(t...)
+Sweeps(s::Sweeps) = s
 
-struct AMG{M,C,S,Y,CS,I} <: PreconditionerType
-    mode::M
+_pre_sweeps(s::Sweeps, level) = min(s.pre + s.grow * (level - 1), s.max)
+_post_sweeps(s::Sweeps, level) = min(s.post + s.grow * (level - 1), s.max)
+
+# NEW SECTION: AMG
+
+"""
+    NativeAMG(; coarse=Direct(), scale_correction=true, fuse=0)
+
+Settings of XCALibre's own AMG (serial meshes) that have no PETSc counterpart:
+
+- `coarse`: coarsest-level solve, `Direct()`, `Smoothed(...)` or `Iterative(...)`
+- `scale_correction`: scale each coarse correction by the energy-optimal factor `(r·c)/(c·Ac)`
+- `fuse`: on a GPU with `Pairwise()`, `Jacobi()` and `Direct()`, `fuse ≥ 1` keeps the transfers between
+  levels as aggregate lists instead of sparse matrices, and `fuse = n > 1` also applies the top `n - 1`
+  coarse levels through the finer matrix instead of storing them; saves memory at the cost of extra
+  matrix products
+"""
+struct NativeAMG{CS}
+    coarse::CS
+    scale_correction::Bool
+    fuse::Int
+end
+
+function NativeAMG(; coarse=Direct(), scale_correction=true, fuse=0)
+    coarse isa AbstractAMGCoarseSolve ||
+        throw(ArgumentError("NativeAMG coarse must be Direct(), Smoothed(...) or Iterative(...)"))
+    coarse isa Smoothed && _check_smoothed_coarse(coarse)
+    fuse >= 0 || throw(ArgumentError("NativeAMG fuse must be non-negative"))
+    return NativeAMG(coarse, Bool(scale_correction), Int(fuse))
+end
+
+Smoothed(smoother=Chebyshev(degree=10); sweeps=1) =
+    (sweeps > 0 || throw(ArgumentError("Smoothed sweeps must be positive")); _check_smoothed_coarse(Smoothed(smoother, Int(sweeps))))
+_check_smoothed_coarse(s::Smoothed{<:Union{Jacobi,Chebyshev}}) = s
+_check_smoothed_coarse(s::Smoothed) = throw(ArgumentError("Smoothed coarse solve takes Jacobi() or Chebyshev()"))
+
+Adapt.@adapt_structure NativeAMG
+
+"""
+    AMG(coarsening=Pairwise(); smoother=Jacobi(), sweeps, coarsest=4096, refresh=5, native=NativeAMG()) <: PreconditionerType
+
+Algebraic multigrid preconditioner: `SolverSetup(solver=Cg(), preconditioner=AMG())` for symmetric
+systems such as pressure, `solver=Bicgstab()` for non-symmetric ones (compressible pressure,
+momentum), `solver=Richardson()` for plain V-cycles.
+
+- `coarsening`: `Pairwise()`, `SmoothedAggregation()` or `RugeStuben()`
+- `smoother`: `Jacobi()`, `Chebyshev()`, `GaussSeidel()`, `SymGaussSeidel()`, `SOR(ω)`, `SSOR(ω)`
+- `sweeps`: `n`, `(pre, post)` or [`Sweeps`](@ref); defaults to 2 for `Jacobi()`, 1 otherwise
+- `coarsest`: stop coarsening once a level has at most this many rows
+- `refresh`: the coarse levels are recomputed from the current matrix every `refresh` solves; the
+  aggregates and interpolation are kept while the sparsity pattern is unchanged
+- `native`: [`NativeAMG`](@ref) settings used on serial meshes only
+
+A serial mesh runs XCALibre's own AMG; a distributed mesh runs PETSc's GAMG with the same coarsening
+family, smoother and sweeps (see the AMG section of the user guide for what differs). Settings a
+path cannot honour stop the run there. `SolverSetup(precision=MixedF32())` stores the coarse levels
+in Float32.
+"""
+struct AMG{C,S,N,TS} <: PreconditionerType
     coarsening::C
     smoother::S
-    cycle::Y
-    coarse_solve::CS
-    scale_correction::Bool
-    pre_sweeps::I
-    post_sweeps::I
-    max_levels::I
-    min_coarse_rows::I
-    max_coarse_rows::I
-    coarse_refresh_interval::I
-    fuse_levels::I
-    coarse_storage::DataType
+    sweeps::Sweeps
+    coarsest::Int
+    refresh::Int
+    native::N
 end
 
-_amg_storage(::Type{Float64}) = Float64
-_amg_storage(::Type{Float32}) = Float32
-_amg_storage(s) = throw(ArgumentError("AMG coarse_storage must be Float32 or Float64"))
+function AMG(coarsening=Pairwise(); smoother=Jacobi(), sweeps=(smoother isa Jacobi ? 2 : 1),
+    coarsest=4096, refresh=5, native=NativeAMG(), legacy...)
+    isempty(legacy) || return _legacy_amg(coarsening, smoother, sweeps, coarsest, refresh, native, legacy)
+    coarsening isa AbstractAMGCoarsening ||
+        throw(ArgumentError("AMG coarsening must be Pairwise(), SmoothedAggregation() or RugeStuben()"))
+    smoother isa AMGSmoother || throw(ArgumentError(
+        "AMG smoother must be Jacobi(), Chebyshev(), GaussSeidel(), SymGaussSeidel(), SOR() or SSOR()"))
+    native isa NativeAMG || throw(ArgumentError("AMG native must be NativeAMG(...)"))
+    coarsest > 0 || throw(ArgumentError("AMG coarsest must be positive"))
+    refresh > 0 || throw(ArgumentError("AMG refresh must be positive"))
+    return AMG{typeof(coarsening),typeof(smoother),typeof(native),Float64}(
+        coarsening, smoother, Sweeps(sweeps), Int(coarsest), Int(refresh), native)
+end
+
+Adapt.adapt_structure(to, a::AMG) = _with_storage(AMG(adapt(to, a.coarsening); smoother=adapt(to, a.smoother),
+    sweeps=a.sweeps, coarsest=a.coarsest, refresh=a.refresh, native=adapt(to, a.native)), _amg_storage(a))
+
+# storage precision of the coarse levels (Float64 = that of the equation); MixedF32 sets Float32
+_amg_storage(::AMG{C,S,N,TS}) where {C,S,N,TS} = TS
+_with_storage(a::AMG{C,S,N}, ::Type{TS}) where {C,S,N,TS} =
+    AMG{C,S,N,TS}(a.coarsening, a.smoother, a.sweeps, a.coarsest, a.refresh, a.native)
 
 # Clamp to min(T,TS): storing hierarchy at higher precision than working matrix wastes memory
 _effective_storage(::Type{T}, ::Type{TS}) where {T,TS} = sizeof(TS) >= sizeof(T) ? T : TS
+
+# coarsening also stops here (OpenFOAM's GAMG limit); `coarsest` normally stops it first
+const _AMG_MAX_LEVELS = 50
 
 # SuiteSparse rejects Float32 sparse factorizations; coarsest direct solve always runs Float64
 _coarse_direct_eltype(::Type{Float32}) = Float64
 _coarse_direct_eltype(::Type{T}) where {T} = T
 
-# `nothing` = taken from SolverSetup's `solver`; standalone (no SolverSetup) use reads it as Cg
-_amg_mode(mode::Union{Nothing,Richardson,Cg,Bicgstab}) = mode
-_amg_mode(mode) = throw(ArgumentError("AMG outer iteration must be Cg(), Bicgstab() or Richardson()"))
+# an iterative coarse solve depends on the rhs, which breaks the fixed preconditioner Krylov needs
+_check_amg_solver(a::AMG, solver) = _check_amg_solver(a.native.coarse, solver)
+_check_amg_solver(::Iterative, ::Union{Cg,Bicgstab}) = throw(ArgumentError(
+    "NativeAMG(coarse=Iterative(...)) needs solver=Richardson(): an iterative coarse solve depends on the " *
+    "right-hand side, which a Krylov preconditioner must not"))
+_check_amg_solver(coarse, solver) = solver
 
-_check_amg_mode(::Union{Nothing,Cg}, ::OnDeviceKrylov) = throw(ArgumentError(
-    "coarse_solve=OnDeviceKrylov requires solver=Richardson() (an inner Krylov coarse solve is nonlinear and breaks AMG-preconditioned CG)"))
-_check_amg_mode(mode, coarse_solve) = mode
+_amg_solver_name(::Richardson) = "richardson"
+_amg_solver_name(::Cg) = "cg"
+_amg_solver_name(::Bicgstab) = "bicgstab"
 
-# the AMG configuration with its outer iteration set
-_amg_with_mode(a::AMG, mode) = AMG(_check_amg_mode(_amg_mode(mode), a.coarse_solve), a.coarsening, a.smoother,
-    a.cycle, a.coarse_solve, a.scale_correction, a.pre_sweeps, a.post_sweeps, a.max_levels,
-    a.min_coarse_rows, a.max_coarse_rows, a.coarse_refresh_interval, a.fuse_levels, a.coarse_storage)
-
-_amg_mode_name(::Nothing) = "cg"
-_amg_mode_name(::Richardson) = "solve"
-_amg_mode_name(::Cg) = "cg"
-_amg_mode_name(::Bicgstab) = "bicgstab"
-_amg_mode_name(mode) = string(nameof(typeof(mode)))
-
-_amg_cycle(cycle::VCycle) = cycle
-_amg_cycle(cycle) = throw(ArgumentError("AMG only supports cycle=VCycle()"))
-
-_amg_coarsening(coarsening::Union{SmoothAggregation,RugeStuben,Geometric}) = coarsening
-_amg_coarsening(coarsening) =
-    throw(ArgumentError("AMG coarsening must be SmoothAggregation(...), RugeStuben(...), or Geometric(...)"))
-
-_amg_smoother(smoother::Union{AMGJacobi,AMGChebyshev,AMGGaussSeidel,AMGSOR}) = smoother
-_amg_smoother(smoother) =
-    throw(ArgumentError("AMG smoother must be AMGJacobi(...), AMGChebyshev(...), AMGGaussSeidel(...), or AMGSOR(...)"))
-
-_amg_smoother_name(T) = string(nameof(T))
-_amg_supported_smoother_types() = (AMGJacobi, AMGChebyshev, AMGGaussSeidel, AMGSOR)
-
-function _amg_gpu_smoother_names()
-    names = sort(_amg_smoother_name.(T for T in _amg_supported_smoother_types() if T <: AbstractAMGGPUSmoother))
-    return join(names, ", ")
-end
-
-_validate_amg_smoother_backend(::CPU, smoother::AbstractAMGSmoother) = smoother
-_validate_amg_smoother_backend(::CPU, smoother::AbstractAMGGPUSmoother) = smoother
-_validate_amg_smoother_backend(::CPU, smoother::AbstractAMGCPUSmoother) = smoother
-_validate_amg_smoother_backend(backend, smoother::AbstractAMGGPUSmoother) = smoother
-
-function _validate_amg_smoother_backend(backend, smoother::AbstractAMGCPUSmoother)
-    throw(ArgumentError(
-        "$(nameof(typeof(smoother))) is a sequential CPU AMG smoother and cannot be used with $(nameof(typeof(backend)))(). " *
-        "GPU-capable AMG smoothers are: $(_amg_gpu_smoother_names())."
-    ))
-end
-
-"""
-    AMG(; coarsening, smoother=AMGJacobi(), coarse_refresh_interval=5, kwargs...) <: PreconditionerType
-
-Algebraic multigrid, used as `SolverSetup(solver=Cg(), preconditioner=AMG(coarsening=...))`
-(symmetric systems such as pressure), with `solver=Bicgstab()` (non-symmetric systems) or with
-`solver=Richardson()` (repeated V-cycles, no Krylov acceleration). `coarsening` is required:
-`SmoothAggregation()`, `Geometric()` or `RugeStuben()`. A serial mesh runs XCALibre's own
-implementation; a distributed mesh runs PETSc's GAMG with the same coarsening, smoother and sweeps,
-and stops for settings GAMG cannot express (e.g. `RugeStuben()`, for which see [`BoomerAMG`](@ref)).
-`coarse_refresh_interval=N` refreshes the coarse levels every `N` solves (the finest every solve); on
-PETSc it holds the whole preconditioner for `N` solves. Mixed
-precision comes from `coarse_storage=Float32`, not from `precision`. See the AMG section of the
-user guide for the keywords and their PETSc translation.
-"""
-function AMG(;
-    mode=nothing,
-    coarsening=nothing,
-    smoother=AMGJacobi(),
-    cycle=VCycle(),
-    coarse_solve=OnDevice(),
-    scale_correction=true,
-    pre_sweeps=nothing,
-    post_sweeps=nothing,
-    max_levels=10,
-    min_coarse_rows=32,
-    max_coarse_rows=4096,
-    coarse_refresh_interval=5,
-    fuse_levels=0,
-    coarse_storage=Float64
-)
-    mode = _amg_mode(mode)
-    isnothing(coarsening) && throw(ArgumentError("AMG needs a coarsening: AMG(coarsening=SmoothAggregation()), " *
-        "AMG(coarsening=Geometric()) or AMG(coarsening=RugeStuben())"))
-    coarsening = _amg_coarsening(coarsening)
-    smoother = _amg_smoother(smoother)
-    cycle = _amg_cycle(cycle)
-    coarse_solve = _amg_coarse_solve(coarse_solve)
-    isnothing(mode) || _check_amg_mode(mode, coarse_solve)
-    # Jacobi defaults to V(2,2): standalone V-cycle needs extra smoothing; GPU launch overhead favours it
-    default_sweeps = smoother isa Union{AMGChebyshev,AMGGaussSeidel,AMGSOR} ? 1 : 2
-    pre_sweeps = isnothing(pre_sweeps) ? default_sweeps : pre_sweeps
-    post_sweeps = isnothing(post_sweeps) ? default_sweeps : post_sweeps
-    pre_sweeps > 0 || throw(ArgumentError("AMG pre_sweeps must be positive"))
-    post_sweeps > 0 || throw(ArgumentError("AMG post_sweeps must be positive"))
-    coarse_refresh_interval > 0 || throw(ArgumentError("AMG coarse_refresh_interval must be positive"))
-    fuse_levels >= 0 || throw(ArgumentError("AMG fuse_levels must be non-negative (0 disables the fused GPU path)"))
-    return AMG(
-        mode,
-        coarsening,
-        smoother,
-        cycle,
-        coarse_solve,
-        Bool(scale_correction),
-        Int(pre_sweeps),
-        Int(post_sweeps),
-        Int(max_levels),
-        Int(min_coarse_rows),
-        Int(max_coarse_rows),
-        Int(coarse_refresh_interval),
-        Int(fuse_levels),
-        _amg_storage(coarse_storage)
-    )
-end
-
-Adapt.@adapt_structure AMG
 
 
 struct AMGMatrixCSR{RP,CV,NZ}
@@ -593,28 +522,28 @@ function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T, ::Type{TI}=Int) wher
     )
 end
 
-# Matrix-free gated to GPU + Geometric + AMGJacobi (only config the fused 1nz/row cycle supports)
+# the fused path applies coarse levels through the finer matrix, which only Pairwise + Jacobi supports
 amg_hierarchy_kind(::AMG, ::CPU) = MaterialisedAMG()
-amg_hierarchy_kind(solver::AMG, ::KernelAbstractions.GPU) =
-    (solver.fuse_levels >= 1 && solver.coarsening isa Geometric && solver.smoother isa AMGJacobi) ?
-        MatrixFreeAMG() : MaterialisedAMG()
+amg_hierarchy_kind(a::AMG, ::KernelAbstractions.GPU) =
+    _fusable(a) ? MatrixFreeAMG() : MaterialisedAMG()
+_fusable(a::AMG) = a.native.fuse >= 1 && a.coarsening isa Pairwise && a.smoother isa Jacobi && a.native.coarse isa Direct
 
 _amg_empty_hierarchy(::MaterialisedAMG, backend, ::Type{T}, ::Type{TS}, ::Type{TI}) where {T,TS,TI} =
     _empty_hierarchy(backend, T, TS, TI)
 
-# the hierarchy stores indices in the equation matrix index type, which the workspace type fixes here
-_workspace(solver::AMG, b) = _workspace(solver, b, Int)
-function _workspace(solver::AMG, b, ::Type{TI}) where {TI<:Integer}
-    _check_amg_mode(solver.mode, solver.coarse_solve)
+# the hierarchy stores indices in the equation matrix index type, which the workspace type fixes here;
+# `solver` is SolverSetup's outer iteration
+function _workspace(amg::AMG, b, ::Type{TI}=Int; solver=Cg()) where {TI<:Integer}
+    _check_amg_solver(amg, solver)
     T = eltype(b)
-    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
+    TS = _effective_storage(T, _amg_storage(amg))
     backend = KernelAbstractions.get_backend(b)
     x = similar(b)
     # Only `amg_bicgstab_solve!` reads these three; allocating them in every mode adds
     # 50% to the workspace. `similar(x, 0)` keeps the field type concrete.
-    bicg_vec() = solver.mode isa Bicgstab ? similar(x) : similar(x, 0)
+    bicg_vec() = solver isa Bicgstab ? similar(x) : similar(x, 0)
     return AMGWorkspace(
-        _amg_empty_hierarchy(amg_hierarchy_kind(solver, backend), backend, T, TS, TI),
+        _amg_empty_hierarchy(amg_hierarchy_kind(amg, backend), backend, T, TS, TI),
         0,
         similar(x),
         similar(x),

@@ -20,9 +20,9 @@ is_same(r) = r === :same
         (DILU(),         :same, :same, :err,  :sub),
         (ILU0GPU(),      :same, :same, :err,  :sub),
         (IC0GPU(),       :same, :same, :err,  :sub),
-        (AMG(coarsening=SmoothAggregation()), :same, :err, :err, :same),
-        (AMG(coarsening=Geometric()),         :same, :err, :err, :same),
-        (AMG(coarsening=RugeStuben()),        :same, :err, :err, :err),
+        (AMG(),                      :same, :same, :err, :same),
+        (AMG(SmoothedAggregation()), :same, :same, :err, :same),
+        (AMG(RugeStuben()),          :same, :same, :err, :err),
         (BoomerAMG(),    :err,  :err,  :err,  :same))
     kind(r) = r === :same ? :same : r isa SV.Substitute ? :sub : :err
     for (pc, full, f32, f16, petsc) ∈ table
@@ -45,74 +45,107 @@ end
         @test is_same(SV._solver_rule(solver, :mixed)) == mixed
         @test is_same(SV._solver_rule(solver, :petsc))
     end
+    @test SV._solver_column(MixedF32(), AMG()) === :amg
 end
 
 @testset "SolverSetup refuses only what no path runs" begin
     @test_throws r"MixedF16 supports the Jacobi" mksetup(Cg(), DILU(), MixedF16())
-    @test_throws r"mixed precision does not apply to AMG" mksetup(Cg(), AMG(coarsening=SmoothAggregation()), MixedF16())
-    @test_throws r"OnDeviceKrylov requires solver=Richardson" mksetup(Cg(), AMG(coarsening=SmoothAggregation(), coarse_solve=OnDeviceKrylov()))
+    @test_throws r"MixedF16 does not apply to AMG" mksetup(Cg(), AMG(), MixedF16())
+    @test_throws r"needs solver=Richardson" mksetup(Cg(), AMG(native=NativeAMG(coarse=Iterative())))
     # runs distributed, so the serial check stops it when the workspace is built
-    for s ∈ (mksetup(Gmres(), AMG(coarsening=SmoothAggregation())), mksetup(Cg(), BoomerAMG()), mksetup(Richardson(), Jacobi()))
+    for s ∈ (mksetup(Gmres(), AMG()), mksetup(Cg(), BoomerAMG()), mksetup(Richardson(), Jacobi()))
         @test_throws ArgumentError SV._check_serial(s)
     end
-    @test mksetup(Richardson(), AMG(coarsening=SmoothAggregation(), coarse_solve=OnDeviceKrylov())).preconditioner.mode isa Richardson
-    @test all(mksetup(s, pc).itmax == 1000 for (s, pc) ∈ ((Cg(), AMG(coarsening=SmoothAggregation())), (Cg(), BoomerAMG()), (Cg(), Jacobi())))
-    # unset mode is solved as CG, so the OnDeviceKrylov guard also runs when the workspace is built
-    @test_throws r"OnDeviceKrylov requires solver=Richardson" _workspace(AMG(coarsening=SmoothAggregation(), coarse_solve=OnDeviceKrylov()), zeros(4))
-    @test_throws r"AMG needs a coarsening" AMG()
-    @test AMG(coarsening=Geometric()).coarse_refresh_interval == 5
+    @test mksetup(Richardson(), AMG(native=NativeAMG(coarse=Iterative()))).preconditioner isa AMG
+    @test all(mksetup(s, pc).itmax == 1000 for (s, pc) ∈ ((Cg(), AMG()), (Cg(), BoomerAMG()), (Cg(), Jacobi())))
+    @test_throws r"needs solver=Richardson" _workspace(AMG(native=NativeAMG(coarse=Iterative())), zeros(4))
+end
+
+@testset "AMG settings" begin
+    a = AMG()
+    @test a.coarsening isa Pairwise && a.smoother isa Jacobi && a.sweeps == Sweeps(2, 2) && a.refresh == 5
+    @test AMG(smoother=Chebyshev()).sweeps == Sweeps(1, 1)
+    @test AMG(sweeps=(0, 2)).sweeps == Sweeps(0, 2)
+    @test SV._pre_sweeps(Sweeps(0, 2; grow=1, max=3), 1) == 0 && SV._pre_sweeps(Sweeps(0, 2; grow=1, max=3), 5) == 3
+    @test SV._post_sweeps(Sweeps(0, 2; grow=1, max=3), 2) == 3
+    @test_throws ArgumentError Sweeps(0, 0)
+    @test_throws ArgumentError AMG(smoother=DILU())
+    @test_throws ArgumentError Pairwise(0)
+    @test_throws ArgumentError SOR(2.0)
+    @test_throws r"Smoothed coarse solve takes" NativeAMG(coarse=Smoothed(SymGaussSeidel()))
+    @test SV._amg_storage(SV._with_storage(a, Float32)) === Float32
 end
 
 @testset "AMG settings PETSc's GAMG cannot run" begin
-    conflicts(; kw...) = SV._gamg_conflicts(AMG(; kw...))
-    @test isempty(conflicts(coarsening=SmoothAggregation()))
-    @test isempty(conflicts(coarsening=SmoothAggregation(strength_threshold=0.05f0)))
-    @test isempty(conflicts(coarsening=Geometric(), smoother=AMGChebyshev()))
-    @test isempty(conflicts(coarsening=Geometric(), smoother=AMGGaussSeidel(sweep=AMGForwardSweep())))
-    for kw ∈ ((coarsening=RugeStuben(),), (coarsening=Geometric(merge_levels=2),),
-            (coarsening=SmoothAggregation(smoother_weight=1.0),), (coarsening=Geometric(), pre_sweeps=1),
-            (coarsening=Geometric(), smoother=AMGChebyshev(), pre_sweeps=2, post_sweeps=2),
-            (coarsening=Geometric(), smoother=AMGSOR(omega=1.2)), (coarsening=Geometric(), max_levels=5))
-        @test length(conflicts(; kw...)) == 1
+    refused(a, solver=Cg()) = last(SV._lower_gamg(a, solver))
+    options(a, solver=Cg()) = first(SV._lower_gamg(a, solver))
+    @test isempty(refused(AMG()))
+    @test isempty(refused(AMG(SmoothedAggregation(threshold=0.05f0))))
+    @test isempty(refused(AMG(smoother=Chebyshev(), sweeps=1)))
+    @test isempty(refused(AMG(smoother=GaussSeidel())))
+    @test isempty(refused(AMG(sweeps=(1, 2))))
+    for a ∈ (AMG(RugeStuben()), AMG(Pairwise(2)), AMG(SmoothedAggregation(weight=1.0)),
+            AMG(smoother=Chebyshev(), sweeps=2), AMG(smoother=SSOR(1.2)), AMG(sweeps=Sweeps(1, 1; grow=1)))
+        @test length(refused(a)) == 1
     end
+    # aggressive coarsening off mirrors the native levels; non-symmetric systems symmetrise the graph
+    @test options(AMG()).pc_gamg_aggressive_coarsening == 0 && options(AMG()).pc_gamg_agg_nsmooths == 0
+    @test !haskey(options(AMG()), :pc_gamg_graph_symmetrize)
+    @test options(AMG(), Bicgstab()).pc_gamg_graph_symmetrize
+    @test options(AMG(coarsest=100)).pc_gamg_coarse_eq_limit == 100
+    o = options(AMG(sweeps=(1, 3)))
+    @test o.pc_mg_distinct_smoothup && o.mg_levels_ksp_max_it == 1 && o.mg_levels_up_ksp_max_it == 3
+    @test options(AMG(smoother=SymGaussSeidel())).mg_levels_pc_sor_local_symmetric
     # runs serially, so SolverSetup accepts it; a distributed run stops when PETSc is set up
-    @test mksetup(Cg(), AMG(coarsening=RugeStuben())) isa SolverSetup
-    @test occursin("use BoomerAMG()", SV._pc_rule(AMG(coarsening=RugeStuben()), :petsc).msg)
-    # native-only settings changed from their defaults are reported, not refused
-    @test SV._native_only_set(AMG(coarsening=Geometric())) == Symbol[]
-    @test SV._native_only_set(AMG(coarsening=Geometric(), fuse_levels=1, scale_correction=false)) ==
-        [:scale_correction, :fuse_levels]
+    @test mksetup(Cg(), AMG(RugeStuben())) isa SolverSetup
+    @test occursin("use BoomerAMG()", SV._pc_rule(AMG(RugeStuben()), :petsc).msg)
+    # NativeAMG settings changed from their defaults are reported, not refused
+    @test SV._native_only(AMG()) == ""
+    @test occursin("fuse", SV._native_only(AMG(native=NativeAMG(fuse=1))))
 end
 
-@testset "BoomerAMG runs only through PETSc" begin
+@testset "BoomerAMG" begin
     @test_throws r"distribute\(mesh\)" SV._check_serial(mksetup(Cg(), BoomerAMG()))
+    h = SV._lower_hypre(BoomerAMG(coarsen=PMIS(), sweeps=(1, 2), smoother=GaussSeidel()))
+    @test h.pc_hypre_boomeramg_coarsen_type == "PMIS" && h.pc_hypre_boomeramg_relax_type_all == "SOR/Jacobi"
+    @test h.pc_hypre_boomeramg_grid_sweeps_down == 1 && h.pc_hypre_boomeramg_grid_sweeps_up == 2
+    @test BoomerAMG(refresh=3).refresh == 3
+    @test_throws r"petsc_options" BoomerAMG(strong_threshold=0.5)
+    @test_throws ArgumentError BoomerAMG(smoother=Jacobi())
 end
 
 @testset "GAMG() is deprecated in favour of AMG" begin
-    g = @test_logs (:warn, r"GAMG\(\) is deprecated; it returns AMG\(coarsening=Geometric\(\)") GAMG(agg_nsmooths=0, freeze=7)
-    @test g isa AMG && g.coarsening isa Geometric && g.coarse_refresh_interval == 7
-    @test GAMG().coarsening isa SmoothAggregation
-    @test GAMG(threshold=0.02).coarsening.strength_threshold == 0.02
+    g = @test_logs (:warn, r"GAMG\(\) is deprecated; use AMG\(...\). This GAMG\(\) is AMG\(Pairwise\(\)") GAMG(agg_nsmooths=0, freeze=7)
+    @test g isa AMG && g.coarsening isa Pairwise && g.refresh == 7
+    @test GAMG().coarsening isa SmoothedAggregation
+    @test GAMG(threshold=0.02).coarsening.threshold == 0.02
     old = GAMG()
-    @test old.smoother isa AMGChebyshev && old.smoother.degree == 2 && old.max_coarse_rows == 50 &&
-        old.coarse_refresh_interval == 25
+    @test old.smoother isa Chebyshev && old.smoother.degree == 2 && old.coarsest == 50 && old.refresh == 25
     @test_throws r"petsc_options" GAMG(square_graph=1)
     @test_throws r"reuse_interpolation" GAMG(reuse_interpolation=false)
 end
 
 @testset "old spellings" begin
-    old = @test_logs (:warn, r"use SolverSetup\(solver=Bicgstab\(\), preconditioner=AMG\(...\)\)") mksetup(
-        AMG(coarsening=SmoothAggregation(), mode=Bicgstab()), Jacobi())
-    @test old.solver isa Bicgstab && old.preconditioner isa AMG && old.preconditioner.mode isa Bicgstab
-    @test mksetup(AMG(coarsening=SmoothAggregation()), Jacobi()).solver isa Cg
-    @test mksetup(AMG(coarsening=SmoothAggregation(), mode=Richardson()), Jacobi()).solver isa Richardson
-    @test (@test_logs (:warn, r"AMG\(mode=Bicgstab\(\)\) is deprecated and ignored") mksetup(
-        Cg(), AMG(coarsening=SmoothAggregation(), mode=Bicgstab()))).preconditioner.mode isa Cg
+    old = @test_logs (:warn, r"use SolverSetup\(solver=Bicgstab\(\), preconditioner=AMG\(...\)\)") match_mode=:any mksetup(
+        AMG(coarsening=Pairwise(), mode=Bicgstab()), Jacobi())
+    @test old.solver isa Bicgstab && old.preconditioner isa AMG
+    @test mksetup(AMG(), Jacobi()).solver isa Cg
+    @test mksetup(AMG(mode=Richardson()), Jacobi()).solver isa Richardson
+    @test (@test_logs (:warn, r"AMG\(mode=Bicgstab\(\)\) is deprecated and ignored") match_mode=:any mksetup(
+        Cg(), AMG(mode=Bicgstab()))).preconditioner isa AMG
     @test AMGSolver === Richardson
+    a = @test_logs (:warn, r"is deprecated") match_mode=:any AMG(coarsening=Pairwise(), pre_sweeps=1,
+        coarse_refresh_interval=3, max_coarse_rows=100, fuse_levels=1, coarse_solve=CPU())
+    @test a.sweeps == Sweeps(1, 2) && a.refresh == 3 && a.coarsest == 100 && a.native.fuse == 1 && a.native.coarse == Direct(max_rows=0)
+    @test_throws r"precision=MixedF32" AMG(coarse_storage=Float32)
+    @test (@test_logs (:warn, r"Geometric\(\) is deprecated") Geometric(merge_levels=2)) == Pairwise(2)
+    @test (@test_logs (:warn,) AMGJacobi(omega=1.0)) == Jacobi(weight=1.0)
+    @test (@test_logs (:warn,) AMGSOR(omega=1.2)) == SSOR(1.2)
+    @test (@test_logs (:warn,) OnDeviceJacobi(iterations=4)) == Smoothed(Jacobi(); sweeps=4)
     # deprecation warnings print on the logging rank only (SolverSetup is built on every rank)
     SV._LOG_RANK[] = () -> false
-    @test_logs mksetup(AMG(coarsening=SmoothAggregation(), mode=Bicgstab()), Jacobi())
-    @test_logs mksetup(Cg(), AMG(coarsening=SmoothAggregation(), mode=Bicgstab()))
+    @test_logs mksetup(AMG(mode=Bicgstab()), Jacobi())
+    @test_logs mksetup(Cg(), AMG(mode=Bicgstab()))
     SV._LOG_RANK[] = () -> true
 end
 
@@ -145,13 +178,15 @@ end
 @testset "AMG as the preconditioner solves the system" begin
     _, x_ref = laplace_values(mksetup(Cg(), Jacobi(); rtol=1e-12, atol=0.0))
     for mode ∈ (Cg(), Bicgstab(), Richardson())
-        amg = AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi())
-        eqn, x_new = laplace_values(mksetup(mode, amg; rtol=1e-10, atol=0.0))
+        eqn, x_new = laplace_values(mksetup(mode, AMG(SmoothedAggregation()); rtol=1e-10, atol=0.0))
         @test isapprox(x_new, x_ref; rtol=1e-6)
         # AMG owns its preconditioner: the equation's is inert, so nothing is built or refreshed
         @test eqn.preconditioner isa Preconditioner{SV.InertPreconditioner}
         @test eqn.solver isa AMGWorkspace && eqn.solver.converged
     end
+    # MixedF32 stores the coarse levels in Float32 and keeps the solve in full precision
+    eqn, x32 = laplace_values(mksetup(Cg(), AMG(), MixedF32(); rtol=1e-10, atol=0.0))
+    @test isapprox(x32, x_ref; rtol=1e-6) && eqn.solver isa AMGWorkspace
     # the deprecated GAMG() is the native AMG with GAMG's default settings
     _, x_gamg = laplace_values(mksetup(Cg(), GAMG(); rtol=1e-10, atol=0.0))
     @test isapprox(x_gamg, x_ref; rtol=1e-6)

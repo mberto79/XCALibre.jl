@@ -10,7 +10,7 @@ rank = MPI.Comm_rank(comm)
 # matrices above 2^24 + 1 rows at setup instead of failing inside PCSetUp
 @testset "GAMG global-id limit (rank $rank)" begin
     ext = Base.get_extension(XCALibre, :XCALibrePETScExt)
-    gamg = merge((; ksp_type="cg", pc_type=ext._pc_type(AMG(coarsening=SmoothAggregation()))), ext._pc_options(AMG(coarsening=SmoothAggregation())))
+    gamg = merge((; ksp_type="cg", pc_type=ext._pc_type(AMG(SmoothedAggregation()))), ext._pc_options(AMG(SmoothedAggregation()), Cg()))
     lim = Int(maxintfloat(Float32)) + 1
     @test ext._uses_gamg(gamg)
     @test ext._uses_gamg((pc_type="jacobi", sub_pc_type="gamg"))

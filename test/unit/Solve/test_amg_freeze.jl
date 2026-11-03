@@ -1,2 +1,4 @@
-@test BoomerAMG(freeze=7).freeze == 7 && AMG(coarsening=SmoothAggregation(), coarse_refresh_interval=7).coarse_refresh_interval == 7
-@test BoomerAMG().freeze == 10 && AMG(coarsening=SmoothAggregation()).coarse_refresh_interval == 5
+using XCALibre, Test
+
+@test BoomerAMG(refresh=7).refresh == 7 && AMG(SmoothedAggregation(); refresh=7).refresh == 7
+@test BoomerAMG().refresh == 10 && AMG(SmoothedAggregation()).refresh == 5

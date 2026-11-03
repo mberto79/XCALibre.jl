@@ -79,7 +79,7 @@ function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solve
     end
 
     numeric_updates = workspace.refresh_count
-    refresh_coarse = (numeric_updates + 1) % solver.coarse_refresh_interval == 0
+    refresh_coarse = (numeric_updates + 1) % solver.refresh == 0
     if !refresh_coarse
         if hierarchy.backend isa CPU
             _sync_finest_matrix!(hierarchy, A)
@@ -122,7 +122,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,<:AMG
     # 1/|diag(A)| for the stopping norm ‖D⁻¹r‖, in Fx (scratch once `residual` has run)
     (; Fx, diag_nz) = phiEqn.equation
     _inv_abs_diagonal!(Fx, _nzval(A), diag_nz)
-    _amg_solve_mode!(workspace, workspace.hierarchy, solver, solver.mode, outer_A, b, x;
+    _amg_solve_mode!(workspace, workspace.hierarchy, solver, setup.solver, outer_A, b, x;
         itmax=itmax, atol=atol, rtol=rtol, dscale=Fx)
 
     copyto!(values, x)
@@ -142,7 +142,7 @@ function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Bicgstab, A, b, x
     return amg_bicgstab_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol, dscale=dscale)
 end
 
-function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Union{Nothing,Cg}, A, b, x; itmax, atol, rtol, dscale=nothing)
+function _amg_solve_mode!(workspace, hierarchy, solver::AMG, ::Cg, A, b, x; itmax, atol, rtol, dscale=nothing)
     return amg_cg_solve!(workspace, hierarchy, solver, A, b, x; itmax=itmax, atol=atol, rtol=rtol, dscale=dscale)
 end
 
@@ -162,11 +162,7 @@ end
     @inbounds out[perm[k]] = src[k]
 end
 
-_matrix_free_coarse_max_rows(cs::OnDevice) = cs.max_rows
-_matrix_free_coarse_max_rows(::Any) = 512
-
-_matrix_free_omega(s::AMGJacobi) = s.omega
-_matrix_free_omega(::Any) = 4 / 3
+_matrix_free_omega(s::Jacobi) = s.weight
 
 # NEW SECTION
 
@@ -174,14 +170,14 @@ function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, 
     backend = hardware.backend
     setup_matrix = _amg_setup_matrix(A, _amg_setup_backend(backend))  # host CSR at finest precision T
     T = eltype(_nzval(_amg_matrix(setup_matrix)))
-    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
-    fused_top = max(Int(solver.fuse_levels) - 1, 0)
-    handle = build_matrix_free_hierarchy(setup_matrix, solver.coarsening.merge_levels, backend;
-                          pre=solver.pre_sweeps, post=solver.post_sweeps,
+    TS = _effective_storage(T, _amg_storage(solver))
+    fused_top = max(solver.native.fuse - 1, 0)
+    handle = build_matrix_free_hierarchy(setup_matrix, solver.coarsening.merges, backend;
+                          sweeps=solver.sweeps,
                           omega_nominal=_matrix_free_omega(solver.smoother),
-                          max_coarse=solver.max_coarse_rows, fused_top=fused_top,
-                          coarse_max_rows=_matrix_free_coarse_max_rows(solver.coarse_solve),
-                          scale_correction=solver.scale_correction,
+                          max_coarse=solver.coarsest, fused_top=fused_top,
+                          coarse_max_rows=solver.native.coarse.max_rows,
+                          scale_correction=solver.native.scale_correction,
                           coarse_storage=TS)
     st = handle.st
     st.refresh_plan[] = build_refresh_plan(handle)
@@ -195,7 +191,7 @@ function _amg_update!(hierarchy::MatrixFreeHierarchy, workspace::AMGWorkspace, A
     if isempty(hierarchy.levels) || hierarchy.nrows != _m(A) || hierarchy.nnz != length(_nzval(A))
         return _build_matrix_free_workspace!(workspace, A, solver, hardware)
     end
-    refresh_coarse = (workspace.refresh_count + 1) % solver.coarse_refresh_interval == 0
+    refresh_coarse = (workspace.refresh_count + 1) % solver.refresh == 0
     refresh_matrix_free_hierarchy!(hierarchy, hierarchy.refresh_plan[], A;
                                    omega_nominal=_matrix_free_omega(solver.smoother), coarse=refresh_coarse)
     workspace.refresh_count += 1

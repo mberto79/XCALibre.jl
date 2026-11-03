@@ -84,7 +84,7 @@ SolverSetup(;
         precision::PR=FullPrecision()
         ) where{S2,I,PR} = begin
         solver, preconditioner = _deprecated_amg_solver(solver, preconditioner)
-        preconditioner = _resolve_amg(preconditioner, solver)
+        preconditioner = _resolve_amg(preconditioner, solver, precision)
         setup = SolverSetup{float_type,I,typeof(solver),S2,typeof(preconditioner),PR}(
             solver, smoother,preconditioner, 
             float_type(convergence), 

@@ -266,18 +266,16 @@ function compare_amg_paths(A, b, backend; mode=Cg(), merge_levels=1, fuse_levels
     # the stopping norm of production solves, ‖D⁻¹r‖
     dinv = _inv_abs_diagonal!(similar(b), _nzval(A), _diagonal_positions(A))
     run_one = (solver) -> begin
-        ws = _workspace(solver, b)
+        ws = _workspace(solver, b; solver=mode)
         for _ in 1:n_update; update!(ws, A, solver, config); end
         x = similar(b); fill!(x, 0)
-        _amg_solve_mode!(ws, ws.hierarchy, solver, solver.mode, A, b, x; itmax=itmax, atol=atol, rtol=rtol,
+        _amg_solve_mode!(ws, ws.hierarchy, solver, mode, A, b, x; itmax=itmax, atol=atol, rtol=rtol,
             dscale=dinv)
         (iters=ws.iterations, converged=ws.converged, relres=ws.last_relative_residual,
          factor=ws.hierarchy.last_cycle_factor, matrix_free=(ws.hierarchy isa MatrixFreeHierarchy))
     end
-    gf_solver = AMG(mode=mode, coarsening=Geometric(merge_levels=merge_levels), smoother=AMGJacobi(),
-                    fuse_levels=fuse_levels, coarse_storage=coarse_storage, max_coarse_rows=4096,
-                    scale_correction=scale_correction)
-    ref_solver = AMG(mode=mode, coarsening=Geometric(merge_levels=merge_levels), smoother=AMGJacobi(),
-                     fuse_levels=0, max_coarse_rows=4096)
+    gf_solver = _with_storage(AMG(Pairwise(merge_levels); coarsest=4096,
+        native=NativeAMG(fuse=fuse_levels, scale_correction=scale_correction)), coarse_storage)
+    ref_solver = AMG(Pairwise(merge_levels); coarsest=4096)
     return (matrix_free=run_one(gf_solver), reference=run_one(ref_solver))
 end

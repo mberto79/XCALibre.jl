@@ -52,15 +52,12 @@ On meshes with appreciable non-orthogonality, pass `ncorrectors` to run non-orth
 ## AMG preconditioner
 ---
 
-Algebraic multigrid is a preconditioner: `solver` picks the outer iteration and `preconditioner = AMG(...)` the multigrid. `coarsening` is required: `SmoothAggregation()`, `Geometric()` (pairwise aggregation, unsmoothed interpolation) or `RugeStuben()` (classical). Use `solver = Cg()` for symmetric systems such as pressure equations, `solver = Bicgstab()` for non-symmetric ones, and `solver = Richardson()` for a standalone multigrid solve (repeated V-cycles with no Krylov acceleration).
+Algebraic multigrid is a preconditioner: `solver` picks the outer iteration and `preconditioner = AMG(...)` the multigrid. Use `solver = Cg()` for symmetric systems such as incompressible pressure, `solver = Bicgstab()` for non-symmetric ones (compressible pressure, momentum, scalars) and `solver = Richardson()` for plain V-cycles with no Krylov acceleration.
 
 ```julia
 SolverSetup(
     solver = Cg(),
-    preconditioner = AMG(
-        coarsening = SmoothAggregation(),
-        smoother = AMGJacobi()
-    ),
+    preconditioner = AMG(),
     convergence = 1e-7,
     relax = 1.0,
     rtol = 0.0,
@@ -68,75 +65,71 @@ SolverSetup(
 )
 ```
 
-!!! note "Earlier spelling"
-    `SolverSetup(solver = AMG(mode = Cg()), preconditioner = Jacobi())` still works, with a deprecation warning: it becomes `solver = Cg(), preconditioner = AMG(...)`, and the `preconditioner` it was given, which was never used, is dropped. `AMG(mode = ...)` inside `preconditioner` is ignored with a warning, and `AMGSolver()` is now `Richardson()`.
+`AMG(coarsening; smoother, sweeps, coarsest, refresh, native)`:
 
-For non-symmetric systems use `solver = Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix. `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` uses it for the pressure equation of a transonic RANS case.
+- `coarsening`: how cells are grouped into coarse levels.
+  - `Pairwise(merges=1)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level, as OpenFOAM's `algebraicPair` agglomeration. Piecewise-constant transfer between levels. Cheap to build, light on memory and robust for non-symmetric matrices.
+  - `SmoothedAggregation(; threshold=0.0)`: larger aggregates with a smoothed interpolation; fewer iterations on hard symmetric problems at a higher setup and memory cost.
+  - `RugeStuben(; threshold=0.25)`: classical AMG, serial meshes only (on a distributed mesh use `BoomerAMG()`).
+- `smoother`: `Jacobi()` (default), `Chebyshev(; degree=3)`, and on the CPU `GaussSeidel()`, `SymGaussSeidel()`, `SOR(ω)`, `SSOR(ω)`. `Jacobi(weight=4/3)` relaxes each level by `weight/λmax`, with λmax the largest eigenvalue of D⁻¹A there; `SOR` and `SSOR` take the relaxation factor `ω` directly.
+- `sweeps`: smoother sweeps before and after the coarse correction on each level. `sweeps = 2` means two before and two after, `sweeps = (0, 2)` none before and two after, and `Sweeps(pre, post; grow, max)` adds `grow` sweeps per level down to at most `max`, as OpenFOAM's GAMG. Defaults to 2 for `Jacobi()` and 1 otherwise.
+- `coarsest = 4096`: coarsening stops once a level has at most this many rows.
+- `refresh = 5`: the coarse levels are recomputed from the current matrix every `refresh` solves. The aggregates and interpolation are kept while the sparsity pattern is unchanged; natively the finest level always uses the current matrix. Use `refresh = 1` to recompute every solve.
+- `native = NativeAMG(...)`: settings of XCALibre's own AMG, which a distributed mesh does not use (below).
 
-Choice of coarsening for non-symmetric operators: `Bicgstab()` has been tested with the default `SmoothAggregation()`. `RugeStuben()` and `Geometric()` are accepted but have not been validated on non-symmetric operators - `RugeStuben()` builds its strength of connection from each row's entries only, not from the transpose - so prefer the default unless you have checked the alternative on your case.
-
-If `Bicgstab()` breaks down - the shadow residual going orthogonal, or the stabilising step collapsing - the half-step iterate is kept and the solve restarts with a fresh shadow residual, at most twice.
-
-`scale_correction` (on by default) is supported. It makes the V-cycle preconditioner depend on its input, but the solver is right-preconditioned, so the solution and residual it carries stay consistent, and convergence is confirmed against the true residual `b - A*x`.
+`SolverSetup(precision = MixedF32())` keeps the outer iteration and finest level in the equation's precision and stores the coarse levels in Float32, about halving the hierarchy's memory.
 
 ```julia
 SolverSetup(
     solver = Bicgstab(),
-    preconditioner = AMG(coarsening = SmoothAggregation(), smoother = AMGGaussSeidel(sweep = AMGForwardSweep())),
+    preconditioner = AMG(SmoothedAggregation(); smoother = SymGaussSeidel(), sweeps = (0, 2)),
     convergence = 1e-7,
     relax = 1.0,
     rtol = 0.0,
-    atol = 1e-5     
+    atol = 1e-5
 )
 ```
 
-### Solving the coarsest level
+`Cg()` rejects a non-symmetric matrix. A typical non-symmetric case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded; `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` solves it with `Bicgstab()` and AMG. If `Bicgstab()` breaks down (the shadow residual going orthogonal, or the stabilising step collapsing) the half-step iterate is kept and the solve restarts with a fresh shadow residual, at most twice. `Cg()` switches to its flexible form when the V-cycle is not symmetric (`scale_correction`, unequal `pre` and `post`, or a forward-only smoother), which tolerates the non-symmetric preconditioner; a symmetric V-cycle remains the better partner for `Cg()`.
 
-The coarsest level of the hierarchy is small but is visited on every V-cycle, so on a GPU the
-default host round trip can dominate. `coarse_solve` selects how it is solved:
+!!! note "Earlier spellings"
+    Earlier keywords and types still work for now, each with a one-time deprecation warning naming the current spelling: `AMG(coarsening=..., pre_sweeps=..., coarse_refresh_interval=..., max_coarse_rows=..., coarse_solve=..., scale_correction=..., fuse_levels=...)`, `Geometric()`, `SmoothAggregation()`, `AMGJacobi()`, `AMGChebyshev()`, `AMGGaussSeidel()`, `AMGSOR()` and the `OnDevice*`/`OnHost` coarse solves. `SolverSetup(solver = AMG(mode = Cg()))` becomes `solver = Cg(), preconditioner = AMG(...)`, `AMGSolver()` is `Richardson()`, and `GAMG()` returns the `AMG()` of PETSc's GAMG defaults. `AMG(coarse_storage = Float32)` is now `precision = MixedF32()`.
 
-- `OnDevice(; max_rows = 512)` (default) — device-resident factorisation, no host round trip.
-  A coarsest level with more rows than `max_rows` falls back to the host, since the factor is
-  rebuilt on every coarse refresh.
-- `OnHost()` — always copy the coarsest right-hand side to the host and solve there. Also
-  written `coarse_solve = CPU()`.
-- `OnDeviceJacobi(; omega, iterations)` and `OnDeviceChebyshev(; degree, eig_ratio, lambda_scale)` — apply a
-  fixed number of smoother sweeps on the device instead of solving. Both are constant linear
-  operators, so they are valid with `solver = Cg()` as well as `solver = Richardson()`.
-- `OnDeviceKrylov(; solver, rtol, atol, itmax)` — run an inner Krylov solve on the device. An
-  inner Krylov solve is nonlinear in its right-hand side, which breaks the fixed-operator
-  assumption of preconditioned CG, so this one requires `solver = Richardson()` and is rejected with
-  `solver = Cg()`. Passing a GPU backend, as in `coarse_solve = CUDABackend()`, selects it.
+### Native settings
+
+`NativeAMG(; coarse=Direct(), scale_correction=true, fuse=0)`:
+
+- `coarse`: the coarsest-level solve, visited on every V-cycle.
+  - `Direct(; max_rows=512)` (default): exact solve. On a GPU the factor stays on the device while the coarsest level has at most `max_rows` rows, otherwise it is solved on the host; `max_rows = 0` always uses the host.
+  - `Smoothed(smoother=Chebyshev(degree=10); sweeps=1)`: fixed sweeps of `Jacobi()` or `Chebyshev()` on the device, a fixed linear operator valid with `Cg()`. Suits a large `coarsest` on a GPU.
+  - `Iterative(solver=Bicgstab(); rtol=1e-2, itmax=50)`: a Jacobi-preconditioned Krylov solve on the device. It depends on the right-hand side, so it needs `solver = Richardson()`.
+  - On a CPU backend every choice is a `Direct()` solve.
+- `scale_correction`: scales each coarse correction by `(r·c)/(c·Ac)`, the factor that minimises the error in the energy norm.
+- `fuse`: on a GPU with `Pairwise()`, `Jacobi()` and `Direct()`, `fuse = 1` keeps the transfers between levels as aggregate lists instead of sparse matrices (less memory, no extra work), and `fuse = n > 1` also applies the top `n - 1` coarse levels through the finer matrix instead of storing them, at the cost of extra matrix products per V-cycle; worthwhile when the hierarchy does not fit on the device. A CPU ignores it.
 
 ```julia
-SolverSetup(solver = Richardson(), preconditioner = AMG(coarsening = SmoothAggregation(),
-    smoother = AMGJacobi(), coarse_solve = OnDeviceChebyshev(degree = 8)), convergence = 1e-7, relax = 1.0)
+SolverSetup(solver = Richardson(), preconditioner = AMG(coarsest = 8000,
+    native = NativeAMG(coarse = Smoothed(Chebyshev(degree = 8)))), convergence = 1e-7, relax = 1.0)
 ```
-
-On a CPU backend every `OnDevice*` option behaves as `OnHost()`.
 
 ### AMG on a distributed mesh
 
 On a distributed mesh `AMG(...)` runs as PETSc's GAMG with its settings translated:
 
-| `AMG` setting | PETSc option |
-|---|---|
-| `coarsening = SmoothAggregation(; strength_threshold)` | `-pc_gamg_agg_nsmooths 1 -pc_gamg_threshold <strength_threshold>` |
-| `coarsening = Geometric()` | `-pc_gamg_agg_nsmooths 0` (unsmoothed aggregation) |
-| `smoother = AMGJacobi(; omega)` | `-mg_levels_ksp_type richardson -mg_levels_pc_type jacobi -mg_levels_ksp_richardson_scale <omega/2>` |
-| `smoother = AMGChebyshev(; degree, eig_ratio, lambda_scale)` | `-mg_levels_ksp_type chebyshev -mg_levels_pc_type jacobi`, degree as `-mg_levels_ksp_max_it`, bounds as `-mg_levels_ksp_chebyshev_esteig` |
-| `smoother = AMGGaussSeidel(; sweep, iterations)`, `AMGSOR(; sweep, iterations)` | `-mg_levels_pc_type sor` with `-pc_sor_its` and the sweep direction, within each rank |
-| `pre_sweeps` (= `post_sweeps`) | `-mg_levels_ksp_max_it` |
-| `max_coarse_rows` | `-pc_gamg_coarse_eq_limit` |
-| `coarse_refresh_interval` | the hierarchy is held fixed for that many solves and rebuilt on the next |
+- `Pairwise()` → `-pc_gamg_agg_nsmooths 0` (unsmoothed aggregation); `SmoothedAggregation(; threshold)` → `-pc_gamg_agg_nsmooths 1 -pc_gamg_threshold <threshold>`. Aggressive coarsening is off (`-pc_gamg_aggressive_coarsening 0`) to mirror the native levels.
+- `Jacobi(; weight)` → Richardson with Jacobi and scale `weight/2`; `Chebyshev(; degree, eig_ratio, lambda_scale)` → PETSc's Chebyshev with Jacobi, degree as `-mg_levels_ksp_max_it`, bounds as `-mg_levels_ksp_chebyshev_esteig`; `GaussSeidel()`, `SymGaussSeidel()` → PETSc's SOR within each rank.
+- `sweeps` → `-mg_levels_ksp_max_it`, with a separate up smoother (`-pc_mg_distinct_smoothup`) when `pre ≠ post`.
+- `coarsest` → `-pc_gamg_coarse_eq_limit`; `refresh = N` → the preconditioner is held for `N` solves and its coarse operators recomputed on the next, keeping the interpolation (`-pc_gamg_reuse_interpolation`).
+- With any outer iteration other than `Cg()` the aggregation graph is symmetrised (`-pc_gamg_graph_symmetrize`), so non-symmetric matrices are supported.
 
-Notes:
+What differs from the native AMG:
 
-- GAMG aggregates differently in detail, so hierarchies and residuals are close, not identical.
-- `AMGJacobi` damps each level by `omega/λmax`; PETSc uses one scale for all levels, `omega/2` (exact for `λmax ≈ 2`).
-- Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `pre_sweeps ≠ post_sweeps`, `AMGChebyshev` with more than one sweep, `AMGSOR` with `omega ≠ 1`, `Geometric(merge_levels > 1)`, a non-default `max_levels`, `smoother_weight` or `near_nullspace`.
-- Native-only settings (`scale_correction`, `coarse_solve`, `fuse_levels`, `min_coarse_rows`, `coarse_storage`) are ignored, with one info message.
-- `coarse_refresh_interval = N` (default 5): natively the coarse levels are refreshed every `N` solves and the finest every solve; PETSc holds the whole preconditioner for `N` solves. Use 1 to refresh every solve.
+- GAMG builds its aggregates with its own (MIS) algorithm, not pairwise, so hierarchies and iteration counts are close, not identical.
+- `Jacobi()` damps each level by `weight/λmax` natively; PETSc uses one scale, `weight/2`, exact for `λmax ≈ 2`.
+- Between refreshes PETSc applies the whole stored preconditioner, while the native AMG updates its finest level every solve.
+- `NativeAMG` settings are not used; when they differ from the defaults one info message lists them.
+
+Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Pairwise(merges > 1)`, `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
 
 The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 

@@ -183,7 +183,7 @@ Linear solvers in XCALibre.jl are provided by [Krylov.jl](https://github.com/Jul
 - `Gmres()` is a general solver, restarted every 30 iterations. We have found it works best on the CPU backend.
 - `Richardson()` repeats the preconditioner without Krylov acceleration. With `AMG(...)` it is a standalone multigrid solve.
 
-`solver` is always the outer iteration and `preconditioner` the method, including multigrid: AMG-preconditioned CG is `solver = Cg(), preconditioner = AMG(coarsening = SmoothAggregation())`.
+`solver` is always the outer iteration and `preconditioner` the method, including multigrid: AMG-preconditioned CG is `solver = Cg(), preconditioner = AMG()`.
 
 Every linear solve stops when ‖D⁻¹(b − Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b − Ax₀)‖₂, where D is the absolute diagonal of A and x₀ the field before the solve, whatever the solver, preconditioner, precision (`MixedF32`, `MixedF16`) or backend (`AMG`, PETSc on distributed meshes). D⁻¹(b − Ax) is the correction one Jacobi step would make, so `atol` is in the units of the field (e.g. Pa for pressure) and does not depend on how the equation is scaled; changing the preconditioner does not change what `atol` and `rtol` mean. With `Jacobi()` the solve is the usual Jacobi-preconditioned one. With other preconditioners `Bicgstab()`, `Cgs()` and `Gmres()` scale by D⁻¹ on the left and apply the preconditioner on the right, and `Cg()` checks D⁻¹r each iteration. PETSc solves on distributed meshes follow the same rule: `Jacobi()` monitors D⁻¹r directly; `Bicgstab()` and `Gmres()` solve the row-scaled system, with AMG preconditioners (`AMG(...)`, `BoomerAMG()`) still built from A (the scaled matrix is applied on the fly, so no second copy is stored); `Cg()` and `Cgs()` with other preconditioners form D⁻¹r only once PETSc's own norm predicts the target is near, which costs a few extra matrix products per solve.
 
@@ -236,7 +236,7 @@ The same `SolverSetup` runs on every solve path. Where a preconditioner is not a
 | `NormDiagonal()` | runs | runs | error: Jacobi only | substitute: Jacobi |
 | `DILU()`, `ILU0GPU()` | runs | runs | error: Jacobi only | substitute: per-rank block ILU(0) |
 | `IC0GPU()` | runs | runs | error: Jacobi only | substitute: per-rank block ICC(0) |
-| `AMG(...)` | runs (native AMG) | error: use `AMG(coarse_storage=Float32)` | error | runs as PETSc's `gamg`, same coarsening and smoother; error for `RugeStuben()` |
+| `AMG(...)` | runs (native AMG) | runs: coarse levels stored in Float32 | error | runs as PETSc's `gamg`, same settings; error for settings GAMG cannot express, such as `RugeStuben()` |
 | `BoomerAMG()` | error: needs PETSc, see below | error | error | runs (`hypre`) |
 
 The outer iteration has its own limits: the native AMG runs with `Cg()`, `Bicgstab()` or `Richardson()`; Krylov.jl and mixed-precision solves with `Cg()`, `Cgs()`, `Bicgstab()` or `Gmres()`; PETSc with all five. A substitute takes the default settings of the method it stands for. On a distributed mesh `petsc_options` can name any other PETSc preconditioner.

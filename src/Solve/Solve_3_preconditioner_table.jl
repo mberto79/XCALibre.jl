@@ -10,10 +10,9 @@ struct Unsupported
 end
 
 const _F16_JACOBI = Unsupported("MixedF16 supports the Jacobi preconditioner only; use MixedF32")
-const _AMG_MIXED = Unsupported("mixed precision does not apply to AMG; use AMG(coarse_storage=Float32) " *
-    "for a single-precision hierarchy")
+const _AMG_F16 = Unsupported("MixedF16 does not apply to AMG; MixedF32 stores its coarse levels in Float32")
 const _HYPRE_ONLY = Unsupported("BoomerAMG() runs hypre through PETSc; on a serial mesh call distribute(mesh) " *
-    "to solve through PETSc in a single process, or use AMG(coarsening=...)")
+    "to solve through PETSc in a single process, or use AMG()")
 
 # columns: serial full precision, serial MixedF32, serial MixedF16, distributed (PETSc)
 const PRECONDITIONER_PATHS = (
@@ -22,7 +21,7 @@ const PRECONDITIONER_PATHS = (
     DILU         = (full=:same,      f32=:same,      f16=_F16_JACOBI, petsc=Substitute("per-rank block ILU(0)")),
     ILU0GPU      = (full=:same,      f32=:same,      f16=_F16_JACOBI, petsc=Substitute("per-rank block ILU(0)")),
     IC0GPU       = (full=:same,      f32=:same,      f16=_F16_JACOBI, petsc=Substitute("per-rank block ICC(0)")),
-    AMG          = (full=:same,      f32=_AMG_MIXED, f16=_AMG_MIXED,  petsc=:same), # PETSc: GAMG, see _gamg_conflicts
+    AMG          = (full=:same,      f32=:same,      f16=_AMG_F16,    petsc=:same), # PETSc: GAMG, see _lower_gamg
     BoomerAMG    = (full=_HYPRE_ONLY, f32=_HYPRE_ONLY, f16=_HYPRE_ONLY, petsc=:same),
 )
 
@@ -39,6 +38,7 @@ _column(::MixedF32) = :f32
 _column(::MixedF16) = :f16
 
 _solver_column(::FullPrecision, ::AMG) = :amg
+_solver_column(::MixedF32, ::AMG) = :amg
 _solver_column(::FullPrecision, pc) = :krylov
 _solver_column(::AbstractMixedPrecision, pc) = :mixed
 
@@ -49,8 +49,8 @@ _pc_rule(pc, col::Symbol) = begin
     col === :petsc ? Unsupported("no PETSc mapping for preconditioner $name; name one with " *
         "petsc_options=\"-pc_type ...\"") : :same
 end
-_pc_rule(pc::AMG, col::Symbol) = col === :petsc && !isempty(_gamg_conflicts(pc)) ?
-    Unsupported(join(_gamg_conflicts(pc), "; ")) : PRECONDITIONER_PATHS.AMG[col]
+_pc_rule(pc::AMG, col::Symbol) = col === :petsc && !isempty(last(_lower_gamg(pc))) ?
+    Unsupported(join(last(_lower_gamg(pc)), "; ")) : PRECONDITIONER_PATHS.AMG[col]
 
 function _solver_rule(solver, col::Symbol)
     allowed = SOLVER_PATHS[col]
@@ -93,55 +93,107 @@ _warn_substitute(pc, rule::Substitute, where) =
 
 # NEW SECTION: AMG on PETSc
 
-# on a distributed mesh AMG runs as PETSc's GAMG (options spelled in the PETSc ext); settings GAMG
-# cannot express stop the run, settings of the native implementation only are listed and skipped
-function _gamg_conflicts(a::AMG)
-    c, s = a.coarsening, a.smoother
-    msgs = String[]
-    c isa RugeStuben && push!(msgs, "AMG(coarsening=RugeStuben()) has no PETSc counterpart; use BoomerAMG() " *
-        "for classical AMG on a distributed mesh")
-    c isa SmoothAggregation && c.smoother_weight != oftype(c.smoother_weight, 4/3) && push!(msgs, "SmoothAggregation(smoother_weight) has no PETSc counterpart")
-    c isa SmoothAggregation && !isnothing(c.near_nullspace) && push!(msgs, "SmoothAggregation(near_nullspace) has no PETSc counterpart")
-    c isa Geometric && c.merge_levels != 1 && push!(msgs, "Geometric(merge_levels) has no PETSc counterpart")
-    a.max_levels == 10 || push!(msgs, "GAMG sets its own number of levels; leave max_levels at its default")
-    a.pre_sweeps == a.post_sweeps || push!(msgs, "PETSc smooths as often before as after; set pre_sweeps == post_sweeps")
-    s isa AMGSOR && s.omega != 1 && push!(msgs, "PETSc's SOR smoother in GAMG takes omega = 1; use AMGGaussSeidel()")
-    s isa AMGChebyshev && a.pre_sweeps != 1 && push!(msgs, "AMGChebyshev with PETSc takes pre_sweeps = post_sweeps = 1; raise degree instead")
-    msgs
+# AMG on a distributed mesh is PETSc's GAMG. One function translates every setting into PETSc options
+# or refuses it, so the two cannot drift apart; NativeAMG settings apply to serial meshes only.
+function _lower_gamg(a::AMG, solver=Cg())
+    refused = String[]
+    refuse(msg) = push!(refused, msg)
+    s = a.sweeps
+    s.grow == 0 || refuse("Sweeps(grow) has no PETSc counterpart: GAMG fixes its level count during setup")
+    opts = (pc_gamg_reuse_interpolation=true, pc_mg_cycle_type="v", pc_gamg_coarse_eq_limit=a.coarsest,
+        pc_gamg_aggressive_coarsening=0)
+    # GAMG aggregates on a symmetric graph; a non-symmetric matrix must be symmetrised first
+    solver isa Cg || (opts = merge(opts, (pc_gamg_graph_symmetrize=true,)))
+    opts = merge(opts, _gamg_coarsening(a.coarsening, refuse), _gamg_smoother(a.smoother, s, refuse))
+    return opts, refused
 end
 
-const _NATIVE_ONLY = (:scale_correction, :coarse_solve, :fuse_levels, :min_coarse_rows, :coarse_storage)
+function _gamg_coarsening(c::SmoothedAggregation, refuse)
+    c.weight == oftype(c.weight, 4/3) || refuse("SmoothedAggregation(weight) has no PETSc counterpart")
+    isnothing(c.near_nullspace) || refuse("SmoothedAggregation(near_nullspace) has no PETSc counterpart")
+    (pc_gamg_agg_nsmooths=1, pc_gamg_threshold=c.threshold)
+end
+function _gamg_coarsening(c::Pairwise, refuse)
+    c.merges == 1 || refuse("Pairwise(merges > 1) has no PETSc counterpart")
+    (pc_gamg_agg_nsmooths=0,)
+end
+_gamg_coarsening(::RugeStuben, refuse) =
+    (refuse("RugeStuben() has no PETSc counterpart; use BoomerAMG() for classical AMG on a distributed mesh"); (;))
 
-# native-implementation settings changed from their defaults, which PETSc does not use
-_native_only_set(a::AMG) = (ref = AMG(coarsening=a.coarsening, smoother=a.smoother);
-    [k for k ∈ _NATIVE_ONLY if getfield(a, k) != getfield(ref, k)])
+# down sweeps on every level; unequal up sweeps through a separate up smoother
+_gamg_sweeps(s::Sweeps) = s.pre == s.post ? (mg_levels_ksp_max_it=s.pre,) :
+    (pc_mg_distinct_smoothup=true, mg_levels_ksp_max_it=s.pre, mg_levels_up_ksp_max_it=s.post)
+
+# Jacobi damps by weight/λmax per level; PETSc's Richardson scale is fixed, so weight/2 assumes λmax ≈ 2
+_gamg_smoother(j::Jacobi, s, refuse) = merge((mg_levels_ksp_type="richardson", mg_levels_pc_type="jacobi",
+    mg_levels_ksp_richardson_scale=j.weight / 2), _gamg_sweeps(s))
+function _gamg_smoother(c::Chebyshev, s, refuse)
+    s.pre == s.post == 1 || refuse("Chebyshev() with PETSc takes sweeps = 1; raise degree instead")
+    (mg_levels_ksp_type="chebyshev", mg_levels_pc_type="jacobi", mg_levels_ksp_max_it=c.degree,
+        mg_levels_ksp_chebyshev_esteig="0,$(c.lambda_scale/c.eig_ratio),0,$(c.lambda_scale)")
+end
+# PETSc's SOR sweeps within each rank
+function _gamg_smoother(g::SweepSmoother, s, refuse)
+    _sweep_omega(g) == 1 || refuse("PETSc's SOR smoother in GAMG takes omega = 1; use GaussSeidel() or SymGaussSeidel()")
+    merge((mg_levels_ksp_type="richardson", mg_levels_pc_type="sor", mg_levels_pc_sor_its=1),
+        _sor_order(_sweep_order(g)), _gamg_sweeps(s))
+end
+_sor_order(::_Forward) = (mg_levels_pc_sor_local_forward=true,)
+_sor_order(::_Symmetric) = (mg_levels_pc_sor_local_symmetric=true,)
+
+# NativeAMG settings changed from their defaults, which PETSc does not use
+function _native_only(a::AMG)
+    n, d = a.native, NativeAMG()
+    changed = ["$k=$(getfield(n, k))" for k ∈ fieldnames(NativeAMG) if getfield(n, k) != getfield(d, k)]
+    isempty(changed) ? "" : "NativeAMG(" * join(changed, ", ") * ")"
+end
+
+# hypre's options for BoomerAMG
+_lower_hypre(b::BoomerAMG) = (pc_hypre_boomeramg_strong_threshold=b.threshold,
+    pc_hypre_boomeramg_coarsen_type=_hypre_name(b.coarsen), pc_hypre_boomeramg_interp_type=_hypre_name(b.interpolation),
+    pc_hypre_boomeramg_P_max=b.max_interp, pc_hypre_boomeramg_agg_nl=b.aggressive, pc_hypre_boomeramg_agg_num_paths=2,
+    pc_hypre_boomeramg_relax_type_all=_hypre_name(b.smoother),
+    pc_hypre_boomeramg_grid_sweeps_down=b.sweeps[1], pc_hypre_boomeramg_grid_sweeps_up=b.sweeps[2])
+_hypre_name(::HMIS) = "HMIS"
+_hypre_name(::PMIS) = "PMIS"
+_hypre_name(::Falgout) = "Falgout"
+_hypre_name(::ExtI) = "ext+i"
+_hypre_name(::Classical) = "classical"
+_hypre_name(::GaussSeidel) = "SOR/Jacobi"
+_hypre_name(::SymGaussSeidel) = "symmetric-SOR/Jacobi"
 
 # SolverSetup is built on every rank; Distribute points this at its is_root
 const _LOG_RANK = Ref{Function}(() -> true)
 
-# the outer iteration is `solver=`; AMG(mode=...) is the old spelling
-function _resolve_amg(pc::AMG, solver)
-    isnothing(pc.mode) || pc.mode isa typeof(solver) || !_LOG_RANK[]() ||
-        @warn "AMG(mode=$(nameof(typeof(pc.mode)))()) is deprecated and ignored: the outer iteration " *
-            "is SolverSetup's solver=$(nameof(typeof(solver)))()" maxlog=1
-    solver isa Union{Cg,Bicgstab,Richardson} ? _amg_with_mode(pc, solver) : pc
+# AMG(mode=...) of earlier releases: the outer iteration is SolverSetup's solver=
+function _resolve_amg(pc::_AMGMode, solver, precision)
+    _LOG_RANK[]() && @warn "AMG(mode=$(nameof(typeof(pc.mode)))()) is deprecated and ignored: the outer iteration " *
+        "is SolverSetup's solver=$(nameof(typeof(solver)))()" maxlog=1
+    _resolve_amg(pc.amg, solver, precision)
 end
-_resolve_amg(pc, solver) = pc
+# MixedF32 keeps the AMG outer iteration in full precision and stores the coarse levels in Float32
+_resolve_amg(pc::AMG, solver, precision) =
+    (_check_amg_solver(pc, solver); precision isa MixedF32 ? _with_storage(pc, Float32) : pc)
+_resolve_amg(pc, solver, precision) = pc
 
-# deprecated SolverSetup(solver=AMG(mode=...)): AMG becomes the preconditioner, its mode the solver
+# SolverSetup(solver=AMG(...)) of earlier releases: AMG becomes the preconditioner, its mode the solver
 _deprecated_amg_solver(solver, preconditioner) = (solver, preconditioner)
-function _deprecated_amg_solver(amg::AMG, preconditioner)
-    solver = something(amg.mode, Cg())
+_deprecated_amg_solver(amg::AMG, preconditioner) = _deprecated_amg_solver(_AMGMode(Cg(), amg), preconditioner)
+function _deprecated_amg_solver(s::_AMGMode, preconditioner)
     _LOG_RANK[]() && @warn "SolverSetup(solver=AMG(...)) is deprecated; use SolverSetup(solver=" *
-        "$(nameof(typeof(solver)))(), preconditioner=AMG(...)). The `preconditioner` given is unused." maxlog=1
-    return solver, _amg_with_mode(amg, solver)
+        "$(nameof(typeof(s.mode)))(), preconditioner=AMG(...)). The `preconditioner` given is unused." maxlog=1
+    return s.mode, s.amg
 end
 
 # AMG keeps its own preconditioner, so the equation holds an inert one that nothing refreshes;
 # BoomerAMG lives in PETSc, and its serial workspace check stops the run
-_set_preconditioner(::FullPrecision, setup::SolverSetup{F,I,S1,S2,<:AMG}, eqn, args...) where {F,I,S1,S2} =
-    _inert_preconditioner()
+const _AMGSetup = SolverSetup{F,I,S1,S2,<:AMG} where {F,I,S1,S2}
+_set_preconditioner(::FullPrecision, setup::_AMGSetup, eqn, args...) = _inert_preconditioner()
+_set_preconditioner(::MixedF32, setup::_AMGSetup, eqn) = _inert_preconditioner()
+_set_preconditioner(::MixedF32, setup::_AMGSetup, eqn, BCs, config) = _inert_preconditioner()
 set_preconditioner(::Union{AMG,BoomerAMG}, eqn, args...) = _inert_preconditioner()
 
-_workspace(::FullPrecision, setup::SolverSetup{F,I,S1,S2,<:AMG}, eqn, b) where {F,I,S1,S2} =
-    _workspace(setup.preconditioner, b, _index_type(_A(eqn)))
+_workspace(::FullPrecision, setup::_AMGSetup, eqn, b) =
+    _workspace(setup.preconditioner, b, _index_type(_A(eqn)); solver=setup.solver)
+_workspace(::MixedF32, setup::_AMGSetup, eqn, b) =
+    _workspace(setup.preconditioner, b, _index_type(_A(eqn)); solver=setup.solver)

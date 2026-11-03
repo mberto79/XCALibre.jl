@@ -52,7 +52,7 @@ On meshes with appreciable non-orthogonality, pass `ncorrectors` to run non-orth
 ## AMG preconditioner
 ---
 
-Algebraic multigrid is a preconditioner: `solver` picks the outer iteration and `preconditioner = AMG(...)` the multigrid. `coarsening` is required, since it decides the method: `SmoothAggregation()`, `Geometric()` (pairwise aggregation by coefficient size, with unsmoothed interpolation) or `RugeStuben()` (classical AMG). Use `solver = Cg()` for symmetric systems such as pressure equations, `solver = Bicgstab()` for non-symmetric ones, and `solver = Richardson()` for a standalone multigrid solve (repeated V-cycles with no Krylov acceleration).
+Algebraic multigrid is a preconditioner: `solver` picks the outer iteration and `preconditioner = AMG(...)` the multigrid. `coarsening` is required: `SmoothAggregation()`, `Geometric()` (pairwise aggregation, unsmoothed interpolation) or `RugeStuben()` (classical). Use `solver = Cg()` for symmetric systems such as pressure equations, `solver = Bicgstab()` for non-symmetric ones, and `solver = Richardson()` for a standalone multigrid solve (repeated V-cycles with no Krylov acceleration).
 
 ```julia
 SolverSetup(
@@ -67,27 +67,6 @@ SolverSetup(
     atol = 1e-5
 )
 ```
-
-### AMG on a distributed mesh
-
-The same `AMG(...)` runs on a distributed mesh as PETSc's GAMG, with its settings translated so the multigrid is the same kind on both paths:
-
-| `AMG` setting | PETSc option |
-|---|---|
-| `coarsening = SmoothAggregation(; strength_threshold)` | `-pc_gamg_agg_nsmooths 1 -pc_gamg_threshold <strength_threshold>` |
-| `coarsening = Geometric()` | `-pc_gamg_agg_nsmooths 0` (unsmoothed aggregation) |
-| `smoother = AMGJacobi(; omega)` | `-mg_levels_ksp_type richardson -mg_levels_pc_type jacobi -mg_levels_ksp_richardson_scale <omega/2>` |
-| `smoother = AMGChebyshev(; degree, eig_ratio, lambda_scale)` | `-mg_levels_ksp_type chebyshev -mg_levels_pc_type jacobi`, degree as `-mg_levels_ksp_max_it`, bounds as `-mg_levels_ksp_chebyshev_esteig` |
-| `smoother = AMGGaussSeidel(; sweep, iterations)`, `AMGSOR(; sweep, iterations)` | `-mg_levels_pc_type sor` with `-pc_sor_its` and the sweep direction, within each rank |
-| `pre_sweeps` (= `post_sweeps`) | `-mg_levels_ksp_max_it` |
-| `max_coarse_rows` | `-pc_gamg_coarse_eq_limit` |
-| `coarse_refresh_interval` | the hierarchy is held fixed for that many solves and rebuilt on the next |
-
-Both paths aggregate differently in detail (GAMG groups cells by independent sets of the matrix graph), so the hierarchy and residuals are close, not identical. `AMGJacobi` damps each level by `omega/λmax`; PETSc's Richardson scale is one number for every level, so `omega/2` is used, exact where `λmax ≈ 2` as for Poisson-like operators. A setting GAMG cannot express stops the run when the solver is built: `RugeStuben()` (use `BoomerAMG()` for classical AMG on a distributed mesh), `pre_sweeps ≠ post_sweeps`, `AMGChebyshev` with more than one sweep, `AMGSOR` with `omega ≠ 1`, `Geometric(merge_levels > 1)`, a non-default `max_levels` (GAMG sets its own number of levels), and a non-default `smoother_weight` or `near_nullspace` of `SmoothAggregation`. Settings that only shape the native implementation (`scale_correction`, `coarse_solve`, `fuse_levels`, `min_coarse_rows`, `coarse_storage`) are not used by PETSc, and a changed one is listed once in an info message.
-
-`coarse_refresh_interval` (default 5) means the same on both paths: the coarse levels are rebuilt every that many solves, which removes most of the setup cost while the matrix changes slowly, as in SIMPLE. Use 1 to rebuild every solve.
-
-The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 
 !!! note "Earlier spelling"
     `SolverSetup(solver = AMG(mode = Cg()), preconditioner = Jacobi())` still works, with a deprecation warning: it becomes `solver = Cg(), preconditioner = AMG(...)`, and the `preconditioner` it was given, which was never used, is dropped. `AMG(mode = ...)` inside `preconditioner` is ignored with a warning, and `AMGSolver()` is now `Richardson()`.
@@ -135,6 +114,31 @@ SolverSetup(solver = Richardson(), preconditioner = AMG(coarsening = SmoothAggre
 ```
 
 On a CPU backend every `OnDevice*` option behaves as `OnHost()`.
+
+### AMG on a distributed mesh
+
+On a distributed mesh `AMG(...)` runs as PETSc's GAMG with its settings translated:
+
+| `AMG` setting | PETSc option |
+|---|---|
+| `coarsening = SmoothAggregation(; strength_threshold)` | `-pc_gamg_agg_nsmooths 1 -pc_gamg_threshold <strength_threshold>` |
+| `coarsening = Geometric()` | `-pc_gamg_agg_nsmooths 0` (unsmoothed aggregation) |
+| `smoother = AMGJacobi(; omega)` | `-mg_levels_ksp_type richardson -mg_levels_pc_type jacobi -mg_levels_ksp_richardson_scale <omega/2>` |
+| `smoother = AMGChebyshev(; degree, eig_ratio, lambda_scale)` | `-mg_levels_ksp_type chebyshev -mg_levels_pc_type jacobi`, degree as `-mg_levels_ksp_max_it`, bounds as `-mg_levels_ksp_chebyshev_esteig` |
+| `smoother = AMGGaussSeidel(; sweep, iterations)`, `AMGSOR(; sweep, iterations)` | `-mg_levels_pc_type sor` with `-pc_sor_its` and the sweep direction, within each rank |
+| `pre_sweeps` (= `post_sweeps`) | `-mg_levels_ksp_max_it` |
+| `max_coarse_rows` | `-pc_gamg_coarse_eq_limit` |
+| `coarse_refresh_interval` | the hierarchy is held fixed for that many solves and rebuilt on the next |
+
+Notes:
+
+- GAMG aggregates differently in detail, so hierarchies and residuals are close, not identical.
+- `AMGJacobi` damps each level by `omega/λmax`; PETSc uses one scale for all levels, `omega/2` (exact for `λmax ≈ 2`).
+- Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `pre_sweeps ≠ post_sweeps`, `AMGChebyshev` with more than one sweep, `AMGSOR` with `omega ≠ 1`, `Geometric(merge_levels > 1)`, a non-default `max_levels`, `smoother_weight` or `near_nullspace`.
+- Native-only settings (`scale_correction`, `coarse_solve`, `fuse_levels`, `min_coarse_rows`, `coarse_storage`) are ignored, with one info message.
+- `coarse_refresh_interval` (default 5) rebuilds the coarse levels every that many solves on both paths; use 1 to rebuild every solve.
+
+The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 
 ## Launching flow solvers
 ---

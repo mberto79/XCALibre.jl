@@ -181,7 +181,7 @@ Linear solvers in XCALibre.jl are provided by [Krylov.jl](https://github.com/Jul
 - `Bicgstab()` is a general purpose linear solver. Works well with non-symmetric matrices e.g. for `U`.
 - `Cg()` is particular strong with symmetric matrices e.g to solve the pressure equation.
 - `Gmres()` is a general solver, restarted every 30 iterations. We have found it works best on the CPU backend.
-- `Richardson()` repeats the preconditioner with no Krylov acceleration; with `preconditioner = AMG(...)` it is a standalone multigrid solve (repeated V-cycles); on a distributed mesh it runs as PETSc's `richardson` with the same multigrid.
+- `Richardson()` repeats the preconditioner without Krylov acceleration. With `AMG(...)` it is a standalone multigrid solve.
 
 `solver` is always the outer iteration and `preconditioner` the method, including multigrid: AMG-preconditioned CG is `solver = Cg(), preconditioner = AMG(coarsening = SmoothAggregation())`.
 
@@ -220,7 +220,7 @@ print_tree(PreconditionerType) # hide
 
 !!! note
 
-    Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `Gmres()` on the CPU. Also notice that the implementations for `DILU` (experimental), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
+    Only the `Jacobi`, `NormDiagonal` and `AMG` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `Gmres()` on the CPU. Also notice that the implementations for `DILU` (experimental), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
 
 !!! warning
 
@@ -241,7 +241,7 @@ The same `SolverSetup` runs on every solve path. Where a preconditioner is not a
 
 The outer iteration has its own limits: the native AMG runs with `Cg()`, `Bicgstab()` or `Richardson()`; Krylov.jl and mixed-precision solves with `Cg()`, `Cgs()`, `Bicgstab()` or `Gmres()`; PETSc with all five. A substitute takes the default settings of the method it stands for. On a distributed mesh `petsc_options` can name any other PETSc preconditioner.
 
-`AMG(...)` is the multigrid algorithm and runs the same on both kinds of mesh: XCALibre's own implementation on a serial mesh and PETSc's GAMG on a distributed one, with the coarsening, smoother and sweeps translated (see the AMG section of the runtime and solvers page). `BoomerAMG()` names the hypre library and always runs hypre, which XCALibre reaches through PETSc only; to use it on an ordinary mesh, call `distribute(mesh)` so the solve goes through PETSc in a single process. `GAMG()` is deprecated: it returns `AMG(coarsening = SmoothAggregation())`, or `AMG(coarsening = Geometric())` with `agg_nsmooths = 0`.
+Choose the algorithm, not the solve path: `AMG(...)` runs natively on a serial mesh and as PETSc's GAMG on a distributed one, with the same settings. `BoomerAMG()` always runs hypre through PETSc; on a serial mesh call `distribute(mesh)` first. `GAMG()` is deprecated in favour of `AMG(...)`.
 
 
 

@@ -512,10 +512,8 @@ iterations that is roughly independent of mesh size. Two AMG preconditioners are
 distributed mesh. Both are for symmetric positive-definite systems only (they have no transpose
 apply):
 
-- `AMG(coarsening = ...)`: the multigrid algorithm, the same one as on a serial mesh. PETSc runs it
-  as its native aggregation AMG (`-pc_type gamg`), with the coarsening, smoother and sweeps
-  translated. It needs no extra build flags. `RugeStuben()` coarsening has no GAMG counterpart and
-  stops the run; use `BoomerAMG()` for classical AMG.
+- `AMG(coarsening = ...)`: the same multigrid as on a serial mesh, run as PETSc's GAMG
+  (`-pc_type gamg`). No extra build needed. `RugeStuben()` is not supported; use `BoomerAMG()`.
 - `BoomerAMG()`: the hypre library (`-pc_type hypre`). It needs a PETSc built with hypre; the stock
   Float64 libraries include it.
 
@@ -525,11 +523,9 @@ p = SolverSetup(solver = Cg(), preconditioner = AMG(coarsening = SmoothAggregati
 ```
 
 **Prefer `AMG(...)` when you want AMG.** It needs no special build, and on the cases measured so
-far PETSc's GAMG was faster than `BoomerAMG()` at every rank count and scaled more evenly (see
-[Benchmarks](@ref)). Those measurements used GAMG's own defaults, whose smoother corresponds to
-`smoother = AMGChebyshev(degree = 2)`; the default `AMGJacobi()` is a different smoother, so measure
-on your case. `BoomerAMG()` remains available for operators where classical coarsening suits
-better. `GAMG()` is deprecated and returns `AMG(...)`.
+far GAMG was faster than `BoomerAMG()` at every rank count and scaled more evenly (see
+[Benchmarks](@ref)); those runs used `smoother = AMGChebyshev(degree = 2)`, GAMG's own default.
+`BoomerAMG()` remains available for operators where classical coarsening suits better.
 
 !!! note "AMG results depend on the rank count"
     An AMG hierarchy is built from each rank's local partition. It therefore changes with the rank
@@ -659,11 +655,9 @@ In SIMPLE, the pressure matrix keeps a fixed sparsity pattern while its coeffici
 slightly from one outer iteration to the next. Rebuilding the whole AMG hierarchy for every solve
 is expensive, so both preconditioners avoid it, in different ways:
 
-- `AMG(...)` runs GAMG with `reuse_interpolation` on: it builds the aggregation and interpolation
-  operators once and then recomputes only the coarse operators and smoothers, which is cheap. This
-  is valid only because the sparsity pattern never changes. `coarse_refresh_interval = N` goes
-  further and holds the whole preconditioner fixed for `N` solves, skipping even that update
-  (default `5`; `1` updates for every solve), as it holds the coarse levels on a serial mesh.
+- `AMG(...)` builds the aggregation and interpolation once (the sparsity pattern never changes)
+  and recomputes only the coarse operators and smoothers. `coarse_refresh_interval = N` holds the
+  whole preconditioner fixed for `N` solves (default `5`; `1` updates every solve).
 - `BoomerAMG(freeze = N)` holds the whole preconditioner fixed for `N` solves and rebuilds it from
   the current matrix on the `N`th (default `10`; `freeze = 1` rebuilds for every solve). HYPRE
   cannot partially reuse a hierarchy, so this all-or-nothing freeze is the only option.
@@ -675,10 +669,9 @@ residual reduction per outer iteration. The defaults balance the two.
 ### Tuning keywords
 
 
-`AMG(...)` takes the same keywords on every mesh; the translation to GAMG options is listed in
-the AMG section of the runtime and solvers page. Other GAMG options, such as `-pc_gamg_square_graph`,
-go through `petsc_options` for the `p` equation, for example
-`run!(model, config; petsc_options = (p = "-pc_gamg_square_graph 1",))`.
+**AMG** takes the same keywords on every mesh (see the AMG section of the runtime and solvers
+page). Other GAMG options go through `petsc_options`, e.g.
+`petsc_options = (p = "-pc_gamg_square_graph 1",)`.
 
 **BoomerAMG** → `-pc_hypre_boomeramg_<k> v`. The defaults are tuned for 3D (`strong_threshold =
 0.7`, `coarsen_type = "HMIS"`, `interp_type = "ext+i"`, `P_max = 4`, `agg_nl = 1`,
@@ -707,7 +700,7 @@ exposed as a keyword can still be passed through `petsc_options`.
     needs no special build and is the safer default in shared scripts.
 
 !!! note
-    In Float32 PETSc libraries (`MixedF32()`, or a Float32 mesh), `AMG(...)`, which runs as PETSc's GAMG, handles at most
+    In Float32 PETSc libraries (`MixedF32()`, or a Float32 mesh), `AMG(...)` (GAMG) handles at most
     2^24 + 1 = 16,777,217 global rows. PETSc releases up to 3.26 pass global row ids through
     floating-point vectors during GAMG setup, and Float32 holds integers exactly only up to 2^24.
     Above that size the solver raises an error when it is constructed. Solve that equation at
@@ -718,7 +711,7 @@ exposed as a keyword can still be passed through `petsc_options`.
 
 With a CUDA-enabled PETSc, `Jacobi()` and `AMG(...)` run on the device and give the same residuals
 as on the CPU; GAMG builds part of its hierarchy on the host, which `coarse_refresh_interval`
-amortises. Use `AMGJacobi()` or `AMGChebyshev()` on GPU fields: the SOR smoothers (`AMGGaussSeidel`, `AMGSOR`) are CPU only, as on a serial mesh.
+amortises. Use `AMGJacobi()` or `AMGChebyshev()` on the GPU; the SOR smoothers are CPU only.
 `BoomerAMG()` runs on the device only if PETSc's hypre was itself built with CUDA. There PETSc
 switches it to the GPU-capable variants (PMIS coarsening, `ext+i` interpolation, l1-Jacobi
 smoothing), so its residuals differ from a CPU run with the same keywords. With a PETSc whose

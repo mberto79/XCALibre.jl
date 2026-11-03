@@ -346,7 +346,8 @@ Algebraic multigrid, used as `SolverSetup(solver=Cg(), preconditioner=AMG(coarse
 `SmoothAggregation()`, `Geometric()` or `RugeStuben()`. A serial mesh runs XCALibre's own
 implementation; a distributed mesh runs PETSc's GAMG with the same coarsening, smoother and sweeps,
 and stops for settings GAMG cannot express (e.g. `RugeStuben()`, for which see [`BoomerAMG`](@ref)).
-`coarse_refresh_interval` rebuilds the coarse levels every that many solves on both paths. Mixed
+`coarse_refresh_interval=N` refreshes the coarse levels every `N` solves (the finest every solve); on
+PETSc it holds the whole preconditioner for `N` solves. Mixed
 precision comes from `coarse_storage=Float32`, not from `precision`. See the AMG section of the
 user guide for the keywords and their PETSc translation.
 """

@@ -100,7 +100,7 @@ function _gamg_conflicts(a::AMG)
     msgs = String[]
     c isa RugeStuben && push!(msgs, "AMG(coarsening=RugeStuben()) has no PETSc counterpart; use BoomerAMG() " *
         "for classical AMG on a distributed mesh")
-    c isa SmoothAggregation && c.smoother_weight != 4/3 && push!(msgs, "SmoothAggregation(smoother_weight) has no PETSc counterpart")
+    c isa SmoothAggregation && c.smoother_weight != oftype(c.smoother_weight, 4/3) && push!(msgs, "SmoothAggregation(smoother_weight) has no PETSc counterpart")
     c isa SmoothAggregation && !isnothing(c.near_nullspace) && push!(msgs, "SmoothAggregation(near_nullspace) has no PETSc counterpart")
     c isa Geometric && c.merge_levels != 1 && push!(msgs, "Geometric(merge_levels) has no PETSc counterpart")
     a.max_levels == 10 || push!(msgs, "GAMG sets its own number of levels; leave max_levels at its default")

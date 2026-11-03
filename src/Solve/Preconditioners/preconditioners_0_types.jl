@@ -64,20 +64,26 @@ BoomerAMG(; freeze=10, device=false, kwargs...) =
     BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), freeze, device)
 
 """
-    GAMG(; freeze, agg_nsmooths)
+    GAMG(; freeze=25, agg_nsmooths=1, threshold=0.0)
 
-Deprecated: use [`AMG`](@ref), which runs as PETSc's GAMG on a distributed mesh. `GAMG()` returns
-`AMG(coarsening=SmoothAggregation())`, `GAMG(agg_nsmooths=0)` returns `AMG(coarsening=Geometric())`,
-and `freeze=N` becomes `coarse_refresh_interval=N`. Other GAMG settings go through `petsc_options`.
+Deprecated: use [`AMG`](@ref), which runs as PETSc's GAMG on a distributed mesh. `GAMG(...)` returns
+the `AMG` settings of PETSc's GAMG defaults: `SmoothAggregation(strength_threshold=threshold)`
+(`Geometric()` with `agg_nsmooths=0`), `AMGChebyshev(degree=2, eig_ratio=11)`, `max_coarse_rows=50`
+and `coarse_refresh_interval=freeze`. Other GAMG settings go through `petsc_options`.
 """
-function GAMG(; freeze=nothing, agg_nsmooths=1, reuse_interpolation=true, kwargs...)
+function GAMG(; freeze=25, agg_nsmooths=1, threshold=0.0, reuse_interpolation=true, kwargs...)
     isempty(kwargs) || throw(ArgumentError("GAMG() is deprecated; pass $(join(keys(kwargs), ", ")) " *
         "with petsc_options=\"-pc_gamg_...\" and use AMG(coarsening=...)"))
+    string(reuse_interpolation) == "true" || throw(ArgumentError("GAMG(reuse_interpolation=false) has no AMG equivalent"))
     string(agg_nsmooths) ∈ ("0", "1") || throw(ArgumentError("GAMG(agg_nsmooths) must be 0 or 1"))
-    coarsening = string(agg_nsmooths) == "0" ? Geometric() : SmoothAggregation()
-    _LOG_RANK[]() && @warn "GAMG() is deprecated; use AMG(coarsening=$(nameof(typeof(coarsening)))()), which " *
-        "runs as PETSc's GAMG on a distributed mesh" maxlog=1
-    AMG(; coarsening, (isnothing(freeze) ? (;) : (; coarse_refresh_interval=freeze))...)
+    unsmoothed = string(agg_nsmooths) == "0"
+    unsmoothed && threshold != 0 && throw(ArgumentError("GAMG(threshold) applies with agg_nsmooths=1 only"))
+    coarsening = unsmoothed ? Geometric() : SmoothAggregation(strength_threshold=threshold)
+    _LOG_RANK[]() && @warn "GAMG() is deprecated; it returns AMG(coarsening=$(nameof(typeof(coarsening)))(), " *
+        "smoother=AMGChebyshev(degree=2, eig_ratio=11), max_coarse_rows=50, coarse_refresh_interval=$freeze), " *
+        "PETSc's GAMG defaults" maxlog=1
+    # PETSc's GAMG defaults: Chebyshev degree 2 on [0.1, 1.1]·λmax, coarsest at most 50 rows
+    AMG(; coarsening, smoother=AMGChebyshev(degree=2, eig_ratio=11), max_coarse_rows=50, coarse_refresh_interval=freeze)
 end
 
 struct IC0GPU <: MULPreconditioner end

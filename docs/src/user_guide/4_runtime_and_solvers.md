@@ -136,7 +136,7 @@ Notes:
 - `AMGJacobi` damps each level by `omega/λmax`; PETSc uses one scale for all levels, `omega/2` (exact for `λmax ≈ 2`).
 - Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `pre_sweeps ≠ post_sweeps`, `AMGChebyshev` with more than one sweep, `AMGSOR` with `omega ≠ 1`, `Geometric(merge_levels > 1)`, a non-default `max_levels`, `smoother_weight` or `near_nullspace`.
 - Native-only settings (`scale_correction`, `coarse_solve`, `fuse_levels`, `min_coarse_rows`, `coarse_storage`) are ignored, with one info message.
-- `coarse_refresh_interval` (default 5) rebuilds the coarse levels every that many solves on both paths; use 1 to rebuild every solve.
+- `coarse_refresh_interval = N` (default 5): natively the coarse levels are refreshed every `N` solves and the finest every solve; PETSc holds the whole preconditioner for `N` solves. Use 1 to refresh every solve.
 
 The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 

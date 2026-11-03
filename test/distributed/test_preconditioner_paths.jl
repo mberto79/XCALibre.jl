@@ -33,6 +33,14 @@ by_hand(opts) = (p = "$GAMG_COMMON $opts",)
     @test p_amg == p_ref
 end
 
+# the translated settings reach PETSc: changing each one changes the fields
+@testset "AMG settings take effect on a distributed mesh (rank $rank)" begin
+    base = fields(AMG(coarsening=SmoothAggregation(), coarse_refresh_interval=1))
+    @test base != fields(AMG(coarsening=SmoothAggregation(), smoother=AMGChebyshev(), coarse_refresh_interval=1))
+    @test base != fields(AMG(coarsening=Geometric(), coarse_refresh_interval=1))
+    @test base != fields(AMG(coarsening=SmoothAggregation()))
+end
+
 @testset "AMG(coarsening=RugeStuben()) stops on a distributed mesh (rank $rank)" begin
     @test_throws r"use BoomerAMG\(\)" fields(AMG(coarsening=RugeStuben()))
 end

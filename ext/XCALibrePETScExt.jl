@@ -317,6 +317,9 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
             nameof(typeof(setup.preconditioner))
     if pc isa AMG
         rule isa XCALibre.Solve.Unsupported && throw(ArgumentError(rule.msg))
+        device_solve && pc.smoother isa XCALibre.Solve.AbstractAMGCPUSmoother && throw(ArgumentError(
+            "$(nameof(typeof(pc.smoother))) is a sequential CPU AMG smoother and cannot be used with GPU fields; " *
+            "use AMGJacobi() or AMGChebyshev()"))
         skipped = XCALibre.Solve._native_only_set(pc)
         isempty(skipped) || MPI.Comm_rank(comm) != 0 || @info "AMG runs as PETSc's GAMG on a distributed " *
             "mesh, which does not use the native-only settings $(join(skipped, ", "))" maxlog=1

@@ -66,6 +66,7 @@ end
 @testset "AMG settings PETSc's GAMG cannot run" begin
     conflicts(; kw...) = SV._gamg_conflicts(AMG(; kw...))
     @test isempty(conflicts(coarsening=SmoothAggregation()))
+    @test isempty(conflicts(coarsening=SmoothAggregation(strength_threshold=0.05f0)))
     @test isempty(conflicts(coarsening=Geometric(), smoother=AMGChebyshev()))
     @test isempty(conflicts(coarsening=Geometric(), smoother=AMGGaussSeidel(sweep=AMGForwardSweep())))
     for kw ∈ ((coarsening=RugeStuben(),), (coarsening=Geometric(merge_levels=2),),
@@ -88,10 +89,15 @@ end
 end
 
 @testset "GAMG() is deprecated in favour of AMG" begin
-    g = @test_logs (:warn, r"GAMG\(\) is deprecated; use AMG\(coarsening=Geometric\(\)\)") GAMG(agg_nsmooths=0, freeze=7)
+    g = @test_logs (:warn, r"GAMG\(\) is deprecated; it returns AMG\(coarsening=Geometric\(\)") GAMG(agg_nsmooths=0, freeze=7)
     @test g isa AMG && g.coarsening isa Geometric && g.coarse_refresh_interval == 7
     @test GAMG().coarsening isa SmoothAggregation
-    @test_throws r"petsc_options" GAMG(threshold=0.02)
+    @test GAMG(threshold=0.02).coarsening.strength_threshold == 0.02
+    old = GAMG()
+    @test old.smoother isa AMGChebyshev && old.smoother.degree == 2 && old.max_coarse_rows == 50 &&
+        old.coarse_refresh_interval == 25
+    @test_throws r"petsc_options" GAMG(square_graph=1)
+    @test_throws r"reuse_interpolation" GAMG(reuse_interpolation=false)
 end
 
 @testset "old spellings" begin
@@ -146,8 +152,7 @@ end
         @test eqn.preconditioner isa Preconditioner{SV.InertPreconditioner}
         @test eqn.solver isa AMGWorkspace && eqn.solver.converged
     end
-    # GAMG on a serial mesh solves with the native AMG
+    # the deprecated GAMG() is the native AMG with GAMG's default settings
     _, x_gamg = laplace_values(mksetup(Cg(), GAMG(); rtol=1e-10, atol=0.0))
-    _, x_amg = laplace_values(mksetup(Cg(), AMG(coarsening=SmoothAggregation()); rtol=1e-10, atol=0.0))
-    @test x_gamg == x_amg
+    @test isapprox(x_gamg, x_ref; rtol=1e-6)
 end

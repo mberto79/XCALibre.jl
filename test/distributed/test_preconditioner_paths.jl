@@ -17,8 +17,7 @@ function fields(p_precon; petsc_options="")
     Array(model.momentum.U.x.values)[1:n], Array(model.momentum.p.values)[1:n]
 end
 
-const GAMG_COMMON = "-pc_type gamg -pc_gamg_reuse_interpolation true -pc_mg_cycle_type v -pc_mg_levels 10 " *
-    "-pc_gamg_coarse_eq_limit 4096"
+const GAMG_COMMON = "-pc_type gamg -pc_gamg_reuse_interpolation true -pc_mg_cycle_type v -pc_gamg_coarse_eq_limit 4096"
 by_hand(opts) = (p = "$GAMG_COMMON $opts",)
 
 @testset "AMG(coarsening=$(nameof(typeof(c))), smoother=$(nameof(typeof(s)))) runs as GAMG (rank $rank)" for (c, s, opts) ∈ (

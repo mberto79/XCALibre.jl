@@ -71,7 +71,7 @@ end
     for kw ∈ ((coarsening=RugeStuben(),), (coarsening=Geometric(merge_levels=2),),
             (coarsening=SmoothAggregation(smoother_weight=1.0),), (coarsening=Geometric(), pre_sweeps=1),
             (coarsening=Geometric(), smoother=AMGChebyshev(), pre_sweeps=2, post_sweeps=2),
-            (coarsening=Geometric(), smoother=AMGSOR(omega=1.2)))
+            (coarsening=Geometric(), smoother=AMGSOR(omega=1.2)), (coarsening=Geometric(), max_levels=5))
         @test length(conflicts(; kw...)) == 1
     end
     # runs serially, so SolverSetup accepts it; a distributed run stops when PETSc is set up

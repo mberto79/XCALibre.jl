@@ -51,7 +51,7 @@ _pc_options(p::BoomerAMG) =
     NamedTuple(Symbol("pc_hypre_boomeramg_$k") => v for (k, v) ∈ pairs(p.opts))
 # AMG as GAMG: the same coarsening, smoother and sweeps (conflicts are refused in XCALibre.Solve)
 _pc_options(a::AMG) = merge((pc_gamg_reuse_interpolation=true, pc_mg_cycle_type="v",
-    pc_mg_levels=a.max_levels, pc_gamg_coarse_eq_limit=a.max_coarse_rows), _gamg_coarsening(a.coarsening),
+    pc_gamg_coarse_eq_limit=a.max_coarse_rows), _gamg_coarsening(a.coarsening),
     _mg_smoother(a.smoother, a.pre_sweeps))
 _gamg_coarsening(c::SmoothAggregation) = (pc_gamg_agg_nsmooths=1, pc_gamg_threshold=c.strength_threshold)
 _gamg_coarsening(::Geometric) = (pc_gamg_agg_nsmooths=0,)

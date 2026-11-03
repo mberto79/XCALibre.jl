@@ -33,10 +33,10 @@ setup = SolverSetup(
 @test setup.preconditioner.post_sweeps == 2
 @test setup.preconditioner.cycle isa VCycle
 
-solver_jacobi_default = AMG()
+solver_jacobi_default = AMG(coarsening=SmoothAggregation())
 @test isnothing(solver_jacobi_default.mode)
 @test solver_jacobi_default.scale_correction == true
-@test AMG(scale_correction=false).scale_correction == false
+@test AMG(coarsening=SmoothAggregation(), scale_correction=false).scale_correction == false
 @test solver_jacobi_default.pre_sweeps == 2
 @test solver_jacobi_default.post_sweeps == 2
 @test solver_jacobi_default.smoother.omega == 4/3
@@ -72,17 +72,17 @@ solver_type_api = AMG(
 @test occursin("AMGJacobi", XCALibre.Solve._amg_gpu_smoother_names())
 @test occursin("AMGChebyshev", XCALibre.Solve._amg_gpu_smoother_names())
 
-solver_gs_default = AMG(mode=Cg(), smoother=AMGGaussSeidel())
+solver_gs_default = AMG(coarsening=SmoothAggregation(), mode=Cg(), smoother=AMGGaussSeidel())
 @test solver_gs_default.smoother.sweep isa AMGSymmetricSweep
 @test solver_gs_default.smoother.iterations == 1
 @test solver_gs_default.pre_sweeps == 1
 @test solver_gs_default.post_sweeps == 1
 
-solver_gs_forward = AMG(smoother=AMGGaussSeidel(AMGForwardSweep(), iterations=2))
+solver_gs_forward = AMG(coarsening=SmoothAggregation(), smoother=AMGGaussSeidel(AMGForwardSweep(), iterations=2))
 @test solver_gs_forward.smoother.sweep isa AMGForwardSweep
 @test solver_gs_forward.smoother.iterations == 2
 
-solver_sor_default = AMG(smoother=AMGSOR(1.1, AMGBackwardSweep()))
+solver_sor_default = AMG(coarsening=SmoothAggregation(), smoother=AMGSOR(1.1, AMGBackwardSweep()))
 @test solver_sor_default.smoother.sweep isa AMGBackwardSweep
 @test solver_sor_default.smoother.omega == 1.1
 @test solver_sor_default.pre_sweeps == 1
@@ -94,28 +94,28 @@ solver_sor_default = AMG(smoother=AMGSOR(1.1, AMGBackwardSweep()))
 controlled_sa = SmoothAggregation(strength_threshold=0.05)
 @test controlled_sa.strength_threshold == 0.05
 
-solver_cg_jacobi_default = AMG(mode=Cg(), smoother=AMGJacobi())
+solver_cg_jacobi_default = AMG(coarsening=SmoothAggregation(), mode=Cg(), smoother=AMGJacobi())
 @test solver_cg_jacobi_default.pre_sweeps == 2
 @test solver_cg_jacobi_default.post_sweeps == 2
 
-solver_custom_sweeps = AMG(pre_sweeps=4, post_sweeps=4)
+solver_custom_sweeps = AMG(coarsening=SmoothAggregation(), pre_sweeps=4, post_sweeps=4)
 @test solver_custom_sweeps.pre_sweeps == 4
 @test solver_custom_sweeps.post_sweeps == 4
 
-solver_explicit_sweeps = AMG(pre_sweeps=2, post_sweeps=3)
+solver_explicit_sweeps = AMG(coarsening=SmoothAggregation(), pre_sweeps=2, post_sweeps=3)
 @test solver_explicit_sweeps.pre_sweeps == 2
 @test solver_explicit_sweeps.post_sweeps == 3
 
-@test_throws ArgumentError AMG(cycle=Symbol("W"))
-@test_throws ArgumentError AMG(mode=Symbol("cg"))
+@test_throws ArgumentError AMG(coarsening=SmoothAggregation(), cycle=Symbol("W"))
+@test_throws ArgumentError AMG(coarsening=SmoothAggregation(), mode=Symbol("cg"))
 @test_throws ArgumentError AMG(coarsening=Symbol("smooth_aggregation"))
-@test_throws ArgumentError AMG(smoother=Symbol("jacobi"))
+@test_throws ArgumentError AMG(coarsening=SmoothAggregation(), smoother=Symbol("jacobi"))
 @test_throws ArgumentError AMG(coarsening=FakeCoarsening())
-@test_throws ArgumentError AMG(smoother=FakeSmoother())
-@test_throws MethodError AMG(; (; Symbol("smoothing_" * "steps") => 1)...)
-@test_throws MethodError AMG(; (; Symbol("pre" * "sweeps") => 1)...)
-@test_throws MethodError AMG(; (; Symbol("connection_" * "strength") => 0.1)...)
-@test_throws MethodError AMG(; (; Symbol("smoother_" * "omega") => 0.8)...)
+@test_throws ArgumentError AMG(coarsening=SmoothAggregation(), smoother=FakeSmoother())
+@test_throws MethodError AMG(; coarsening=SmoothAggregation(),  (; Symbol("smoothing_" * "steps") => 1)...)
+@test_throws MethodError AMG(; coarsening=SmoothAggregation(),  (; Symbol("pre" * "sweeps") => 1)...)
+@test_throws MethodError AMG(; coarsening=SmoothAggregation(),  (; Symbol("connection_" * "strength") => 0.1)...)
+@test_throws MethodError AMG(; coarsening=SmoothAggregation(),  (; Symbol("smoother_" * "omega") => 0.8)...)
 @test_throws MethodError SmoothAggregation(max_prolongation_entries=1)
 @test_throws MethodError SmoothAggregation(aggressive_levels=1)
 @test_throws MethodError SmoothAggregation(interpolation=:unsmoothed)
@@ -420,7 +420,7 @@ XCALibre.Solve.amg_solve!(
 # ===== BiCGStab mode: valid for a non-symmetric operator AND Krylov accelerated =====
 # `A_bad` is reused on purpose: `Cg()` refuses it above, and this mode must solve it.
 # --- 1. the mode constructs and is accepted by the validator
-@test AMG(mode=Bicgstab()).mode isa Bicgstab
+@test AMG(coarsening=SmoothAggregation(), mode=Bicgstab()).mode isa Bicgstab
 @test XCALibre.Solve._amg_mode_name(Bicgstab()) == "bicgstab"
 
 # --- 2. workspace aliasing: BiCGStab's three extra vectors may alias nothing, `svec`
@@ -499,7 +499,7 @@ XCALibre.Solve.amg_bicgstab_solve!(
 # --- 7. every sweep direction converges. Sweeps scan the row and skip `j == i`, so a
 # mishandled diagonal - which still converges, to the wrong answer - is caught here.
 for sweep in (AMGForwardSweep(), AMGBackwardSweep(), AMGSymmetricSweep())
-    solver_gs = AMG(mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=sweep))
+    solver_gs = AMG(coarsening=SmoothAggregation(), mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=sweep))
     ws_gs = _workspace(solver_gs, b)
     ws_gs = XCALibre.Solve.update!(ws_gs, A, solver_gs, config)
     x_gs = zeros(eltype(b), length(b))
@@ -513,7 +513,7 @@ end
 # `if !iszero(aii)`, so a singular row must stay finite rather than spread NaN.
 A_zerodiag = SparseXCSR(sparsecsr([1, 1, 2, 2], [1, 2, 1, 2], [0.0, 1.0, 1.0, 2.0], 2, 2))
 b_zerodiag = [1.0, 1.0]
-solver_zd = AMG(mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=AMGForwardSweep()), max_coarse_rows=2)
+solver_zd = AMG(coarsening=SmoothAggregation(), mode=Bicgstab(), smoother=AMGGaussSeidel(sweep=AMGForwardSweep()), max_coarse_rows=2)
 ws_zd = _workspace(solver_zd, b_zerodiag)
 ws_zd = XCALibre.Solve.update!(ws_zd, A_zerodiag, solver_zd, config)
 x_zd = zeros(eltype(b_zerodiag), length(b_zerodiag))
@@ -544,7 +544,7 @@ for (sweep, orders) in ((AMGForwardSweep(),   (1:4,)),
                         (AMGBackwardSweep(),  (4:-1:1,)),
                         (AMGSymmetricSweep(), (1:4, 4:-1:1)))
     smoother_md = AMGGaussSeidel(sweep=sweep, iterations=1)
-    solver_md = AMG(mode=Richardson(), smoother=smoother_md, max_coarse_rows=10)
+    solver_md = AMG(coarsening=SmoothAggregation(), mode=Richardson(), smoother=smoother_md, max_coarse_rows=10)
     ws_md = _workspace(solver_md, b_md)
     ws_md = XCALibre.Solve.update!(ws_md, A_md, solver_md, config)
     lvl_md = ws_md.hierarchy.levels[1]
@@ -613,9 +613,9 @@ XCALibre.Solve.amg_bicgstab_solve!(
 
 # NEW SECTION: mixed precision (coarse_storage=Float32) — API, type-stability, FP32 storage with
 # FP64 outer correction reaches the FP64 tolerance and matches FP64 iteration count.
-@test AMG(coarse_storage=Float32).coarse_storage === Float32
-@test AMG().coarse_storage === Float64
-@test_throws ArgumentError AMG(coarse_storage=Int)
+@test AMG(coarsening=SmoothAggregation(), coarse_storage=Float32).coarse_storage === Float32
+@test AMG(coarsening=SmoothAggregation()).coarse_storage === Float64
+@test_throws ArgumentError AMG(coarsening=SmoothAggregation(), coarse_storage=Int)
 for mode in (Cg(), Richardson())
     sref = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi())
     s32  = AMG(mode=mode, coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_storage=Float32)

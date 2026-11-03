@@ -1,4 +1,4 @@
-# The serial `preconditioner=AMG()` setup runs unchanged on a distributed mesh: PETSc's GAMG
+# The serial `preconditioner=AMG(coarsening=SmoothAggregation())` setup runs unchanged on a distributed mesh: PETSc's GAMG
 # substitutes for it with one warning, giving the fields of an explicit `GAMG()` run.
 using XCALibre, PETSc, MPI, Test
 
@@ -18,9 +18,9 @@ function fields(p_precon)
 end
 
 substituted = r"AMG\(\) has no PETSc equivalent; substituting PETSc's GAMG\(\)"
-u_amg, p_amg = rank == 0 ? (@test_logs (:warn, substituted) match_mode=:any fields(AMG())) : fields(AMG())
+u_amg, p_amg = rank == 0 ? (@test_logs (:warn, substituted) match_mode=:any fields(AMG(coarsening=SmoothAggregation()))) : fields(AMG(coarsening=SmoothAggregation()))
 u_gamg, p_gamg = fields(GAMG())
-@testset "preconditioner=AMG() runs as GAMG (rank $rank)" begin
+@testset "preconditioner=AMG(coarsening=SmoothAggregation()) runs as GAMG (rank $rank)" begin
     @test u_amg == u_gamg
     @test p_amg == p_gamg
 end

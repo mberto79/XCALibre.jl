@@ -105,10 +105,9 @@ function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solve
     return workspace
 end
 
-# serial AMG path (AMG, or GAMG/BoomerAMG substituted by the native AMG, see `_native_amg`)
-function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,<:AMGFamily}, result, component, config) where {F,I,S1,S2}
+function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,<:AMG}, result, component, config) where {F,I,S1,S2}
     (; itmax, atol, rtol) = setup
-    solver = _native_amg(setup)
+    solver = setup.preconditioner
     A = _A(phiEqn)
     b = _b(phiEqn, component)
     workspace = phiEqn.solver

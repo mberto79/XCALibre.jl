@@ -1,6 +1,6 @@
 # Mach 1.4 flow over a cylinder, as in 2D_cylinder_transonic_RANS.jl, but with `p` solved by
 # AMG-preconditioned BiCGStab: upwinded pressure convection makes the pressure matrix
-# non-symmetric, so `solver=Cg()` with `preconditioner=AMG()` would reject it.
+# non-symmetric, so `solver=Cg()` with `preconditioner=AMG(...)` would reject it.
 using XCALibre
 # using CUDA # Run this if using NVIDIA GPU
 # using AMDGPU # Run this if using AMD GPU

@@ -22,11 +22,12 @@ Adapt.@adapt_structure DILU
 """
     BoomerAMG(; kwargs...) <: PreconditionerType
 
-HYPRE BoomerAMG via PETSc (`-pc_type hypre`). On a serial mesh XCALibre's native [`AMG`](@ref) runs
-instead, with a one-time warning. Needs a PETSc with hypre,
+HYPRE BoomerAMG via PETSc (`-pc_type hypre`), on every mesh: a serial mesh runs it through PETSc in a
+single process after `distribute(mesh)`. Needs a PETSc with hypre,
 which the stock Float64 libraries include (Float32 ones do not). SPD systems only (e.g. pressure).
-Use it where [`GAMG`](@ref) converges poorly or the strongest reduction per solve matters; GAMG
-is the default recommendation, since it needs no special build and is the better AMG on the GPU.
+Use it where [`AMG`](@ref) (PETSc's GAMG on a distributed mesh) converges poorly or the strongest
+reduction per solve matters; `AMG` is the default recommendation, since it needs no special build
+and is the better AMG on the GPU.
 Like any AMG, results vary slightly with the rank count, and it needs more memory than `Jacobi`.
 
 Defaults are tuned for 3D (`BOOMERAMG_3D_DEFAULTS`): PETSc's own BoomerAMG defaults build a
@@ -63,35 +64,21 @@ BoomerAMG(; freeze=10, device=false, kwargs...) =
     BoomerAMG(merge(BOOMERAMG_3D_DEFAULTS, NamedTuple(kwargs)), freeze, device)
 
 """
-    GAMG(; kwargs...) <: PreconditionerType
+    GAMG(; freeze, agg_nsmooths)
 
-PETSc native aggregation AMG (`-pc_type gamg`) on distributed meshes; on a serial mesh XCALibre's
-native [`AMG`](@ref) runs instead, with a one-time warning (GAMG's keywords are not carried over).
-No hypre build required. SPD systems only (e.g. pressure). The recommended AMG for distributed
-pressure solves on large meshes, on CPU and GPU. It needs more memory than `Jacobi` and pays off
-only when each rank holds a large partition. The hierarchy is built per partition, so residuals
-vary slightly with the rank count; use `Jacobi` where results must match across rank counts exactly.
-
-Defaults set `reuse_interpolation=true`: because the mesh never refines, the pressure matrix
-keeps a FIXED sparsity pattern, so GAMG builds the aggregation + prolongation P once and
-recomputes only the coarse operators (RAP) and smoothers each solve — the hierarchy stays
-numerically current at a fraction of a full setup. `freeze=N` additionally holds the whole
-preconditioner fixed for `N` solves, skipping even that update, and rebuilds it on the `N`th
-(default 25; `freeze=1` updates every solve). Because the coefficient drift between rebuilds is
-small, the freeze leaves the pressure residual essentially unchanged while removing most of the
-setup cost.
-
-Each keyword `k=v` overrides a default and is passed as `-pc_gamg_<k> v`, e.g.
-`GAMG(threshold=0.02, square_graph=1)`. See the PETSc `-pc_gamg_*` options.
+Deprecated: use [`AMG`](@ref), which runs as PETSc's GAMG on a distributed mesh. `GAMG()` returns
+`AMG(coarsening=SmoothAggregation())`, `GAMG(agg_nsmooths=0)` returns `AMG(coarsening=Geometric())`,
+and `freeze=N` becomes `coarse_refresh_interval=N`. Other GAMG settings go through `petsc_options`.
 """
-struct GAMG{NT<:NamedTuple} <: PreconditionerType
-    opts::NT
-    freeze::Int
+function GAMG(; freeze=nothing, agg_nsmooths=1, reuse_interpolation=true, kwargs...)
+    isempty(kwargs) || throw(ArgumentError("GAMG() is deprecated; pass $(join(keys(kwargs), ", ")) " *
+        "with petsc_options=\"-pc_gamg_...\" and use AMG(coarsening=...)"))
+    string(agg_nsmooths) ∈ ("0", "1") || throw(ArgumentError("GAMG(agg_nsmooths) must be 0 or 1"))
+    coarsening = string(agg_nsmooths) == "0" ? Geometric() : SmoothAggregation()
+    _LOG_RANK[]() && @warn "GAMG() is deprecated; use AMG(coarsening=$(nameof(typeof(coarsening)))()), which " *
+        "runs as PETSc's GAMG on a distributed mesh" maxlog=1
+    AMG(; coarsening, (isnothing(freeze) ? (;) : (; coarse_refresh_interval=freeze))...)
 end
-
-# reuse_interpolation valid only for SAME_NONZERO_PATTERN — guaranteed here (no mesh refinement)
-const GAMG_DEFAULTS = (reuse_interpolation = true,)
-GAMG(; freeze=25, kwargs...) = GAMG(merge(GAMG_DEFAULTS, NamedTuple(kwargs)), freeze)
 
 struct IC0GPU <: MULPreconditioner end
 Adapt.@adapt_structure IC0GPU

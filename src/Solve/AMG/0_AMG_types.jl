@@ -348,7 +348,7 @@ XCALibre's native algebraic multigrid, used as `SolverSetup(solver=Cg(), precond
 """
 function AMG(;
     mode=nothing,
-    coarsening=SmoothAggregation(),
+    coarsening=nothing,
     smoother=AMGJacobi(),
     cycle=VCycle(),
     coarse_solve=OnDevice(),
@@ -358,11 +358,13 @@ function AMG(;
     max_levels=10,
     min_coarse_rows=32,
     max_coarse_rows=4096,
-    coarse_refresh_interval=1,
+    coarse_refresh_interval=5,
     fuse_levels=0,
     coarse_storage=Float64
 )
     mode = _amg_mode(mode)
+    isnothing(coarsening) && throw(ArgumentError("AMG needs a coarsening: AMG(coarsening=SmoothAggregation()), " *
+        "AMG(coarsening=Geometric()) or AMG(coarsening=RugeStuben())"))
     coarsening = _amg_coarsening(coarsening)
     smoother = _amg_smoother(smoother)
     cycle = _amg_cycle(cycle)
@@ -396,8 +398,6 @@ end
 
 Adapt.@adapt_structure AMG
 
-# preconditioners a serial mesh solves with the native AMG
-const AMGFamily = Union{AMG,GAMG,BoomerAMG}
 
 struct AMGMatrixCSR{RP,CV,NZ}
     rowptr::RP

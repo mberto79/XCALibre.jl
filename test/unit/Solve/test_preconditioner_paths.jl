@@ -4,6 +4,7 @@ using Test
 
 # `solver` is the outer iteration and `preconditioner` the method on every path; each preconditioner
 # runs as named, as a named substitute (one warning) or stops with guidance (PRECONDITIONER_PATHS).
+# AMG runs natively on a serial mesh and as PETSc's GAMG on a distributed one; BoomerAMG only in PETSc.
 const SV = XCALibre.Solve
 
 mksetup(solver, pc, precision=FullPrecision(); kw...) =
@@ -19,9 +20,10 @@ is_same(r) = r === :same
         (DILU(),         :same, :same, :err,  :sub),
         (ILU0GPU(),      :same, :same, :err,  :sub),
         (IC0GPU(),       :same, :same, :err,  :sub),
-        (AMG(),          :same, :err,  :err,  :sub),
-        (GAMG(),         :sub,  :err,  :err,  :same),
-        (BoomerAMG(),    :sub,  :err,  :err,  :same))
+        (AMG(coarsening=SmoothAggregation()), :same, :err, :err, :same),
+        (AMG(coarsening=Geometric()),         :same, :err, :err, :same),
+        (AMG(coarsening=RugeStuben()),        :same, :err, :err, :err),
+        (BoomerAMG(),    :err,  :err,  :err,  :same))
     kind(r) = r === :same ? :same : r isa SV.Substitute ? :sub : :err
     for (pc, full, f32, f16, petsc) ∈ table
         @test kind(SV._pc_rule(pc, :full)) == full
@@ -47,39 +49,64 @@ end
 
 @testset "SolverSetup refuses only what no path runs" begin
     @test_throws r"MixedF16 supports the Jacobi" mksetup(Cg(), DILU(), MixedF16())
-    @test_throws r"mixed precision does not apply to AMG" mksetup(Cg(), AMG(), MixedF16())
-    @test_throws r"OnDeviceKrylov requires solver=Richardson" mksetup(Cg(), AMG(coarse_solve=OnDeviceKrylov()))
+    @test_throws r"mixed precision does not apply to AMG" mksetup(Cg(), AMG(coarsening=SmoothAggregation()), MixedF16())
+    @test_throws r"OnDeviceKrylov requires solver=Richardson" mksetup(Cg(), AMG(coarsening=SmoothAggregation(), coarse_solve=OnDeviceKrylov()))
     # runs distributed, so the serial check stops it when the workspace is built
-    for s ∈ (mksetup(Gmres(), AMG()), mksetup(Cg(), GAMG(), MixedF32()), mksetup(Richardson(), Jacobi()))
+    for s ∈ (mksetup(Gmres(), AMG(coarsening=SmoothAggregation())), mksetup(Cg(), BoomerAMG()), mksetup(Richardson(), Jacobi()))
         @test_throws ArgumentError SV._check_serial(s)
     end
-    @test mksetup(Richardson(), AMG(coarse_solve=OnDeviceKrylov())).preconditioner.mode isa Richardson
-    @test all(mksetup(s, pc).itmax == 1000 for (s, pc) ∈ ((Cg(), AMG()), (Cg(), GAMG()), (Cg(), Jacobi())))
+    @test mksetup(Richardson(), AMG(coarsening=SmoothAggregation(), coarse_solve=OnDeviceKrylov())).preconditioner.mode isa Richardson
+    @test all(mksetup(s, pc).itmax == 1000 for (s, pc) ∈ ((Cg(), AMG(coarsening=SmoothAggregation())), (Cg(), BoomerAMG()), (Cg(), Jacobi())))
     # unset mode is solved as CG, so the OnDeviceKrylov guard also runs when the workspace is built
-    @test_throws r"OnDeviceKrylov requires solver=Richardson" _workspace(AMG(coarse_solve=OnDeviceKrylov()), zeros(4))
+    @test_throws r"OnDeviceKrylov requires solver=Richardson" _workspace(AMG(coarsening=SmoothAggregation(), coarse_solve=OnDeviceKrylov()), zeros(4))
+    @test_throws r"AMG needs a coarsening" AMG()
+    @test AMG(coarsening=Geometric()).coarse_refresh_interval == 5
 end
 
-@testset "GAMG and BoomerAMG on a serial mesh run the native AMG" begin
-    for pc ∈ (GAMG(), BoomerAMG()), solver ∈ (Cg(), Bicgstab(), Richardson())
-        amg = SV._native_amg(mksetup(solver, pc))
-        @test amg isa AMG && amg.mode isa typeof(solver)
+@testset "AMG settings PETSc's GAMG cannot run" begin
+    conflicts(; kw...) = SV._gamg_conflicts(AMG(; kw...))
+    @test isempty(conflicts(coarsening=SmoothAggregation()))
+    @test isempty(conflicts(coarsening=Geometric(), smoother=AMGChebyshev()))
+    @test isempty(conflicts(coarsening=Geometric(), smoother=AMGGaussSeidel(sweep=AMGForwardSweep())))
+    for kw ∈ ((coarsening=RugeStuben(),), (coarsening=Geometric(merge_levels=2),),
+            (coarsening=SmoothAggregation(smoother_weight=1.0),), (coarsening=Geometric(), pre_sweeps=1),
+            (coarsening=Geometric(), smoother=AMGChebyshev(), pre_sweeps=2, post_sweeps=2),
+            (coarsening=Geometric(), smoother=AMGSOR(omega=1.2)))
+        @test length(conflicts(; kw...)) == 1
     end
-    @test_logs (:warn, r"GAMG\(\) is not available on a serial mesh; substituting XCALibre's native AMG") SV._check_serial(mksetup(Cg(), GAMG()))
+    # runs serially, so SolverSetup accepts it; a distributed run stops when PETSc is set up
+    @test mksetup(Cg(), AMG(coarsening=RugeStuben())) isa SolverSetup
+    @test occursin("use BoomerAMG()", SV._pc_rule(AMG(coarsening=RugeStuben()), :petsc).msg)
+    # native-only settings changed from their defaults are reported, not refused
+    @test SV._native_only_set(AMG(coarsening=Geometric())) == Symbol[]
+    @test SV._native_only_set(AMG(coarsening=Geometric(), fuse_levels=1, scale_correction=false)) ==
+        [:scale_correction, :fuse_levels]
+end
+
+@testset "BoomerAMG runs only through PETSc" begin
+    @test_throws r"distribute\(mesh\)" SV._check_serial(mksetup(Cg(), BoomerAMG()))
+end
+
+@testset "GAMG() is deprecated in favour of AMG" begin
+    g = @test_logs (:warn, r"GAMG\(\) is deprecated; use AMG\(coarsening=Geometric\(\)\)") GAMG(agg_nsmooths=0, freeze=7)
+    @test g isa AMG && g.coarsening isa Geometric && g.coarse_refresh_interval == 7
+    @test GAMG().coarsening isa SmoothAggregation
+    @test_throws r"petsc_options" GAMG(threshold=0.02)
 end
 
 @testset "old spellings" begin
     old = @test_logs (:warn, r"use SolverSetup\(solver=Bicgstab\(\), preconditioner=AMG\(...\)\)") mksetup(
-        AMG(mode=Bicgstab()), Jacobi())
+        AMG(coarsening=SmoothAggregation(), mode=Bicgstab()), Jacobi())
     @test old.solver isa Bicgstab && old.preconditioner isa AMG && old.preconditioner.mode isa Bicgstab
-    @test mksetup(AMG(), Jacobi()).solver isa Cg
-    @test mksetup(AMG(mode=Richardson()), Jacobi()).solver isa Richardson
+    @test mksetup(AMG(coarsening=SmoothAggregation()), Jacobi()).solver isa Cg
+    @test mksetup(AMG(coarsening=SmoothAggregation(), mode=Richardson()), Jacobi()).solver isa Richardson
     @test (@test_logs (:warn, r"AMG\(mode=Bicgstab\(\)\) is deprecated and ignored") mksetup(
-        Cg(), AMG(mode=Bicgstab()))).preconditioner.mode isa Cg
+        Cg(), AMG(coarsening=SmoothAggregation(), mode=Bicgstab()))).preconditioner.mode isa Cg
     @test AMGSolver === Richardson
     # deprecation warnings print on the logging rank only (SolverSetup is built on every rank)
     SV._LOG_RANK[] = () -> false
-    @test_logs mksetup(AMG(mode=Bicgstab()), Jacobi())
-    @test_logs mksetup(Cg(), AMG(mode=Bicgstab()))
+    @test_logs mksetup(AMG(coarsening=SmoothAggregation(), mode=Bicgstab()), Jacobi())
+    @test_logs mksetup(Cg(), AMG(coarsening=SmoothAggregation(), mode=Bicgstab()))
     SV._LOG_RANK[] = () -> true
 end
 
@@ -121,6 +148,6 @@ end
     end
     # GAMG on a serial mesh solves with the native AMG
     _, x_gamg = laplace_values(mksetup(Cg(), GAMG(); rtol=1e-10, atol=0.0))
-    _, x_amg = laplace_values(mksetup(Cg(), AMG(); rtol=1e-10, atol=0.0))
+    _, x_amg = laplace_values(mksetup(Cg(), AMG(coarsening=SmoothAggregation()); rtol=1e-10, atol=0.0))
     @test x_gamg == x_amg
 end

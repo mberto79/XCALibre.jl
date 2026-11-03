@@ -40,7 +40,7 @@ end
 function _make_config()
     setup = SolverSetup(
         solver=Cg(),
-        preconditioner=AMG(),
+        preconditioner=AMG(coarsening=SmoothAggregation()),
         convergence=1e-7,
         relax=1.0,
         rtol=1e-8,

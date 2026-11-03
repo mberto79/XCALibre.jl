@@ -41,7 +41,7 @@ _ksp_type(s) = nothing
 _pc_type(::Jacobi) = "jacobi"
 _pc_type(::Union{DILU,ILU0GPU,IC0GPU}) = "bjacobi" # per-rank incomplete-factorisation blocks
 _pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply (SPD only)
-_pc_type(::GAMG) = "gamg" # PETSc native aggregation AMG (SPD only)
+_pc_type(::AMG) = "gamg" # PETSc native aggregation AMG (SPD only)
 _pc_type(p) = nothing
 
 # curated PC kwargs -> PETSc options; each kwarg k=v becomes -pc_<prefix>_<k> v
@@ -49,17 +49,35 @@ _pc_options(p) = (;)
 _pc_options(::IC0GPU) = (sub_pc_type="icc",)
 _pc_options(p::BoomerAMG) =
     NamedTuple(Symbol("pc_hypre_boomeramg_$k") => v for (k, v) ∈ pairs(p.opts))
-_pc_options(p::GAMG) =
-    NamedTuple(Symbol("pc_gamg_$k") => v for (k, v) ∈ pairs(p.opts))
+# AMG as GAMG: the same coarsening, smoother and sweeps (conflicts are refused in XCALibre.Solve)
+_pc_options(a::AMG) = merge((pc_gamg_reuse_interpolation=true, pc_mg_cycle_type="v",
+    pc_mg_levels=a.max_levels, pc_gamg_coarse_eq_limit=a.max_coarse_rows), _gamg_coarsening(a.coarsening),
+    _mg_smoother(a.smoother, a.pre_sweeps))
+_gamg_coarsening(c::SmoothAggregation) = (pc_gamg_agg_nsmooths=1, pc_gamg_threshold=c.strength_threshold)
+_gamg_coarsening(::Geometric) = (pc_gamg_agg_nsmooths=0,)
+_gamg_coarsening(c) = (;)
+# AMGJacobi damps by omega/λmax per level; PETSc's Richardson scale is fixed, so omega/2 assumes λmax ≈ 2
+_mg_smoother(s::AMGJacobi, sweeps) = (mg_levels_ksp_type="richardson", mg_levels_pc_type="jacobi",
+    mg_levels_ksp_richardson_scale=s.omega/2, mg_levels_ksp_max_it=sweeps)
+_mg_smoother(s::AMGChebyshev, sweeps) = (mg_levels_ksp_type="chebyshev", mg_levels_pc_type="jacobi",
+    mg_levels_ksp_max_it=s.degree, mg_levels_ksp_chebyshev_esteig="0,$(s.lambda_scale/s.eig_ratio),0,$(s.lambda_scale)")
+_mg_smoother(s::AMGGaussSeidel, sweeps) = _mg_sor(s.sweep, 1.0, s.iterations, sweeps)
+_mg_smoother(s::AMGSOR, sweeps) = _mg_sor(s.sweep, s.omega, s.iterations, sweeps)
+# PETSc SOR sweeps within each rank
+_mg_sor(sweep, omega, its, sweeps) = merge((mg_levels_ksp_type="richardson", mg_levels_pc_type="sor",
+    mg_levels_pc_sor_omega=omega, mg_levels_pc_sor_its=its, mg_levels_ksp_max_it=sweeps), _sor_sweep(sweep))
+_sor_sweep(::AMGSymmetricSweep) = (mg_levels_pc_sor_local_symmetric=true,)
+_sor_sweep(::AMGForwardSweep) = (mg_levels_pc_sor_local_forward=true,)
+_sor_sweep(::AMGBackwardSweep) = (mg_levels_pc_sor_local_backward=true,)
 
 # the PETSc preconditioner standing in for a substitute (DILU/ILU0GPU/IC0GPU map in _pc_type)
 _petsc_pc(p) = p
-_petsc_pc(::AMG) = GAMG()
 _petsc_pc(::NormDiagonal) = Jacobi()
 
 # PCs that manage their own hierarchy across solves carry a `freeze` count (rebuild every N solves)
 _pc_freeze(p) = 1
-_pc_freeze(p::Union{BoomerAMG,GAMG}) = p.freeze
+_pc_freeze(p::BoomerAMG) = p.freeze
+_pc_freeze(a::AMG) = a.coarse_refresh_interval
 
 # NEW SECTION: signal dispositions
 
@@ -279,17 +297,23 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         @warn "$(nameof(typeof(setup.preconditioner)))() has no PETSc equivalent; substituting " *
             "$(rule.name) (-pc_type $(opts.pc_type)). Name another with petsc_options=\"-pc_type ...\"" maxlog=1 _id=
             nameof(typeof(setup.preconditioner))
+    if pc isa AMG
+        rule isa XCALibre.Solve.Unsupported && throw(ArgumentError(rule.msg))
+        skipped = XCALibre.Solve._native_only_set(pc)
+        isempty(skipped) || MPI.Comm_rank(comm) != 0 || @info "AMG runs as PETSc's GAMG on a distributed " *
+            "mesh, which does not use the native-only settings $(join(skipped, ", "))" maxlog=1
+    end
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
         error("PETScSolver: hypre requested but this PETSc build ($(petsclib.PetscScalar)) has " *
             "no hypre support. PETSc_jll carries hypre for Float64 only; other precisions need " *
-            "a PETSc configured with --download-hypre. Use GAMG(), which needs no extra build, " *
+            "a PETSc configured with --download-hypre. Use AMG(coarsening=SmoothAggregation()), which needs no extra build, " *
             "or see the distributed simulations page of the documentation.")
     end
     if pc isa BoomerAMG && device_solve && !pc.device && !_hypre_on_device(petsclib)
         error("PETScSolver: BoomerAMG() with GPU fields needs a hypre built for the device, and " *
             "this PETSc's hypre runs on the host (or exposes no HYPRE_GetExecutionPolicy), which " *
-            "crashes instead of erroring. Use GAMG() or Jacobi() for pressure, or " *
+            "crashes instead of erroring. Use AMG(coarsening=...) or Jacobi() for pressure, or " *
             "BoomerAMG(device=true) to skip this check. See the distributed simulations page of " *
             "the documentation.")
     end

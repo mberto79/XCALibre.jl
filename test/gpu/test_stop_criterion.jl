@@ -12,7 +12,7 @@ const GPU_CASES = (
     (Bicgstab(), Jacobi(), FullPrecision()), (Bicgstab(), ILU0GPU(), FullPrecision()),
     (Cgs(), Jacobi(), FullPrecision()), (Gmres(), Jacobi(), FullPrecision()), (Gmres(), ILU0GPU(), FullPrecision()),
     (Cg(), Jacobi(), MixedF32()), (Bicgstab(), Jacobi(), MixedF32()), (Gmres(), Jacobi(), MixedF32()),
-    ((s, Jacobi(), FullPrecision()) for s ∈ AMG_MODES)...)
+    ((s, AMG(), FullPrecision()) for s ∈ AMG_MODES)...)
 
 check_stop_criterion(GPU_CASES; backend=CUDABackend())
 check_amg_solver(backend=CUDABackend())

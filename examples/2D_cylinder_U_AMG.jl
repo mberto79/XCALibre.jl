@@ -53,12 +53,11 @@ solvers = (
         atol=1e-6
     ),
     p = SolverSetup(
-        solver=AMG(
-            # mode = AMGSolver(),  
-            mode = Cg(),  
+        solver=Cg(), # Richardson() for repeated V-cycles without Krylov acceleration
+        preconditioner=AMG(
             pre_sweeps=10,
             post_sweeps=10,
-            # scale_correction = true  # default; applies to AMGSolver only
+            # scale_correction = true  # default
             # coarse_solve = OnDevice(max_rows=512)  # default: coarsest solved on device up to max_rows, else host LU
             # alternatives: coarse_solve = CPU() (host LU/QR) or OnDeviceKrylov()
             coarse_solve = OnDeviceJacobi(iterations=30), 
@@ -72,8 +71,6 @@ solvers = (
             #                          # hierarchy (small wall-clock cost on warm-started solves)
             # coarsening = SmoothAggregation()
         ),
-        # solver=Cg(),
-        preconditioner=Jacobi(),
         convergence=1e-7,
         relax=1.0,
         itmax=1000,

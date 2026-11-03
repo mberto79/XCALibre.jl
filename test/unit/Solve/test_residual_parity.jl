@@ -40,13 +40,13 @@ function parity_solve(solver, preconditioner, precision; backend=CPU(), workgrou
     res, norm(b - A*Array(T.values))/r0
 end
 
-parity_amg = AMG(mode=AMGSolver(), coarsening=SmoothAggregation(), smoother=AMGJacobi())
+parity_amg = AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi())
 parity_paths = (
     ("Cg Jacobi", Cg(), Jacobi(), FullPrecision()),
     ("Cg DILU", Cg(), DILU(), FullPrecision()),
     ("Bicgstab Jacobi", Bicgstab(), Jacobi(), FullPrecision()),
     ("Bicgstab DILU", Bicgstab(), DILU(), FullPrecision()),
-    ("AMG", parity_amg, Jacobi(), FullPrecision()),
+    ("AMG", Richardson(), parity_amg, FullPrecision()),
     ("Cg MixedF32", Cg(), Jacobi(), MixedF32()),
     ("Cg MixedF16", Cg(), Jacobi(), MixedF16()))
 

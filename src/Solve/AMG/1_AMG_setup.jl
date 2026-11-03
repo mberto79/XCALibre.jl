@@ -836,7 +836,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     _refresh_coarse_cpu!(coarse_cpu, host_levels[end].A)
     rowptr_pattern, colval_pattern = _pattern_signature(A, TI)
     pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
-    is_symmetric = solver.mode isa Cg ? _is_symmetric(host_levels[1].A) : true
+    is_symmetric = solver.mode isa Union{Nothing,Cg} ? _is_symmetric(host_levels[1].A) : true
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
     TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
     storage_levels = TS === T ? host_levels : [_level_to_storage(level, TS) for level in host_levels]

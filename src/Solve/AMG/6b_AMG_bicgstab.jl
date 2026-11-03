@@ -1,5 +1,5 @@
 # AMG-preconditioned BiCGStab: Krylov acceleration for the NON-SYMMETRIC operators
-# `Cg()` refuses and `AMGSolver()` solves without acceleration (~5x the cycles).
+# `Cg()` refuses and `Richardson()` solves without acceleration (~5x the cycles).
 # See "AMG solver" in the user guide for when to select it.
 
 @kernel function _amg_bicg_p_kernel!(p, r, v, beta, omega)

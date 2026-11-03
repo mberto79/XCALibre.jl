@@ -156,7 +156,7 @@ mutable struct MatrixFreeHierarchy{T, LV, B, VT, VR, VI, HS, HT} <: AbstractAMGH
     n::Int; pre::Int; post::Int; omega_nominal::T; backend::B
     fused_top::Int           # top coarse levels (2..fused_top+1) applied matrix-free (A_l not stored)
     coarse_max_rows::Int     # coarsest <= this -> device dense-inverse GEMV, else host LU
-    scale_correction::Bool   # GAMG energy-min coarse correction (AMGSolver mode only; fused_top==0)
+    scale_correction::Bool   # GAMG energy-min coarse correction (Richardson only; fused_top==0)
     refresh_plan::Base.RefValue{Any}  # MatrixFreeRefreshPlan (frozen-sparsity device refresh); nothing until built
     nrows::Int; nnz::Int     # pattern guard: rebuild on a change
     is_symmetric::Bool       # Cg gate reads it

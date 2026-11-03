@@ -79,10 +79,6 @@ end
 
 Krylov.iteration_count(ws::MixedWorkspace) = Krylov.iteration_count(ws.krylov)
 
-# a mixed-precision workspace holds its own preconditioner, so the equation keeps an inert one
-struct MixedPrecisionSolve <: PreconditionerType end
-update_preconditioner!(::Preconditioner{MixedPrecisionSolve}, mesh, config) = nothing
-
 # any serial preconditioner, built on the Float32 copy of the matrix and refreshed every solve
 function MixedWorkspace(p::MixedF32, solver::AbstractLinearSolver, preconditioner::PreconditionerType, A, b, dptr)
     nzval = similar(_nzval(A), Float32)

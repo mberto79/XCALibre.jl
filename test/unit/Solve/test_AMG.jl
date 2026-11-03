@@ -18,7 +18,7 @@ struct FakeSmoother <: XCALibre.Solve.AbstractAMGSmoother end
 A, b = amg_test_matrix()
 setup = SolverSetup(
     solver=Richardson(),
-    preconditioner=AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi()),
+    preconditioner=AMG(coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_refresh_interval=1),
     convergence=1e-7,
     relax=1.0,
     rtol=1e-8,
@@ -43,7 +43,7 @@ solver_jacobi_default = AMG(coarsening=SmoothAggregation())
 @test solver_jacobi_default.coarsening.strength_threshold == 0.0
 @test solver_jacobi_default.coarsening.smoother_weight == 4/3
 @test solver_jacobi_default.max_coarse_rows == 4096
-@test solver_jacobi_default.coarse_refresh_interval == 1
+@test solver_jacobi_default.coarse_refresh_interval == 5
 
 solver_rs_default = AMG(coarsening=RugeStuben(), smoother=AMGJacobi())
 @test solver_rs_default.coarsening.strength_threshold == 0.25
@@ -232,7 +232,7 @@ ws2 = XCALibre.Solve.update!(ws, A2, setup.preconditioner, config)
 @test ws2.refresh_count == 1  # same pattern, changed values: a refresh
 @test ws2.hierarchy === hierarchy_build  # refreshed in place, not rebuilt
 if length(ws2.hierarchy.levels) > 1
-    # coarse_refresh_interval=1 (default): full refresh updates coarse operators in place
+    # coarse_refresh_interval=1: full refresh updates coarse operators in place
     @test ws2.hierarchy.levels[2].A === coarse_object_before
     @test XCALibre.Solve._nzval(ws2.hierarchy.levels[2].A) != coarse_before
 end

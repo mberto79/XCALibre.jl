@@ -24,7 +24,7 @@ in transient runs, are met as in full precision.
 Supported with the Krylov solvers (`Cg`, `Cgs`, `Bicgstab`, `Gmres`) and every serial
 preconditioner, which is built on the `Float32` matrix. On distributed meshes PETSc solves the
 correction with its `Float32` library (PETSc_jll loads it beside the `Float64` one), so PETSc
-preconditioners (e.g. `GAMG`) are available too.
+preconditioners (e.g. `AMG`, run as GAMG) are available too.
 """
 struct MixedF32 <: AbstractMixedPrecision end
 

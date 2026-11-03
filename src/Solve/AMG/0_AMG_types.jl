@@ -338,13 +338,17 @@ function _validate_amg_smoother_backend(backend, smoother::AbstractAMGCPUSmoothe
 end
 
 """
-    AMG(; coarsening=SmoothAggregation(), smoother=AMGJacobi(), coarse_solve=OnDevice(), kwargs...) <: PreconditionerType
+    AMG(; coarsening, smoother=AMGJacobi(), coarse_refresh_interval=5, kwargs...) <: PreconditionerType
 
-XCALibre's native algebraic multigrid, used as `SolverSetup(solver=Cg(), preconditioner=AMG(...))`
+Algebraic multigrid, used as `SolverSetup(solver=Cg(), preconditioner=AMG(coarsening=...))`
 (symmetric systems such as pressure), with `solver=Bicgstab()` (non-symmetric systems) or with
-`solver=Richardson()` (repeated V-cycles, no Krylov acceleration). On a distributed mesh PETSc's
-`GAMG()` is used instead, with a one-time warning. Mixed precision comes from
-`coarse_storage=Float32`, not from `precision`. See the AMG section of the user guide for the keywords.
+`solver=Richardson()` (repeated V-cycles, no Krylov acceleration). `coarsening` is required:
+`SmoothAggregation()`, `Geometric()` or `RugeStuben()`. A serial mesh runs XCALibre's own
+implementation; a distributed mesh runs PETSc's GAMG with the same coarsening, smoother and sweeps,
+and stops for settings GAMG cannot express (e.g. `RugeStuben()`, for which see [`BoomerAMG`](@ref)).
+`coarse_refresh_interval` rebuilds the coarse levels every that many solves on both paths. Mixed
+precision comes from `coarse_storage=Float32`, not from `precision`. See the AMG section of the
+user guide for the keywords and their PETSc translation.
 """
 function AMG(;
     mode=nothing,

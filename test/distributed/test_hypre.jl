@@ -14,8 +14,8 @@ PETSc.initialize(petsclib)
 has_hypre = ext._petsc_has_pkg(petsclib, "hypre")
 
 @testset "hypre capability guards (rank $rank)" begin
-    # BoomerAMG is PETSc-only: serial constructor must refuse
-    @test_throws ErrorException Preconditioner{BoomerAMG}(nothing)
+    # BoomerAMG is PETSc-only: the serial path must refuse
+    @test_throws r"distribute\(mesh\)" XCALibre.Solve._check_serial(SolverSetup(solver=Cg(), preconditioner=BoomerAMG(), convergence=1e-7, relax=1.0))
     # the device-execution query answers false on a host-only or static hypre; device=true skips it
     @test ext._hypre_on_device(petsclib) isa Bool
     @test !BoomerAMG().device && BoomerAMG(device=true).device

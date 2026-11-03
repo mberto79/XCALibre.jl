@@ -60,7 +60,7 @@ solvers = (
     ),
     p = SolverSetup(
         solver      = Cg(),
-        preconditioner = Jacobi(), # GAMG() needs no extra build; BoomerAMG() needs hypre
+        preconditioner = Jacobi(), # AMG(coarsening=SmoothAggregation()) needs no extra build; BoomerAMG() needs hypre
         convergence = 1e-7,
         relax       = 0.2,
         rtol = 0.01,

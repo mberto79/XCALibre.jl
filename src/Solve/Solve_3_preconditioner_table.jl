@@ -91,8 +91,6 @@ _warn_substitute(pc, rule::Substitute, where) =
     @warn "$(nameof(typeof(pc)))() is not available $where; substituting $(rule.name)" maxlog=1 _id=(
         nameof(typeof(pc)), where)
 
-# NEW SECTION: the AMG family on the serial path
-
 # NEW SECTION: AMG on PETSc
 
 # on a distributed mesh AMG runs as PETSc's GAMG (options spelled in the PETSc ext); settings GAMG

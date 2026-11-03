@@ -707,7 +707,7 @@ exposed as a keyword can still be passed through `petsc_options`.
     needs no special build and is the safer default in shared scripts.
 
 !!! note
-    In Float32 PETSc libraries (`MixedF32()`, or a Float32 mesh), `GAMG` handles at most
+    In Float32 PETSc libraries (`MixedF32()`, or a Float32 mesh), `AMG(...)`, which runs as PETSc's GAMG, handles at most
     2^24 + 1 = 16,777,217 global rows. PETSc releases up to 3.26 pass global row ids through
     floating-point vectors during GAMG setup, and Float32 holds integers exactly only up to 2^24.
     Above that size the solver raises an error when it is constructed. Solve that equation at

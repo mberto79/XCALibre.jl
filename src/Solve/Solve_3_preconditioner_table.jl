@@ -93,9 +93,8 @@ _warn_substitute(pc, rule::Substitute, where) =
 
 # NEW SECTION: AMG on PETSc
 
-# distributed AMG: Pairwise() is PCMG over the native pairwise aggregates (built per rank in the PETSc
-# ext), SmoothedAggregation() is GAMG. One function returns the options and refusals, so they cannot
-# drift apart; NativeAMG settings apply to serial meshes only.
+# Pairwise() is PCMG over native per-rank aggregates, SmoothedAggregation() is GAMG; one function
+# returns options and refusals together so they cannot drift apart
 function _lower_petsc_amg(a::AMG, solver=Cg())
     refused = String[]
     refuse(msg) = push!(refused, msg)

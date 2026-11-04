@@ -114,22 +114,23 @@ SolverSetup(solver = Richardson(), preconditioner = AMG(coarsest = 8000,
 
 ### AMG on a distributed mesh
 
-On a distributed mesh `AMG(...)` runs as PETSc's GAMG with its settings translated:
+On a distributed mesh `AMG(...)` runs in PETSc with its settings translated:
 
-- `Pairwise()` → `-pc_gamg_agg_nsmooths 0` (unsmoothed aggregation); `SmoothedAggregation(; threshold)` → `-pc_gamg_agg_nsmooths 1 -pc_gamg_threshold <threshold>`. Aggressive coarsening is off (`-pc_gamg_aggressive_coarsening 0`) to mirror the native levels.
+- `Pairwise(merges)` → PETSc's multigrid (`-pc_type mg`) over XCALibre's own pairwise aggregates, the same algorithm as on a serial mesh. Each rank aggregates its own cells, so aggregates never cross rank boundaries; PETSc forms the coarse operators (`-pc_mg_galerkin both`) and solves the coarsest level with LU. Non-symmetric matrices are supported.
+- `SmoothedAggregation(; threshold)` → PETSc's GAMG, `-pc_gamg_agg_nsmooths 1 -pc_gamg_threshold <threshold>`, with aggressive coarsening off (`-pc_gamg_aggressive_coarsening 0`) to mirror the native levels. With any outer iteration other than `Cg()` the aggregation graph is symmetrised (`-pc_gamg_graph_symmetrize`), so non-symmetric matrices are supported.
 - `Jacobi(; weight)` → Richardson with Jacobi and scale `weight/2`; `Chebyshev(; degree, eig_ratio, lambda_scale)` → PETSc's Chebyshev with Jacobi, degree as `-mg_levels_ksp_max_it`, bounds as `-mg_levels_ksp_chebyshev_esteig`; `GaussSeidel()`, `SymGaussSeidel()` → PETSc's SOR within each rank.
 - `sweeps` → `-mg_levels_ksp_max_it`, with a separate up smoother (`-pc_mg_distinct_smoothup`) when `pre ≠ post`.
-- `coarsest` → `-pc_gamg_coarse_eq_limit`; `refresh = N` → the preconditioner is held for `N` solves and its coarse operators recomputed on the next, keeping the interpolation (`-pc_gamg_reuse_interpolation`).
-- With any outer iteration other than `Cg()` the aggregation graph is symmetrised (`-pc_gamg_graph_symmetrize`), so non-symmetric matrices are supported.
+- `coarsest`: coarsening stops once the global coarse level has at most this many rows (`-pc_gamg_coarse_eq_limit` for GAMG); `refresh = N` → the preconditioner is held for `N` solves and its coarse operators recomputed on the next, keeping the interpolation.
 
 What differs from the native AMG:
 
-- GAMG builds its aggregates with its own (MIS) algorithm, not pairwise, so hierarchies and iteration counts are close, not identical.
+- `Pairwise()`: aggregates stop at rank boundaries, so the hierarchy depends on the partition and matches the serial one on a single rank.
+- `SmoothedAggregation()`: GAMG builds its aggregates with its own (MIS) algorithm, so hierarchies and iteration counts are close, not identical.
 - `Jacobi()` damps each level by `weight/λmax` natively; PETSc uses one scale, `weight/2`, exact for `λmax ≈ 2`.
 - Between refreshes PETSc applies the whole stored preconditioner, while the native AMG updates its finest level every solve.
 - `NativeAMG` settings are not used; when they differ from the defaults one info message lists them.
 
-Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Pairwise(merges > 1)`, `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
+Settings PETSc cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
 
 The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 

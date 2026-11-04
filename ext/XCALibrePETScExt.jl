@@ -41,14 +41,14 @@ _ksp_type(s) = nothing
 _pc_type(::Jacobi) = "jacobi"
 _pc_type(::Union{DILU,ILU0GPU,IC0GPU}) = "bjacobi" # per-rank incomplete-factorisation blocks
 _pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply
-_pc_type(::AMG) = "gamg"
+_pc_type(a::AMG) = first(XCALibre.Solve._lower_petsc_amg(a)).pc_type # mg (Pairwise) or gamg
 _pc_type(p) = nothing
 
 # curated PC settings -> PETSc options; AMG and BoomerAMG are translated in XCALibre.Solve
 _pc_options(p, solver) = (;)
 _pc_options(::IC0GPU, solver) = (sub_pc_type="icc",)
 _pc_options(p::BoomerAMG, solver) = XCALibre.Solve._lower_hypre(p)
-_pc_options(a::AMG, solver) = first(XCALibre.Solve._lower_gamg(a, solver))
+_pc_options(a::AMG, solver) = first(XCALibre.Solve._lower_petsc_amg(a, solver))
 
 # the PETSc preconditioner standing in for a substitute (DILU/ILU0GPU/IC0GPU map in _pc_type)
 _petsc_pc(p) = p
@@ -125,6 +125,7 @@ struct XPETScSolver{PL,TM,TV,TK,SY,FI} <: Distribute.AbstractDistributedSolver
     rnorm::Base.RefValue{Float64} # ‖D⁻¹(b - Ax)‖₂ of the last unconverged solve
     nwarn::Base.RefValue{Int}     # unconverged solves measured; none after the warning's maxlog
     stop::_StopTest
+    mg::Base.RefValue{Any} # Pairwise AMG levels still to build: the matrix has no values until assembled
 end
 
 # one PetscInt width is loaded per process, fixed by PETSc's "PetscInt" preference at precompile
@@ -300,7 +301,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
             "$(XCALibre.Solve._smoother_name(pc.smoother))() is a sequential CPU smoother and cannot run with GPU " *
             "fields; use Jacobi() or Chebyshev()"))
         native = XCALibre.Solve._native_only(pc)
-        isempty(native) || MPI.Comm_rank(comm) != 0 || @info "AMG runs as PETSc's GAMG on a distributed " *
+        isempty(native) || MPI.Comm_rank(comm) != 0 || @info "AMG runs in PETSc on a distributed " *
             "mesh, which does not use $native" maxlog=1
     end
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
@@ -319,6 +320,9 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     end
     _check_gamg_ids(_petsc_version(petsclib), real(petsclib.PetscScalar), opts, N)
     ksp = PETSc.KSP(Amat; opts...)
+    # the PC configured here, which the shell swap moves behind the shell
+    mg = pc isa AMG && opts.pc_type == "mg" ?
+        (pc=_ksp_pc(petsclib, ksp), rowptr=rowptr, colval=colval, n=n, amg=pc, comm=comm) : nothing
     # tolerances mean what they mean on serial paths: rtol is relative to the warm-started initial
     # residual, not PETSc's default ||b||; `convergence` is the outer-loop target only. No dtol stop,
     # which serial solves lack. _StopTest replaces PETSc's test; the tolerances set here are for -ksp_view
@@ -338,7 +342,76 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
         _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0),
         XCALibre.Solve._solve_name(setup, label), (atol=Float64(atol), rtol=Float64(rtol)), report,
-        MPI.Comm_rank(comm) == 0, Ref(0.0), Ref(0), stop)
+        MPI.Comm_rank(comm) == 0, Ref(0.0), Ref(0), stop, Ref{Any}(mg))
+end
+
+# NEW SECTION: Pairwise AMG as PCMG
+
+# the serial pairwise levels, built per rank on the owned block (aggregates never cross ranks), become
+# PCMG's interpolations; PETSc forms the coarse operators, recomputed on each refresh with P kept
+function _pairwise_mg!(s::XPETScSolver, mg, nzval)
+    (; petsclib) = s
+    (; pc, comm) = mg
+    ok(f, args...) = _ptr_call(_petsc_sym(petsclib, f), args...) == 0 || error("PETSc: $f failed")
+    Ps = XCALibre.Solve._pairwise_transfers(_owned_block(mg.rowptr, mg.colval, nzval, mg.n), mg.amg,
+        x -> MPI.Allreduce(x, +, comm))
+    # P must be A's type (host or device) for PETSc's Galerkin product
+    mt = Ref{Ptr{Cchar}}(C_NULL)
+    ok(:MatGetType, s.A.ptr, mt)
+    PI, L = petsclib.PetscInt, length(Ps) + 1
+    _pc_int(_petsc_sym(petsclib, :PCMGSetLevels), pc, PI(L), C_NULL) == 0 || error("PETSc: PCMGSetLevels failed")
+    rank = MPI.Comm_rank(comm)
+    for (i, P) ∈ enumerate(Ps)
+        nf, nc = size(P)
+        sizes = MPI.Allgather([nf, nc], comm)
+        rows, cols = sum(sizes[1:2:2rank]; init=0), sum(sizes[2:2:2rank]; init=0)
+        Nf, Nc = sum(sizes[1:2:end]), sum(sizes[2:2:end])
+        I = PI[rows + r - 1 for r ∈ P.rowval]
+        J = PI[cols + c - 1 for c ∈ 1:nc for _ ∈ P.colptr[c]:P.colptr[c+1]-1]
+        Pmat = _coo_mat(petsclib, comm, mt[], PI.((nf, nc, Nf, Nc)), I, J, petsclib.PetscScalar.(P.nzval))
+        # PCMG numbers levels from the coarsest (0); P maps level L-i-1 to L-i
+        _pc_int(_petsc_sym(petsclib, :PCMGSetInterpolation), pc, PI(L - i), Pmat) == 0 ||
+            error("PETSc: PCMGSetInterpolation failed")
+        ok(:MatDestroy, Ref(Pmat)) # the PC holds it
+    end
+    # the mg_* options reach the levels only once they exist
+    push!(s.ksp.opts)
+    try
+        ok(:PCSetFromOptions, pc)
+    finally
+        pop!(s.ksp.opts)
+    end
+end
+
+_ksp_pc(petsclib, ksp) = (pc = Ref(C_NULL); _ptr_call(_petsc_sym(petsclib, :KSPGetPC), ksp.ptr, pc) == 0 ||
+    error("PETSc: KSPGetPC failed"); pc[])
+
+# owned rows × owned columns of the local CSR, which numbers owned cells first
+function _owned_block(rowptr, colval, nzval, n)
+    keep = [k for r ∈ 1:n for k ∈ rowptr[r]:rowptr[r+1]-1 if colval[k] <= n]
+    rp = ones(Int, n + 1)
+    for r ∈ 1:n
+        rp[r+1] = rp[r] + count(k -> colval[k] <= n, rowptr[r]:rowptr[r+1]-1)
+    end
+    XCALibre.Solve.AMGMatrixCSR(rp, Int.(colval[keep]), nzval[keep], n, n)
+end
+
+for PI ∈ (Int32, Int64)
+    @eval begin
+        _pc_int(f, pc, l::$PI, p) = ccall(f, Cint, (Ptr{Cvoid}, $PI, Ptr{Cvoid}), pc, l, p)
+        function _coo_mat(petsclib, comm, mt, (m, n, M, N)::NTuple{4,$PI}, I::Vector{$PI}, J::Vector{$PI}, V)
+            P = Ref(C_NULL)
+            sym = f -> _petsc_sym(petsclib, f)
+            ccall(sym(:MatCreate), Cint, (MPI.MPI_Comm, Ptr{Ptr{Cvoid}}), comm, P) == 0 &&
+            ccall(sym(:MatSetSizes), Cint, (Ptr{Cvoid}, $PI, $PI, $PI, $PI), P[], m, n, M, N) == 0 &&
+            ccall(sym(:MatSetType), Cint, (Ptr{Cvoid}, Ptr{Cchar}), P[], mt) == 0 &&
+            ccall(sym(:MatSetPreallocationCOO), Cint, (Ptr{Cvoid}, Int64, Ptr{$PI}, Ptr{$PI}),
+                P[], length(I), I, J) == 0 &&
+            ccall(sym(:MatSetValuesCOO), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, LibPETSc.InsertMode),
+                P[], V, LibPETSc.INSERT_VALUES) == 0 || error("PETSc: interpolation matrix assembly failed")
+            P[]
+        end
+    end
 end
 
 # NEW SECTION: stopping rule
@@ -692,6 +765,7 @@ passemble!(s::XPETScSolver, eqn, partition; component=nothing) =
 
 function passemble!(s::XPETScSolver, nzval::AbstractVector, b::AbstractVector)
     _set_values!(s.petsclib, s.A, nzval, s.sync, s.fill)
+    isnothing(s.mg[]) || (_pairwise_mg!(s, s.mg[], _host(nzval)); s.mg[] = nothing)
     c = s.stop
     (c.explicit || c.rowscale) && _inverse_abs_diagonal!(s)
     c.rowscale && c.op == C_NULL && _petsc_ok(s, :MatDiagonalScale, s.A.ptr, c.dinv, C_NULL)

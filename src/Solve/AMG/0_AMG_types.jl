@@ -70,7 +70,7 @@ Adapt.@adapt_structure Iterative
 # NEW SECTION: coarsening
 
 """
-    Pairwise(merges=1)
+    Pairwise(merges=2)
 
 Pairwise agglomeration: each cell is paired with the neighbour it is most strongly coupled to
 (largest `|aᵢⱼ|`), `merges` times per level, so clusters hold about `2^merges` cells. Transfer
@@ -79,7 +79,7 @@ light on memory and robust for non-symmetric matrices; the default.
 """
 struct Pairwise <: AbstractAMGCoarsening
     merges::Int
-    function Pairwise(merges::Integer=1)
+    function Pairwise(merges::Integer=2)
         merges > 0 || throw(ArgumentError("Pairwise merges must be positive"))
         return new(Int(merges))
     end

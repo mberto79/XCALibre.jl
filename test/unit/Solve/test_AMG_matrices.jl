@@ -328,3 +328,15 @@ end
     @test_throws ArgumentError AMG(SmoothedAggregation(); native=NativeAMG(fuse=1))
     @test_throws ArgumentError AMG(smoother=GaussSeidel(), native=NativeAMG(fuse=1))
 end
+
+# equal couplings pair in one direction, so uniform 2D cells form 2×2 boxes after two pairing passes
+@testset "Pairwise ties build box-shaped aggregates" begin
+    n = 16
+    I1 = spdiagm(-1 => -ones(n - 1), 0 => 2ones(n), 1 => -ones(n - 1))
+    A = SV._amg_matrix(SparseMatricesCSR.SparseMatrixCSR(transpose(sparse(kron(I1, sparse(I, n, n)) + kron(sparse(I, n, n), I1)))))
+    agg, nc = SV._pairwise_aggregates(A, 2)
+    @test nc == n^2 ÷ 4
+    cells = [findall(==(g), agg) for g in 1:nc]
+    spans(c) = (extrema((k - 1) % n for k in c), extrema((k - 1) ÷ n for k in c))
+    @test all(c -> length(c) == 4 && all(e -> e[2] - e[1] == 1, spans(c)), cells)
+end

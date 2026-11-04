@@ -113,10 +113,8 @@ function _gamg_coarsening(c::SmoothedAggregation, refuse)
     isnothing(c.near_nullspace) || refuse("SmoothedAggregation(near_nullspace) has no PETSc counterpart")
     (pc_gamg_agg_nsmooths=1, pc_gamg_threshold=c.threshold)
 end
-function _gamg_coarsening(c::Pairwise, refuse)
-    c.merges == 1 || refuse("Pairwise(merges > 1) has no PETSc counterpart")
-    (pc_gamg_agg_nsmooths=0,)
-end
+# GAMG forms its own (larger than pairwise) aggregates, so merges sets nothing there
+_gamg_coarsening(c::Pairwise, refuse) = (pc_gamg_agg_nsmooths=0,)
 _gamg_coarsening(::RugeStuben, refuse) =
     (refuse("RugeStuben() has no PETSc counterpart; use BoomerAMG() for classical AMG on a distributed mesh"); (;))
 

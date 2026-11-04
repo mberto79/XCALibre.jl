@@ -68,7 +68,7 @@ SolverSetup(
 `AMG(coarsening; smoother, sweeps, coarsest, refresh, native)`:
 
 - `coarsening`: how cells are grouped into coarse levels.
-  - `Pairwise(merges=1)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level. Transfers between levels are piecewise constant and kept as lists of each aggregate's cells, never as sparse matrices, with each level's cells renumbered so an aggregate's cells are contiguous. Cheap to build, light on memory and robust for non-symmetric matrices.
+  - `Pairwise(merges=2)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level, so each level has about a quarter of the rows of the one above. Equal couplings, as between uniform cells, go to the neighbour farthest in the cell numbering, which on meshes numbered row by row builds compact box-shaped aggregates. Transfers between levels are piecewise constant and kept as lists of each aggregate's cells, never as sparse matrices, with each level's cells renumbered so an aggregate's cells are contiguous. Cheap to build, light on memory and robust for non-symmetric matrices.
   - `SmoothedAggregation(; threshold=0.0)`: larger aggregates with a smoothed interpolation; fewer iterations on hard symmetric problems at a higher setup and memory cost.
   - `RugeStuben(; threshold=0.25)`: classical AMG, serial meshes only (on a distributed mesh use `BoomerAMG()`).
 - `smoother`: `Jacobi()` (default), `Chebyshev(; degree=3)`, and on the CPU `GaussSeidel()`, `SymGaussSeidel()`, `SOR(ω)`, `SSOR(ω)`. `Jacobi(weight=4/3)` relaxes each level by `weight/λmax`, with λmax the largest eigenvalue of D⁻¹A there; `SOR` and `SSOR` take the relaxation factor `ω` directly.
@@ -129,7 +129,7 @@ What differs from the native AMG:
 - Between refreshes PETSc applies the whole stored preconditioner, while the native AMG updates its finest level every solve.
 - `NativeAMG` settings are not used; when they differ from the defaults one info message lists them.
 
-Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Pairwise(merges > 1)`, `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
+Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
 
 The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 

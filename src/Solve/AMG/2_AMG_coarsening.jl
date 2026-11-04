@@ -458,6 +458,9 @@ function build_prolongation(A, coarsening::SmoothedAggregation, candidate=nothin
     return agg, P, coarse_candidate
 end
 
+# relative difference below which two couplings count as equal when pairing
+const _PAIR_TIE = 1e-6
+
 function _pairwise_aggregates(A, merges::Int)
     rowptr = _rowptr(A)
     colval = _colval(A)
@@ -487,22 +490,29 @@ function _pairwise_aggregates(A, merges::Int)
         order = sortperm(cnt)
         @inbounds for c in order
             merged[c] && continue
-            bestc = 0
-            bestw = zero(T)
             for t in off[c]:(off[c + 1] - 1)
                 i = cells[t]
                 for p in rowptr[i]:(rowptr[i + 1] - 1)
-                    j = colval[p]
-                    cj = agg[j]
+                    cj = agg[colval[p]]
                     cj == c && continue
-                    if stamp[cj] != c
-                        stamp[cj] = c
-                        acc[cj] = zero(T)
-                    end
+                    stamp[cj] != c && (stamp[cj] = c; acc[cj] = zero(T))
                     acc[cj] += abs(nzval[p])
-                    if !merged[cj] && acc[cj] > bestw
-                        bestw = acc[cj]
-                        bestc = cj
+                end
+            end
+            # equal couplings (uniform cells) go to the neighbour farthest in numbering: on meshes numbered
+            # row by row this is one fixed direction, which builds compact box-shaped aggregates
+            bestc = 0
+            bestw = zero(T)
+            bestd = 0
+            for t in off[c]:(off[c + 1] - 1)
+                i = cells[t]
+                for p in rowptr[i]:(rowptr[i + 1] - 1)
+                    cj = agg[colval[p]]
+                    (cj == c || merged[cj] || iszero(acc[cj])) && continue
+                    w = acc[cj]
+                    d = abs(cj - c)
+                    if w > bestw * (1 + _PAIR_TIE) || (w >= bestw * (1 - _PAIR_TIE) && d > bestd)
+                        bestw, bestc, bestd = w, cj, d
                     end
                 end
             end

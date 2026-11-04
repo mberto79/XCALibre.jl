@@ -35,7 +35,7 @@ setup = SolverSetup(
 
 # NEW SECTION: constructors and defaults
 amg_default = AMG()
-@test amg_default.coarsening isa Pairwise && amg_default.coarsening.merges == 1
+@test amg_default.coarsening isa Pairwise && amg_default.coarsening.merges == 2
 @test amg_default.smoother isa Jacobi && amg_default.smoother.weight == 4/3
 @test amg_default.sweeps.pre == amg_default.sweeps.post == 2
 @test amg_default.coarsest == 4096

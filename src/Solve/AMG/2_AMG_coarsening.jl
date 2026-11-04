@@ -108,7 +108,7 @@ function _coarse_graph(strong)
     return coarse
 end
 
-_initial_candidates(coarsening::SmoothAggregation) = coarsening.near_nullspace
+_initial_candidates(coarsening::SmoothedAggregation) = coarsening.near_nullspace
 _initial_candidates(::AbstractAMGCoarsening) = nothing
 
 function _sa_filtered_matrix(A, strong)
@@ -420,7 +420,7 @@ function _near_nullspace_vector(A, candidate)
     if isnothing(candidate)
         return ones(T, n)
     end
-    length(candidate) == n || throw(ArgumentError("SmoothAggregation near_nullspace must match the matrix row count"))
+    length(candidate) == n || throw(ArgumentError("SmoothedAggregation near_nullspace must match the matrix row count"))
     return T.(collect(candidate))
 end
 
@@ -446,19 +446,19 @@ function _tentative_prolongation(agg, candidate)
     return sparse(I, J, V, n, nc), coarse_candidate
 end
 
-function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing, level_id=1)
+function build_prolongation(A, coarsening::SmoothedAggregation, candidate=nothing, level_id=1)
     n = _m(A)
     candidate_vec = _near_nullspace_vector(A, isnothing(candidate) ? coarsening.near_nullspace : candidate)
     n <= 2 && return collect(1:n), nothing, candidate_vec
-    strong = _sa_strength_graph(A, coarsening.strength_threshold)
+    strong = _sa_strength_graph(A, coarsening.threshold)
     agg, nagg = _standard_aggregates(strong)
     nagg < 1 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
-    P = _smooth_prolongation(A, P0, strong, coarsening.smoother_weight)
+    P = _smooth_prolongation(A, P0, strong, coarsening.weight)
     return agg, P, coarse_candidate
 end
 
-function _geometric_aggregates(A, merge_levels::Int)
+function _pairwise_aggregates(A, merges::Int)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
@@ -466,7 +466,7 @@ function _geometric_aggregates(A, merge_levels::Int)
     T = eltype(nzval)
     agg = collect(1:n)
     ncl = n
-    for _ in 1:merge_levels
+    for _ in 1:merges
         cnt = zeros(Int, ncl)
         @inbounds for i in 1:n
             cnt[agg[i]] += 1
@@ -522,11 +522,11 @@ function _geometric_aggregates(A, merge_levels::Int)
     return agg, ncl
 end
 
-function build_prolongation(A, coarsening::Geometric, _candidate=nothing, _level_id=1)
+function build_prolongation(A, coarsening::Pairwise, _candidate=nothing, _level_id=1)
     n = _m(A)
     candidate_vec = _near_nullspace_vector(A, nothing)
     n <= 2 && return collect(1:n), nothing, candidate_vec
-    agg, nagg = _geometric_aggregates(A, coarsening.merge_levels)
+    agg, nagg = _pairwise_aggregates(A, coarsening.merges)
     nagg < 1 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
     return agg, P0, coarse_candidate
@@ -535,7 +535,7 @@ end
 function build_prolongation(A, coarsening::RugeStuben, _candidate=nothing, _level_id=1)
     n = _m(A)
     n <= 2 && return collect(1:n), nothing, nothing
-    strong = _rs_strength_graph(A, coarsening.strength_threshold)
+    strong = _rs_strength_graph(A, coarsening.threshold)
     splitting = _rs_coarse_fine_split(strong)
     P = _rs_direct_interpolation(A, strong, splitting)
     isnothing(P) && return splitting, nothing, nothing

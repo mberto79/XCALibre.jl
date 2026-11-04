@@ -341,7 +341,7 @@ end
 
 function _refresh_coarse_operators!(hierarchy::AMGHierarchy, solver::AMG)
     _refresh_coarse_operators!(hierarchy.backend, hierarchy, solver)
-    _build_coarse_inverse!(hierarchy, solver.coarse_solve)  # refresh device coarse solver
+    _build_coarse_inverse!(hierarchy, solver.native.coarse)  # refresh device coarse solver
     return hierarchy
 end
 
@@ -695,8 +695,8 @@ function refresh_finest_level!(hierarchy::AMGHierarchy, solver::AMG)
 end
 
 function _should_stop_coarsening(n, coarse_rows, solver::AMG, level_id)
-    poor_reduction = coarse_rows > solver.max_coarse_rows && coarse_rows >= 0.85 * n
-    return coarse_rows < 2 || coarse_rows >= n || coarse_rows <= solver.min_coarse_rows || poor_reduction || level_id >= solver.max_levels
+    poor_reduction = coarse_rows > solver.coarsest && coarse_rows >= 0.85 * n
+    return coarse_rows < 2 || coarse_rows >= n || poor_reduction || level_id >= _AMG_MAX_LEVELS
 end
 
 function _hierarchy_complexities(levels)
@@ -709,9 +709,9 @@ end
 
 function _amg_log_hierarchy(solver::AMG, backend, rows; matrix_free::Bool=false)
     cs = solver.coarsening
-    coarsening = cs isa Geometric ? "Geometric(merge_levels=$(cs.merge_levels))" : string(nameof(typeof(cs)))
-    path = matrix_free ? "matrix-free (fuse_levels=$(solver.fuse_levels))" : "materialised"
-    @info "AMG hierarchy" mode=_amg_mode_name(solver.mode) coarsening=coarsening smoother=_amg_smoother_name(typeof(solver.smoother)) backend=nameof(typeof(backend)) path=path levels=length(rows) rows=join(rows, " -> ")
+    coarsening = cs isa Pairwise ? "Pairwise($(cs.merges))" : string(nameof(typeof(cs)), "()")
+    path = matrix_free ? "fused (fuse=$(solver.native.fuse))" : "stored"
+    @info "AMG hierarchy" coarsening=coarsening smoother=_smoother_name(solver.smoother) backend=nameof(typeof(backend)) path=path levels=length(rows) rows=join(rows, " -> ")
 end
 
 function _amg_workgroup(backend, workgroup, ndrange)
@@ -782,7 +782,7 @@ function setup_hierarchy(A, solver::AMG, backend; log_diagnostics=true)
 end
 
 function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=true, index_type=eltype(_rowptr(A)))
-    _validate_amg_smoother_backend(backend, solver.smoother)
+    _check_smoother_backend(backend, solver.smoother)
     host_levels = nothing
     transfer_csc = Any[]
     galerkin_caches = Any[]
@@ -821,7 +821,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         push!(host_levels, level)
 
         coarse_rows = _m(coarse_A)
-        if coarse_rows <= solver.max_coarse_rows || _should_stop_coarsening(_m(current_A), coarse_rows, solver, level_id)
+        if coarse_rows <= solver.coarsest || _should_stop_coarsening(_m(current_A), coarse_rows, solver, level_id)
             P_last = _empty_transfer_matrix(T, TI)
             R_last = _empty_transfer_matrix(T, TI)
             push!(host_levels, _allocate_level(coarse_A, P_last, R_last, level_id + 1, collect(1:coarse_rows), CPU(), solver.smoother))
@@ -836,9 +836,9 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
     _refresh_coarse_cpu!(coarse_cpu, host_levels[end].A)
     rowptr_pattern, colval_pattern = _pattern_signature(A, TI)
     pattern_hash = hash(colval_pattern, hash(rowptr_pattern))
-    is_symmetric = solver.mode isa Union{Nothing,Cg} ? _is_symmetric(host_levels[1].A) : true
+    is_symmetric = _is_symmetric(host_levels[1].A)
     operator_complexity, grid_complexity = _hierarchy_complexities(host_levels)
-    TS = _effective_storage(T, _amg_storage(solver.coarse_storage))
+    TS = _effective_storage(T, _amg_storage(solver))
     storage_levels = TS === T ? host_levels : [_level_to_storage(level, TS) for level in host_levels]
     device_levels = backend isa CPU ? storage_levels : Any[adapt(backend, level) for level in storage_levels]
     device_levels = backend isa CPU ? device_levels : _amg_finalize_device_levels(backend, device_levels)
@@ -866,7 +866,7 @@ function setup_hierarchy(A, solver::AMG, backend, workgroup; log_diagnostics=tru
         Ref{Any}(nothing),
         Ref{Any}(cycle_input)
     )
-    _build_coarse_inverse!(hierarchy, solver.coarse_solve)
+    _build_coarse_inverse!(hierarchy, solver.native.coarse)
     log_diagnostics && _amg_log_hierarchy(solver, backend, map(level -> _m(level.A), host_levels))
     return hierarchy
 end

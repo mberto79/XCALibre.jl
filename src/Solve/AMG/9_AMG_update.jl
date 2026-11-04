@@ -111,7 +111,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,<:AMG
     A = _A(phiEqn)
     b = _b(phiEqn, component)
     workspace = phiEqn.solver
-    values = get_values(result, component)
+    values = result.values
     res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
     update!(workspace, A, solver, config)
     apply_smoother!(setup.smoother, values, A, b, config.hardware)

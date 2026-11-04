@@ -8,3 +8,4 @@
 * added: `Sweeps(pre, post; grow, max)` for unequal sweeps and more sweeps on coarser levels.
 * changed: `BoomerAMG()` always runs hypre through PETSc; on a serial mesh it errors and points to `distribute(mesh)`.
 * deprecated: `GAMG(...)` returns the `AMG(...)` of PETSc's GAMG defaults.
+* fixed: `AMG()` as the preconditioner of a vector equation (momentum) no longer fails on a serial mesh.

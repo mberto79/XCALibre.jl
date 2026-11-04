@@ -191,3 +191,24 @@ end
     _, x_gamg = laplace_values(mksetup(Cg(), GAMG(); rtol=1e-10, atol=0.0))
     @test isapprox(x_gamg, x_ref; rtol=1e-6)
 end
+
+# momentum is a vector equation solved per component: AMG with Bicgstab() runs it like Jacobi()
+@testset "AMG on a vector equation" begin
+    bfs = UNV2D_mesh(pkgdir(XCALibre, "examples/0_GRIDS/backwardFacingStep_10mm.unv"), scale=0.001)
+    run_bfs(Upc) = begin
+        model = Physics(time=Steady(), fluid=Fluid{Incompressible}(nu=1e-3), turbulence=RANS{Laminar}(),
+            energy=Energy{Isothermal}(), domain=bfs)
+        bcs = assign(region=bfs, (
+            U = [Dirichlet(:inlet, [0.5, 0.0, 0.0]), Extrapolated(:outlet), Wall(:wall, [0.0, 0.0, 0.0]), Symmetry(:top)],
+            p = [Extrapolated(:inlet), Dirichlet(:outlet, 0.0), Extrapolated(:wall), Symmetry(:top)]))
+        solvers = (
+            U = SolverSetup(solver=Bicgstab(), preconditioner=Upc, convergence=1e-10, relax=0.8, rtol=1e-6, atol=0.0),
+            p = SolverSetup(solver=Cg(), preconditioner=Jacobi(), convergence=1e-10, relax=0.2, rtol=1e-6, atol=0.0))
+        config = Configuration(solvers=solvers, schemes=(U=Schemes(divergence=Linear), p=Schemes()), boundaries=bcs,
+            runtime=Runtime(iterations=5, write_interval=-1, time_step=1), hardware=Hardware(backend=CPU(), workgroup=1024))
+        initialise!(model.momentum.U, [0.5, 0.0, 0.0]); initialise!(model.momentum.p, 0.0)
+        run!(model, config; progress=false)
+        copy(model.momentum.U.x.values)
+    end
+    @test isapprox(run_bfs(AMG()), run_bfs(Jacobi()); rtol=1e-4)
+end

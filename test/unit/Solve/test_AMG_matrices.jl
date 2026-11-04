@@ -152,15 +152,15 @@ function convection2d(m=80)
 end
 
 @testset "default AMG()" begin
-    # 6400 rows > coarsest=4096, so the default Pairwise hierarchy has more than one level
+    # 6400 rows > coarsest=4096: one Pairwise coarsening, then the coarsest solve
     A, b = poisson2d(80)
     relres, ws = _solve_amg(A, b, AMG(), Cg(), _config)
-    @test length(ws.hierarchy.levels) > 1
+    @test ws.hierarchy isa SV.MatrixFreeHierarchy && ws.hierarchy.coarse_n < size(A, 1)
     @test ws.converged && relres < 1e-7
     Ac, bc = convection2d(80)
     relres, ws = _solve_amg(Ac, bc, AMG(), Bicgstab(), _config)
     @test !ws.hierarchy.is_symmetric
-    @test length(ws.hierarchy.levels) > 1
+    @test ws.hierarchy.coarse_n < size(Ac, 1)
     @test ws.converged && relres < 1e-7
 end
 
@@ -297,27 +297,67 @@ end
     ws = SV.update!(ws, Af, s, _config)
     @test eltype(SV._nzval(ws.hierarchy.levels[1].A)) === Float32
     x = zeros(Float32, n)
-    SV._amg_solve_mode!(ws, ws.hierarchy, s, Cg(), ws.hierarchy.levels[1].A, bf, x; itmax=100, atol=0f0, rtol=1f-5)
+    SV._amg_solve_mode!(ws, ws.hierarchy, s, Cg(), SV.outer_operator(ws.hierarchy, Af), bf, x; itmax=100, atol=0f0, rtol=1f-5)
     @test ws.converged
     @test ws.iterations <= 40
     @test ws.last_relative_residual <= 1e-5
 end
 
-@testset "T2 CPU ignores fuse" begin
-    # fuse only triggers matrix-free on GPU. On CPU it must be silently ignored: same hierarchy
-    # kind (materialised) and BIT-IDENTICAL iteration count for fl=0 vs fl=3.
+@testset "T2 CPU fuse" begin
+    # fused coarse levels apply the same operator through the finer matrix: same iterations (±1) and solution
     A, b = poisson2d(64)
-    runfl(fl) = begin
-        s = AMG(Pairwise(2); coarsest=256, native=NativeAMG(fuse=fl))
-        ws = _workspace(s, b)
-        ws = SV.update!(ws, A, s, _config)
+    runfl(fl; smoother=Jacobi()) = begin
+        s = AMG(Pairwise(1); smoother, coarsest=64, native=NativeAMG(fuse=fl))
+        ws = SV.update!(_workspace(s, b), A, s, _config)
         x = zeros(eltype(b), length(b))
-        SV._amg_solve_mode!(ws, ws.hierarchy, s, Cg(), ws.hierarchy.levels[1].A, b, x; itmax=200, atol=1e-8, rtol=1e-8)
-        ws
+        SV._amg_solve_mode!(ws, ws.hierarchy, s, Cg(), SV.outer_operator(ws.hierarchy, A), b, x; itmax=200, atol=1e-8, rtol=1e-8)
+        (ws=ws, x=x)
     end
-    ws0 = runfl(0); ws3 = runfl(3)
-    @test ws0.hierarchy isa SV.AMGHierarchy
-    @test ws3.hierarchy isa SV.AMGHierarchy
-    @test ws3.iterations == ws0.iterations
+    r0 = runfl(0)
+    @test r0.ws.hierarchy isa SV.MatrixFreeHierarchy && length(r0.ws.hierarchy.levels) > 3
+    for r in (runfl(1), runfl(2), runfl(2; smoother=Chebyshev()))
+        @test r.ws.converged
+        @test norm(b - Array(parent(A)) * r.x) / norm(b) < 1e-7
+    end
+    for fl in (1, 2)
+        r = runfl(fl)
+        @test r.ws.hierarchy.fused_top == fl
+        @test abs(r.ws.iterations - r0.ws.iterations) <= 1
+        @test norm(r.x - r0.x) / norm(r0.x) < 1e-8
+    end
+    @test_throws ArgumentError AMG(SmoothedAggregation(); native=NativeAMG(fuse=1))
+    @test_throws ArgumentError AMG(smoother=GaussSeidel(), native=NativeAMG(fuse=1))
 end
 
+# equal couplings pair across the faces the bias favours (here y), whatever the cell numbering,
+# so uniform 2D cells form 2×2 boxes after two pairing passes
+@testset "Pairwise face-normal bias builds box-shaped aggregates" begin
+    n = 16
+    for id in ((x, y) -> x + (y - 1) * n, (x, y) -> y + (x - 1) * n)
+        xy = Vector{NTuple{2,Int}}(undef, n^2)
+        foreach(c -> xy[id(c...)] = c, Iterators.product(1:n, 1:n))
+        nbrs = [Int[] for _ in 1:n^2]; fids = [Int[] for _ in 1:n^2]; normals = NTuple{3,Float64}[]
+        for (x, y) in xy, (dx, dy) in ((1, 0), (0, 1))
+            (x + dx > n || y + dy > n) && continue
+            push!(normals, (dx, dy, 0.0))
+            a, b = id(x, y), id(x + dx, y + dy)
+            push!(nbrs[a], b); push!(fids[a], length(normals)); push!(nbrs[b], a); push!(fids[b], length(normals))
+        end
+        I1, J1, V1 = Int[], Int[], Float64[]
+        for a in 1:n^2
+            push!(I1, a); push!(J1, a); push!(V1, 4)
+            foreach(b -> (push!(I1, a); push!(J1, b); push!(V1, -1)), nbrs[a])
+        end
+        A = SV._amg_matrix(SparseMatricesCSR.sparsecsr(I1, J1, V1, n^2, n^2))
+        lens = cumsum(vcat(0, length.(nbrs)))
+        mesh = (cell_faces_range=[(lens[a] + 1):lens[a + 1] for a in 1:n^2], cell_faces=reduce(vcat, fids),
+            cell_neighbours=reduce(vcat, nbrs), face_normal=normals)
+        bias = SV._pairwise_bias(A, mesh)
+        pairs, np = SV._pairwise_aggregates(A, 1, bias)
+        @test np == n^2 ÷ 2 && all(g -> allequal(first.(xy[findall(==(g), pairs)])), 1:np)
+        agg, nc = SV._pairwise_aggregates(A, 2, bias)
+        @test nc == n^2 ÷ 4
+        spans(c) = (extrema(first.(xy[c])), extrema(last.(xy[c])))
+        @test all(g -> (c = findall(==(g), agg); length(c) == 4 && all(e -> e[2] - e[1] == 1, spans(c))), 1:nc)
+    end
+end

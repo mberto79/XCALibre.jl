@@ -35,7 +35,7 @@ setup = SolverSetup(
 
 # NEW SECTION: constructors and defaults
 amg_default = AMG()
-@test amg_default.coarsening isa Pairwise && amg_default.coarsening.merges == 1
+@test amg_default.coarsening isa Pairwise && amg_default.coarsening.merges == 2
 @test amg_default.smoother isa Jacobi && amg_default.smoother.weight == 4/3
 @test amg_default.sweeps.pre == amg_default.sweeps.post == 2
 @test amg_default.coarsest == 4096
@@ -352,12 +352,16 @@ SV.amg_solve!(ws_rs_solve, ws_rs_solve.hierarchy, solver_rs, ws_rs_solve.hierarc
 @test norm(b - Array(parent(A)) * x_rs) / norm(b) < 1e-8
 @test ws_rs_solve.iterations > 0
 
-# Pairwise (OpenFOAM-style) agglomeration
+# Pairwise (OpenFOAM-style) agglomeration: aggregate-list hierarchy with a permuted finest level,
+# so the outer operator is the given matrix, not levels[1].A; it always coarsens at least once
 solver_geo = AMG(Pairwise())
 x_geo = zeros(eltype(b), length(b))
 ws_geo = _workspace(solver_geo, b)
 ws_geo = SV.update!(ws_geo, A, solver_geo, config)
-SV.amg_cg_solve!(ws_geo, ws_geo.hierarchy, solver_geo, ws_geo.hierarchy.levels[1].A, b, x_geo; itmax=100, atol=1e-8, rtol=1e-8)
+@test ws_geo.hierarchy isa SV.MatrixFreeHierarchy
+@test ws_geo.hierarchy.coarse_n < size(A, 1)
+@test SV.outer_operator(ws_geo.hierarchy, A) === A
+SV.amg_cg_solve!(ws_geo, ws_geo.hierarchy, solver_geo, SV.outer_operator(ws_geo.hierarchy, A), b, x_geo; itmax=100, atol=1e-8, rtol=1e-8)
 @test norm(b - Array(parent(A)) * x_geo) / norm(b) < 1e-8
 
 A_bad = SparseXCSR(sparsecsr([1, 1, 2], [1, 2, 2], [2.0, 1.0, 3.0], 2, 2))
@@ -537,8 +541,9 @@ SV.amg_bicgstab_solve!(ws_ws, ws_ws.hierarchy, solver_ws, ws_ws.hierarchy.levels
 @test ws_ws.converged
 
 # NEW SECTION: coarse solves (Smoothed and Iterative run as Direct on a CPU backend)
-for (coarse, outer) in ((Direct(max_rows=0), Cg()), (Smoothed(), Cg()), (Iterative(), Richardson()))
-    s = AMG(SmoothedAggregation(); coarsest=2, native=NativeAMG(; coarse))
+for (coarse, outer) in ((Direct(max_rows=0), Cg()), (Smoothed(), Cg()), (Iterative(), Richardson())),
+        coarsening in (SmoothedAggregation(), Pairwise())
+    s = AMG(coarsening; coarsest=2, native=NativeAMG(; coarse))
     w = SV.update!(_workspace(s, b; solver=outer), A, s, config)
     xc = zeros(eltype(b), length(b))
     SV._amg_solve_mode!(w, w.hierarchy, s, outer, SV.outer_operator(w.hierarchy, A), b, xc; itmax=100, atol=1e-8, rtol=1e-8)
@@ -566,6 +571,16 @@ for outer in (Cg(), Richardson())
     else
         @test abs(r32.it - rref.it) <= max(2, rref.it ÷ 5)
     end
+end
+
+# Pairwise: Float32 coarse levels below a full-precision finest level
+for outer in (Cg(), Richardson())
+    s = SV._with_storage(AMG(Pairwise(); coarsest=2), Float32)
+    w = SV.update!(_workspace(s, b; solver=outer), A, s, config)
+    @test eltype(w.hierarchy.coarse_x) === Float32
+    xm = zeros(eltype(b), length(b))
+    SV._amg_solve_mode!(w, w.hierarchy, s, outer, SV.outer_operator(w.hierarchy, A), b, xm; itmax=200, atol=1e-8, rtol=1e-8)
+    @test norm(b - Array(parent(A)) * xm) / norm(b) < 1e-8
 end
 
 # FP32 refresh path: a changed matrix (same pattern) refreshes the FP32 hierarchy in place and still converges
@@ -707,7 +722,7 @@ try
         @test occursin("Jacobi()", message)
         @test occursin("Chebyshev()", message)
 
-        # GPU fuse: 0 (stored) and 1 (fused) agree in iterations (±1) and solution; fuse=2 converges.
+        # GPU fuse: Pairwise keeps aggregate lists; 0 and 1 fused levels agree in iterations (±1) and solution.
         # Screened Poisson keeps the weight=4/3 Jacobi smoother stable; pure Poisson makes the Pairwise cycle diverge.
         let nx = 48
             np = nx*nx; ip = Int[]; jp = Int[]; vp = Float64[]
@@ -723,22 +738,26 @@ try
             A_t3 = XCALibre.ModelFramework._build_A(backend_gpu, ip, jp, vp, np)
             b_t3 = adapt(backend_gpu, ones(np))
             Ah_t3 = sparse(ip, jp, vp, np, np)
-            run_fuse(fuse) = begin
-                s = AMG(Pairwise(1); coarsest=128, native=NativeAMG(; fuse))
-                ws = _workspace(s, b_t3)
+            run_fuse(fuse; smoother=Jacobi(), coarse=Direct(), solver=Cg()) = begin
+                s = AMG(Pairwise(1); smoother, coarsest=128, native=NativeAMG(; fuse, coarse))
+                ws = _workspace(s, b_t3; solver)
                 ws = SV.update!(ws, A_t3, s, config_gpu)
                 x = KernelAbstractions.zeros(backend_gpu, Float64, np)
-                SV._amg_solve_mode!(ws, ws.hierarchy, s, Cg(), A_t3, b_t3, x; itmax=200, atol=0.0, rtol=1e-8)
-                (iters=ws.iterations, x=Array(x), mf=ws.hierarchy isa SV.MatrixFreeHierarchy)
+                SV._amg_solve_mode!(ws, ws.hierarchy, s, solver, A_t3, b_t3, x; itmax=200, atol=0.0, rtol=1e-8)
+                (iters=ws.iterations, x=Array(x), mf=ws.hierarchy isa SV.MatrixFreeHierarchy, conv=ws.converged)
             end
             r0 = run_fuse(0); r1 = run_fuse(1)
-            @test !r0.mf
-            @test r1.mf
+            @test r0.mf && r1.mf
             @test abs(r1.iters - r0.iters) <= 1
             @test norm(r1.x - r0.x) / norm(r0.x) < 1e-8
             r2 = run_fuse(2)
             @test r2.mf
             @test norm(ones(np) - Ah_t3 * r2.x) / sqrt(np) < 1e-6
+            # Chebyshev on fused levels, and the device coarse solves of the aggregate hierarchy
+            for r ∈ (run_fuse(1; smoother=Chebyshev()), run_fuse(0; coarse=Smoothed(Chebyshev(degree=8))),
+                    run_fuse(0; coarse=Smoothed(Jacobi(); sweeps=20)), run_fuse(0; coarse=Iterative(Cg()), solver=Richardson()))
+                @test r.conv && norm(ones(np) - Ah_t3 * r.x) / sqrt(np) < 1e-6
+            end
         end
     end
 catch err

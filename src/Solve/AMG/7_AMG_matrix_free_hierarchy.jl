@@ -130,19 +130,20 @@ end
 # and the matrix-free transfer factors. coarse_pos/row_macro/inv_sqrt_w implicitly encode P_l/R_l.
 mutable struct MatrixFreeLevel{MA, VI, VT, VID, T}
     A::MA                # A_perm_l (device CSR, Int32 indices)
-    invdiag::VT; diag_index::VID; omega::T
+    invdiag::VT; diag_index::VID; omega::T; lambda::T  # omega = Jacobi weight/lambda; lambda = λmax(D⁻¹A)
     agg_offsets::VI      # len n_coarse+1: aggregate g owns permuted rows agg_offsets[g]:agg_offsets[g+1]-1
     inv_sqrt_w::VT       # len n_coarse: 1/sqrt(aggregate size)
     coarse_pos::VI       # len n_coarse: aggregate id -> child permuted row position
     row_macro::VI        # len n: permuted row -> aggregate id
     n::Int; n_coarse::Int
     x::VT; tmp::VT; r::VT; rhs::VT; sc::VT  # scratch (device); sc = Ac for scale_correction
+    dir::VT              # Chebyshev search direction (empty for other smoothers)
 end
 
 # Device matrix-free hierarchy, also the workspace.hierarchy on the matrix-free path.
 # coarse_fac/coarse_inv/refresh_plan are Ref{Any} so the empty and built hierarchies share one concrete type
 # (workspace.hierarchy reassignment after build type-checks).
-mutable struct MatrixFreeHierarchy{T, LV, B, VT, VR, VI, HS, HT} <: AbstractAMGHierarchy
+mutable struct MatrixFreeHierarchy{T, LV, B, VT, VR, VI, HS, HT, S} <: AbstractAMGHierarchy
     levels::LV               # Vector{MatrixFreeLevel} (transfer levels 1..M, finest first)
     coarse_fac::Base.RefValue{Any}  # lu(coarsest A) on host (host-LU fallback path)
     coarse_n::Int
@@ -162,6 +163,7 @@ mutable struct MatrixFreeHierarchy{T, LV, B, VT, VR, VI, HS, HT} <: AbstractAMGH
     is_symmetric::Bool       # Cg gate reads it
     last_cycle_factor::Float64
     workgroup::Int           # gather/scatter launch workgroup (cycle internals fix wg=256)
+    smoother::S
 end
 
 # NEW SECTION: zero-alloc coarsest solve (device dense-inverse GEMV or reusable-buffer host LU)
@@ -195,7 +197,7 @@ end
 # Typed-but-unbuilt matrix-free hierarchy, mirroring _empty_hierarchy: same concrete type as a built
 # one (placeholder lu gives the host-buffer eltype TF; empty device/host buffers match build's types) so
 # update! can reassign workspace.hierarchy after the first build. Populated on first update! call.
-function _empty_matrix_free_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T,TS}
+function _empty_matrix_free_hierarchy(backend, ::Type{T}, ::Type{TS}=T, smoother=Jacobi()) where {T,TS}
     da(v) = backend isa CPU ? copy(v) : Adapt.adapt(backend, v)
     placeholder = lu(sparse([1], [1], [one(T)], 1, 1))
     rhs_h, x_h, rhs_hT, x_hT = _coarse_host_buffers(placeholder, TS, 0)
@@ -204,41 +206,120 @@ function _empty_matrix_free_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T
                    rhs_h, x_h, rhs_hT, x_hT,
                    Int32[], da(Int32[]), da(zeros(T, 0)),
                    0, Sweeps(2, 2), T(4 / 3), backend, 0, 512, false,
-                   Ref{Any}(nothing), 0, 0, true, 0.0, 256)
+                   Ref{Any}(nothing), 0, 0, true, 0.0, 256, smoother)
 end
 
-_amg_empty_hierarchy(::MatrixFreeAMG, backend, ::Type{T}, ::Type{TS}, ::Type) where {T,TS} =
-    _empty_matrix_free_hierarchy(backend, T, TS)
+_amg_empty_hierarchy(::MatrixFreeAMG, backend, ::Type{T}, ::Type{TS}, ::Type, smoother=Jacobi()) where {T,TS} =
+    _empty_matrix_free_hierarchy(backend, T, TS, smoother)
 
 # Coarsest solve, zero-alloc per cycle. GEMV branch: on-device dense inverse (no host sync). LU branch:
 # the one surviving host round-trip, but through reusable buffers + in-place ldiv! (UMFPACK caches its
 # workspace in the factorization) so it allocates nothing that scales with coarse_n.
 function solve_coarsest_level!(st::MatrixFreeHierarchy)
-    coarse_inv = st.coarse_inv[]
-    if coarse_inv !== nothing
-        mul!(st.coarse_x, coarse_inv, st.coarse_rhs)
-    else
-        KernelAbstractions.synchronize(st.backend)
-        copyto!(st.coarse_rhs_hT, st.coarse_rhs)
-        st.coarse_rhs_h === st.coarse_rhs_hT || (st.coarse_rhs_h .= st.coarse_rhs_hT)
-        ldiv!(st.coarse_x_h, st.coarse_fac[], st.coarse_rhs_h)
-        st.coarse_x_hT === st.coarse_x_h || (st.coarse_x_hT .= st.coarse_x_h)
-        copyto!(st.coarse_x, st.coarse_x_hT)
-    end
+    _mf_coarse!(st, st.coarse_inv[])
     return st.coarse_x
 end
 
+_mf_coarse!(st, coarse_inv::AbstractMatrix) = mul!(st.coarse_x, coarse_inv, st.coarse_rhs)
+
+function _mf_coarse!(st, ::Nothing)
+    KernelAbstractions.synchronize(st.backend)
+    copyto!(st.coarse_rhs_hT, st.coarse_rhs)
+    st.coarse_rhs_h === st.coarse_rhs_hT || (st.coarse_rhs_h .= st.coarse_rhs_hT)
+    ldiv!(st.coarse_x_h, st.coarse_fac[], st.coarse_rhs_h)
+    st.coarse_x_hT === st.coarse_x_h || (st.coarse_x_hT .= st.coarse_x_h)
+    copyto!(st.coarse_x, st.coarse_x_hT)
+end
+
+# NativeAMG(coarse=Smoothed(...)): fixed sweeps from zero on the device coarsest level
+struct _MFSmoothedCoarse{L,S,V}
+    level::L
+    smoother::S
+    sweeps::Int
+    eig::V
+end
+
+function _mf_coarse!(st, c::_MFSmoothedCoarse)
+    lv = c.level; bk = st.backend
+    lv.rhs .= st.coarse_rhs
+    _fill_device!(bk, lv.x, zero(eltype(lv.x)))
+    _mf_coarse_smooth!(c.smoother, lv, c.sweeps, bk)
+    st.coarse_x .= lv.x
+end
+
+_mf_coarse_smooth!(::Jacobi, lv, k, bk) = smooth_level!(lv, lv.rhs, k, bk, 256)
+_mf_coarse_smooth!(s::Chebyshev, lv, k, bk) = _chebyshev_sweeps!(lv, s, lv.rhs, k, lv.r, bk, 256, (r, x, b) ->
+    _launch_amg_kernel!(bk, 256, _amg_csr_residual_kernel!, lv.n, r, _rowptr(lv.A), _colval(lv.A), _nzval(lv.A), x, b))
+
+# NativeAMG(coarse=Iterative(...)): Jacobi-preconditioned Krylov on the device coarsest level
+struct _MFKrylovCoarse{K,L}
+    krylov::K
+    level::L
+end
+
+function _mf_coarse!(st, c::_MFKrylovCoarse)
+    lv = c.level
+    lv.rhs .= st.coarse_rhs
+    _apply_coarse_direct!(lv.x, c.krylov, lv.rhs)
+    st.coarse_x .= lv.x
+end
+
+# a coarsest level sharing the refreshed coarsest CSR, for smoother and Krylov coarse solves
+function _mf_coarsest_level(A, backend, ::Type{T}, smoother) where {T}
+    dev(v) = backend isa CPU ? copy(v) : Adapt.adapt(backend, v)
+    n = _m(A); di = dev(_diag_index(AMGMatrixCSR(Array(_rowptr(A)), Array(_colval(A)), Array(_nzval(A)), n, n)))
+    z() = dev(zeros(T, n)); e = dev(Int32[])
+    return MatrixFreeLevel(A, z(), di, one(T), one(T), e, dev(T[]), e, e, n, 0, z(), z(), z(), z(), dev(T[]),
+        smoother isa Chebyshev ? z() : dev(T[]))
+end
+
+# a CPU backend always solves the coarsest level directly
+_mf_coarse_solver(cs, st, A, backend) = _mf_coarse_solver(cs, st, A, backend, backend isa CPU || cs isa Direct)
+_mf_coarse_solver(cs, st, A, backend, direct::Bool) = direct ? st.coarse_inv[] : _mf_device_coarse(cs, st, A, backend)
+function _mf_device_coarse(cs::Smoothed, st, A, backend)
+    lv = _mf_coarsest_level(A, backend, eltype(_nzval(A)), cs.smoother)
+    c = _MFSmoothedCoarse(lv, cs.smoother, cs.sweeps, similar(lv.x))
+    _refresh_mf_coarse!(c, backend, false)
+    return c
+end
+function _mf_device_coarse(cs::Iterative, st, A, backend)
+    lv = _mf_coarsest_level(A, backend, eltype(_nzval(A)), Jacobi())
+    _refresh_mf_coarse!(lv, backend)
+    op = _AMGCoarseOp(_rowptr(A), _colval(A), _nzval(A), lv.n, lv.n, backend, 256)
+    ws = _workspace(cs.solver, lv.rhs)
+    c = ws isa _ShadowWorkspace ? similar(lv.rhs) : nothing
+    kb = AMGKrylovCoarse(ws, op, Diagonal(lv.invdiag), cs.rtol, cs.atol, cs.itmax, _nzval(A), 0, 0, c)
+    return _MFKrylovCoarse(kb, lv)
+end
+
+# after a coarse refresh: new diagonal (and eigenvalue for smoothers) of the coarsest level
+_refresh_mf_coarse!(c, backend, warm=true) = nothing
+function _refresh_mf_coarse!(lv::MatrixFreeLevel, backend)
+    _launch_amg_kernel!(backend, 256, _amg_invdiag_kernel!, lv.n, lv.invdiag, _nzval(lv.A), lv.diag_index)
+    KernelAbstractions.synchronize(backend)
+end
+function _refresh_mf_coarse!(c::_MFSmoothedCoarse, backend, warm=true)
+    lv = c.level; T = eltype(lv.x)
+    _refresh_mf_coarse!(lv, backend)
+    lv.lambda = _lambda_max_device!(lv, c.eig, warm, backend, 256)
+    c.smoother isa Jacobi && (lv.omega = min(T(c.smoother.weight), T(2) - eps(T)) / lv.lambda)
+    return c
+end
+_refresh_mf_coarse!(c::_MFKrylovCoarse, backend, warm=true) = _refresh_mf_coarse!(c.level, backend)
+
 # Build the materialized A_l hierarchy by Galerkin RAP (host), stopping at max_coarse. operators[l]
 # are natural-order AMGMatrixCSR; Ps[l]/aggs[l] are the reference normalized transfers/aggregation.
-function build_galerkin_operators(Am, merge_levels::Integer, max_coarse::Integer)
+function build_galerkin_operators(Am, merge_levels::Integer, max_coarse::Integer, bias=nothing)
     operators = [Am]; Ps = []; aggs = Vector{Vector{Int}}()
     A_cur = Am
-    while _m(A_cur) > max_coarse
-        agg, P, _ = build_prolongation(A_cur, Pairwise(merge_levels))
+    # always coarsen once, as the stored hierarchy does, so a small matrix still has two levels
+    while length(operators) == 1 || _m(A_cur) > max_coarse
+        agg, P, _ = build_prolongation(A_cur, Pairwise(merge_levels); bias)
         nc = maximum(agg)
         nc >= _m(A_cur) && break              # no further coarsening possible
         A_next = _amg_matrix(sparse(P') * _csr_to_csc(A_cur) * P, eltype(_rowptr(Am)))
         push!(aggs, agg); push!(Ps, P); push!(operators, A_next)
+        bias = _coarse_pairwise_bias(A_cur, bias, agg, A_next)
         A_cur = A_next
     end
     return operators, Ps, aggs
@@ -250,12 +331,12 @@ end
 function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2, sweeps=Sweeps(pre, post),
                       omega_nominal=4/3, max_coarse::Integer=64, fused_top::Integer=0,
                       coarse_max_rows::Integer=512, scale_correction::Bool=false,
-                      coarse_storage=nothing)
+                      coarse_storage=nothing, smoother=Jacobi(weight=omega_nominal), mesh=nothing)
     Am = _amg_matrix(A); T = eltype(_nzval(Am))
     TC = coarse_storage === nothing ? T : coarse_storage  # levels >=2 + coarsest storage type
-    operators, Ps, aggs = build_galerkin_operators(Am, merge_levels, max_coarse)
+    operators, Ps, aggs = build_galerkin_operators(Am, merge_levels, max_coarse, _pairwise_bias(Am, mesh))
     L = length(operators); M = L - 1
-    M >= 1 || error("matrix too small to coarsen at max_coarse=$max_coarse")
+    M >= 1 || throw(ArgumentError("Pairwise() cannot coarsen this matrix (no off-diagonal couplings); use Jacobi()"))
 
     # Per-level permutation (aggregate-contiguous) + child permutation for coarse_pos.
     cps = Vector{Vector{Int32}}(undef, M); cpis = Vector{Vector{Int32}}(undef, M)
@@ -268,12 +349,12 @@ function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int
         A_perms[l], pvms[l] = permute_operator(operators[l], cp, cpi)
     end
 
-    omegas = Vector{T}(undef, M); invdiags_nat = Vector{Vector{T}}(undef, M)
+    omegas = Vector{T}(undef, M); lambdas = Vector{T}(undef, M); invdiags_nat = Vector{Vector{T}}(undef, M)
     for l in 1:M
         _, invd = _diag_inverse(operators[l])
         invdiags_nat[l] = invd
-        lambda = _estimate_lambda_max(operators[l], invd)
-        omegas[l] = min(T(omega_nominal), T(2) - eps(T)) / T(lambda)
+        lambdas[l] = _estimate_lambda_max(operators[l], invd)
+        omegas[l] = min(T(omega_nominal), T(2) - eps(T)) / T(lambdas[l])
     end
 
     fused_top = clamp(Int(fused_top), 0, M - 1)  # level 1 (fine A_0) is never matrix-free
@@ -292,9 +373,10 @@ function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int
                AMGMatrixCSR(dev(_rowptr(Ap)), dev(_colval(Ap)), dev(Tl.(_nzval(Ap))), n, n)
         diag_index_perm = is_mf ? dev(TI[]) : dev(_diag_index(Ap))
         sc = scale_correction ? dev(zeros(Tl, n)) : dev(Tl[])  # Ac scratch (matfree levels too)
-        push!(levels, MatrixFreeLevel(Adev, dev(Tl.(invdiag_perm)), diag_index_perm, Tl(omegas[l]),
+        dir = smoother isa Chebyshev ? dev(zeros(Tl, n)) : dev(Tl[])
+        push!(levels, MatrixFreeLevel(Adev, dev(Tl.(invdiag_perm)), diag_index_perm, Tl(omegas[l]), Tl(lambdas[l]),
                               dev(aos[l]), dev(inv_sqrt_w), dev(coarse_pos), dev(row_macro),
-                              n, nc, dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), sc))
+                              n, nc, dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), dev(zeros(Tl, n)), sc, dir))
     end
 
     coarse_n = _m(operators[L])
@@ -308,7 +390,7 @@ function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int
                    rhs_h, x_h, rhs_hT, x_hT,
                    Vector{Int32}(cps[1]), dev(cps[1]), dev(zeros(T, n)),
                    n, sweeps, T(omega_nominal), backend, fused_top, Int(coarse_max_rows), scale_correction,
-                   Ref{Any}(nothing), n, length(_nzval(Am)), _is_symmetric(Am), 0.0, 256)
+                   Ref{Any}(nothing), n, length(_nzval(Am)), _is_symmetric(Am), 0.0, 256, smoother)
     return (st=st, operators=operators, Ps=Ps, omegas=omegas, invdiags=invdiags_nat,
             coarse_fac=coarse_fac, T=T, A_perms=A_perms, pvms=pvms, aos=aos, cps=cps,
             cpis=cpis, aggs=aggs, M=M)
@@ -366,6 +448,82 @@ function smooth_fused_level!(st::MatrixFreeHierarchy, l::Int, rhs, k::Int, cy, c
     return lv.x
 end
 
+# NEW SECTION: smoothers on stored and fused levels
+
+# r <- rhs - A_l·x, through the Galerkin chain on a fused level
+function _mf_residual!(st::MatrixFreeHierarchy, l::Int, r, x, rhs, cy, cz, bk, wg)
+    lv = st.levels[l]
+    if is_fused_level(st, l)
+        apply_fused_operator!(r, st, l, x, cy, cz, bk, wg)
+        _launch_amg_kernel!(bk, wg, _amg_residual_in_place_kernel!, lv.n, r, rhs)
+    else
+        A = lv.A
+        _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, lv.n, r, _rowptr(A), _colval(A), _nzval(A), x, rhs)
+    end
+    return r
+end
+
+_mf_smooth!(st::MatrixFreeHierarchy, l::Int, rhs, k::Int, cy, cz, bk, wg) =
+    k > 0 ? _mf_smooth!(st.smoother, st, l, rhs, k, cy, cz, bk, wg) : st.levels[l].x
+
+_mf_smooth!(::Jacobi, st, l, rhs, k, cy, cz, bk, wg) = is_fused_level(st, l) ?
+    smooth_fused_level!(st, l, rhs, k, cy, cz, bk, wg) : smooth_level!(st.levels[l], rhs, k, bk, wg)
+
+# the post-smoothing rhs of a stored level is lv.r, so the residual goes to lv.tmp there
+function _mf_smooth!(s::Chebyshev, st, l, rhs, k, cy, cz, bk, wg)
+    lv = st.levels[l]
+    r = rhs === lv.r ? lv.tmp : lv.r
+    _chebyshev_sweeps!(lv, s, rhs, k, r, bk, wg, (r, x, b) -> _mf_residual!(st, l, r, x, b, cy, cz, bk, wg))
+end
+
+function _chebyshev_sweeps!(lv::MatrixFreeLevel, s::Chebyshev, rhs, k, r, bk, wg, residual!)
+    T = eltype(lv.x)
+    lmax = max(T(s.lambda_scale) * lv.lambda, one(T)); lmin = lmax / T(s.eig_ratio)
+    center, radius = (lmax + lmin) / 2, (lmax - lmin) / 2
+    for _ in 1:k
+        alpha = inv(center)
+        residual!(r, lv.x, rhs)
+        _launch_amg_kernel!(bk, wg, _amg_chebyshev_first_step_kernel!, lv.n, lv.x, lv.dir, r, lv.invdiag, alpha)
+        for _ in 2:s.degree
+            beta = (T(0.5) * radius * alpha)^2
+            alpha = inv(center - beta / alpha)
+            residual!(r, lv.x, rhs)
+            _launch_amg_kernel!(bk, wg, _amg_chebyshev_step_kernel!, lv.n, lv.x, lv.dir, r, lv.invdiag, alpha, beta)
+        end
+    end
+    return lv.x
+end
+
+# Gauss-Seidel/SOR sweeps run on the host over stored (CPU) levels
+function _mf_smooth!(s::SweepSmoother, st, l, rhs, k, cy, cz, bk, wg)
+    lv = st.levels[l]
+    order, omega = _sweep_order(s), eltype(lv.x)(_sweep_omega(s))
+    for _ in 1:k
+        _mf_sweep!(order, lv.x, lv.A, rhs, lv.invdiag, omega)
+    end
+    return lv.x
+end
+
+function _mf_sweep_row!(x, rp, cv, nz, b, invdiag, omega, i)
+    T = eltype(x)
+    sigma = zero(T)
+    @inbounds for p in rp[i]:(rp[i + 1] - 1)
+        sigma += nz[p] * x[cv[p]]
+    end
+    @inbounds x[i] += omega * invdiag[i] * (b[i] - sigma)
+end
+function _mf_sweep!(::_Forward, x, A, b, invdiag, omega)
+    rp, cv, nz = _rowptr(A), _colval(A), _nzval(A)
+    for i in 1:_m(A); _mf_sweep_row!(x, rp, cv, nz, b, invdiag, omega, i); end
+    return x
+end
+function _mf_sweep!(::_Symmetric, x, A, b, invdiag, omega)
+    _mf_sweep!(_Forward(), x, A, b, invdiag, omega)
+    rp, cv, nz = _rowptr(A), _colval(A), _nzval(A)
+    for i in _m(A):-1:1; _mf_sweep_row!(x, rp, cv, nz, b, invdiag, omega, i); end
+    return x
+end
+
 # GAMG scale_correction up-sweep: x += sf·c with sf=(r_l·c)/(c·Ac) instead of plain x += P·xc.
 # r_l = lv.r from the down-sweep is still valid (lv.x untouched since), so no residual recompute is paid.
 # Matrix-free levels get Ac via the Galerkin chain (apply_fused_operator!, one fine SpMV).
@@ -401,20 +559,13 @@ function matrix_free_cycle!(st::MatrixFreeHierarchy, rhs_dev)
     for l in 1:M
         lv = st.levels[l]
         _fill_device!(bk, lv.x, zero(T))
-        if is_fused_level(st, l)
-            smooth_fused_level!(st, l, lv.rhs, _pre_sweeps(st.sweeps, l), cy, cz, bk, wg)
-            apply_fused_operator!(lv.r, st, l, lv.x, cy, cz, bk, wg)
-            _launch_amg_kernel!(bk, wg, _amg_residual_in_place_kernel!, lv.n, lv.r, lv.rhs)  # lv.r = rhs - A_l x
-        else
-            smooth_level!(lv, lv.rhs, _pre_sweeps(st.sweeps, l), bk, wg)
-            rp, cv, nz = _rowptr(lv.A), _colval(lv.A), _nzval(lv.A)
-            _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, lv.n, lv.r, rp, cv, nz, lv.x, lv.rhs)
-        end
+        _mf_smooth!(st, l, lv.rhs, _pre_sweeps(st.sweeps, l), cy, cz, bk, wg)
+        _mf_residual!(st, l, lv.r, lv.x, lv.rhs, cy, cz, bk, wg)
         child_rhs = l < M ? st.levels[l + 1].rhs : st.coarse_rhs
         _launch_amg_kernel!(bk, wg, _amg_matrix_free_restrict_kernel!, lv.n_coarse, child_rhs, lv.r,
                             lv.agg_offsets, lv.inv_sqrt_w, lv.coarse_pos)
     end
-    # coarsest solve (zero-alloc: device GEMV or reusable-buffer host LU)
+    # coarsest solve (zero-alloc: device GEMV, reusable-buffer host LU, or a device smoother/Krylov)
     solve_coarsest_level!(st)
     # up sweep
     for l in M:-1:1
@@ -430,12 +581,11 @@ function matrix_free_cycle!(st::MatrixFreeHierarchy, rhs_dev)
         # _cycle! rhs aliasing (level.rhs is overwritten by _residual! at levels >= 2). Empirically a
         # stronger cycle: F1 standalone 151 -> 121 iters, == reference; Cg iters unchanged (89 == 89).
         post_rhs = l == 1 ? lv.rhs : lv.r
-        if is_fused_level(st, l)
-            copyto!(lv.tmp, post_rhs)  # smooth_fused_level! uses lv.r as scratch; avoid aliasing
-            smooth_fused_level!(st, l, lv.tmp, _post_sweeps(st.sweeps, l), cy, cz, bk, wg)
-        else
-            smooth_level!(lv, post_rhs, _post_sweeps(st.sweeps, l), bk, wg)
+        if is_fused_level(st, l) && l > 1
+            copyto!(lv.tmp, post_rhs)  # fused smoothing uses lv.r as scratch; avoid aliasing
+            post_rhs = lv.tmp
         end
+        _mf_smooth!(st, l, post_rhs, _post_sweeps(st.sweeps, l), cy, cz, bk, wg)
     end
     KernelAbstractions.synchronize(bk)
     return st.levels[1].x

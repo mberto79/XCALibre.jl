@@ -84,7 +84,8 @@ end
     @test isempty(refused(AMG(smoother=Chebyshev(), sweeps=1)))
     @test isempty(refused(AMG(smoother=GaussSeidel())))
     @test isempty(refused(AMG(sweeps=(1, 2))))
-    for a ∈ (AMG(RugeStuben()), AMG(Pairwise(2)), AMG(SmoothedAggregation(weight=1.0)),
+    @test isempty(refused(AMG(Pairwise(3))))
+    for a ∈ (AMG(RugeStuben()), AMG(SmoothedAggregation(weight=1.0)),
             AMG(smoother=Chebyshev(), sweeps=2), AMG(smoother=SSOR(1.2)), AMG(sweeps=Sweeps(1, 1; grow=1)))
         @test length(refused(a)) == 1
     end

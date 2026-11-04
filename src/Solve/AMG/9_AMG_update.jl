@@ -53,15 +53,16 @@ function _sync_workspace_hierarchy!(workspace::AMGWorkspace, hierarchy)
     return workspace
 end
 
-function update!(workspace::AMGWorkspace, A, solver::AMG, config)
+# `mesh` gives Pairwise() its face-normal pairing bias; without it equal couplings pair in cell order
+function update!(workspace::AMGWorkspace, A, solver::AMG, config, mesh=nothing)
     (; hardware) = config
     hierarchy = workspace.hierarchy
     hierarchy.backend = hardware.backend
     hierarchy.workgroup = _amg_workgroup(hardware.backend, hardware.workgroup, max(_m(A), 1))
-    return _amg_update!(hierarchy, workspace, A, solver, hardware)
+    return _amg_update!(hierarchy, workspace, A, solver, hardware, mesh)
 end
 
-function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solver::AMG, hardware)
+function _amg_update!(hierarchy::AMGHierarchy, workspace::AMGWorkspace, A, solver::AMG, hardware, _mesh)
     if isempty(hierarchy.host_levels)
         setup_backend = _amg_setup_backend(hardware.backend)
         setup_matrix = _amg_setup_matrix(A, setup_backend)
@@ -113,7 +114,7 @@ function solve_system!(phiEqn::ModelEquation, setup::SolverSetup{F,I,S1,S2,<:AMG
     workspace = phiEqn.solver
     values = result.values
     res = residual(phiEqn, component, config) # outer residual of x₀: independent of the solve
-    update!(workspace, A, solver, config)
+    update!(workspace, A, solver, config, get_phi(phiEqn).mesh)
     apply_smoother!(setup.smoother, values, A, b, config.hardware)
     x = workspace.solution
     copyto!(x, values)
@@ -167,7 +168,7 @@ _matrix_free_omega(s) = 4 / 3
 
 # NEW SECTION
 
-function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, hardware)
+function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, hardware, mesh)
     backend = hardware.backend
     _check_smoother_backend(backend, solver.smoother)
     setup_matrix = _amg_setup_matrix(A, _amg_setup_backend(backend))  # host CSR at finest precision T
@@ -180,7 +181,7 @@ function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, 
                           max_coarse=solver.coarsest, fused_top=solver.native.fuse,
                           coarse_max_rows=coarse isa Direct ? coarse.max_rows : 0,
                           scale_correction=solver.native.scale_correction,
-                          coarse_storage=TS)
+                          coarse_storage=TS, mesh)
     st = handle.st
     st.refresh_plan[] = build_refresh_plan(handle)
     st.coarse_inv[] = _mf_coarse_solver(coarse, st, st.refresh_plan[].coarsest_csr, backend)
@@ -190,9 +191,9 @@ function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, 
     return workspace
 end
 
-function _amg_update!(hierarchy::MatrixFreeHierarchy, workspace::AMGWorkspace, A, solver::AMG, hardware)
+function _amg_update!(hierarchy::MatrixFreeHierarchy, workspace::AMGWorkspace, A, solver::AMG, hardware, mesh)
     if isempty(hierarchy.levels) || hierarchy.nrows != _m(A) || hierarchy.nnz != length(_nzval(A))
-        return _build_matrix_free_workspace!(workspace, A, solver, hardware)
+        return _build_matrix_free_workspace!(workspace, A, solver, hardware, mesh)
     end
     refresh_coarse = (workspace.refresh_count + 1) % solver.refresh == 0
     refresh_matrix_free_hierarchy!(hierarchy, hierarchy.refresh_plan[], A;

@@ -73,7 +73,9 @@ Adapt.@adapt_structure Iterative
     Pairwise(merges=2)
 
 Pairwise agglomeration: each cell is paired with the neighbour it is most strongly coupled to
-(largest `|aᵢⱼ|`), `merges` times per level, so clusters hold about `2^merges` cells. Transfer
+(largest `|aᵢⱼ|`), `merges` times per level, so clusters hold about `2^merges` cells. Couplings
+across faces facing y and z count 1% and 2% more, so equal couplings pair in one fixed direction
+and uniform cells form box-shaped clusters, however the cells are numbered. Transfer
 between levels is piecewise constant and coarse matrices are Galerkin products. Cheap to set up,
 light on memory and robust for non-symmetric matrices; the default.
 """

@@ -329,14 +329,35 @@ end
     @test_throws ArgumentError AMG(smoother=GaussSeidel(), native=NativeAMG(fuse=1))
 end
 
-# equal couplings pair in one direction, so uniform 2D cells form 2×2 boxes after two pairing passes
-@testset "Pairwise ties build box-shaped aggregates" begin
+# equal couplings pair across the faces the bias favours (here y), whatever the cell numbering,
+# so uniform 2D cells form 2×2 boxes after two pairing passes
+@testset "Pairwise face-normal bias builds box-shaped aggregates" begin
     n = 16
-    I1 = spdiagm(-1 => -ones(n - 1), 0 => 2ones(n), 1 => -ones(n - 1))
-    A = SV._amg_matrix(SparseMatricesCSR.SparseMatrixCSR(transpose(sparse(kron(I1, sparse(I, n, n)) + kron(sparse(I, n, n), I1)))))
-    agg, nc = SV._pairwise_aggregates(A, 2)
-    @test nc == n^2 ÷ 4
-    cells = [findall(==(g), agg) for g in 1:nc]
-    spans(c) = (extrema((k - 1) % n for k in c), extrema((k - 1) ÷ n for k in c))
-    @test all(c -> length(c) == 4 && all(e -> e[2] - e[1] == 1, spans(c)), cells)
+    for id in ((x, y) -> x + (y - 1) * n, (x, y) -> y + (x - 1) * n)
+        xy = Vector{NTuple{2,Int}}(undef, n^2)
+        foreach(c -> xy[id(c...)] = c, Iterators.product(1:n, 1:n))
+        nbrs = [Int[] for _ in 1:n^2]; fids = [Int[] for _ in 1:n^2]; normals = NTuple{3,Float64}[]
+        for (x, y) in xy, (dx, dy) in ((1, 0), (0, 1))
+            (x + dx > n || y + dy > n) && continue
+            push!(normals, (dx, dy, 0.0))
+            a, b = id(x, y), id(x + dx, y + dy)
+            push!(nbrs[a], b); push!(fids[a], length(normals)); push!(nbrs[b], a); push!(fids[b], length(normals))
+        end
+        I1, J1, V1 = Int[], Int[], Float64[]
+        for a in 1:n^2
+            push!(I1, a); push!(J1, a); push!(V1, 4)
+            foreach(b -> (push!(I1, a); push!(J1, b); push!(V1, -1)), nbrs[a])
+        end
+        A = SV._amg_matrix(SparseMatricesCSR.sparsecsr(I1, J1, V1, n^2, n^2))
+        lens = cumsum(vcat(0, length.(nbrs)))
+        mesh = (cell_faces_range=[(lens[a] + 1):lens[a + 1] for a in 1:n^2], cell_faces=reduce(vcat, fids),
+            cell_neighbours=reduce(vcat, nbrs), face_normal=normals)
+        bias = SV._pairwise_bias(A, mesh)
+        pairs, np = SV._pairwise_aggregates(A, 1, bias)
+        @test np == n^2 ÷ 2 && all(g -> allequal(first.(xy[findall(==(g), pairs)])), 1:np)
+        agg, nc = SV._pairwise_aggregates(A, 2, bias)
+        @test nc == n^2 ÷ 4
+        spans(c) = (extrema(first.(xy[c])), extrema(last.(xy[c])))
+        @test all(g -> (c = findall(==(g), agg); length(c) == 4 && all(e -> e[2] - e[1] == 1, spans(c))), 1:nc)
+    end
 end

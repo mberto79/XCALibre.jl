@@ -309,16 +309,17 @@ _refresh_mf_coarse!(c::_MFKrylovCoarse, backend, warm=true) = _refresh_mf_coarse
 
 # Build the materialized A_l hierarchy by Galerkin RAP (host), stopping at max_coarse. operators[l]
 # are natural-order AMGMatrixCSR; Ps[l]/aggs[l] are the reference normalized transfers/aggregation.
-function build_galerkin_operators(Am, merge_levels::Integer, max_coarse::Integer)
+function build_galerkin_operators(Am, merge_levels::Integer, max_coarse::Integer, bias=nothing)
     operators = [Am]; Ps = []; aggs = Vector{Vector{Int}}()
     A_cur = Am
     # always coarsen once, as the stored hierarchy does, so a small matrix still has two levels
     while length(operators) == 1 || _m(A_cur) > max_coarse
-        agg, P, _ = build_prolongation(A_cur, Pairwise(merge_levels))
+        agg, P, _ = build_prolongation(A_cur, Pairwise(merge_levels); bias)
         nc = maximum(agg)
         nc >= _m(A_cur) && break              # no further coarsening possible
         A_next = _amg_matrix(sparse(P') * _csr_to_csc(A_cur) * P, eltype(_rowptr(Am)))
         push!(aggs, agg); push!(Ps, P); push!(operators, A_next)
+        bias = _coarse_pairwise_bias(A_cur, bias, agg, A_next)
         A_cur = A_next
     end
     return operators, Ps, aggs
@@ -330,10 +331,10 @@ end
 function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2, sweeps=Sweeps(pre, post),
                       omega_nominal=4/3, max_coarse::Integer=64, fused_top::Integer=0,
                       coarse_max_rows::Integer=512, scale_correction::Bool=false,
-                      coarse_storage=nothing, smoother=Jacobi(weight=omega_nominal))
+                      coarse_storage=nothing, smoother=Jacobi(weight=omega_nominal), mesh=nothing)
     Am = _amg_matrix(A); T = eltype(_nzval(Am))
     TC = coarse_storage === nothing ? T : coarse_storage  # levels >=2 + coarsest storage type
-    operators, Ps, aggs = build_galerkin_operators(Am, merge_levels, max_coarse)
+    operators, Ps, aggs = build_galerkin_operators(Am, merge_levels, max_coarse, _pairwise_bias(Am, mesh))
     L = length(operators); M = L - 1
     M >= 1 || throw(ArgumentError("Pairwise() cannot coarsen this matrix (no off-diagonal couplings); use Jacobi()"))
 

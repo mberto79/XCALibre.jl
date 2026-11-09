@@ -40,26 +40,23 @@ _ksp_type(::Richardson) = "richardson"
 _ksp_type(s) = nothing
 _pc_type(::Jacobi) = "jacobi"
 _pc_type(::Union{DILU,ILU0GPU,IC0GPU}) = "bjacobi" # per-rank incomplete-factorisation blocks
-_pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply (SPD only)
-_pc_type(::GAMG) = "gamg" # PETSc native aggregation AMG (SPD only)
+_pc_type(::BoomerAMG) = "hypre" # PCHYPRE defaults to boomeramg; no transpose apply
+_pc_type(::AMG) = "gamg"
 _pc_type(p) = nothing
 
-# curated PC kwargs -> PETSc options; each kwarg k=v becomes -pc_<prefix>_<k> v
-_pc_options(p) = (;)
-_pc_options(::IC0GPU) = (sub_pc_type="icc",)
-_pc_options(p::BoomerAMG) =
-    NamedTuple(Symbol("pc_hypre_boomeramg_$k") => v for (k, v) ∈ pairs(p.opts))
-_pc_options(p::GAMG) =
-    NamedTuple(Symbol("pc_gamg_$k") => v for (k, v) ∈ pairs(p.opts))
+# curated PC settings -> PETSc options; AMG and BoomerAMG are translated in XCALibre.Solve
+_pc_options(p, solver) = (;)
+_pc_options(::IC0GPU, solver) = (sub_pc_type="icc",)
+_pc_options(p::BoomerAMG, solver) = XCALibre.Solve._lower_hypre(p)
+_pc_options(a::AMG, solver) = first(XCALibre.Solve._lower_gamg(a, solver))
 
 # the PETSc preconditioner standing in for a substitute (DILU/ILU0GPU/IC0GPU map in _pc_type)
 _petsc_pc(p) = p
-_petsc_pc(::AMG) = GAMG()
 _petsc_pc(::NormDiagonal) = Jacobi()
 
-# PCs that manage their own hierarchy across solves carry a `freeze` count (rebuild every N solves)
-_pc_freeze(p) = 1
-_pc_freeze(p::Union{BoomerAMG,GAMG}) = p.freeze
+# PCs that manage their own hierarchy across solves are rebuilt every `refresh` solves
+_pc_refresh(p) = 1
+_pc_refresh(p::Union{AMG,BoomerAMG}) = p.refresh
 
 # NEW SECTION: signal dispositions
 
@@ -282,7 +279,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     vec = device_solve ? dev.vec : _HOST_VEC
     x, b = (_vec_without_array(petsclib, comm, n, N, vec.create) for _ ∈ 1:2)
     pc = _petsc_pc(setup.preconditioner)
-    curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(pc)), _pc_options(pc))
+    curated = merge((; ksp_type=_ksp_type(setup.solver), pc_type=_pc_type(pc)), _pc_options(pc, setup.solver))
     raw = isempty(petsc_options) ? (;) : PETSc.parse_options(String.(split(petsc_options)))
     opts = merge(curated, raw)
     stop_opts, mode = _stop_options(opts)
@@ -297,17 +294,26 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
         @warn "$(nameof(typeof(setup.preconditioner)))() has no PETSc equivalent; substituting " *
             "$(rule.name) (-pc_type $(opts.pc_type)). Name another with petsc_options=\"-pc_type ...\"" maxlog=1 _id=
             nameof(typeof(setup.preconditioner))
+    if pc isa AMG
+        rule isa XCALibre.Solve.Unsupported && throw(ArgumentError(rule.msg))
+        device_solve && pc.smoother isa XCALibre.Solve.SweepSmoother && throw(ArgumentError(
+            "$(XCALibre.Solve._smoother_name(pc.smoother))() is a sequential CPU smoother and cannot run with GPU " *
+            "fields; use Jacobi() or Chebyshev()"))
+        native = XCALibre.Solve._native_only(pc)
+        isempty(native) || MPI.Comm_rank(comm) != 0 || @info "AMG runs as PETSc's GAMG on a distributed " *
+            "mesh, which does not use $native" maxlog=1
+    end
     # catches BoomerAMG and any "-pc_type hypre"/"-pc_hypre_type ..." passthrough
     if any(v -> occursin("hypre", string(v)), values(opts)) && !_petsc_has_pkg(petsclib, "hypre")
         error("PETScSolver: hypre requested but this PETSc build ($(petsclib.PetscScalar)) has " *
             "no hypre support. PETSc_jll carries hypre for Float64 only; other precisions need " *
-            "a PETSc configured with --download-hypre. Use GAMG(), which needs no extra build, " *
+            "a PETSc configured with --download-hypre. Use AMG(), which needs no extra build, " *
             "or see the distributed simulations page of the documentation.")
     end
     if pc isa BoomerAMG && device_solve && !pc.device && !_hypre_on_device(petsclib)
         error("PETScSolver: BoomerAMG() with GPU fields needs a hypre built for the device, and " *
             "this PETSc's hypre runs on the host (or exposes no HYPRE_GetExecutionPolicy), which " *
-            "crashes instead of erroring. Use GAMG() or Jacobi() for pressure, or " *
+            "crashes instead of erroring. Use AMG() or Jacobi() for pressure, or " *
             "BoomerAMG(device=true) to skip this check. See the distributed simulations page of " *
             "the documentation.")
     end
@@ -328,7 +334,7 @@ function _petsc_solver(eqn, dmesh::DistributedMesh, setup;
     MPI.Comm_rank(comm) == 0 && @info "PETSc solve [$label]: KSP=$(opts.ksp_type) " *
         "PC=$(opts.pc_type) atol=$(TF(atol)) rtol=$(TF(rtol)) itmax=$(setup.itmax)" *
         (isempty(extra) ? "" : " " * join(("$k=$v" for (k, v) ∈ pairs(extra)), " "))
-    setup_every = _pc_freeze(pc)
+    setup_every = _pc_refresh(pc)
     XPETScSolver(petsclib, Amat, b, x, ksp, n, sync, fill, _petsc_sym(petsclib, vec.place),
         _petsc_sym(petsclib, vec.reset), Ref(C_NULL), setup_every, Ref(0),
         XCALibre.Solve._solve_name(setup, label), (atol=Float64(atol), rtol=Float64(rtol)), report,

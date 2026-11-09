@@ -59,7 +59,7 @@ This function is used to provide solver settings that will be used internally in
 # Input arguments
 
 - `solver`: the outer iteration, one of `Cg()`, `Cgs()`, `Bicgstab()`, `Gmres()` (Krylov.jl, re-exported in XCALibre.jl) or `Richardson()` (with `AMG` only). `Gmres()` restarts every 30 iterations.
-- `preconditioner`: the method, e.g. `Jacobi()`, `DILU()`, `AMG()`, `GAMG()`. Where a preconditioner is not available (e.g. `AMG` on a distributed mesh) a named substitute runs with a one-time warning; see the preconditioners section of the numerical setup page
+- `preconditioner`: the method, e.g. `Jacobi()`, `DILU()`, `AMG(coarsening=SmoothAggregation())`, `BoomerAMG()`. Where a preconditioner is not available (e.g. `DILU` on a distributed mesh) a named substitute runs with a one-time warning; see the preconditioners section of the numerical setup page
 - `convergence`: residual target for this field that stops the outer (e.g. SIMPLE) iteration; it does not control the linear solver, which stops on `atol`, `rtol` and `itmax`. The residual, `Σ|b - Ax| / Σ|Aᵢᵢxᵢ|`, is taken on the field before the linear solve, so it does not depend on the solver settings.
 - `relax`: specifies the relaxation factor to be used e.g. set to 1 for no relaxation
 - `smoother`: specifies smoothing method to be applied before discretisation. `JacobiSmoother`: is currently the only choice (defaults to `nothing`)
@@ -84,7 +84,7 @@ SolverSetup(;
         precision::PR=FullPrecision()
         ) where{S2,I,PR} = begin
         solver, preconditioner = _deprecated_amg_solver(solver, preconditioner)
-        preconditioner = _resolve_amg(preconditioner, solver)
+        preconditioner = _resolve_amg(preconditioner, solver, precision)
         setup = SolverSetup{float_type,I,typeof(solver),S2,typeof(preconditioner),PR}(
             solver, smoother,preconditioner, 
             float_type(convergence), 

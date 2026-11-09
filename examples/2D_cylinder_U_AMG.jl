@@ -54,22 +54,15 @@ solvers = (
     ),
     p = SolverSetup(
         solver=Cg(), # Richardson() for repeated V-cycles without Krylov acceleration
-        preconditioner=AMG(
-            pre_sweeps=10,
-            post_sweeps=10,
-            # scale_correction = true  # default
-            # coarse_solve = OnDevice(max_rows=512)  # default: coarsest solved on device up to max_rows, else host LU
-            # alternatives: coarse_solve = CPU() (host LU/QR) or OnDeviceKrylov()
-            coarse_solve = OnDeviceJacobi(iterations=30), 
-            max_coarse_rows=20000,  
-
-            # coarse_storage = Float32  # GPU-only: single-precision hierarchy, same iterations, less bandwidth
-            # fuse_levels = 1  # experimental matrix-free V-cycle (GPU + Geometric + AMGJacobi); saves VRAM, else slower
-            # alternatives: coarsening = Geometric(merge_levels=1) or RugeStuben()
-            coarsening = SmoothAggregation(strength_threshold=0.05)  # opt-in: fewer iters on
-            #                          # anisotropic (boundary-layer) pressure matrices; denser
-            #                          # hierarchy (small wall-clock cost on warm-started solves)
-            # coarsening = SmoothAggregation()
+        # SmoothedAggregation(threshold=0.05): fewer iterations on anisotropic (boundary-layer)
+        # pressure matrices; the default Pairwise() is cheaper to build and lighter on memory
+        preconditioner=AMG(SmoothedAggregation(threshold=0.05);
+            sweeps=10,
+            coarsest=20000,
+            # precision=MixedF32() in SolverSetup stores the coarse levels in Float32
+            # NativeAMG(fuse=1) on a GPU (Pairwise() and Jacobi() only) stores no transfer matrices;
+            # fuse=2 also applies the top coarse level through the finer matrix: less memory, more work
+            native=NativeAMG(coarse=Smoothed(Jacobi(); sweeps=30))  # default: Direct()
         ),
         convergence=1e-7,
         relax=1.0,

@@ -87,8 +87,10 @@ end
 # the stopping rule of every solve path, so swapping Cg()<->AMG keeps tuned tolerances valid
 _amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = _stop_target(T(atol), T(rtol), r0norm)
 
-# scale_correction makes M nonlinear; flexible PR+ beta avoids the FR beta assumption
-_amg_cg_flexible(solver::AMG) = solver.scale_correction
+# scale_correction makes M nonlinear and unequal or one-way sweeps make it non-symmetric; flexible PR+
+# beta avoids the FR beta assumption
+_amg_cg_flexible(solver::AMG) = solver.native.scale_correction || solver.sweeps.pre != solver.sweeps.post ||
+    solver.smoother isa Union{GaussSeidel,SOR}
 
 # The report scalar-indexes, so it needs the HOST operator: handed the device matrix a
 # GPU run throws a CUDA scalar-indexing error in place of this ArgumentError. A

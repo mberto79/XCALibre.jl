@@ -153,7 +153,7 @@ mutable struct MatrixFreeHierarchy{T, LV, B, VT, VR, VI, HS, HT} <: AbstractAMGH
     cell_perm::Vector{Int32} # finest permuted position -> original cell (host)
     cell_perm_device::VI     # cell_perm on device (gather/scatter the outer residual/correction)
     residual_permuted::VR    # device scratch: residual gathered into permuted order (working type T)
-    n::Int; pre::Int; post::Int; omega_nominal::T; backend::B
+    n::Int; sweeps::Sweeps; omega_nominal::T; backend::B
     fused_top::Int           # top coarse levels (2..fused_top+1) applied matrix-free (A_l not stored)
     coarse_max_rows::Int     # coarsest <= this -> device dense-inverse GEMV, else host LU
     scale_correction::Bool   # GAMG energy-min coarse correction (Richardson only; fused_top==0)
@@ -203,7 +203,7 @@ function _empty_matrix_free_hierarchy(backend, ::Type{T}, ::Type{TS}=T) where {T
                    da(zeros(TS, 0)), da(zeros(TS, 0)), Ref{Any}(nothing),
                    rhs_h, x_h, rhs_hT, x_hT,
                    Int32[], da(Int32[]), da(zeros(T, 0)),
-                   0, 2, 2, T(4 / 3), backend, 0, 512, false,
+                   0, Sweeps(2, 2), T(4 / 3), backend, 0, 512, false,
                    Ref{Any}(nothing), 0, 0, true, 0.0, 256)
 end
 
@@ -234,7 +234,7 @@ function build_galerkin_operators(Am, merge_levels::Integer, max_coarse::Integer
     operators = [Am]; Ps = []; aggs = Vector{Vector{Int}}()
     A_cur = Am
     while _m(A_cur) > max_coarse
-        agg, P, _ = build_prolongation(A_cur, Geometric(merge_levels=Int(merge_levels)))
+        agg, P, _ = build_prolongation(A_cur, Pairwise(merge_levels))
         nc = maximum(agg)
         nc >= _m(A_cur) && break              # no further coarsening possible
         A_next = _amg_matrix(sparse(P') * _csr_to_csc(A_cur) * P, eltype(_rowptr(Am)))
@@ -247,7 +247,7 @@ end
 # Build the device multilevel matrix-free state; also returns the host hierarchy + per-level omega/invdiag for an oracle on the SAME operators.
 # coarse_storage (default T) sets precision of levels 2..M + coarsest buffers; level 1 (A_0) is ALWAYS at T.
 # Operators are built in T (accurate host RAP), then each level's device arrays are downcast to its target type.
-function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2,
+function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2, sweeps=Sweeps(pre, post),
                       omega_nominal=4/3, max_coarse::Integer=64, fused_top::Integer=0,
                       coarse_max_rows::Integer=512, scale_correction::Bool=false,
                       coarse_storage=nothing)
@@ -307,7 +307,7 @@ function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int
                    dev(zeros(TC, coarse_n)), dev(zeros(TC, coarse_n)), Ref{Any}(coarse_inv),
                    rhs_h, x_h, rhs_hT, x_hT,
                    Vector{Int32}(cps[1]), dev(cps[1]), dev(zeros(T, n)),
-                   n, pre, post, T(omega_nominal), backend, fused_top, Int(coarse_max_rows), scale_correction,
+                   n, sweeps, T(omega_nominal), backend, fused_top, Int(coarse_max_rows), scale_correction,
                    Ref{Any}(nothing), n, length(_nzval(Am)), _is_symmetric(Am), 0.0, 256)
     return (st=st, operators=operators, Ps=Ps, omegas=omegas, invdiags=invdiags_nat,
             coarse_fac=coarse_fac, T=T, A_perms=A_perms, pvms=pvms, aos=aos, cps=cps,
@@ -402,11 +402,11 @@ function matrix_free_cycle!(st::MatrixFreeHierarchy, rhs_dev)
         lv = st.levels[l]
         _fill_device!(bk, lv.x, zero(T))
         if is_fused_level(st, l)
-            smooth_fused_level!(st, l, lv.rhs, st.pre, cy, cz, bk, wg)
+            smooth_fused_level!(st, l, lv.rhs, _pre_sweeps(st.sweeps, l), cy, cz, bk, wg)
             apply_fused_operator!(lv.r, st, l, lv.x, cy, cz, bk, wg)
             _launch_amg_kernel!(bk, wg, _amg_residual_in_place_kernel!, lv.n, lv.r, lv.rhs)  # lv.r = rhs - A_l x
         else
-            smooth_level!(lv, lv.rhs, st.pre, bk, wg)
+            smooth_level!(lv, lv.rhs, _pre_sweeps(st.sweeps, l), bk, wg)
             rp, cv, nz = _rowptr(lv.A), _colval(lv.A), _nzval(lv.A)
             _launch_amg_kernel!(bk, wg, _amg_csr_residual_kernel!, lv.n, lv.r, rp, cv, nz, lv.x, lv.rhs)
         end
@@ -432,9 +432,9 @@ function matrix_free_cycle!(st::MatrixFreeHierarchy, rhs_dev)
         post_rhs = l == 1 ? lv.rhs : lv.r
         if is_fused_level(st, l)
             copyto!(lv.tmp, post_rhs)  # smooth_fused_level! uses lv.r as scratch; avoid aliasing
-            smooth_fused_level!(st, l, lv.tmp, st.post, cy, cz, bk, wg)
+            smooth_fused_level!(st, l, lv.tmp, _post_sweeps(st.sweeps, l), cy, cz, bk, wg)
         else
-            smooth_level!(lv, post_rhs, st.post, bk, wg)
+            smooth_level!(lv, post_rhs, _post_sweeps(st.sweeps, l), bk, wg)
         end
     end
     KernelAbstractions.synchronize(bk)

@@ -497,35 +497,24 @@ function _chebyshev_sweeps!(lv::MatrixFreeLevel, s::Chebyshev, rhs, k, r, bk, wg
     return lv.x
 end
 
-# Gauss-Seidel/SOR sweeps run on the host over stored (CPU) levels
+# Gauss-Seidel/SOR sweeps run on the host over stored (CPU) levels, through the stored hierarchy's sweeps
 function _mf_smooth!(s::SweepSmoother, st, l, rhs, k, cy, cz, bk, wg)
     lv = st.levels[l]
     order, omega = _sweep_order(s), eltype(lv.x)(_sweep_omega(s))
+    diagonal = _StoredDiagonal(_nzval(lv.A), lv.diag_index)
     for _ in 1:k
-        _mf_sweep!(order, lv.x, lv.A, rhs, lv.invdiag, omega)
+        _apply_sweep!(order, lv.x, lv.A, rhs, diagonal, omega)
     end
     return lv.x
 end
 
-function _mf_sweep_row!(x, rp, cv, nz, b, invdiag, omega, i)
-    T = eltype(x)
-    sigma = zero(T)
-    @inbounds for p in rp[i]:(rp[i + 1] - 1)
-        sigma += nz[p] * x[cv[p]]
-    end
-    @inbounds x[i] += omega * invdiag[i] * (b[i] - sigma)
+# aᵢᵢ read through the level's diagonal positions; a missing diagonal reads as zero, which the sweep skips
+struct _StoredDiagonal{V,I}
+    nzval::V
+    index::I
 end
-function _mf_sweep!(::_Forward, x, A, b, invdiag, omega)
-    rp, cv, nz = _rowptr(A), _colval(A), _nzval(A)
-    for i in 1:_m(A); _mf_sweep_row!(x, rp, cv, nz, b, invdiag, omega, i); end
-    return x
-end
-function _mf_sweep!(::_Symmetric, x, A, b, invdiag, omega)
-    _mf_sweep!(_Forward(), x, A, b, invdiag, omega)
-    rp, cv, nz = _rowptr(A), _colval(A), _nzval(A)
-    for i in _m(A):-1:1; _mf_sweep_row!(x, rp, cv, nz, b, invdiag, omega, i); end
-    return x
-end
+Base.@propagate_inbounds Base.getindex(d::_StoredDiagonal, i) =
+    (p = d.index[i]; iszero(p) ? zero(eltype(d.nzval)) : d.nzval[p])
 
 # GAMG scale_correction up-sweep: x += sf·c with sf=(r_l·c)/(c·Ac) instead of plain x += P·xc.
 # r_l = lv.r from the down-sweep is still valid (lv.x untouched since), so no residual recompute is paid.

@@ -50,6 +50,10 @@ _legacy_coarse(cs::AbstractAMGCoarseSolve) = cs
 _legacy_coarse(::CPU) = Direct(max_rows=0)
 _legacy_coarse(::KernelAbstractions.GPU) = Iterative()
 
+# earlier fuse_levels=n applied n - 1 coarse levels through the finer matrix
+_legacy_fuse(::Nothing, fuse) = fuse
+_legacy_fuse(n, fuse) = max(n - 1, 0)
+
 # AMG(...) with earlier keywords: map to the current ones
 function _legacy_amg(coarsening, smoother, sweeps, coarsest, refresh, native, legacy)
     kw = Dict{Symbol,Any}(pairs(legacy))
@@ -66,7 +70,7 @@ function _legacy_amg(coarsening, smoother, sweeps, coarsest, refresh, native, le
     refresh = pop!(kw, :coarse_refresh_interval, refresh)
     coarsest = pop!(kw, :max_coarse_rows, coarsest)
     native = NativeAMG(coarse=_legacy_coarse(pop!(kw, :coarse_solve, native.coarse)),
-        scale_correction=pop!(kw, :scale_correction, native.scale_correction), fuse=pop!(kw, :fuse_levels, native.fuse))
+        scale_correction=pop!(kw, :scale_correction, native.scale_correction), fuse=_legacy_fuse(pop!(kw, :fuse_levels, nothing), native.fuse))
     foreach(k -> pop!(kw, k, nothing), (:min_coarse_rows, :max_levels, :cycle))
     isempty(kw) || throw(ArgumentError("unknown AMG keywords: $(join(keys(kw), ", "))"))
     amg = AMG(coarsening; smoother, sweeps, coarsest, refresh, native)

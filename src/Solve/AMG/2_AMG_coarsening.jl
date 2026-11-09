@@ -460,10 +460,13 @@ end
 
 # pairing weight factor per matrix entry: couplings across faces facing y and z count 1% and 2% more, so
 # equal couplings (uniform cells) pair in one fixed direction however the cells are numbered
-function _pairwise_bias(A, mesh)
-    ranges = Array(mesh.cell_faces_range)
+_pairwise_bias(A, mesh::AbstractMesh) =
+    _pairwise_bias(A, mesh.cell_faces_range, mesh.cell_faces, mesh.cell_neighbours, mesh.face_normal)
+_pairwise_bias(A, _) = nothing
+function _pairwise_bias(A, cell_faces_range, cell_faces, cell_neighbours, face_normal)
+    ranges = Array(cell_faces_range)
     length(ranges) == _m(A) || return nothing
-    faces, nbrs, normals = Array(mesh.cell_faces), Array(mesh.cell_neighbours), Array(mesh.face_normal)
+    faces, nbrs, normals = Array(cell_faces), Array(cell_neighbours), Array(face_normal)
     rowptr, colval = _rowptr(A), _colval(A)
     T = eltype(_nzval(A))
     bias = ones(T, length(colval))
@@ -476,7 +479,6 @@ function _pairwise_bias(A, mesh)
     end
     return bias
 end
-_pairwise_bias(A, ::Nothing) = nothing
 
 # bias of the coarse matrix Ac: each coarse coupling keeps the |a|-weighted mean bias of the fine couplings it sums
 _coarse_pairwise_bias(A, ::Nothing, agg, Ac) = nothing

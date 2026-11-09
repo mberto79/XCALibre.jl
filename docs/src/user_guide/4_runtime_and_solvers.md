@@ -124,7 +124,7 @@ On a distributed mesh `AMG(...)` runs as PETSc's GAMG with its settings translat
 
 What differs from the native AMG:
 
-- GAMG builds its aggregates with its own (MIS) algorithm, not pairwise, so hierarchies and iteration counts are close, not identical.
+- GAMG builds its aggregates with its own (MIS) algorithm, not pairwise, so `Pairwise(merges)` is not used and hierarchies and iteration counts are close, not identical.
 - `Jacobi()` damps each level by `weight/λmax` natively; PETSc uses one scale, `weight/2`, exact for `λmax ≈ 2`.
 - Between refreshes PETSc applies the whole stored preconditioner, while the native AMG updates its finest level every solve.
 - `NativeAMG` settings are not used; when they differ from the defaults one info message lists them.

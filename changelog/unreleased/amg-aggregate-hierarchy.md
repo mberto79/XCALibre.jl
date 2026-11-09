@@ -1,3 +1,5 @@
-* changed: `AMG(Pairwise())` keeps transfers as aggregate lists instead of sparse matrices on every backend: 1.5-1.65× faster solves with half the hierarchy memory on 3D Poisson matrices.
-* changed: `NativeAMG(fuse=n)` counts the coarse levels applied through the finer matrix (was `n - 1`), on CPU and GPU, with `Jacobi()` or `Chebyshev()`.
-* changed: `AMG()` defaults to `Pairwise(2)`, and equal couplings pair across faces facing z, then y, then x, whatever the cell numbering: 6.5 s instead of 12.8 s for 100 SIMPLE iterations on a 192k-cell hex mesh, 8 threads.
+* changed: `AMG(Pairwise())` keeps transfers between levels as aggregate lists instead of sparse matrices, on every backend.
+* changed: `Pairwise()` pairs equal couplings across faces facing z, then y, then x, whatever the cell numbering.
+* breaking: `NativeAMG(fuse=n)` now counts the coarse levels applied through the finer matrix (was `n - 1`).
+* breaking: `NativeAMG(fuse)` with a coarsening other than `Pairwise()`, or a smoother other than `Jacobi()` or `Chebyshev()`, now throws.
+* breaking: `Pairwise()` defaults to `merges=2` (was 1).

@@ -350,9 +350,9 @@ end
         end
         A = SV._amg_matrix(SparseMatricesCSR.sparsecsr(I1, J1, V1, n^2, n^2))
         lens = cumsum(vcat(0, length.(nbrs)))
-        mesh = (cell_faces_range=[(lens[a] + 1):lens[a + 1] for a in 1:n^2], cell_faces=reduce(vcat, fids),
-            cell_neighbours=reduce(vcat, nbrs), face_normal=normals)
-        bias = SV._pairwise_bias(A, mesh)
+        bias = SV._pairwise_bias(A, [(lens[a] + 1):lens[a + 1] for a in 1:n^2], reduce(vcat, fids),
+            reduce(vcat, nbrs), normals)
+        @test SV._pairwise_bias(A, ()) === nothing
         pairs, np = SV._pairwise_aggregates(A, 1, bias)
         @test np == n^2 ÷ 2 && all(g -> allequal(first.(xy[findall(==(g), pairs)])), 1:np)
         agg, nc = SV._pairwise_aggregates(A, 2, bias)

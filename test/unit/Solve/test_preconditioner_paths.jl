@@ -137,7 +137,7 @@ end
     @test AMGSolver === Richardson
     a = @test_logs (:warn, r"is deprecated") match_mode=:any AMG(coarsening=Pairwise(), pre_sweeps=1,
         coarse_refresh_interval=3, max_coarse_rows=100, fuse_levels=1, coarse_solve=CPU())
-    @test a.sweeps == Sweeps(1, 2) && a.refresh == 3 && a.coarsest == 100 && a.native.fuse == 1 && a.native.coarse == Direct(max_rows=0)
+    @test a.sweeps == Sweeps(1, 2) && a.refresh == 3 && a.coarsest == 100 && a.native.fuse == 0 && a.native.coarse == Direct(max_rows=0)
     @test_throws r"precision=MixedF32" AMG(coarse_storage=Float32)
     @test (@test_logs (:warn, r"Geometric\(\) is deprecated") Geometric(merge_levels=2)) == Pairwise(2)
     @test (@test_logs (:warn,) AMGJacobi(omega=1.0)) == Jacobi(weight=1.0)

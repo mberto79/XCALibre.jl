@@ -352,7 +352,7 @@ SV.amg_solve!(ws_rs_solve, ws_rs_solve.hierarchy, solver_rs, ws_rs_solve.hierarc
 @test norm(b - Array(parent(A)) * x_rs) / norm(b) < 1e-8
 @test ws_rs_solve.iterations > 0
 
-# Pairwise (OpenFOAM-style) agglomeration: aggregate-list hierarchy with a permuted finest level,
+# Pairwise agglomeration: aggregate-list hierarchy with a permuted finest level,
 # so the outer operator is the given matrix, not levels[1].A; it always coarsens at least once
 solver_geo = AMG(Pairwise())
 x_geo = zeros(eltype(b), length(b))

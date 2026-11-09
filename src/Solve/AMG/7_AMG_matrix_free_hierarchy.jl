@@ -241,10 +241,10 @@ end
 
 function _mf_coarse!(st, c::_MFSmoothedCoarse)
     lv = c.level; bk = st.backend
-    lv.rhs .= st.coarse_rhs
+    lv.rhs === st.coarse_rhs || (lv.rhs .= st.coarse_rhs)
     _fill_device!(bk, lv.x, zero(eltype(lv.x)))
     _mf_coarse_smooth!(c.smoother, lv, c.sweeps, bk)
-    st.coarse_x .= lv.x
+    lv.x === st.coarse_x || (st.coarse_x .= lv.x)
 end
 
 _mf_coarse_smooth!(::Jacobi, lv, k, bk) = smooth_level!(lv, lv.rhs, k, bk, 256)
@@ -259,17 +259,20 @@ end
 
 function _mf_coarse!(st, c::_MFKrylovCoarse)
     lv = c.level
-    lv.rhs .= st.coarse_rhs
+    lv.rhs === st.coarse_rhs || (lv.rhs .= st.coarse_rhs)
     _apply_coarse_direct!(lv.x, c.krylov, lv.rhs)
-    st.coarse_x .= lv.x
+    lv.x === st.coarse_x || (st.coarse_x .= lv.x)
 end
 
-# a coarsest level sharing the refreshed coarsest CSR, for smoother and Krylov coarse solves
-function _mf_coarsest_level(A, backend, ::Type{T}, smoother) where {T}
+# a coarsest level sharing the refreshed coarsest CSR, for smoother and Krylov coarse solves; its x and rhs
+# are st.coarse_x/coarse_rhs when the precisions match (refresh uses rhs as scratch, never mid-cycle)
+function _mf_coarsest_level(A, backend, ::Type{T}, smoother, st) where {T}
     dev(v) = backend isa CPU ? copy(v) : Adapt.adapt(backend, v)
     n = _m(A); di = dev(_diag_index(AMGMatrixCSR(Array(_rowptr(A)), Array(_colval(A)), Array(_nzval(A)), n, n)))
     z() = dev(zeros(T, n)); e = dev(Int32[])
-    return MatrixFreeLevel(A, z(), di, one(T), one(T), e, dev(T[]), e, e, n, 0, z(), z(), z(), z(), dev(T[]),
+    own(v) = eltype(v) === T ? v : z()
+    return MatrixFreeLevel(A, z(), di, one(T), one(T), e, dev(T[]), e, e, n, 0, own(st.coarse_x), z(), z(),
+        own(st.coarse_rhs), dev(T[]),
         smoother isa Chebyshev ? z() : dev(T[]))
 end
 
@@ -277,13 +280,13 @@ end
 _mf_coarse_solver(cs, st, A, backend) = _mf_coarse_solver(cs, st, A, backend, backend isa CPU || cs isa Direct)
 _mf_coarse_solver(cs, st, A, backend, direct::Bool) = direct ? st.coarse_inv[] : _mf_device_coarse(cs, st, A, backend)
 function _mf_device_coarse(cs::Smoothed, st, A, backend)
-    lv = _mf_coarsest_level(A, backend, eltype(_nzval(A)), cs.smoother)
+    lv = _mf_coarsest_level(A, backend, eltype(_nzval(A)), cs.smoother, st)
     c = _MFSmoothedCoarse(lv, cs.smoother, cs.sweeps, similar(lv.x))
     _refresh_mf_coarse!(c, backend, false)
     return c
 end
 function _mf_device_coarse(cs::Iterative, st, A, backend)
-    lv = _mf_coarsest_level(A, backend, eltype(_nzval(A)), Jacobi())
+    lv = _mf_coarsest_level(A, backend, eltype(_nzval(A)), Jacobi(), st)
     _refresh_mf_coarse!(lv, backend)
     op = _AMGCoarseOp(_rowptr(A), _colval(A), _nzval(A), lv.n, lv.n, backend, 256)
     ws = _workspace(cs.solver, lv.rhs)

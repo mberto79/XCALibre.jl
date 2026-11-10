@@ -277,7 +277,8 @@ function _mf_coarsest_level(A, backend, ::Type{T}, smoother, st) where {T}
 end
 
 # a CPU backend always solves the coarsest level directly
-_mf_coarse_solver(cs, st, A, backend) = _mf_coarse_solver(cs, st, A, backend, backend isa CPU || cs isa Direct)
+_mf_coarse_direct(cs, backend) = backend isa CPU || cs isa Direct
+_mf_coarse_solver(cs, st, A, backend) = _mf_coarse_solver(cs, st, A, backend, _mf_coarse_direct(cs, backend))
 _mf_coarse_solver(cs, st, A, backend, direct::Bool) = direct ? st.coarse_inv[] : _mf_device_coarse(cs, st, A, backend)
 function _mf_device_coarse(cs::Smoothed, st, A, backend)
     lv = _mf_coarsest_level(A, backend, eltype(_nzval(A)), cs.smoother, st)
@@ -334,7 +335,8 @@ end
 function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int=2, post::Int=2, sweeps=Sweeps(pre, post),
                       omega_nominal=4/3, max_coarse::Integer=64, fused_top::Integer=0,
                       coarse_max_rows::Integer=512, scale_correction::Bool=false,
-                      coarse_storage=nothing, smoother=Jacobi(weight=omega_nominal), mesh=nothing)
+                      coarse_storage=nothing, smoother=Jacobi(weight=omega_nominal), mesh=nothing,
+                      coarse_direct::Bool=true)
     Am = _amg_matrix(A); T = eltype(_nzval(Am))
     TC = coarse_storage === nothing ? T : coarse_storage  # levels >=2 + coarsest storage type
     operators, Ps, aggs = build_galerkin_operators(Am, merge_levels, max_coarse, _pairwise_bias(Am, mesh))
@@ -384,9 +386,11 @@ function build_matrix_free_hierarchy(A, merge_levels::Integer, backend; pre::Int
 
     coarse_n = _m(operators[L])
     coarse_csc = _csr_to_csc(operators[L])
-    coarse_fac = lu(coarse_csc)
-    coarse_inv = _build_coarse_dense_inv(coarse_csc, backend, TC, coarse_max_rows)
-    rhs_h, x_h, rhs_hT, x_hT = _coarse_host_buffers(coarse_fac, TC, coarse_n)
+    # a device coarse solve (coarse_direct=false) never uses the host factor: a 1×1 placeholder of the same
+    # type keeps the hierarchy's concrete type, and the host buffers stay empty, as refresh leaves them
+    coarse_fac = coarse_direct ? lu(coarse_csc) : lu(sparse([1], [1], [one(T)], 1, 1))
+    coarse_inv = coarse_direct ? _build_coarse_dense_inv(coarse_csc, backend, TC, coarse_max_rows) : nothing
+    rhs_h, x_h, rhs_hT, x_hT = _coarse_host_buffers(coarse_fac, TC, coarse_direct ? coarse_n : 0)
     n = _m(Am)
     st = MatrixFreeHierarchy(levels, Ref{Any}(coarse_fac), coarse_n,
                    dev(zeros(TC, coarse_n)), dev(zeros(TC, coarse_n)), Ref{Any}(coarse_inv),

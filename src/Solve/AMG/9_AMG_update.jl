@@ -181,7 +181,7 @@ function _build_matrix_free_workspace!(workspace::AMGWorkspace, A, solver::AMG, 
                           max_coarse=solver.coarsest, fused_top=solver.native.fuse,
                           coarse_max_rows=coarse isa Direct ? coarse.max_rows : 0,
                           scale_correction=solver.native.scale_correction,
-                          coarse_storage=TS, mesh)
+                          coarse_storage=TS, mesh, coarse_direct=_mf_coarse_direct(coarse, backend))
     st = handle.st
     st.refresh_plan[] = build_refresh_plan(handle)
     st.coarse_inv[] = _mf_coarse_solver(coarse, st, st.refresh_plan[].coarsest_csr, backend)

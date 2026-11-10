@@ -139,12 +139,17 @@ end
 _sor_order(::_Forward) = (mg_levels_pc_sor_local_forward=true,)
 _sor_order(::_Symmetric) = (mg_levels_pc_sor_local_symmetric=true,)
 
-# NativeAMG settings changed from their defaults, which PETSc does not use
+# settings changed from their defaults that PETSc does not use: NativeAMG and Pairwise(merges)
 function _native_only(a::AMG)
     n, d = a.native, NativeAMG()
     changed = ["$k=$(getfield(n, k))" for k ∈ fieldnames(NativeAMG) if getfield(n, k) != getfield(d, k)]
-    isempty(changed) ? "" : "NativeAMG(" * join(changed, ", ") * ")"
+    unused = isempty(changed) ? String[] : ["NativeAMG(" * join(changed, ", ") * ")"]
+    _pairwise_unused(a.coarsening, unused)
+    join(unused, " or ")
 end
+_pairwise_unused(c, unused) = unused
+_pairwise_unused(c::Pairwise, unused) =
+    c.merges == Pairwise().merges ? unused : push!(unused, "Pairwise(merges=$(c.merges))")
 
 # hypre's options for BoomerAMG
 _lower_hypre(b::BoomerAMG) = (pc_hypre_boomeramg_strong_threshold=b.threshold,

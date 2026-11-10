@@ -361,3 +361,62 @@ end
         @test all(g -> (c = findall(==(g), agg); length(c) == 4 && all(e -> e[2] - e[1] == 1, spans(c))), 1:nc)
     end
 end
+
+# uniform 3D cells with Pairwise(2): the first level pairs across z then y faces into 2×2 slabs, and the
+# first pass of the next level, through the coarse bias, pairs the slabs across x into 2×2×2 boxes
+@testset "Pairwise face-normal bias builds 2×2×2 boxes in 3D" begin
+    n = 8; N = n^3
+    for id in ((x, y, z) -> x + (y - 1) * n + (z - 1) * n^2, (x, y, z) -> z + (y - 1) * n + (x - 1) * n^2)
+        xyz = Vector{NTuple{3,Int}}(undef, N)
+        foreach(c -> xyz[id(c...)] = c, Iterators.product(1:n, 1:n, 1:n))
+        nbrs = [Int[] for _ in 1:N]; fids = [Int[] for _ in 1:N]; normals = NTuple{3,Float64}[]
+        for c in xyz, d in ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+            e = c .+ d
+            any(>(n), e) && continue
+            push!(normals, Float64.(d))
+            a, b = id(c...), id(e...)
+            push!(nbrs[a], b); push!(fids[a], length(normals)); push!(nbrs[b], a); push!(fids[b], length(normals))
+        end
+        I1, J1, V1 = Int[], Int[], Float64[]
+        for a in 1:N
+            push!(I1, a); push!(J1, a); push!(V1, 6)
+            foreach(b -> (push!(I1, a); push!(J1, b); push!(V1, -1)), nbrs[a])
+        end
+        A = SV._amg_matrix(SparseMatricesCSR.sparsecsr(I1, J1, V1, N, N))
+        lens = cumsum(vcat(0, length.(nbrs)))
+        bias = SV._pairwise_bias(A, [(lens[a] + 1):lens[a + 1] for a in 1:N], reduce(vcat, fids),
+            reduce(vcat, nbrs), normals)
+        # extent of each aggregate along x, y, z (0 = one cell, 1 = two cells)
+        extent(c) = ntuple(k -> -(reverse(extrema(getindex.(xyz[c], k)))...), 3)
+        boxes(agg, nc, size, ext) =
+            all(g -> (c = findall(==(g), agg); length(c) == size && extent(c) == ext), 1:nc)
+
+        ops, _, aggs = SV.build_galerkin_operators(A, 2, 1, bias)
+        agg1 = aggs[1]; nc1 = maximum(agg1)
+        @test nc1 == N ÷ 4 && boxes(agg1, nc1, 4, (0, 1, 1))
+        bias2 = SV._coarse_pairwise_bias(A, bias, agg1, ops[2])
+        pairs2, np2 = SV._pairwise_aggregates(ops[2], 1, bias2)
+        @test np2 == N ÷ 8 && boxes(pairs2[agg1], np2, 8, (1, 1, 1))
+        # the same boxes form from three pairing passes on the finest level
+        agg3, nc3 = SV._pairwise_aggregates(A, 3, bias)
+        @test nc3 == N ÷ 8 && boxes(agg3, nc3, 8, (1, 1, 1))
+    end
+end
+
+# Smoothed/Iterative coarse solves on a GPU skip the host factorisation at build, as refresh does;
+# forced here on the CPU, where the build otherwise solves the coarsest level directly
+@testset "Pairwise build without a host coarse factor" begin
+    A, b = poisson2d(12)
+    for cs in (Smoothed(), Iterative())
+        h0 = SV.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=8)
+        h = SV.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=8, coarse_direct=false)
+        st = h.st
+        @test typeof(st) == typeof(h0.st)
+        @test size(st.coarse_fac[]) == (1, 1) && isempty(st.coarse_rhs_h) && st.coarse_n == h0.st.coarse_n
+        st.refresh_plan[] = SV.build_refresh_plan(h)
+        st.coarse_inv[] = SV._mf_device_coarse(cs, st, st.refresh_plan[].coarsest_csr, CPU())
+        SV.refresh_matrix_free_hierarchy!(st, st.refresh_plan[], SV._amg_matrix(A); coarse=true)
+        @test all(isfinite, SV.matrix_free_cycle!(st, b[st.cell_perm]))
+    end
+    @test SV._mf_coarse_direct(Smoothed(), CPU()) && SV._mf_coarse_direct(Direct(), CPU())
+end

@@ -103,6 +103,11 @@ end
     # NativeAMG settings changed from their defaults are reported, not refused
     @test SV._native_only(AMG()) == ""
     @test occursin("fuse", SV._native_only(AMG(native=NativeAMG(fuse=1))))
+    # GAMG forms its own aggregates, so a non-default Pairwise(merges) is reported too
+    @test SV._native_only(AMG(Pairwise(2))) == ""
+    @test SV._native_only(AMG(Pairwise(3))) == "Pairwise(merges=3)"
+    @test SV._native_only(AMG(Pairwise(1); native=NativeAMG(fuse=1))) ==
+        "NativeAMG(fuse=1) or Pairwise(merges=1)"
 end
 
 @testset "BoomerAMG" begin

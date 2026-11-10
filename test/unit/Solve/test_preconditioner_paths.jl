@@ -84,7 +84,8 @@ end
     @test isempty(refused(AMG(smoother=Chebyshev(), sweeps=1)))
     @test isempty(refused(AMG(smoother=GaussSeidel())))
     @test isempty(refused(AMG(sweeps=(1, 2))))
-    for a ∈ (AMG(RugeStuben()), AMG(Pairwise(2)), AMG(SmoothedAggregation(weight=1.0)),
+    @test isempty(refused(AMG(Pairwise(3))))
+    for a ∈ (AMG(RugeStuben()), AMG(SmoothedAggregation(weight=1.0)),
             AMG(smoother=Chebyshev(), sweeps=2), AMG(smoother=SSOR(1.2)), AMG(sweeps=Sweeps(1, 1; grow=1)))
         @test length(refused(a)) == 1
     end
@@ -102,6 +103,11 @@ end
     # NativeAMG settings changed from their defaults are reported, not refused
     @test SV._native_only(AMG()) == ""
     @test occursin("fuse", SV._native_only(AMG(native=NativeAMG(fuse=1))))
+    # GAMG forms its own aggregates, so a non-default Pairwise(merges) is reported too
+    @test SV._native_only(AMG(Pairwise(2))) == ""
+    @test SV._native_only(AMG(Pairwise(3))) == "Pairwise(merges=3)"
+    @test SV._native_only(AMG(Pairwise(1); native=NativeAMG(fuse=1))) ==
+        "NativeAMG(fuse=1) or Pairwise(merges=1)"
 end
 
 @testset "BoomerAMG" begin
@@ -136,7 +142,7 @@ end
     @test AMGSolver === Richardson
     a = @test_logs (:warn, r"is deprecated") match_mode=:any AMG(coarsening=Pairwise(), pre_sweeps=1,
         coarse_refresh_interval=3, max_coarse_rows=100, fuse_levels=1, coarse_solve=CPU())
-    @test a.sweeps == Sweeps(1, 2) && a.refresh == 3 && a.coarsest == 100 && a.native.fuse == 1 && a.native.coarse == Direct(max_rows=0)
+    @test a.sweeps == Sweeps(1, 2) && a.refresh == 3 && a.coarsest == 100 && a.native.fuse == 0 && a.native.coarse == Direct(max_rows=0)
     @test_throws r"precision=MixedF32" AMG(coarse_storage=Float32)
     @test (@test_logs (:warn, r"Geometric\(\) is deprecated") Geometric(merge_levels=2)) == Pairwise(2)
     @test (@test_logs (:warn,) AMGJacobi(omega=1.0)) == Jacobi(weight=1.0)

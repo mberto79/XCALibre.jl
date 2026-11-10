@@ -68,7 +68,7 @@ SolverSetup(
 `AMG(coarsening; smoother, sweeps, coarsest, refresh, native)`:
 
 - `coarsening`: how cells are grouped into coarse levels.
-  - `Pairwise(merges=1)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level. Piecewise-constant transfer between levels. Cheap to build, light on memory and robust for non-symmetric matrices.
+  - `Pairwise(merges=2)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level, so each level has about a quarter of the rows of the one above. Couplings across faces facing y and z count 1% and 2% more, so equal couplings, as between uniform cells, pair in one fixed direction however the cells are numbered, building compact box-shaped aggregates. Transfers between levels are piecewise constant and kept as lists of each aggregate's cells, never as sparse matrices, with each level's cells renumbered so an aggregate's cells are contiguous. Cheap to build, light on memory and robust for non-symmetric matrices.
   - `SmoothedAggregation(; threshold=0.0)`: larger aggregates with a smoothed interpolation; fewer iterations on hard symmetric problems at a higher setup and memory cost.
   - `RugeStuben(; threshold=0.25)`: classical AMG, serial meshes only (on a distributed mesh use `BoomerAMG()`).
 - `smoother`: `Jacobi()` (default), `Chebyshev(; degree=3)`, and on the CPU `GaussSeidel()`, `SymGaussSeidel()`, `SOR(ω)`, `SSOR(ω)`. `Jacobi(weight=4/3)` relaxes each level by `weight/λmax`, with λmax the largest eigenvalue of D⁻¹A there; `SOR` and `SSOR` take the relaxation factor `ω` directly.
@@ -105,7 +105,7 @@ SolverSetup(
   - `Iterative(solver=Bicgstab(); rtol=1e-2, itmax=50)`: a Jacobi-preconditioned Krylov solve on the device. It depends on the right-hand side, so it needs `solver = Richardson()`.
   - On a CPU backend every choice is a `Direct()` solve.
 - `scale_correction`: scales each coarse correction by `(r·c)/(c·Ac)`, the factor that minimises the error in the energy norm.
-- `fuse`: on a GPU with `Pairwise()`, `Jacobi()` and `Direct()`, `fuse = 1` keeps the transfers between levels as aggregate lists instead of sparse matrices (less memory, no extra work), and `fuse = n > 1` also applies the top `n - 1` coarse levels through the finer matrix instead of storing them, at the cost of extra matrix products per V-cycle; worthwhile when the hierarchy does not fit on the device. A CPU ignores it.
+- `fuse`: with `Pairwise()`, the number of coarse levels below the finest that are not stored but applied through the finer matrix. Saves memory at the cost of extra matrix products per V-cycle; worthwhile when the hierarchy does not fit on a GPU. Needs `Jacobi()` or `Chebyshev()`.
 
 ```julia
 SolverSetup(solver = Richardson(), preconditioner = AMG(coarsest = 8000,
@@ -124,12 +124,12 @@ On a distributed mesh `AMG(...)` runs as PETSc's GAMG with its settings translat
 
 What differs from the native AMG:
 
-- GAMG builds its aggregates with its own (MIS) algorithm, not pairwise, so hierarchies and iteration counts are close, not identical.
+- GAMG builds its aggregates with its own (MIS) algorithm, not pairwise, so `Pairwise(merges)` is not used and hierarchies and iteration counts are close, not identical.
 - `Jacobi()` damps each level by `weight/λmax` natively; PETSc uses one scale, `weight/2`, exact for `λmax ≈ 2`.
 - Between refreshes PETSc applies the whole stored preconditioner, while the native AMG updates its finest level every solve.
 - `NativeAMG` settings are not used; when they differ from the defaults one info message lists them.
 
-Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Pairwise(merges > 1)`, `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
+Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
 
 The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 

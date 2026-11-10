@@ -31,7 +31,7 @@ end
     @inbounds x[i] += omega * invdiag[i] * residual[i]
 end
 
-function _amg_axpy!(hierarchy::AMGHierarchy, x, a, y)
+function _amg_axpy!(hierarchy::AbstractAMGHierarchy, x, a, y)
     _launch_amg_kernel!(hierarchy, _amg_axpy_kernel!, length(x), x, a, y)
     return x
 end
@@ -95,7 +95,7 @@ end
     end
 end
 
-function _fill_amg!(hierarchy::AMGHierarchy, x, value)
+function _fill_amg!(hierarchy::AbstractAMGHierarchy, x, value)
     _launch_amg_kernel!(hierarchy, _amg_fill_kernel!, length(x), x, value)
     return x
 end

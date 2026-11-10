@@ -60,8 +60,8 @@ solvers = (
             sweeps=10,
             coarsest=20000,
             # precision=MixedF32() in SolverSetup stores the coarse levels in Float32
-            # NativeAMG(fuse=1) on a GPU (Pairwise() and Jacobi() only) stores no transfer matrices;
-            # fuse=2 also applies the top coarse level through the finer matrix: less memory, more work
+            # with Pairwise(), NativeAMG(fuse=1) applies the top coarse level through the finer matrix
+            # instead of storing it: less memory, more work per V-cycle
             native=NativeAMG(coarse=Smoothed(Jacobi(); sweeps=30))  # default: Direct()
         ),
         convergence=1e-7,

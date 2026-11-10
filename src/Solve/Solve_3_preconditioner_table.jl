@@ -113,10 +113,8 @@ function _gamg_coarsening(c::SmoothedAggregation, refuse)
     isnothing(c.near_nullspace) || refuse("SmoothedAggregation(near_nullspace) has no PETSc counterpart")
     (pc_gamg_agg_nsmooths=1, pc_gamg_threshold=c.threshold)
 end
-function _gamg_coarsening(c::Pairwise, refuse)
-    c.merges == 1 || refuse("Pairwise(merges > 1) has no PETSc counterpart")
-    (pc_gamg_agg_nsmooths=0,)
-end
+# GAMG forms its own (larger than pairwise) aggregates, so merges sets nothing there
+_gamg_coarsening(c::Pairwise, refuse) = (pc_gamg_agg_nsmooths=0,)
 _gamg_coarsening(::RugeStuben, refuse) =
     (refuse("RugeStuben() has no PETSc counterpart; use BoomerAMG() for classical AMG on a distributed mesh"); (;))
 
@@ -141,12 +139,17 @@ end
 _sor_order(::_Forward) = (mg_levels_pc_sor_local_forward=true,)
 _sor_order(::_Symmetric) = (mg_levels_pc_sor_local_symmetric=true,)
 
-# NativeAMG settings changed from their defaults, which PETSc does not use
+# settings changed from their defaults that PETSc does not use: NativeAMG and Pairwise(merges)
 function _native_only(a::AMG)
     n, d = a.native, NativeAMG()
     changed = ["$k=$(getfield(n, k))" for k ∈ fieldnames(NativeAMG) if getfield(n, k) != getfield(d, k)]
-    isempty(changed) ? "" : "NativeAMG(" * join(changed, ", ") * ")"
+    unused = isempty(changed) ? String[] : ["NativeAMG(" * join(changed, ", ") * ")"]
+    _pairwise_unused(a.coarsening, unused)
+    join(unused, " or ")
 end
+_pairwise_unused(c, unused) = unused
+_pairwise_unused(c::Pairwise, unused) =
+    c.merges == Pairwise().merges ? unused : push!(unused, "Pairwise(merges=$(c.merges))")
 
 # hypre's options for BoomerAMG
 _lower_hypre(b::BoomerAMG) = (pc_hypre_boomeramg_strong_threshold=b.threshold,

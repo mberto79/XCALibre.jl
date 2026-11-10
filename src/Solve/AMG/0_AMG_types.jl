@@ -70,16 +70,18 @@ Adapt.@adapt_structure Iterative
 # NEW SECTION: coarsening
 
 """
-    Pairwise(merges=1)
+    Pairwise(merges=2)
 
 Pairwise agglomeration: each cell is paired with the neighbour it is most strongly coupled to
-(largest `|aᵢⱼ|`), `merges` times per level, so clusters hold about `2^merges` cells. Transfer
+(largest `|aᵢⱼ|`), `merges` times per level, so clusters hold about `2^merges` cells. Couplings
+across faces facing y and z count 1% and 2% more, so equal couplings pair in one fixed direction
+and uniform cells form box-shaped clusters, however the cells are numbered. Transfer
 between levels is piecewise constant and coarse matrices are Galerkin products. Cheap to set up,
 light on memory and robust for non-symmetric matrices; the default.
 """
 struct Pairwise <: AbstractAMGCoarsening
     merges::Int
-    function Pairwise(merges::Integer=1)
+    function Pairwise(merges::Integer=2)
         merges > 0 || throw(ArgumentError("Pairwise merges must be positive"))
         return new(Int(merges))
     end
@@ -232,10 +234,9 @@ Settings of XCALibre's own AMG (serial meshes) that have no PETSc counterpart:
 
 - `coarse`: coarsest-level solve, `Direct()`, `Smoothed(...)` or `Iterative(...)`
 - `scale_correction`: scale each coarse correction by the energy-optimal factor `(r·c)/(c·Ac)`
-- `fuse`: on a GPU with `Pairwise()`, `Jacobi()` and `Direct()`, `fuse ≥ 1` keeps the transfers between
-  levels as aggregate lists instead of sparse matrices, and `fuse = n > 1` also applies the top `n - 1`
-  coarse levels through the finer matrix instead of storing them; saves memory at the cost of extra
-  matrix products
+- `fuse`: with `Pairwise()`, the number of coarse levels below the finest that are not stored but
+  applied through the finer matrix; saves memory at the cost of extra matrix products per V-cycle.
+  Needs `Jacobi()` or `Chebyshev()`
 """
 struct NativeAMG{CS}
     coarse::CS
@@ -296,6 +297,8 @@ function AMG(coarsening=Pairwise(); smoother=Jacobi(), sweeps=(smoother isa Jaco
         "AMG smoother must be Jacobi(), Chebyshev(), GaussSeidel(), SymGaussSeidel(), SOR() or SSOR()"))
     native isa NativeAMG || throw(ArgumentError("AMG native must be NativeAMG(...)"))
     coarsest > 0 || throw(ArgumentError("AMG coarsest must be positive"))
+    native.fuse == 0 || (coarsening isa Pairwise && smoother isa Union{Jacobi,Chebyshev}) || throw(ArgumentError(
+        "NativeAMG(fuse) needs Pairwise() coarsening and the Jacobi() or Chebyshev() smoother"))
     refresh > 0 || throw(ArgumentError("AMG refresh must be positive"))
     return AMG{typeof(coarsening),typeof(smoother),typeof(native),Float64}(
         coarsening, smoother, Sweeps(sweeps), Int(coarsest), Int(refresh), native)
@@ -521,13 +524,10 @@ function _empty_hierarchy(backend, ::Type{T}, ::Type{TS}=T, ::Type{TI}=Int) wher
     )
 end
 
-# the fused path applies coarse levels through the finer matrix, which only Pairwise + Jacobi supports
-amg_hierarchy_kind(::AMG, ::CPU) = MaterialisedAMG()
-amg_hierarchy_kind(a::AMG, ::KernelAbstractions.GPU) =
-    _fusable(a) ? MatrixFreeAMG() : MaterialisedAMG()
-_fusable(a::AMG) = a.native.fuse >= 1 && a.coarsening isa Pairwise && a.smoother isa Jacobi && a.native.coarse isa Direct
+# Pairwise transfers are aggregate lists, never matrices; other coarsenings store P and R
+amg_hierarchy_kind(a::AMG, backend) = a.coarsening isa Pairwise ? MatrixFreeAMG() : MaterialisedAMG()
 
-_amg_empty_hierarchy(::MaterialisedAMG, backend, ::Type{T}, ::Type{TS}, ::Type{TI}) where {T,TS,TI} =
+_amg_empty_hierarchy(::MaterialisedAMG, backend, ::Type{T}, ::Type{TS}, ::Type{TI}, smoother) where {T,TS,TI} =
     _empty_hierarchy(backend, T, TS, TI)
 
 # the hierarchy stores indices in the equation matrix index type, which the workspace type fixes here;
@@ -542,7 +542,7 @@ function _workspace(amg::AMG, b, ::Type{TI}=Int; solver=Cg()) where {TI<:Integer
     # 50% to the workspace. `similar(x, 0)` keeps the field type concrete.
     bicg_vec() = solver isa Bicgstab ? similar(x) : similar(x, 0)
     return AMGWorkspace(
-        _amg_empty_hierarchy(amg_hierarchy_kind(amg, backend), backend, T, TS, TI),
+        _amg_empty_hierarchy(amg_hierarchy_kind(amg, backend), backend, T, TS, TI, amg.smoother),
         0,
         similar(x),
         similar(x),

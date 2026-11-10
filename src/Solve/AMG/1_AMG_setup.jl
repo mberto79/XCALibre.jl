@@ -710,7 +710,7 @@ end
 function _amg_log_hierarchy(solver::AMG, backend, rows; matrix_free::Bool=false)
     cs = solver.coarsening
     coarsening = cs isa Pairwise ? "Pairwise($(cs.merges))" : string(nameof(typeof(cs)), "()")
-    path = matrix_free ? "fused (fuse=$(solver.native.fuse))" : "stored"
+    path = matrix_free ? "aggregate lists (fuse=$(solver.native.fuse))" : "stored"
     @info "AMG hierarchy" coarsening=coarsening smoother=_smoother_name(solver.smoother) backend=nameof(typeof(backend)) path=path levels=length(rows) rows=join(rows, " -> ")
 end
 

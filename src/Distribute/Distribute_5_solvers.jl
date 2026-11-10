@@ -2,25 +2,19 @@ export DistributedEqn
 
 # serial ModelEquation on the rank-local mesh plus its distributed solver and Partition; the
 # reference cell's local id is cached at construction, 0 when another rank owns it
-struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,V<:AbstractVector,T}
+struct DistributedEqn{E<:ModelEquation,S<:AbstractDistributedSolver,P<:Partition,T}
     eqn::E
     solver::S
     partition::P
     ref_cell::Int
     ref_lid::Int
-    diag::V                   # owned diagonals of the x and y systems, kept for their deferred residuals
     red::Vector{T}            # local (num, den) per component, all-reduced in one call
 end
 DistributedEqn(eqn, solver, partition) = DistributedEqn(eqn, solver, partition, 1,
-    _ref_local(get_phi(eqn).mesh, 1), _diag_store(eqn, partition.n_owned),
-    zeros(eltype(_nzval(_A(eqn))), 2 + 2 * _n_saved(eqn)))
+    _ref_local(get_phi(eqn).mesh, 1), zeros(eltype(_nzval(_A(eqn))), 2 * _n_components(eqn)))
 
-_diag_store(eqn, n) = begin
-    nz = _nzval(_A(eqn))
-    KernelAbstractions.zeros(get_backend(nz), eltype(nz), _n_saved(eqn) * n)
-end
-_n_saved(::ModelEquation{<:VectorModel}) = 2
-_n_saved(_) = 0
+_n_components(::ModelEquation{<:VectorModel}) = 3
+_n_components(_) = 1
 
 # local id of an original global cell id on this rank's owned block, 0 when not owned
 function _ref_local(dm::DistributedMesh, cellID)
@@ -37,13 +31,14 @@ Solve.unwrap_eqn(deqn::DistributedEqn) = deqn.eqn
 
 function Solve.wrap_eqn(eqn, dmesh::DistributedMesh, setup, config;
         petsc_options="", label="")
-    DistributedEqn(eqn, PETScSolver(eqn, dmesh, setup; petsc_options, label), getfield(dmesh, :partition))
+    solver = _distributed_solver(setup.precision, eqn, dmesh, setup, config; petsc_options, label)
+    DistributedEqn(eqn, solver, getfield(dmesh, :partition))
 end
 
 function Solve.solve_equation!(
     deqn::DistributedEqn, phi, phiBCs, solversetup, config; time=nothing, ref=nothing, irelax=nothing)
     eqn = deqn.eqn
-    discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux)
+    discretise!(eqn, phi, config, rho_prev=eqn.model.terms[1].flux, time=time)
     apply_boundary_conditions!(eqn, phiBCs, nothing, time, config)
     _is_pure_laplacian(eqn) && make_symmetric!(eqn, config)
     setReference!(deqn, ref, 1, config)
@@ -53,44 +48,35 @@ function Solve.solve_equation!(
 end
 
 # mirrors serial VectorModel solve with one width-3 exchange after all components: a component's
-# solve reads only owned rows, and the systems differ only on the diagonal (update_equation!
-# restores A0), so the x and y residuals are taken after the exchange against their saved diagonals
+# solve reads only owned rows, and each residual is taken on x₀ (ghosts current) before its solve
 function Solve.solve_equation!(
     deqn::DistributedEqn, psi, psiBCs, solversetup, xdir::XDir, ydir::YDir, zdir::ZDir, config;
     time=nothing)
     eqn = deqn.eqn
-    n = deqn.partition.n_owned
-    discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux)
+    red = deqn.red
+    discretise!(eqn, psi, config, rho_prev=eqn.model.terms[1].flux, time=time)
     update_equation!(eqn, config)
     apply_boundary_conditions!(eqn, psiBCs, xdir, time, config)
     implicit_relaxation_diagdom!(eqn, psi.x.values, solversetup.relax, xdir, config)
+    red[1], red[2] = _local_residual!(deqn, xdir, config)
     _solve_owned!(deqn, psi.x, xdir)
-    _save_diag!(deqn, 0, config)
 
     update_equation!(eqn, config)
     apply_boundary_conditions!(eqn, psiBCs, ydir, time, config)
     implicit_relaxation_diagdom!(eqn, psi.y.values, solversetup.relax, ydir, config)
+    red[3], red[4] = _local_residual!(deqn, ydir, config)
     _solve_owned!(deqn, psi.y, ydir)
 
     is3d = psi.mesh.mesh isa Mesh3
+    red[5], red[6] = zero(eltype(red)), zero(eltype(red))
     if is3d
-        _save_diag!(deqn, n, config)
         update_equation!(eqn, config)
         apply_boundary_conditions!(eqn, psiBCs, zdir, time, config)
         implicit_relaxation_diagdom!(eqn, psi.z.values, solversetup.relax, zdir, config)
+        red[5], red[6] = _local_residual!(deqn, zdir, config)
         _solve_owned!(deqn, psi.z, zdir)
     end
     sync!(psi, psi.mesh, config)
-
-    red = deqn.red
-    red[1], red[2] = _residual_saved!(deqn, xdir, 0, config)
-    if is3d
-        red[3], red[4] = _residual_saved!(deqn, ydir, n, config)
-        red[5], red[6] = _local_residual!(deqn, zdir, config)
-    else
-        red[3], red[4] = _local_residual!(deqn, ydir, config)
-        red[5], red[6] = zero(eltype(red)), zero(eltype(red))
-    end
     _allreduce!(deqn)
     resz = is3d ? _scaled(red[5], red[6]) : zero(_get_float(psi.mesh))
     return _scaled(red[1], red[2]), _scaled(red[3], red[4]), resz
@@ -101,47 +87,14 @@ _solve_owned!(deqn, result, component) = begin
     psolve!(deqn.solver, result.values)
 end
 
-function _save_diag!(deqn, off, config)
-    A = _A(deqn.eqn)
-    (; backend, workgroup) = config.hardware
-    kernel! = _sized(_save_diag_kernel!, backend, workgroup, deqn.partition.n_owned)
-    kernel!(deqn.diag, off, _rowptr(A), _colval(A), _nzval(A))
-end
-
-@kernel function _save_diag_kernel!(diag, off, @Const(rowptr), @Const(colval), @Const(nzval))
-    i = @index(Global)
-    @inbounds diag[off + i] = nzval[spindex(rowptr, colval, i, i)]
-end
-
-# same arithmetic, in the same order, as Solve._scaled_residual! with the diagonal read from diag
-@kernel function _scaled_residual_saved!(R, Fx, @Const(rowptr), @Const(colval), @Const(nzval),
-        @Const(values), @Const(b), @Const(diag), off)
-    i = @index(Global)
-    Ax = zero(eltype(R))
-    Dx = zero(eltype(R))
-    xi = values[i]
-
-    @inbounds for nzi ∈ rowptr[i]:(rowptr[i + 1] - 1)
-        j = colval[nzi]
-        Aij = j == i ? diag[off + i] : nzval[nzi]
-        Ax += Aij * values[j]
-        if j == i
-            Dx = Aij * xi
-        end
-    end
-
-    @inbounds begin
-        R[i] = abs(b[i] - Ax)
-        Fx[i] = abs(Dx)
-    end
-end
-
 _is_pure_laplacian(eqn) = length(eqn.model.terms) == 1 && eqn.model.terms[1] isa Laplacian
 
+# the residual is taken on x₀, whose ghosts are current (fields are kept synced between solves)
 function Solve.solve_system!(deqn::DistributedEqn, setup, result, component, config)
+    res = residual(deqn, component, config)
     _solve_owned!(deqn, result, component)
     sync!(result, get_phi(deqn.eqn).mesh, config)
-    residual(deqn, component, config)
+    res
 end
 
 # all-reduces issued by the solver seams since load; budgeted per iteration in `test_perf.jl`
@@ -168,16 +121,6 @@ function _local_residual!(deqn::DistributedEqn, component, config)
     _local_sums(deqn, R, Fx)
 end
 
-function _residual_saved!(deqn::DistributedEqn, component, off, config)
-    eqn = deqn.eqn
-    (; A, R, Fx) = eqn.equation
-    (; backend, workgroup) = config.hardware
-    kernel! = _sized(_scaled_residual_saved!, backend, workgroup, deqn.partition.n_owned)
-    kernel!(R, Fx, _rowptr(A), _colval(A), _nzval(A), get_values(get_phi(eqn), component),
-        _b(eqn, component), deqn.diag, off)
-    _local_sums(deqn, R, Fx)
-end
-
 _local_sums(deqn, R, Fx) = (n = deqn.partition.n_owned; (sum(view(R, 1:n)), sum(view(Fx, 1:n))))
 
 _allreduce!(deqn) = (ALLREDUCE_COUNT[] += 1; MPI.Allreduce!(deqn.red, +, _comm(deqn)); nothing)
@@ -195,18 +138,33 @@ end
 # NEW SECTION: reduction + mesh seams (extend the serial identities from Solvers)
 
 Solve.is_distributed_mesh(::DistributedMesh) = true
-Solvers._warn_skipped_postprocess(dm::DistributedMesh, postprocess) =
-    Solvers._has_postprocess(postprocess) && dm.partition.rank == 0 &&
-        @warn "runtime post-processing (config.postprocess) is not distributed yet and is skipped" maxlog=1
 Solve.is_report_rank(dm::DistributedMesh) = MPI.Comm_rank(getfield(dm, :comm)) == 0
 Solve.global_any(flag::Bool, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(Int(flag), max, getfield(dm, :comm)) > 0)
+
+Solve.global_sum(v, dm::DistributedMesh) =
+    (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, +, getfield(dm, :comm)))
+
+Solve.global_min(v, dm::DistributedMesh) =
+    (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, min, getfield(dm, :comm)))
+Solve.n_owned_cells(dm::DistributedMesh) = getfield(dm, :partition).n_owned
+Solve.global_cell_index(dm::DistributedMesh, i) = getfield(dm, :orig_cells)[i]
 
 # global_max seam: Courant dt must be identical on every rank
 Solvers.global_max(v, dm::DistributedMesh) =
     (ALLREDUCE_COUNT[] += 1; MPI.Allreduce(v, max, getfield(dm, :comm)))
 # courant kernel dispatches on Mesh2/Mesh3 geometry — unwrap the DistributedMesh
 Solvers._base_mesh(dm::DistributedMesh) = getfield(dm, :mesh)
+# LES Δ scaling dispatches on Mesh2/Mesh3; the local extent normal to Empty patches is the global
+# one, since every cell of a one-cell-thick mesh touches both Empty planes
+ModelPhysics.delta_scaling(dm::DistributedMesh, BCs) = ModelPhysics.delta_scaling(getfield(dm, :mesh), BCs)
+# bounding box over all ranks; a rank's local box (owned and ghost cells) is only part of it
+function bounding_box(dm::DistributedMesh)
+    pmin, pmax = bounding_box(getfield(dm, :mesh))
+    comm = getfield(dm, :comm)
+    return typeof(pmin)(MPI.Allreduce(Vector(pmin), min, comm)),
+           typeof(pmax)(MPI.Allreduce(Vector(pmax), max, comm))
+end
 
 # MeshWave wall distance: a cell touching a wall node needs every wall face through that node,
 # and some belong to other ranks. A node shared between ranks lies on a processor face of each

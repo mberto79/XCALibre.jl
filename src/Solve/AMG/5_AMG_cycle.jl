@@ -75,7 +75,7 @@ function LinearAlgebra.mul!(y, A::_AMGCoarseOp, x)
     return y
 end
 
-mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ}
+mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ,C}
     workspace::WS
     op::OP
     M::M
@@ -85,25 +85,28 @@ mutable struct AMGKrylovCoarse{WS,OP,M,F,I,NZ}
     nzval::NZ
     total_iters::Int
     calls::Int
+    c::C        # retry shadow vector for BiCGStab/CGS (`nothing` for other solvers)
 end
 
-_amg_krylov_solver_for(cs::OnDeviceKrylov, A) =
-    cs.solver === nothing ? (_is_symmetric(A) ? Cg() : Bicgstab()) : cs.solver
-_amg_krylov_coarse_solver(cs::OnDeviceKrylov, hierarchy) =
-    _amg_krylov_solver_for(cs, hierarchy.host_levels[end].A)
 
 function _apply_coarse_direct!(x, kb::AMGKrylovCoarse, b)
-    krylov_solve!(kb.workspace, kb.op, b; M=kb.M, ldiv=false, atol=kb.atol, rtol=kb.rtol, itmax=kb.itmax)
-    copyto!(x, Krylov.solution(kb.workspace))
+    kw = (; M=kb.M, ldiv=false, atol=kb.atol, rtol=kb.rtol, itmax=kb.itmax)
+    krylov_solve!(kb.workspace, kb.op, b; kw...)
+    # shadow-vector breakdown (see `_broke_down`): retry with the dense shadow, else no correction
+    _broke_down(kb.workspace, kb.itmax) &&
+        krylov_solve!(kb.workspace, kb.op, b; c=_fallback_shadow!(kb.c), kw...)
+    if _broke_down(kb.workspace, kb.itmax)
+        fill!(x, zero(eltype(x)))
+    else
+        copyto!(x, Krylov.solution(kb.workspace))
+    end
     kb.total_iters += Krylov.iteration_count(kb.workspace)
     kb.calls += 1
     return x
 end
 
-_build_coarse_inverse!(hierarchy::AMGHierarchy, ::OnHost) = (hierarchy.coarse_inv[] = nothing; hierarchy)
-
-function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDevice)
-    hierarchy.backend isa CPU && return (hierarchy.coarse_inv[] = nothing; hierarchy)
+function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Direct)
+    (hierarchy.backend isa CPU || cs.max_rows == 0) && return (hierarchy.coarse_inv[] = nothing; hierarchy)
     # Mixed: inverse computed in FP64 (no FP32 pivot fragility) but stored at TS for device GEMV
     _amg_mixed_precision(hierarchy) && return _build_mixed_coarse_inverse!(hierarchy, cs.max_rows)
     return _build_coarse_inverse!(hierarchy.backend, hierarchy, cs)
@@ -128,7 +131,7 @@ function _build_mixed_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
     return hierarchy
 end
 
-_build_coarse_inverse!(::Any, hierarchy::AMGHierarchy, cs::OnDevice) =
+_build_coarse_inverse!(::Any, hierarchy::AMGHierarchy, cs::Direct) =
     _build_host_coarse_inverse!(hierarchy, cs.max_rows)
 
 function _build_host_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
@@ -156,7 +159,7 @@ function _build_host_coarse_inverse!(hierarchy::AMGHierarchy, max_rows)
     return hierarchy
 end
 
-function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDeviceKrylov)
+function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Iterative)
     if hierarchy.backend isa CPU
         hierarchy.coarse_inv[] = nothing
         return hierarchy
@@ -172,10 +175,11 @@ function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::OnDeviceKrylov)
     if existing isa AMGKrylovCoarse && existing.nzval === _nzval(level.A)
         return hierarchy
     end
-    solver_choice = _amg_krylov_coarse_solver(cs, hierarchy)
+    solver_choice = cs.solver
     op = _AMGCoarseOp(_rowptr(level.A), _colval(level.A), _nzval(level.A), n, n, hierarchy.backend, hierarchy.workgroup)
     ws = _workspace(solver_choice, level.rhs)
-    hierarchy.coarse_inv[] = AMGKrylovCoarse(ws, op, Diagonal(level.inv_diagonal), cs.rtol, cs.atol, cs.itmax, _nzval(level.A), 0, 0)
+    c = ws isa _ShadowWorkspace ? similar(level.rhs) : nothing
+    hierarchy.coarse_inv[] = AMGKrylovCoarse(ws, op, Diagonal(level.inv_diagonal), cs.rtol, cs.atol, cs.itmax, _nzval(level.A), 0, 0, c)
     return hierarchy
 end
 
@@ -189,10 +193,6 @@ mutable struct AMGSmootherCoarse{S,H,NZ}
     calls::Int
 end
 
-_coarse_smoother(cs::OnDeviceJacobi) = (AMGJacobi(omega=cs.omega), Int(cs.iterations))
-_coarse_smoother(cs::OnDeviceChebyshev) =
-    (AMGChebyshev(degree=cs.degree, eig_ratio=cs.eig_ratio, lambda_scale=cs.lambda_scale), 1)
-
 function _apply_coarse_direct!(x, sc::AMGSmootherCoarse, b)
     level = sc.hierarchy.levels[end]
     _fill_amg!(sc.hierarchy, level.x, zero(eltype(level.x)))  # x init 0 => residual-form smoother is a fixed linear operator
@@ -201,7 +201,7 @@ function _apply_coarse_direct!(x, sc::AMGSmootherCoarse, b)
     return level.x
 end
 
-function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Union{OnDeviceJacobi,OnDeviceChebyshev})
+function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Smoothed)
     if hierarchy.backend isa CPU
         hierarchy.coarse_inv[] = nothing
         return hierarchy
@@ -215,8 +215,7 @@ function _build_coarse_inverse!(hierarchy::AMGHierarchy, cs::Union{OnDeviceJacob
     _refresh_level_device!(hierarchy, level)
     existing = hierarchy.coarse_inv[]
     existing isa AMGSmootherCoarse && existing.nzval === _nzval(level.A) && return hierarchy
-    smoother, loops = _coarse_smoother(cs)
-    hierarchy.coarse_inv[] = AMGSmootherCoarse(smoother, loops, hierarchy, _nzval(level.A), 0)
+    hierarchy.coarse_inv[] = AMGSmootherCoarse(cs.smoother, cs.sweeps, hierarchy, _nzval(level.A), 0)
     return hierarchy
 end
 
@@ -236,7 +235,7 @@ function _coarse_solve!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, b
     return level.x
 end
 
-function _cycle!(hierarchy::AMGHierarchy, cycle::VCycle, solver::AMG, level_index, rhs)
+function _cycle!(hierarchy::AMGHierarchy, solver::AMG, level_index, rhs)
     levels = hierarchy.levels
     level = levels[level_index]
     _fill_amg!(hierarchy, level.x, zero(eltype(level.x)))
@@ -245,21 +244,21 @@ function _cycle!(hierarchy::AMGHierarchy, cycle::VCycle, solver::AMG, level_inde
         return _coarse_solve!(hierarchy, solver, level, rhs)
     end
 
-    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.pre_sweeps)
+    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, _pre_sweeps(solver.sweeps, level_index))
     _residual!(hierarchy, level.rhs, level.A, level.x, rhs)
 
     coarse_level = levels[level_index + 1]
     _restrict!(hierarchy, coarse_level.rhs, level.R, level.rhs)
-    _cycle!(hierarchy, cycle, solver, level_index + 1, coarse_level.rhs)
+    _cycle!(hierarchy, solver, level_index + 1, coarse_level.rhs)
 
     _apply_coarse_correction!(hierarchy, solver, level, coarse_level)
-    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, solver.post_sweeps)
+    _apply_level_smoother!(hierarchy, solver.smoother, level, rhs, _post_sweeps(solver.sweeps, level_index))
     return level.x
 end
 
 # scale_correction makes preconditioner nonlinear; amg_cg_solve! uses flexible PR+ beta to handle it
 function _apply_coarse_correction!(hierarchy::AMGHierarchy, solver::AMG, level::AMGLevel, coarse_level::AMGLevel)
-    if !solver.scale_correction
+    if !solver.native.scale_correction
         _prolongate_add!(hierarchy, level.x, level.P, coarse_level.x, level.tmp)
         return level.x
     end
@@ -281,7 +280,7 @@ _amg_mixed_precision(hierarchy::AMGHierarchy) = hierarchy.cycle_input[] !== noth
 function amg_apply_preconditioner!(z, hierarchy::AMGHierarchy, solver::AMG, r)
     root = hierarchy.levels[1]
     rin = _amg_cycle_input(hierarchy, r)
-    _cycle!(hierarchy, solver.cycle, solver, 1, rin)
+    _cycle!(hierarchy, solver, 1, rin)
     _copy_amg!(hierarchy, z, root.x)
     return z
 end
@@ -305,15 +304,15 @@ function _push_residual_norm_history!(workspace::AMGWorkspace, residual_norm)
     return workspace
 end
 
-function amg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
+function amg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol, dscale=nothing)
     T = eltype(x)
-    bnorm = max(norm(b), eps(T))
     _residual!(hierarchy, workspace.residual, A, x, b)
     _reset_residual_history!(workspace)
-    rnorm = norm(workspace.residual)
+    rnorm = _scaled_norm(workspace.residual, dscale)
+    r0 = max(rnorm, floatmin(T)) # rel is relative to ‖D⁻¹r₀‖, in the stopping norm
     _push_residual_norm_history!(workspace, rnorm)
     ε = _amg_eps(T, atol, rtol, rnorm)
-    rel = rnorm / bnorm
+    rel = rnorm / r0
     initial_rel = rel
     best_rnorm = rnorm
     stall = 0
@@ -325,9 +324,9 @@ function amg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, so
         KernelAbstractions.synchronize(hierarchy.backend)
         _add_amg!(hierarchy, x, workspace.correction)
         _residual!(hierarchy, workspace.residual, A, x, b)
-        rnorm = norm(workspace.residual)
+        rnorm = _scaled_norm(workspace.residual, dscale)
         _push_residual_norm_history!(workspace, rnorm)
-        rel = rnorm / bnorm
+        rel = rnorm / r0
         if rnorm < best_rnorm * (one(T) - T(1e-4))
             best_rnorm = rnorm
             stall = 0

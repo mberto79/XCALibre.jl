@@ -21,6 +21,15 @@ les_model = Physics(
     energy = Energy{Isothermal}(),
     domain = dm)
 
+# density-based solver: supported with the RANS models, refused with the LES models it has
+# no distributed path for
+godunov_model(turbulence) = Physics(
+    time = Transient(),
+    fluid = Fluid{SupersonicFlow}(nu=1e-5, cp=1005.0, gamma=1.4, Pr=0.7),
+    turbulence = turbulence,
+    energy = Energy{SensibleEnthalpy}(Tref=0.0),
+    domain = dm)
+
 compressible_model = Physics(
     time = Steady(),
     fluid = Fluid{WeaklyCompressible}(nu=1e-3, cp=1005.0, gamma=1.4, Pr=0.7),
@@ -33,18 +42,23 @@ compressible_model = Physics(
     @test check(:SIMPLE, model) === nothing
     @test check(:PISO, model) === nothing
     @test check(:potential_flow, model) === nothing
+    @test check(:Godunov, godunov_model(RANS{Laminar}())) === nothing
+    @test check(:Godunov, godunov_model(RANS{KOmegaSST}(walls=(:wall,)))) === nothing
 
     # unsupported solver, supported models
     @test_throws ErrorException check(:CSIMPLE, model)
     @test_throws ErrorException check(:CPISO, model)
     @test_throws ErrorException check(:SIMPLE_MRF, model)
-    @test_throws ErrorException check(:Godunov, model)
     @test_throws ErrorException check(:multiphase, model)
     @test_throws ErrorException check(:FilmModel, model)
 
     # supported solver, unsupported model
     @test_throws ErrorException check(:SIMPLE, les_model)
     @test_throws ErrorException check(:SIMPLE, compressible_model)
+    @test_throws ErrorException check(:Godunov, godunov_model(LES{Smagorinsky}()))
+    @test_throws ErrorException check(:Godunov, godunov_model(LES{WALE}()))
+    # SensibleEnthalpy holds only T for the density-based solver; the pressure-based ones solve it
+    @test_throws ErrorException check(:CSIMPLE, godunov_model(RANS{Laminar}()))
 
     # the message names what is missing, so it doubles as the implementation list
     msg = try; check(:CSIMPLE, les_model); ""; catch e; sprint(showerror, e); end

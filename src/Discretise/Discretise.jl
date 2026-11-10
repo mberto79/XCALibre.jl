@@ -24,6 +24,7 @@ using XCALibre.ModelFramework
 include("Discretise_0_types.jl")
 include("Discretise_1_schemes.jl")
 include("Discretise_2_generated_distretisation.jl")
+include("Discretise_6_time_levels.jl")
 include("Discretise_3_boundary_conditions.jl")
 include("Discretise_4_assign_boundaries.jl")
 include("Discretise_5_apply_bcs.jl")

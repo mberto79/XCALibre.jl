@@ -57,28 +57,25 @@ end
 
 
 """
-    activate_multithread(backend::CPU; nthreads=1, first_touch=false)
+    activate_multithread(backend::CPU; nthreads=1)
 
-Set the number of OpenBLAS threads and, optionally, NUMA placement by first touch.
+Set the CPU backend that fields, equations and preconditioners are built with, and the number of
+OpenBLAS threads.
 
 # Input arguments
 
-- `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`
+- `backend` is the only required input which must be `CPU()` from `KernelAbstractions.jl`. With
+  `CPU(static=true)` and pinned threads, arrays are allocated by parallel first touch, so each
+  thread's chunk sits in its NUMA domain; pass the mesh, built before, through [`first_touch`](@ref).
 - `nthreads` is the number of BLAS threads (default: 1)
-- `first_touch` allocates the equations, fields and preconditioners built from then on so that
-  each thread first writes the chunk it works on (default: false). It pays on nodes with several
-  NUMA domains, with `CPU(static=true)` and pinned threads. The mesh, built before, is placed
-  with `mesh = first_touch(mesh)`.
 
 !!! note
     The CPU linear solvers run their vector operations on Julia's own threads (`-t`), so BLAS
     needs no threads of its own. Julia picks its OpenBLAS thread count from the machine rather
     than from `-t`, and a second thread pool competes with Julia's for the same cores.
 """
-activate_multithread(backend::CPU; nthreads=1, first_touch=false) = begin
-    first_touch && !backend.static &&
-        @warn "first_touch places pages for static chunks; use CPU(static=true)"
-    FIRST_TOUCH[] = first_touch
+activate_multithread(backend::CPU; nthreads=1) = begin
+    CPU_BACKEND[] = backend
     BLAS.set_num_threads(nthreads)
 end
 

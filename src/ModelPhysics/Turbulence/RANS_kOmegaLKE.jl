@@ -37,7 +37,7 @@ Adapt.@adapt_structure KOmegaLKE
 
 # Model type definition (hold equation definitions and internal data)
 struct KOmegaLKEModel{
-    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,V1,V2,State,WS}
+    T,E1,E2,E3,F1,F2,F3,S1,S2,S3,S4,S5,S6,S7,S8,S9,S10,V1,V2,State,WS,L}
     turbulence::T
     k_eqn::E1
     ω_eqn::E2
@@ -59,6 +59,7 @@ struct KOmegaLKEModel{
     ∇ω::V2
     state::State
     wall_scratch::WS
+    levels::L # lagged copies and old levels under Crank-Nicolson (`nothing` otherwise)
 end 
 Adapt.@adapt_structure KOmegaLKEModel
 
@@ -214,15 +215,15 @@ function initialise(
     
     # Set up preconditioners
 
-    @reset kl_eqn.preconditioner = set_preconditioner(solvers.kl.preconditioner, kl_eqn)
-    @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-    @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
+    @reset kl_eqn.preconditioner = set_preconditioner(solvers.kl, kl_eqn)
+    @reset k_eqn.preconditioner = set_preconditioner(solvers.k, k_eqn)
+    @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega, ω_eqn)
     
     # preallocating solvers
 
-    @reset kl_eqn.solver = _workspace(solvers.kl.solver, _b(kl_eqn), _index_type(_A(kl_eqn)))
-    @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
-    @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn), _index_type(_A(ω_eqn)))
+    @reset kl_eqn.solver = _workspace(solvers.kl, kl_eqn)
+    @reset k_eqn.solver = _workspace(solvers.k, k_eqn)
+    @reset ω_eqn.solver = _workspace(solvers.omega, ω_eqn)
 
     TF = _get_float(mesh)
     time = zero(TF) # assuming time=0
@@ -258,7 +259,8 @@ function initialise(
         ∇k,
         ∇ω,
         state,
-        wall_scratch(mesh, boundaries, config)
+        wall_scratch(mesh, boundaries, config),
+        transport_levels(k_eqn, (k=k, omega=omega, kl=kl), mesh)
     ), new_config
 end
 
@@ -307,33 +309,9 @@ function turbulence!(
 
     kMin = eps()  # set kMin_ value
 
-    # Update Velocity Gradient and Calculate Flow Quantities (ONCE)
-    grad!(gradU, Uf, U, boundaries.U, time, config) 
-    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
-
+    lagged_coefficients!(rans.levels, (k=k, omega=omega, kl=kl))
+    _lke_flow_quantities!(rans, model, S, time, config)
     η = coeffs.η
-
-    xcal_foreach(k, config) do i
-        g = gradU[i]
-
-        # Velocity divergence
-        divU_val = tr(g)
-        divU[i] = divU_val
-
-        # Calculate strain rate, vorticity & production
-        S_dev = 0.5*(g + g') - divU_val/3*I # Dev(S)
-        S2[i] = 2.0 * sum(S_dev.^2) # S2 = 2*magSqr(dev(symm(gradU)))
-        Ω[i] = sqrt(2.0 * sum((0.5*(g - g')).^2)) # Omega = sqrt(2)*mag(skew(gradU))
-        # g .* 2*S_dev parses as (g .* 2)*S_dev, a matrix product; the double contraction needs the brackets
-        Pk[i] = 2.0*sum(g .* S_dev) # Pk = gradU && dev(twoSymm(gradU))
-
-        # Calculate velocity magnitude
-        u = U[i]
-        normU[i] = sqrt(u[1]^2 + u[2]^2 + u[3]^2)
-
-        # Cache ReLambda (used in gamma, kl, and nut loops)
-        ReLambda[i] = max(normU[i], sqrt(kMin)) * y[i] / nu[i]
-    end
 
     # Calculate gamma, PkL, DkLf, nueffkLS (fused gamma + kl setup)
     xcal_foreach(γ, config) do i
@@ -372,7 +350,7 @@ function turbulence!(
 
     # Solve kl equation
     prev .= kl.values
-    discretise!(kl_eqn, prev, config)
+    discretise!(kl_eqn, old_level(rans.levels, :kl, prev), config; time)
     apply_boundary_conditions!(kl_eqn, boundaries.kl, nothing, time, config)
     implicit_relaxation!(kl_eqn, kl.values, solvers.kl.relax, nothing, config)
     update_preconditioner!(kl_eqn.preconditioner, mesh, config)
@@ -406,7 +384,7 @@ function turbulence!(
 
     # Solve omega equation
     prev .= omega.values
-    discretise!(ω_eqn, prev, config)
+    discretise!(ω_eqn, old_level(rans.levels, :omega, prev), config; time)
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     constrain_equation!(ω_eqn, boundaries.omega, model, config, wall_scratch) 
@@ -447,14 +425,67 @@ function turbulence!(
 
     # Solve k equation
     prev .= k.values
-    discretise!(k_eqn, prev, config)
+    discretise!(k_eqn, old_level(rans.levels, :k, prev), config; time)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     update_preconditioner!(k_eqn.preconditioner, mesh, config)
     k_res = solve_system!(k_eqn, solvers.k, k, nothing, config)
     bound!(k, prev, config)
 
-    # Calculate Final nutL and nut
+    _lke_eddy_viscosity!(rans, model, time, config)
+
+    # Update Residuals and Convergence Status 
+    residuals = ((:k, k_res),(:kl, kl_res),(:omega, ω_res))
+    k_converged  = k_res  < solvers.k.convergence
+    kl_converged = kl_res < solvers.kl.convergence
+    ω_converged  = ω_res  < solvers.omega.convergence
+    converged = k_converged && kl_converged && ω_converged
+    state.residuals = residuals
+    state.converged = converged
+    
+    return nothing
+end
+
+# strain rate, vorticity, production and velocity magnitude of the current velocity
+function _lke_flow_quantities!(rans::KOmegaLKEModel, model, S, time, config)
+    (; y) = model.turbulence
+    (; nu) = model.fluid
+    (; U, Uf, gradU) = S
+    (; Ω, normU, divU, S2, ReLambda) = rans
+    Pk = get_source(rans.k_eqn, 1)
+    kMin = eps()
+    grad!(gradU, Uf, U, config.boundaries.U, time, config)
+    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
+    xcal_foreach(model.turbulence.k, config) do i
+        g = gradU[i]
+
+        # Velocity divergence
+        divU_val = tr(g)
+        divU[i] = divU_val
+
+        # Calculate strain rate, vorticity & production
+        S_dev = 0.5*(g + g') - divU_val/3*I # Dev(S)
+        S2[i] = 2.0 * sum(S_dev.^2) # S2 = 2*magSqr(dev(symm(gradU)))
+        Ω[i] = sqrt(2.0 * sum((0.5*(g - g')).^2)) # Omega = sqrt(2)*mag(skew(gradU))
+        # g .* 2*S_dev parses as (g .* 2)*S_dev, a matrix product; the double contraction needs the brackets
+        Pk[i] = 2.0*sum(g .* S_dev) # Pk = gradU && dev(twoSymm(gradU))
+
+        # Calculate velocity magnitude
+        u = U[i]
+        normU[i] = sqrt(u[1]^2 + u[2]^2 + u[3]^2)
+
+        # Cache ReLambda (used in gamma, kl, and nut loops)
+        ReLambda[i] = max(normU[i], sqrt(kMin)) * y[i] / nu[i]
+    end
+end
+
+# laminar and turbulent eddy viscosities from k, omega and kl
+function _lke_eddy_viscosity!(rans::KOmegaLKEModel, model, time, config)
+    (; k, omega, kl, nut, y, nutf, coeffs) = model.turbulence
+    (; nu) = model.fluid
+    (; nuL, nuts, Ω, normU, S2, ReLambda, wall_scratch) = rans
+    boundaries = config.boundaries
+    η = coeffs.η
     xcal_foreach(nut, config) do i
         kl_i = kl[i]
         nu_i = nu[i]
@@ -485,17 +516,11 @@ function turbulence!(
     interpolate!(nutf, nut, config)
     correct_boundaries!(nutf, nut, boundaries.nut, time, config)
     correct_eddy_viscosity!(nutf, boundaries.nut, model, config, wall_scratch)
+end
 
-    # Update Residuals and Convergence Status 
-    residuals = ((:k, k_res),(:kl, kl_res),(:omega, ω_res))
-    k_converged  = k_res  < solvers.k.convergence
-    kl_converged = kl_res < solvers.kl.convergence
-    ω_converged  = ω_res  < solvers.omega.convergence
-    converged = k_converged && kl_converged && ω_converged
-    state.residuals = residuals
-    state.converged = converged
-    
-    return nothing
+function eddy_viscosity!(rans::KOmegaLKEModel, model::Physics, S, time, config)
+    _lke_flow_quantities!(rans, model, S, time, config)
+    _lke_eddy_viscosity!(rans, model, time, config)
 end
 
 # Specialise VTK writer

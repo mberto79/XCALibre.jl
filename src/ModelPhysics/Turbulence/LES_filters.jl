@@ -81,19 +81,19 @@ function cell_surface_area(field, fieldBCs, config)
     # add non-empty boundary contributions
     boundaries_cpu = get_boundaries(boundaries)
 
+    # one work item per boundary cell adds its faces of the patch in face order (deterministic)
+    (; boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
     for BC ∈ fieldBCs
         if typeof(BC) <: Empty
             continue
         end
         facesID_range = boundaries_cpu[BC.ID].IDs_range
-        start_ID = facesID_range[1]
-        
-        kernel_range = length(facesID_range)
+        isempty(facesID_range) && continue
 
-        ndrange=kernel_range
+        ndrange=length(boundary_cells)
         kernel! = _add_boundary_area!(backend)
-        kernel!(areaSum, start_ID, faces;
-            _dynamic_setup(backend, workgroup, ndrange)...)
+        kernel!(areaSum, facesID_range, faces, boundary_cells, boundary_cell_faces_range,
+            boundary_cell_faces; _dynamic_setup(backend, workgroup, ndrange)...)
     end
     return areaSum
 end
@@ -118,14 +118,17 @@ end
     end
 end
 
-@kernel function _add_boundary_area!(areaSum, start_ID, faces)
-    i = @index(Global)
-    fID = i + start_ID - 1
+@kernel function _add_boundary_area!(
+    areaSum, facesID_range, faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
+    j = @index(Global)
 
     @inbounds begin
-        face = faces[fID]
-        cID = face.ownerCells[1]
-        Atomix.@atomic areaSum[cID] += face.area
+        cID = boundary_cells[j]
+        for k ∈ boundary_cell_faces_range[j]
+            fID = boundary_cell_faces[k]
+            fID ∈ facesID_range || continue
+            areaSum[cID] += faces.area[fID]
+        end
     end
 end
 
@@ -133,14 +136,14 @@ end
 function basic_filter_new!(phiFiltered, phif, surfaceArea, config)
     (; hardware) = config
     (; backend, workgroup) = hardware
-    (; boundary_cellsID) = phiFiltered.mesh
+    (; boundary_cells) = phiFiltered.mesh
     
     ndrange=length(phiFiltered)
     kernel! = _sized(_surface_sum!, backend, workgroup, ndrange)
     kernel!(phiFiltered, phif, surfaceArea)
 
-    # boundary faces contribution 
-    ndrange=length(boundary_cellsID)
+    # boundary faces contribution: one work item per boundary cell (deterministic)
+    ndrange=length(boundary_cells)
     kernel! = _sized(_add_boundary_faces!, backend, workgroup, ndrange)
     kernel!(phiFiltered, phif, surfaceArea)
 
@@ -200,40 +203,26 @@ end
 end
 
 @kernel function _add_boundary_faces!(phiFiltered::Output, phif::Field, surfaceArea) where {Output,Field}
-    fID = @index(Global)
+    j = @index(Global)
 
     @uniform begin
         (; mesh) = phiFiltered
-        (; faces, cells, cell_faces, boundary_cellsID) = mesh
+        (; faces, boundary_cells, boundary_cell_faces_range, boundary_cell_faces) = mesh
     end
 
-    cID = boundary_cellsID[fID]
-    (; faces_range) = cells[cID]
+    cID = boundary_cells[j]
+    for k ∈ boundary_cell_faces_range[j]
+        fID = boundary_cell_faces[k]
+        res = phif[fID]*faces[fID].area/surfaceArea[cID]
 
-    # areaSum = 0.0
-    surfaceSum = nothing 
-    if Field <: AbstractVectorField 
-        surfaceSum = SVector{3}(0.0,0.0,0.0)
-    elseif Field <: AbstractScalarField
-        surfaceSum = 0.0
-    end 
-
-    bfarea = faces[fID].area
-    # areaSum += bfarea
-    # surfaceSum += phif[fID]*bfarea
-    # res = surfaceSum/areaSum
-    surfaceSum = phif[fID]*bfarea
-    res = surfaceSum/surfaceArea[cID]
-
-    # Atomix.@atomic phiFiltered[cID] += res
-
-    if Output <: AbstractVectorField 
-        Atomix.@atomic phiFiltered.x.values[cID] += res[1]
-        Atomix.@atomic phiFiltered.y.values[cID] += res[2]
-        Atomix.@atomic phiFiltered.z.values[cID] += res[3]
-    elseif Output <: AbstractScalarField
-        Atomix.@atomic phiFiltered.values[cID] += res
-    end 
+        if Output <: AbstractVectorField 
+            phiFiltered.x.values[cID] += res[1]
+            phiFiltered.y.values[cID] += res[2]
+            phiFiltered.z.values[cID] += res[3]
+        elseif Output <: AbstractScalarField
+            phiFiltered.values[cID] += res
+        end
+    end
 end
 
 

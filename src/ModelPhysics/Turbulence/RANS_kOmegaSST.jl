@@ -33,7 +33,7 @@ struct KOmegaSST{S1,S2,S3,F1,F2,F3,C1,C2,C3,Y} <: AbstractRANSModel
 end
 Adapt.@adapt_structure KOmegaSST
 
-struct KOmegaSSTModel{E1,E2,S,S1,F1,F2,S2,S3,S4,S5,S6,F3,S7,S8,V1,V2,WS}
+struct KOmegaSSTModel{E1,E2,S,S1,F1,F2,S2,S3,S4,S5,S6,F3,S7,S8,V1,V2,WS,L}
     k_eqn::E1 
     ω_eqn::E2
     state::S
@@ -51,6 +51,7 @@ struct KOmegaSSTModel{E1,E2,S,S1,F1,F2,S2,S3,S4,S5,S6,F3,S7,S8,V1,V2,WS}
     ∇k::V1
     ∇ω::V2
     wall_scratch::WS
+    levels::L # lagged copies and old levels under Crank-Nicolson (`nothing` otherwise)
 end
 Adapt.@adapt_structure KOmegaSSTModel
 
@@ -144,7 +145,7 @@ function initialise(
     
     k_eqn = (
             Time{schemes.k.time}(rho, k)
-            + Divergence{schemes.k.divergence}(mdotf, k) 
+            + Divergence{schemes.k.divergence}(mdotf, k, ∇k.result)
             - Laplacian{schemes.k.laplacian}(mueffk, k) 
             + Si(Dkf,k) # Dkf = β⁺rho*omega
             ==
@@ -153,7 +154,7 @@ function initialise(
     
     ω_eqn = (
             Time{schemes.omega.time}(rho, omega)
-            + Divergence{schemes.omega.divergence}(mdotf, omega) 
+            + Divergence{schemes.omega.divergence}(mdotf, omega, ∇ω.result)
             - Laplacian{schemes.omega.laplacian}(mueffω, omega) 
             + Si(Dωf,omega)  # Dωf = rho*β1*omega
             + Si(dkdomegadx, omega)
@@ -163,11 +164,13 @@ function initialise(
 
     # Krylov preconditioner/workspace are serial-only (distributed solves through PETSc PCs)
     if !is_distributed_mesh(mesh)
-        @reset k_eqn.preconditioner = set_preconditioner(solvers.k.preconditioner, k_eqn)
-        @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega.preconditioner, ω_eqn)
-        @reset k_eqn.solver = _workspace(solvers.k.solver, _b(k_eqn), _index_type(_A(k_eqn)))
-        @reset ω_eqn.solver = _workspace(solvers.omega.solver, _b(ω_eqn), _index_type(_A(ω_eqn)))
+        @reset k_eqn.preconditioner = set_preconditioner(solvers.k, k_eqn)
+        @reset ω_eqn.preconditioner = set_preconditioner(solvers.omega, ω_eqn)
+        @reset k_eqn.solver = _workspace(solvers.k, k_eqn)
+        @reset ω_eqn.solver = _workspace(solvers.omega, ω_eqn)
     end
+
+    levels = transport_levels(k_eqn, (k=k, omega=omega), mesh)
 
     # wrap transported-scalar eqns for the distributed solve seam (identity serial)
     k_eqn = wrap_eqn(k_eqn, mesh, solvers.k, config; label="k")
@@ -176,7 +179,7 @@ function initialise(
     new_config = wall_distance!(model, model.wall_info.walls, config; method=model.wall_info.method)
 
     initial_residual = ((:k, 1.0),(:omega, 1.0))
-    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω, wall_scratch(mesh, boundaries, config)), new_config
+    return KOmegaSSTModel(k_eqn, ω_eqn, ModelState(initial_residual, false), β, σkf, σωf, γ, CDkω, arg1, F1, F1f, arg2, F2, Ω, ∇k, ∇ω, wall_scratch(mesh, boundaries, config), levels), new_config
 end
 
 # Model solver call (implementation)
@@ -228,6 +231,7 @@ function turbulence!(
 
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(config.schemes.U.limiter, gradU, U, config)
+    lagged_coefficients!(rans.levels, (k=k, omega=omega))
     magnitude2!(Pk, S, config, scale_factor=2.0) # multiplied by 2 (def of Sij)
     magnitude2!(Ω, Vorticity(U, gradU), config, scale_factor=2.0) # 
     # @. Ω.values = sqrt(Ω.values) # This is for the proper NASA formulation
@@ -236,6 +240,12 @@ function turbulence!(
     grad!(∇ω, omegaf, omega, boundaries.omega, time, config)
     grad!(∇k, kf, k, boundaries.k, time, config)
     inner_product!(dkdomegadx, ∇k, ∇ω, config)
+    # second-order convection schemes reconstruct faces with the limited gradient (the
+    # cross-diffusion term above uses the plain one)
+    is_second_order(config.schemes.k.divergence) &&
+        limit_gradient!(config.schemes.k.limiter, ∇k, k, config)
+    is_second_order(config.schemes.omega.divergence) &&
+        limit_gradient!(config.schemes.omega.limiter, ∇ω, omega, config)
 
     @. CDkω.values = max(2*coeffs.σω2*dkdomegadx.values/omega.values, scalar(1e-10))
 
@@ -292,7 +302,7 @@ function turbulence!(
 
     # Solve omega equation
     # prev .= omega.values
-    discretise!(ω_eqn, omega, config)
+    discretise!(ω_eqn, old_level(rans.levels, :omega, omega), config; time)
     apply_boundary_conditions!(ω_eqn, boundaries.omega, nothing, time, config)
     # implicit_relaxation!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
     implicit_relaxation_diagdom!(ω_eqn, omega.values, solvers.omega.relax, nothing, config)
@@ -307,7 +317,7 @@ function turbulence!(
 
     # Solve k equation
     # prev .= k.values
-    discretise!(k_eqn, k, config)
+    discretise!(k_eqn, old_level(rans.levels, :k, k), config; time)
     apply_boundary_conditions!(k_eqn, boundaries.k, nothing, time, config)
     # implicit_relaxation!(k_eqn, k.values, solvers.k.relax, nothing, config)
     implicit_relaxation_diagdom!(k_eqn, k.values, solvers.k.relax, nothing, config)
@@ -331,6 +341,28 @@ function turbulence!(
     state.residuals = ((:k , k_res),(:omega, ω_res))
     state.converged = k_res < solvers.k.convergence && ω_res < solvers.omega.convergence
     return nothing
+end
+
+function eddy_viscosity!(rans::KOmegaSSTModel, model::Physics, S, time, config)
+    (; k, omega, nut, nutf, coeffs, y) = model.turbulence
+    (; U, Uf, gradU) = S
+    (; Ω, arg2, F2) = rans
+    (; nu) = model.fluid
+    scalar = ScalarFloat(model.domain)
+    Pk = get_source(unwrap_eqn(rans.k_eqn), 1)
+    grad!(gradU, Uf, U, config.boundaries.U, time, config)
+    limit_gradient!(config.schemes.U.limiter, gradU, U, config)
+    magnitude2!(Pk, S, config, scale_factor=2.0)
+    @. Ω.values = sqrt(Pk.values)
+    @. arg2.values = min(max(
+            2*sqrt(max(k.values, scalar(eps())))/(coeffs.β⁺*omega.values*y.values),
+            500*nu.values/(y.values^2*omega.values)), scalar(100))
+    @. F2.values = tanh(arg2.values^2)
+    @. nut.values = coeffs.α1*k.values/max(coeffs.α1*omega.values, F2.values*Ω.values)
+    sync!(nut, model.domain, config)
+    interpolate!(nutf, nut, config)
+    correct_boundaries!(nutf, nut, config.boundaries.nut, time, config)
+    correct_eddy_viscosity!(nutf, config.boundaries.nut, model, config, rans.wall_scratch)
 end
 
 function restart_turbulence!(turbulence::KOmegaSST, model, config, time)

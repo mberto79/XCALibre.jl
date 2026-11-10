@@ -1,4 +1,4 @@
-export godunov!, Rusanov, HLLC, FEuler, RK2, MUSCL, VanLeer, MinMod, Superbee
+export godunov!, Rusanov, HLLC, FEuler, RK2, RK3, RK4, RK5, MUSCL, VanLeer, MinMod, Superbee
 
 # BC dispatch keys on bc_U: inviscid Wall/Slip/Symmetry use the exact Euler wall flux F=(0, p·n·A, 0), Dirichlet ghost UR=2*U_bc-UL,
 # Outlet backflow a stagnant ghost; viscous Wall heat flux is selected by bc_T (Dirichlet isothermal, Neumann/physical adiabatic).
@@ -47,6 +47,22 @@ SSP-RK2 / Heun's method (2nd order) explicit time stepping.
   W^{n+1} = 0.5*(W^n + W^(2))
 """
 struct RK2 end
+
+"""
+Multistage Runge-Kutta schemes of Jameson (low storage, optimised for steady-state convergence):
+  W^(0) = W^n,  W^(k) = W^n - α_k*(dt/V)*R(W^(k-1)),  W^{n+1} = W^(N)
+with `RK3()` α = (0.1481, 0.4, 1), `RK4()` α = (1/4, 1/3, 1/2, 1) and `RK5()`
+α = (1/4, 1/6, 3/8, 1/2, 1). They extend the stability limit (CFL up to ≈ N-1) and are meant for
+steady problems together with `LocalTimeStepping`; they are not time accurate. Viscous fluxes and
+turbulence are evaluated with the fields at the start of the step in every stage.
+"""
+struct RKJST{N} end
+const RK3 = RKJST{3}
+const RK4 = RKJST{4}
+const RK5 = RKJST{5}
+_rk_alpha(::RKJST{3}) = (0.1481, 0.4, 1.0)
+_rk_alpha(::RKJST{4}) = (1/4, 1/3, 1/2, 1.0)
+_rk_alpha(::RKJST{5}) = (1/4, 1/6, 3/8, 1/2, 1.0)
 
 # ============================================================
 # Limiter functions
@@ -435,19 +451,23 @@ end
     end
 end
 
-# Inviscid flux — boundary faces, face-based loop (atomics)
+# Inviscid flux — boundary faces: one work item per boundary cell adds its faces in face order
+# (no atomics), so the residual does not depend on the thread count
 @kernel function _inviscid_bc_flux!(
     flux_scheme, U_BCs, p_BCs, T_BCs,
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     rho, U, p, T, mesh, fluid, time
 )
-    fID = @index(Global)
+    j = @index(Global)
+    @uniform (; boundary_cell_faces_range, boundary_cell_faces) = mesh
 
-    @inbounds _inviscid_bc_dispatch!(
-        flux_scheme, U_BCs, p_BCs, T_BCs,
-        res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        rho, U, p, T, mesh, fluid, fID, time
-    )
+    @inbounds for k ∈ boundary_cell_faces_range[j]
+        _inviscid_bc_dispatch!(
+            flux_scheme, U_BCs, p_BCs, T_BCs,
+            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            rho, U, p, T, mesh, fluid, boundary_cell_faces[k], time
+        )
+    end
 end
 
 @generated function _inviscid_bc_dispatch!(
@@ -496,22 +516,22 @@ end
     cID = ownerCells[1]
 
     Fp = p[cID] * area * normal
-    Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
-    Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
-    Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
+    res_rhoUx.values[cID] += Fp[1]
+    res_rhoUy.values[cID] += Fp[2]
+    res_rhoUz.values[cID] += Fp[3]
 end
 
-# ── Shared atomic accumulation helper for Riemann-path BC handlers ───────────────
+# ── Shared accumulation helper for Riemann-path BC handlers ───────────────
 
 @inline function _accumulate_inviscid!(
     res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     cID, F_rho, F_rhoU::SVector{3}, F_rhoE
 )
-    Atomix.@atomic res_rho.values[cID]   += F_rho
-    Atomix.@atomic res_rhoUx.values[cID] += F_rhoU[1]
-    Atomix.@atomic res_rhoUy.values[cID] += F_rhoU[2]
-    Atomix.@atomic res_rhoUz.values[cID] += F_rhoU[3]
-    Atomix.@atomic res_rhoE.values[cID]  += F_rhoE
+    res_rho.values[cID]   += F_rho
+    res_rhoUx.values[cID] += F_rhoU[1]
+    res_rhoUy.values[cID] += F_rhoU[2]
+    res_rhoUz.values[cID] += F_rhoU[3]
+    res_rhoE.values[cID]  += F_rhoE
 end
 
 # ── Outlet BC: outflow (un_L > 0) UR=UL, so with Zerogradient bc_p/bc_T L=R and the flux is exact ──
@@ -589,9 +609,9 @@ end
     if abs(un_bc) <= TF(1e-10)
         # Prescribed velocity is tangential → impermeable exact wall flux.
         Fp = pL * area * normal
-        Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
-        Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
-        Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
+        res_rhoUx.values[cID] += Fp[1]
+        res_rhoUy.values[cID] += Fp[2]
+        res_rhoUz.values[cID] += Fp[3]
         return
     end
 
@@ -606,6 +626,68 @@ end
         flux_scheme, UL, UR_ghost, pL, pR, rhoL, rhoR, normal, area, gamma
     )
 
+    _accumulate_inviscid!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+                          cID, F_rho, F_rhoU, F_rhoE)
+end
+
+# ── Characteristic far field: U, p and T all Dirichlet (free stream) ───────────────
+# Boundary state from the normal Riemann invariants; the exact physical flux of that state is used.
+@inline function _apply_inviscid_bc!(
+    flux_scheme, bc_U::AbstractDirichlet,
+    bc_p::Union{Dirichlet, DirichletFunction}, bc_T::Union{Dirichlet, FixedTemperature, DirichletFunction},
+    res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+    rho, U, p, T, mesh, fluid, fID, time
+)
+    (; faces) = mesh
+    face = faces[fID]
+    (; area, normal, ownerCells) = face
+    cID = ownerCells[1]
+    i   = fID - bc_U.IDs_range.start + 1
+
+    TF    = eltype(rho.values)
+    gamma = TF(fluid.gamma.values)
+    R_gas = TF(fluid.R.values)
+    gm1   = gamma - one(TF)
+
+    UL   = U[cID]
+    pL   = p[cID]
+    rhoL = rho[cID]
+    TL   = T[cID]
+
+    # free stream from the BCs (ghost = 2 q_bc - q_L for U and p; T ghost is T_bc)
+    U_inf = TF(0.5) * (UL + ghost_velocity(bc_U, face, UL, normal, time, i))
+    p_inf = max(TF(0.5) * (pL + ghost_pressure(bc_p, face, pL, normal, time, i)), TF(1e-10))
+    T_inf = max(ghost_temperature(bc_T, face, TL, time, i), TF(1e-10))
+    rho_inf = p_inf / (R_gas * T_inf)
+    a_inf   = sqrt(gamma * p_inf / rho_inf)
+
+    un_i = UL ⋅ normal
+    a_i  = sqrt(gamma * pL / rhoL)
+    un_inf = U_inf ⋅ normal
+
+    if un_inf >= a_inf || un_i >= a_i       # supersonic outflow
+        Ub, pb, rhob = UL, pL, rhoL
+    elseif un_inf <= -a_inf || un_i <= -a_i # supersonic inflow
+        Ub, pb, rhob = U_inf, p_inf, rho_inf
+    else
+        Rp = un_i + 2 * a_i / gm1
+        Rm = un_inf - 2 * a_inf / gm1
+        un_b = TF(0.5) * (Rp + Rm)
+        a_b  = max(TF(0.25) * gm1 * (Rp - Rm), TF(1e-10))
+        if un_b >= zero(TF)                 # outflow: entropy and tangential velocity from the interior
+            Ut   = UL - un_i * normal
+            rhob = rhoL * (a_b / a_i)^(2 / gm1)
+        else                                # inflow: from the free stream
+            Ut   = U_inf - un_inf * normal
+            rhob = rho_inf * (a_b / a_inf)^(2 / gm1)
+        end
+        Ub = Ut + un_b * normal
+        pb = rhob * a_b^2 / gamma
+    end
+
+    F_rho, F_rhoU, F_rhoE = compute_inviscid_flux(
+        flux_scheme, Ub, Ub, pb, pb, rhob, rhob, normal, area, gamma
+    )
     _accumulate_inviscid!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
                           cID, F_rho, F_rhoU, F_rhoE)
 end
@@ -637,9 +719,9 @@ end
     if abs(un_face) <= TF(1e-10)
         # Impermeable: exact wall flux
         Fp = pL * area * normal
-        Atomix.@atomic res_rhoUx.values[cID] += Fp[1]
-        Atomix.@atomic res_rhoUy.values[cID] += Fp[2]
-        Atomix.@atomic res_rhoUz.values[cID] += Fp[3]
+        res_rhoUx.values[cID] += Fp[1]
+        res_rhoUy.values[cID] += Fp[2]
+        res_rhoUz.values[cID] += Fp[3]
         return
     end
 
@@ -687,29 +769,6 @@ end
                           cID, F_rho, F_rhoU, F_rhoE)
 end
 
-# Per-cell CFL time step: λ = |U| + a + ν_eff/dx → dt = CFL*dx/λ (combined convective+diffusive)
-@kernel function _compute_dt_cell!(dt_cell, rho, U, p, cells, fluid, cfl, dim_exp, nu_eff)
-    i = @index(Global)
-
-    @uniform gamma = fluid.gamma.values
-
-    @inbounds begin
-        TF = eltype(rho.values)
-        rho_i    = rho[i]
-        Ui       = U[i]
-        pi       = p[i]
-        Vi       = cells[i].volume
-        nu_eff_i = nu_eff[i]
-
-        ai     = sqrt(TF(gamma) * pi / rho_i)
-        Umag   = sqrt(Ui ⋅ Ui)
-        dx     = Vi^dim_exp
-        lambda = Umag + ai + nu_eff_i / (dx + TF(1e-30))
-
-        dt_cell[i] = cfl * dx / (lambda + TF(1e-30))
-    end
-end
-
 @kernel function _compute_nu_eff_cell!(nu_eff, nu_mol, nut)
     i = @index(Global)
     @inbounds nu_eff[i] = nu_mol + nut.values[i]
@@ -726,26 +785,85 @@ function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_c
 end
 
 """Return fixed dt from `runtime.dt[1]` (no kernel launch)."""
-function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, config, dim_exp)
+function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, config, dim_exp, iteration=1)
     TF = eltype(workspace.dt_cell)
     return TF(runtime.dt[1])
 end
 
-"""Compute CFL-limited dt via per-cell kernel; update `runtime.dt` in place."""
-function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, config, dim_exp)
+# Compute the CFL-limited global dt (minimum of the per-cell spectral-radius dt); update `runtime.dt` in place.
+function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, config, dim_exp, iteration=1)
     TF = eltype(workspace.dt_cell)
-    cfl = TF(runtime.adaptive.maxCo)
     (; dt_cell, nu_eff) = workspace
     (; rho) = model.fluid
     (; U, p) = model.momentum
-    mesh = model.domain
     (; backend, workgroup) = config.hardware
-    n_cells = length(mesh.cells)
-    kernel! = _sized(_compute_dt_cell!, backend, workgroup, n_cells)
-    kernel!(dt_cell, rho, U, p, mesh.cells, model.fluid, cfl, dim_exp, nu_eff)
-    dt = minimum(dt_cell)
+    kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
+    kernel!(dt_cell, rho, U, p, model.domain, model.fluid, TF(runtime.adaptive.maxCo), nu_eff)
+    dt = global_min(minimum(_owned(dt_cell, model.domain)), model.domain)
     runtime.dt .= dt
     return dt
+end
+
+# time step of cell i: a scalar (global dt) or a per-cell array (local time stepping)
+@inline _dt_at(dt::Number, i) = dt
+@inline _dt_at(dt::AbstractArray, i) = @inbounds dt[i]
+
+# Local time step from the spectral radius of the cell: convective part from the face sums,
+# diffusive part from ν_eff Σ A²/V² (= 2 d ν/dx² on a Cartesian cell, as in the global CFL)
+@kernel function _compute_dt_local!(dt_cell, rho, U, p, mesh, fluid, cfl, nu_eff)
+    i = @index(Global)
+
+    @uniform begin
+        (; cells, faces, cell_faces) = mesh
+        gamma = fluid.gamma.values
+    end
+
+    @inbounds begin
+        TF = eltype(rho.values)
+        Ui = U[i]
+        ai = sqrt(TF(gamma) * p[i] / rho[i])
+        Vi = cells[i].volume
+        conv = zero(TF)
+        visc = zero(TF)
+        for fi ∈ cells[i].faces_range
+            (; area, normal) = faces[cell_faces[fi]]
+            conv += (abs(Ui ⋅ normal) + ai) * area
+            visc += area * area
+        end
+        lambda = TF(0.5) * conv / Vi + nu_eff[i] * visc / (Vi * Vi)
+        dt_cell[i] = cfl / (lambda + TF(1e-30))
+    end
+end
+
+# owned entries of a per-cell array (ghost entries come from partial face lists)
+_owned(v, mesh) = view(v, 1:n_owned_cells(mesh))
+
+_time_increment(dt::Number, mesh) = dt
+_time_increment(dt::AbstractArray, mesh) = global_min(minimum(_owned(dt, mesh)), mesh)
+
+# reduction of the per-cell dt over the owned cells of every rank
+_reduce_dt(::MinDt, dt_cell, mesh) = global_min(minimum(_owned(dt_cell, mesh)), mesh)
+_reduce_dt(::MaxDt, dt_cell, mesh) = global_max(maximum(_owned(dt_cell, mesh)), mesh)
+function _reduce_dt(::MeanDt, dt_cell, mesh)
+    dt = _owned(dt_cell, mesh)
+    sums = global_sum([sum(dt), length(dt)], mesh)
+    return sums[1] / sums[2]
+end
+
+# Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum.
+function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration=1)
+    TF = eltype(workspace.dt_cell)
+    (; maxCo, startCo, ramp) = runtime.adaptive
+    frac = ramp > 0 ? min(one(TF), TF(iteration - 1) / TF(ramp)) : one(TF)
+    cfl = TF(startCo + (maxCo - startCo) * frac)
+    (; dt_cell, nu_eff) = workspace
+    (; rho) = model.fluid
+    (; U, p) = model.momentum
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
+    kernel!(dt_cell, rho, U, p, model.domain, model.fluid, cfl, nu_eff)
+    runtime.dt .= _reduce_dt(runtime.adaptive.turbulence_dt, dt_cell, model.domain)
+    return dt_cell
 end
 
 @kernel function _forward_euler!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, cells, dt)
@@ -754,7 +872,7 @@ end
     @inbounds begin
         TF = eltype(rho.values)
         V  = cells[i].volume
-        factor = dt / V
+        factor = _dt_at(dt, i) / V
 
         rho.values[i]   -= factor * res_rho.values[i]
         rhoU.x[i]       -= factor * res_rhoUx.values[i]
@@ -775,6 +893,23 @@ end
         rhoUy_0[i] = rhoU.y[i]
         rhoUz_0[i] = rhoU.z[i]
         rhoE_0[i]  = rhoE.values[i]
+    end
+end
+
+# Jameson stage: W = W^n - α*(dt/V)*R
+@kernel function _rk_stage!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0,
+                            res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, cells, dt, alpha)
+    i = @index(Global)
+
+    @inbounds begin
+        TF = eltype(rho.values)
+        factor = TF(alpha) * _dt_at(dt, i) / cells[i].volume
+
+        rho.values[i]  = max(rho_0[i] - factor * res_rho.values[i], TF(1e-10))
+        rhoU.x[i]      = rhoUx_0[i] - factor * res_rhoUx.values[i]
+        rhoU.y[i]      = rhoUy_0[i] - factor * res_rhoUy.values[i]
+        rhoU.z[i]      = rhoUz_0[i] - factor * res_rhoUz.values[i]
+        rhoE.values[i] = rhoE_0[i]  - factor * res_rhoE.values[i]
     end
 end
 
@@ -921,13 +1056,17 @@ end
     res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
     U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh
 )
-    fID = @index(Global)
+    j = @index(Global)
+    @uniform (; boundary_cell_faces_range, boundary_cell_faces) = mesh
 
-    @inbounds _viscous_bc_dispatch!(
-        U_BCs, T_BCs,
-        res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
-        U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh, fID
-    )
+    # one work item per boundary cell adds its faces in face order (deterministic)
+    @inbounds for k ∈ boundary_cell_faces_range[j]
+        _viscous_bc_dispatch!(
+            U_BCs, T_BCs,
+            res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
+            U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh, boundary_cell_faces[k]
+        )
+    end
 end
 
 @generated function _viscous_bc_dispatch!(
@@ -987,10 +1126,10 @@ end
     F_visc_E = (Uf_face ⋅ tau_n) + q_wall
 
     tau_n_area = tau_n * area
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
-    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+    res_rhoUx.values[cID] -= tau_n_area[1]
+    res_rhoUy.values[cID] -= tau_n_area[2]
+    res_rhoUz.values[cID] -= tau_n_area[3]
+    res_rhoE.values[cID]  -= F_visc_E * area
 end
 
 # Wall (no-slip): two-point gradient (U_wall-U_cell)/δ⊗n — orthogonal, avoids thin-cell amplification.
@@ -1021,10 +1160,10 @@ end
     F_visc_E = (U_wall ⋅ tau_n) + q_wall
 
     tau_n_area = tau_n * area
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
-    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+    res_rhoUx.values[cID] -= tau_n_area[1]
+    res_rhoUy.values[cID] -= tau_n_area[2]
+    res_rhoUz.values[cID] -= tau_n_area[3]
+    res_rhoE.values[cID]  -= F_visc_E * area
 end
 
 # Slip/Symmetry: zero shear + adiabatic → no viscous flux.
@@ -1066,10 +1205,10 @@ end
     F_visc_E = (Uf_face ⋅ tau_n) + kf * (gradT_f ⋅ normal)
 
     tau_n_area = tau_n * area
-    Atomix.@atomic res_rhoUx.values[cID] -= tau_n_area[1]
-    Atomix.@atomic res_rhoUy.values[cID] -= tau_n_area[2]
-    Atomix.@atomic res_rhoUz.values[cID] -= tau_n_area[3]
-    Atomix.@atomic res_rhoE.values[cID]  -= F_visc_E * area
+    res_rhoUx.values[cID] -= tau_n_area[1]
+    res_rhoUy.values[cID] -= tau_n_area[2]
+    res_rhoUz.values[cID] -= tau_n_area[3]
+    res_rhoE.values[cID]  -= F_visc_E * area
 end
 
 # ============================================================
@@ -1091,7 +1230,15 @@ Explicit Godunov-type density-based solver for compressible flows, including sup
 
 - `flux` — Riemann solver: `Rusanov()` (default) or `HLLC()`
 - `reconstruction` — spatial reconstruction: `Upwind()` (1st order, default) or `MUSCL{L}()` (2nd order) where `L` is a slope limiter: `VanLeer`, `MinMod`, or `Superbee`
-- `time_stepping` — explicit time integration: `FEuler()` (1st order, default) or `RK2()` (2nd order SSP)
+- `time_stepping` — explicit time integration: `FEuler()` (1st order, default) or `RK2()` (2nd order SSP) or the steady multistage schemes `RK3()`, `RK4()`, `RK5()`
+
+`Runtime(adaptive=LocalTimeStepping(maxCo=..., ramp=...))` enables per-cell pseudo-time stepping (steady problems).
+
+`forces=(patches=[:wall], interval=10)` records pressure and viscous force histories in `residuals.forces`.
+
+On a distributed mesh (see `distribute`) each rank advances its own cells; residuals, time steps
+and forces are reduced over all ranks. Write results with `output=OpenFOAM()` (3D meshes) or set
+`write_interval=-1`.
 
 # Output
 
@@ -1099,10 +1246,13 @@ This function returns a `NamedTuple` for accessing the residuals (e.g. `residual
 
 - `rho` Vector of density residuals for each time step.
 """
-function godunov!(model, config; output=VTK(), progress=true)
+function godunov!(model, config; output=VTK(), progress=true, forces=nothing)
     check_distributed_support(:Godunov, model)
+    reject_crank_nicolson(config.schemes, "godunov!",
+        "the turbulence transport is a split step after the explicit flow update, so the time \
+        integration cannot be second order; use Euler")
     _check_godunov_bcs(config.boundaries)
-    residuals = _setup_godunov(model, config; output=output, progress=progress)
+    residuals = _setup_godunov(model, config; output=output, progress=progress, forces=forces)
     return residuals
 end
 
@@ -1126,7 +1276,7 @@ function _check_godunov_bcs(boundaries)
     end
 end
 
-function _setup_godunov(model, config; output=VTK(), progress=true)
+function _setup_godunov(model, config; output=VTK(), progress=true, forces=nothing)
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu) = model.fluid
     mesh = model.domain
@@ -1180,7 +1330,14 @@ function _setup_godunov(model, config; output=VTK(), progress=true)
     prev      = KernelAbstractions.zeros(backend, TF, n_cells)
 
     @info "Initialising turbulence model..."
-    turbulenceModel, config = initialise(model.turbulence, model, mdotf, nothing, config)
+    # RANS models build their transport equations from a scalar-equation template (peqn.equation); the
+    # density-based solver has no pressure equation, so a Laplacian template over p provides it.
+    rhorDf = FaceScalarField(mesh)
+    initialise!(rhorDf, 1.0)
+    template_eqn = (
+        - Laplacian{schemes.p.laplacian}(rhorDf, p) == - Source(ScalarField(mesh))
+    ) → ScalarEquation(p, boundaries.p)
+    turbulenceModel, config = initialise(model.turbulence, model, mdotf, template_eqn, config)
 
     @info "Initialising density from p and T..."
 
@@ -1191,7 +1348,7 @@ function _setup_godunov(model, config; output=VTK(), progress=true)
     residuals = GODUNOV(
         model, workspace, turbulenceModel,
         S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
-        config; output=output, progress=progress
+        config; output=output, progress=progress, forces=forces
     )
     return residuals
 end
@@ -1208,7 +1365,7 @@ function compute_residuals!(
     (; hardware) = config
     (; backend, workgroup) = hardware
     n_cells  = length(mesh.cells)
-    n_bfaces = length(mesh.boundary_cellsID)
+    n_bcells = length(mesh.boundary_cells)
 
     kernel! = _sized(_zero_residuals!, backend, workgroup, n_cells)
     kernel!(res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE)
@@ -1220,12 +1377,12 @@ function compute_residuals!(
     kernel! = _sized(_viscous_flux_internal!, backend, workgroup, n_cells)
     kernel!(res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, U, T, gradU, gradT, mueff, kappa_eff, mesh)
 
-    kernel! = _sized(_inviscid_bc_flux!, backend, workgroup, n_bfaces)
+    kernel! = _sized(_inviscid_bc_flux!, backend, workgroup, n_bcells)
     kernel!(flux_scheme, boundaries.U, boundaries.p, boundaries.T,
             res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             rho, U, p, T, mesh, model.fluid, time)
 
-    kernel! = _sized(_viscous_bc_flux!, backend, workgroup, n_bfaces)
+    kernel! = _sized(_viscous_bc_flux!, backend, workgroup, n_bcells)
     kernel!(boundaries.U, boundaries.T, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE,
             U, Uf, gradU, gradT, T, mueff, kappa_eff, mesh)
 end
@@ -1239,9 +1396,17 @@ function recover_primitives!(workspace, model, config)
     (; backend, workgroup) = hardware
     n_cells = length(model.domain.cells)
 
+    # ghost cells take the owners' conserved state; the conversion below is pointwise
+    sync!((rho, rhoU), model.domain, config)
+    sync!(rhoE, model.domain, config)
+
     kernel! = _sized(_cons_to_prim!, backend, workgroup, n_cells)
     kernel!(U, p, T, Mach, rho, rhoU, rhoE, model.domain.cells, model.fluid)
 end
+
+# the flux kernels read gradU of ghost cells (processor faces); tensor gradients are not
+# exchanged by grad!, so the velocity gradient is synced here (no-op serial)
+_sync_gradU!(gradU, mesh, config) = Discretise.sync_gradient!(gradU.result, mesh, config)
 
 function interpolate_primitive_fields!(
     model, boundaries, rhof, mdotf, time, config
@@ -1279,6 +1444,61 @@ function step!(
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 end
 
+# Refresh primitives, face fields, gradients and thermal coefficients after a conserved-variable stage update.
+function refresh_stage!(
+    workspace, model, boundaries, recon_scheme, gradU, gradRho, gradP, gradT,
+    nueff, mueff, kappa_eff, rhof, mdotf, time, config
+)
+    (; U, p, Uf, pf) = model.momentum
+    (; rho) = model.fluid
+    (; T, Tf) = model.energy
+    (; schemes) = config
+    TF = _get_float(model.domain)
+    cp_val = TF(model.fluid.cp.values)
+    Pr_val = TF(model.fluid.Pr.values)
+
+    recover_primitives!(workspace, model, config)
+    interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
+    grad!(gradT, Tf, T, boundaries.T, time, config)
+    limit_gradient!(schemes.T.limiter, gradT, T, config)
+    grad!(gradU, Uf, U, boundaries.U, time, config)
+    limit_gradient!(schemes.U.limiter, gradU, U, config)
+    _sync_gradU!(gradU, model.domain, config)
+    update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
+    update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
+end
+
+# Jameson multistage step: W^(k) = W^n - α_k*(dt/V)*R(W^(k-1)); R(W^n) is pre-computed.
+# `dt` is a scalar or the per-cell array of local time stepping. Call recover_primitives! after.
+function step!(
+    scheme::RKJST{N}, workspace, model, boundaries, flux_scheme, recon_scheme,
+    gradU, gradRho, gradP, gradT, nueff, mueff, kappa_eff, rhof, mdotf, dt, time, config
+) where {N}
+    (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
+    (; rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0) = workspace
+    (; rho) = model.fluid
+    (; backend, workgroup) = config.hardware
+    mesh = model.domain
+    n_cells = length(mesh.cells)
+    (; U, Uf) = model.momentum
+    alphas = _rk_alpha(scheme)
+
+    kernel! = _sized(_save_conservative!, backend, workgroup, n_cells)
+    kernel!(rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0, rho, rhoU, rhoE)
+
+    for k ∈ 1:N
+        if k > 1
+            refresh_stage!(workspace, model, boundaries, recon_scheme, gradU, gradRho, gradP, gradT,
+                           nueff, mueff, kappa_eff, rhof, mdotf, time, config)
+            compute_residuals!(workspace, flux_scheme, recon_scheme, boundaries, model,
+                               gradU, gradRho, gradP, gradT, mueff, kappa_eff, Uf, mesh, time, config)
+        end
+        kernel! = _sized(_rk_stage!, backend, workgroup, n_cells)
+        kernel!(rho, rhoU, rhoE, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0,
+                res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt, alphas[k])
+    end
+end
+
 """
 SSP-RK2 step: W^(1)=W^n-(dt/V)*R(W^n), W^(2)=W^(1)-(dt/V)*R(W^(1)), W^{n+1}=0.5*(W^n+W^(2)).
 R(W^n) must be pre-computed. Call recover_primitives! after.
@@ -1308,14 +1528,8 @@ function step!(
     kernel!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, mesh.cells, dt)
 
     # Update primitives and face fields at W^(1) for stage-2 residual
-    recover_primitives!(workspace, model, config)
-    interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
-    grad!(gradT, Tf, T, boundaries.T, time, config)
-    limit_gradient!(schemes.T.limiter, gradT, T, config)
-    grad!(gradU, Uf, U, boundaries.U, time, config)
-    limit_gradient!(schemes.U.limiter, gradU, U, config)
-    update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
-    update_thermo_coeffs!(mueff, kappa_eff, rhof, nueff, cp_val, Pr_val)
+    refresh_stage!(workspace, model, boundaries, recon_scheme, gradU, gradRho, gradP, gradT,
+                   nueff, mueff, kappa_eff, rhof, mdotf, time, config)
 
     # Stage 2: R(W^(1)), Euler update → W^(2)
     compute_residuals!(workspace, flux_scheme, recon_scheme, boundaries, model,
@@ -1336,7 +1550,7 @@ end
 function GODUNOV(
     model, workspace, turbulenceModel,
     S, gradT, gradRho, gradP, nueff, mueff, kappa_eff, mdotf, prev,
-    config; output=VTK(), progress=true
+    config; output=VTK(), progress=true, forces=nothing
 )
     (; U, p, Uf, pf) = model.momentum
     (; rho, nu, R) = model.fluid
@@ -1348,14 +1562,14 @@ function GODUNOV(
 
     flux_scheme  = get(schemes, :flux, Rusanov())
     time_scheme  = get(schemes, :time_stepping, FEuler())
-    recon_scheme = schemes.reconstruction
+    recon_scheme = get(schemes, :reconstruction, Upwind())
 
-    (; rhoU, rhoE, res_rho) = workspace
+    (; rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
 
     n_cells = length(mesh.cells)
     TF = _get_float(mesh)
 
-    dim_exp = typeof(mesh) <: Mesh2 ? TF(0.5) : TF(1/3)   # dx = V^dim_exp
+    dim_exp = _base_mesh(mesh) isa Mesh2 ? TF(0.5) : TF(1/3)   # dx = V^dim_exp
 
     outputWriter = initialise_writer(output, model.domain)
 
@@ -1366,6 +1580,10 @@ function GODUNOV(
 
     @info "Initialising conservative variables from primitive fields..."
 
+    # prime ghosts with the owners' initial state (no-op serial)
+    sync!((p, U), mesh, config); sync!(T, mesh, config)
+    @. rho.values = p.values / (R.values * T.values)
+
     kernel! = _sized(_prim_to_cons!, backend, workgroup, n_cells)
     kernel!(rhoU, rhoE, rho, U, p, model.fluid)
 
@@ -1375,7 +1593,6 @@ function GODUNOV(
 
     @info "Initialising face fields, gradients and viscous coefficients..."
 
-    @. rho.values = p.values / (R.values * T.values)
     interpolate_primitive_fields!(model, boundaries, rhof, mdotf, time, config)
 
     update_nueff!(nueff, nu, model.turbulence, config)
@@ -1383,16 +1600,22 @@ function GODUNOV(
 
     grad!(gradU, Uf, U, boundaries.U, time, config)
     limit_gradient!(schemes.U.limiter, gradU, U, config)
+    _sync_gradU!(gradU, mesh, config)
     grad!(gradT, Tf, T, boundaries.T, time, config)
     limit_gradient!(schemes.T.limiter, gradT, T, config)
     update_recon_gradients!(recon_scheme, gradRho, gradP, rhof, pf, rho, p, boundaries, time, config)
 
     @. workspace.nu_eff = nu_mol
-    R_rho = ones(TF, iterations)
+    R_rho  = ones(TF, iterations)
+    R_rhoU = ones(TF, iterations)
+    R_rhoE = ones(TF, iterations)
+    force_log = _force_log(forces)
+    local_dt  = runtime.adaptive isa LocalTimeStepping
 
     @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
 
-    bar = _progress_bar(iterations, progress)
+    bar = _progress_bar(iterations, progress && !is_distributed_mesh(mesh))
+    n_global = global_sum(n_owned_cells(mesh), mesh)
 
     for iteration ∈ 1:iterations
 
@@ -1401,12 +1624,22 @@ function GODUNOV(
                            gradU, gradRho, gradP, gradT, mueff, kappa_eff, Uf, mesh, time, config)
 
         # 2. L2 density residual (before conservative update)
-        rho_res = norm(res_rho.values) / sqrt(TF(n_cells))
-        R_rho[iteration] = rho_res
+        rho_res, rhoU_res, rhoE_res = _residual_norms(workspace, mesh, n_global)
+        if !isfinite(rho_res)
+            @error "Godunov solver diverged (non-finite density residual) at iteration $iteration; reduce the Courant number"
+            R_rho[iteration:end]  .= TF(NaN)
+            R_rhoU[iteration:end] .= TF(NaN)
+            R_rhoE[iteration:end] .= TF(NaN)
+            break
+        end
+        R_rho[iteration]  = rho_res
+        R_rhoU[iteration] = rhoU_res
+        R_rhoE[iteration] = rhoE_res
 
         # 3. Time step (adaptive CFL or fixed)
-        dt = compute_dt!(workspace, model, runtime, config, dim_exp)
-        time += dt
+        dt = compute_dt!(workspace, model, runtime, config, dim_exp, iteration)
+        dt_time = _time_increment(dt, mesh)   # local time stepping: dt is the per-cell array, time follows the minimum
+        time += dt_time
 
         # 4. Advance W^n → W^{n+1} (FEuler: single update; RK2: two-stage SSP)
         step!(time_scheme, workspace, model, boundaries, flux_scheme, recon_scheme,
@@ -1425,6 +1658,7 @@ function GODUNOV(
 
         # 8. Turbulence update (recomputes gradU and S internally)
         turbulence!(turbulenceModel, model, S, prev, time, config)
+        _sync_gradU!(gradU, mesh, config)
 
         # 9. Effective viscosity and thermal conductivity
         update_nueff!(nueff, nu, model.turbulence, config)
@@ -1434,9 +1668,11 @@ function GODUNOV(
         update_nu_eff_cell!(workspace.nu_eff, nu_mol, model.turbulence, backend, workgroup, n_cells)
 
         isnothing(bar) || ProgressMeter.next!(bar, showvalues = [
-            (:time, time), (:iter, iteration), (:dt, dt), (:continuity_error, rho_res),
+            (:time, time), (:iter, iteration), (:dt, dt_time), (:continuity_error, rho_res),
             turbulenceModel.state.residuals...
         ])
+
+        _log_forces!(force_log, forces, iteration, time, model, config)
 
         if iteration % write_interval + signbit(write_interval) == 0
             save_output(model, outputWriter, iteration, time, config)
@@ -1444,5 +1680,42 @@ function GODUNOV(
 
     end # time loop
 
-    return (rho=R_rho,)
+    # normalised by the residual at the end of the Courant ramp (first iteration without LTS)
+    iter0 = local_dt ? min(runtime.adaptive.ramp + 1, iterations) : 1
+    function rel(R)
+        i0 = findfirst(x -> isfinite(x) && x > 0, @view R[iter0:end])
+        ref = isnothing(i0) ? one(TF) : R[iter0 + i0 - 1]
+        return R ./ ref
+    end
+    base = (rho=R_rho, rhoU=R_rhoU, rhoE=R_rhoE,
+            rho_rel=rel(R_rho), rhoU_rel=rel(R_rhoU), rhoE_rel=rel(R_rhoE))
+    return isnothing(forces) ? base : merge(base, (forces=force_log,))
+end
+
+# RMS of the cell residuals over the owned cells of every rank, one reduction for all three
+function _residual_norms(workspace, mesh, n_global)
+    (; res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE) = workspace
+    sq(f) = sum(abs2, _owned(f.values, mesh))
+    s = global_sum([sq(res_rho), sq(res_rhoUx) + sq(res_rhoUy) + sq(res_rhoUz), sq(res_rhoE)], mesh)
+    TF = eltype(s)
+    return sqrt(s[1] / TF(n_global)), sqrt(s[2] / TF(n_global)), sqrt(s[3] / TF(n_global))
+end
+
+# Optional force history: `forces=(patches=[:wing], interval=10)`; the result holds, per patch,
+# the iterations and the pressure and viscous force vectors (absolute p, as `pressure_force`).
+_force_log(::Nothing) = nothing
+_force_log(forces) = NamedTuple{Tuple(forces.patches)}(Tuple(
+    (iteration=Int[], pressure=Vector{Vector{Float64}}(), viscous=Vector{Vector{Float64}}())
+    for _ ∈ forces.patches))
+
+_log_forces!(::Nothing, forces, iteration, time, model, config) = nothing
+function _log_forces!(log, forces, iteration, time, model, config)
+    iteration % forces.interval == 0 || return nothing
+    for patch ∈ forces.patches
+        h = log[patch]
+        push!(h.iteration, iteration)
+        push!(h.pressure, Float64.(pressure_force(patch, model, config)))
+        push!(h.viscous,  Float64.(viscous_force(patch, model, config; time=time)))
+    end
+    return nothing
 end

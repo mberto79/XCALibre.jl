@@ -68,7 +68,7 @@ ScalarField(mesh::AbstractMesh; store_mesh=true) =begin
     ncells  = length(mesh.cells)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    arr = first_touch_zeros(backend, F, ncells)
+    arr = KernelAbstractions.zeros(backend, F, ncells)
     if store_mesh
         return ScalarField(arr, mesh)
     else
@@ -86,7 +86,7 @@ FaceScalarField(mesh::AbstractMesh; store_mesh=true) = begin
     nfaces  = length(mesh.faces)
     F = _get_float(mesh)
     backend = _get_backend(mesh)
-    arr = first_touch_zeros(backend, F, nfaces)
+    arr = KernelAbstractions.zeros(backend, F, nfaces)
     if store_mesh
         return FaceScalarField(arr, mesh)
     else
@@ -265,6 +265,28 @@ field_values(t::TensorField) = TensorValues(
     t.yx.values, t.yy.values, t.yz.values,
     t.zx.values, t.zy.values, t.zz.values)
 
+field_values(v::VectorField) = VectorValues(v.x.values, v.y.values, v.z.values)
+
+# the transpose shares the storage with the roles of the off-diagonal arrays swapped
+transpose_values(t::TensorField) = TensorValues(
+    t.xx.values, t.yx.values, t.zx.values,
+    t.xy.values, t.yy.values, t.zy.values,
+    t.xz.values, t.yz.values, t.zz.values)
+
+struct VectorValues{A}
+    x::A
+    y::A
+    z::A
+end
+Adapt.@adapt_structure VectorValues
+
+@inline Base.getindex(v::VectorValues, i::Integer) = @inbounds SVector{3}(v.x[i], v.y[i], v.z[i])
+@inline Base.setindex!(v::VectorValues, x::SVector{3}, i::Integer) = @inbounds begin
+    v.x[i] = x[1]
+    v.y[i] = x[2]
+    v.z[i] = x[3]
+end
+
 struct TensorValues{A}
     xx::A
     xy::A
@@ -401,7 +423,7 @@ struct Dev2{T}
 end
 Adapt.@adapt_structure Dev2
 
-Base.getindex(T::Dev2, i::Integer) = begin
+@inline Base.getindex(T::Dev2, i::Integer) = begin
     Ti = T.parent[i]
     Ti - eltype(Ti)(2)/3*tr(Ti)*I
 end

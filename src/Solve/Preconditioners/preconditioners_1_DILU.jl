@@ -6,8 +6,9 @@ function extract_diagonal!(D, Di, A::AbstractSparseArray, config)
     (; hardware) = config
     # (; backend, workgroup) = hardware
     (; nzval, n) = A
+    n == 0 && return nothing # a rank without cells
     backend = CPU()
-    workgroup = cld(n, Threads.nthreads())
+    workgroup = cld(max(n, one(n)), Threads.nthreads())
     
     ndrange = n
     kernel! = _sized(_extract_diagonal!, backend, workgroup, ndrange)

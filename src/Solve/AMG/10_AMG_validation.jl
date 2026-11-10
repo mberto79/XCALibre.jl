@@ -143,8 +143,11 @@ function measure_cycle_allocations(A, merge_levels::Integer, backend; pre::Int=2
     st = h.st; T = h.T; n = st.n
     rhs = backend isa CPU ? rand(T, n) : Adapt.adapt(backend, rand(T, n))
     matrix_free_cycle!(st, rhs)                                # warmup (compile + cuBLAS handle)
-    a1 = @allocated matrix_free_cycle!(st, rhs)
-    a2 = @allocated matrix_free_cycle!(st, rhs)                # KA launch adds a fixed host alloc — report, don't assert zero
+    GC.gc()                                                    # run pending finalizers outside the measurement
+    # KA launch adds a fixed host alloc — report, don't assert zero. Threaded launches and finalizers
+    # occasionally add bytes to one call, so compare the minimum of two batches of cycles
+    a1 = minimum(@allocated(matrix_free_cycle!(st, rhs)) for _ in 1:3)
+    a2 = minimum(@allocated(matrix_free_cycle!(st, rhs)) for _ in 1:3)
     return (host_bytes=(a1, a2), constant=(a1 == a2), coarse_n=st.coarse_n,
             branch=(st.coarse_inv[] === nothing ? :host_lu : :gemv), levels=length(st.levels) + 1)
 end
@@ -250,28 +253,4 @@ function validate_refresh_convergence(A1, A2, merge_levels::Integer, backend; pr
         rn = norm(Array(res))
     end
     return (converged=(rn <= rtol * r0), iters=it, final_rel=rn / r0, n=n, levels=length(st.levels) + 1)
-end
-
-# NEW SECTION: end-to-end path comparison (REPL driver)
-
-# Run `mode` through update!+_amg_solve_mode! on both the matrix-free and reference paths, same device
-# system. A and b must already be on `backend`. n_update>1 exercises the transient refresh path.
-function compare_amg_paths(A, b, backend; mode=Cg(), merge_levels=1, fuse_levels=1,
-                                coarse_storage=Float64, itmax=200, rtol=1e-8, atol=1e-8,
-                                workgroup=64, scale_correction=true, n_update=1)
-    config = (hardware=(backend=backend, workgroup=workgroup),)
-    run_one = (solver) -> begin
-        ws = _workspace(solver, b)
-        for _ in 1:n_update; update!(ws, A, solver, config); end
-        x = similar(b); fill!(x, 0)
-        _amg_solve_mode!(ws, ws.hierarchy, solver, solver.mode, A, b, x; itmax=itmax, atol=atol, rtol=rtol)
-        (iters=ws.iterations, converged=ws.converged, relres=ws.last_relative_residual,
-         factor=ws.hierarchy.last_cycle_factor, matrix_free=(ws.hierarchy isa MatrixFreeHierarchy))
-    end
-    gf_solver = AMG(mode=mode, coarsening=Geometric(merge_levels=merge_levels), smoother=AMGJacobi(),
-                    fuse_levels=fuse_levels, coarse_storage=coarse_storage, max_coarse_rows=4096,
-                    scale_correction=scale_correction)
-    ref_solver = AMG(mode=mode, coarsening=Geometric(merge_levels=merge_levels), smoother=AMGJacobi(),
-                     fuse_levels=0, max_coarse_rows=4096)
-    return (matrix_free=run_one(gf_solver), reference=run_one(ref_solver))
 end

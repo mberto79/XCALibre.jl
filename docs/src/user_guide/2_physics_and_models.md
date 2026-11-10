@@ -259,6 +259,13 @@ LES{Smagorinsky}(; C=0.15) # default value provided by default
 LES{Smagorinsky}(C=0.1) # user selected value
 ```
 
+WALE model: the Wall-Adapting Local Eddy-viscosity model (Nicoud & Ducros, 1999), with the standard model constant passed by default. Unlike the Smagorinsky model, the eddy viscosity vanishes in pure shear and scales correctly near walls without the need for damping functions. Boundary conditions for `nut` must be provided, generally zero gradient conditions work well.
+```julia
+LES{WALE}() # default constructor will use value below
+LES{WALE}(; C=0.325) # default value provided by default
+LES{WALE}(C=0.5) # user selected value
+```
+
 For example, an incompressible LES simulation with the `Smagorinsky` model can be specified as
 ```julia
 Physics(
@@ -431,6 +438,14 @@ temperature: on a wall-function mesh the near-wall thermal resistance is
 modelled rather than resolved, so a wall temperature recovered from the first
 cell inherits that treatment. Use `FixedTemperature` instead when the wall
 temperature is the quantity being imposed and the flux should follow.
+
+### `Robin` condition
+
+`Robin` imposes the mixed constraint `a·φ + b·∇φ·n = value` on a scalar field, e.g. a convective heat-transfer condition. `a=1, b=0` recovers `Dirichlet` and `a=0, b=1` recovers `Neumann`.
+
+```@docs; canonical=false
+Robin
+```
 
 ### `AbstractPhysicalConstraint` conditions
 

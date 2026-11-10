@@ -94,7 +94,7 @@ Adapt.@adapt_structure Face2D
         normal::SV3     # face normal unit vector
         e::SV3          # unit vector in the direction between owner cells
         area::F         # face area
-        delta::F        # distance between owner cells centres
+        delta::F        # distance between owner cells centres (boundary: cell centre to nearest face point)
         weight::F       # linear interpolation weight
     end
 """
@@ -111,7 +111,7 @@ struct Face3D{
     normal::SV3     # face normal unit vector
     e::SV3          # unit vector in the direction between owner cells
     area::F         # face area
-    delta::F        # distance between owner cells centres
+    delta::F        # distance between owner cells centres (boundary: cell centre to nearest face point)
     weight::F       # linear interpolation weight
 end
 Adapt.@adapt_structure Face3D
@@ -254,7 +254,7 @@ struct Mesh2{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
     face_normal::VV      # face unit normals
     face_e::VV           # unit vectors between owner cell centres
     face_area::VTF       # face areas
-    face_delta::VTF      # distance between owner cell centres
+    face_delta::VTF      # distance between owner cell centres (boundary: cell centre to nearest face point)
     face_weight::VTF     # linear interpolation weights
     face_nodes::VI       # node IDs of each face
     face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
@@ -265,13 +265,18 @@ struct Mesh2{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
     get_float::VTF       # one-element array tagging the mesh float type
     get_int::VI          # one-element array tagging the mesh integer type
     boundary_cellsID::VI # owner cell ID of each boundary face
+    boundary_cells::VI   # owner cells of boundary faces, each once (derived)
+    boundary_cell_faces_range::VR # range of each boundary cell's faces in boundary_cell_faces
+    boundary_cell_faces::VI # boundary face IDs grouped by owner cell, ascending within a cell
     function Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
-        face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
+        face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID,
+        boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
         c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
         fields = (c.centre, c.volume, c.nodes_range, c.faces_range, cell_nodes, cell_faces,
             cell_neighbours, s, f.nodes_range, f.ownerCells, f.centre, f.normal, f.e, f.area, f.delta,
             f.weight, face_nodes, face_gDiff, boundaries, n.coords, n.cells_range, node_cells,
-            _type_tag(f.area, get_float), _type_tag(cell_nodes, get_int), boundary_cellsID)
+            _type_tag(f.area, get_float), _type_tag(cell_nodes, get_int), boundary_cellsID,
+            boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
         new{typeof(f.centre), typeof(f.area), typeof(f.nodes_range), typeof(f.ownerCells),
             typeof(cell_nodes), typeof(s), typeof(boundaries)}(fields...)
     end
@@ -289,13 +294,14 @@ end
 Adapt.adapt_structure(to, m::Mesh2) = Mesh2(adapt(to, m.cells), adapt(to, m.cell_nodes),
     adapt(to, m.cell_faces), adapt(to, m.cell_neighbours), adapt(to, m.cell_nsign), adapt(to, m.faces),
     adapt(to, m.face_nodes), adapt(to, m.face_gDiff), adapt(to, m.boundaries), adapt(to, m.nodes),
-    adapt(to, m.node_cells), adapt(to, m.get_float), adapt(to, m.get_int), adapt(to, m.boundary_cellsID))
+    adapt(to, m.node_cells), adapt(to, m.get_float), adapt(to, m.get_int), adapt(to, m.boundary_cellsID),
+    adapt(to, m.boundary_cells), adapt(to, m.boundary_cell_faces_range), adapt(to, m.boundary_cell_faces))
 
 Mesh2(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
       boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID) = Mesh2(
     cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
     face_gDiff_coefficients(faces), boundaries, nodes, node_cells, get_float, get_int,
-    boundary_cellsID)
+    boundary_cellsID, boundary_cell_faces(boundary_cellsID)...)
 
 """
     struct Mesh3{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
@@ -319,7 +325,7 @@ its own array; `mesh.cells`, `mesh.faces` and `mesh.nodes` return views that ind
     face_normal::VV      # face unit normals
     face_e::VV           # unit vectors between owner cell centres
     face_area::VTF       # face areas
-    face_delta::VTF      # distance between owner cell centres
+    face_delta::VTF      # distance between owner cell centres (boundary: cell centre to nearest face point)
     face_weight::VTF     # linear interpolation weights
     face_nodes::VI       # node IDs of each face
     face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
@@ -330,7 +336,14 @@ its own array; `mesh.cells`, `mesh.faces` and `mesh.nodes` return views that ind
     get_float::VTF       # one-element array tagging the mesh float type
     get_int::VI          # one-element array tagging the mesh integer type
     boundary_cellsID::VI # owner cell ID of each boundary face
+    boundary_cells::VI   # owner cells of boundary faces, each once (derived)
+    boundary_cell_faces_range::VR # range of each boundary cell's faces in boundary_cell_faces
+    boundary_cell_faces::VI # boundary face IDs grouped by owner cell, ascending within a cell
 ```
+
+Kernels that add boundary-face contributions to cells loop over `boundary_cells` and, for each,
+over its faces in `boundary_cell_faces`, so every cell sums its faces in one fixed order: results
+do not depend on the thread count or the scheduling.
 """
 struct Mesh3{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
     cell_centre::VV      # cell centroid coordinates
@@ -347,7 +360,7 @@ struct Mesh3{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
     face_normal::VV      # face unit normals
     face_e::VV           # unit vectors between owner cell centres
     face_area::VTF       # face areas
-    face_delta::VTF      # distance between owner cell centres
+    face_delta::VTF      # distance between owner cell centres (boundary: cell centre to nearest face point)
     face_weight::VTF     # linear interpolation weights
     face_nodes::VI       # node IDs of each face
     face_gDiff::VTF      # Laplacian face coefficient (derived, see `_gDiff`)
@@ -358,13 +371,18 @@ struct Mesh3{VV, VTF, VR, VO, VI, VS, VB} <: AbstractMesh
     get_float::VTF       # one-element array tagging the mesh float type
     get_int::VI          # one-element array tagging the mesh integer type
     boundary_cellsID::VI # owner cell ID of each boundary face
+    boundary_cells::VI   # owner cells of boundary faces, each once (derived)
+    boundary_cell_faces_range::VR # range of each boundary cell's faces in boundary_cell_faces
+    boundary_cell_faces::VI # boundary face IDs grouped by owner cell, ascending within a cell
     function Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
-        face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID)
+        face_gDiff, boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID,
+        boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
         c, f, n, s = _soa(cells), _soa(faces), _soa(nodes), _nsign(cell_nsign)
         fields = (c.centre, c.volume, c.nodes_range, c.faces_range, cell_nodes, cell_faces,
             cell_neighbours, s, f.nodes_range, f.ownerCells, f.centre, f.normal, f.e, f.area, f.delta,
             f.weight, face_nodes, face_gDiff, boundaries, n.coords, n.cells_range, node_cells,
-            _type_tag(f.area, get_float), _type_tag(cell_nodes, get_int), boundary_cellsID)
+            _type_tag(f.area, get_float), _type_tag(cell_nodes, get_int), boundary_cellsID,
+            boundary_cells, boundary_cell_faces_range, boundary_cell_faces)
         new{typeof(f.centre), typeof(f.area), typeof(f.nodes_range), typeof(f.ownerCells),
             typeof(cell_nodes), typeof(s), typeof(boundaries)}(fields...)
     end
@@ -384,24 +402,14 @@ Base.propertynames(m::Union{Mesh2,Mesh3}, private::Bool=false) = (:cells, :faces
 Adapt.adapt_structure(to, m::Mesh3) = Mesh3(adapt(to, m.cells), adapt(to, m.cell_nodes),
     adapt(to, m.cell_faces), adapt(to, m.cell_neighbours), adapt(to, m.cell_nsign), adapt(to, m.faces),
     adapt(to, m.face_nodes), adapt(to, m.face_gDiff), adapt(to, m.boundaries), adapt(to, m.nodes),
-    adapt(to, m.node_cells), adapt(to, m.get_float), adapt(to, m.get_int), adapt(to, m.boundary_cellsID))
+    adapt(to, m.node_cells), adapt(to, m.get_float), adapt(to, m.get_int), adapt(to, m.boundary_cellsID),
+    adapt(to, m.boundary_cells), adapt(to, m.boundary_cell_faces_range), adapt(to, m.boundary_cell_faces))
 
 Mesh3(cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
       boundaries, nodes, node_cells, get_float, get_int, boundary_cellsID) = Mesh3(
     cells, cell_nodes, cell_faces, cell_neighbours, cell_nsign, faces, face_nodes,
     face_gDiff_coefficients(faces), boundaries, nodes, node_cells, get_float, get_int,
-    boundary_cellsID)
-
-# first touch: arrays reached through a per-cell, face or node range are cut by that range, so
-# each thread places the entries of the elements it owns
-Adapt.adapt_structure(to::FirstTouch, m::Mesh2) = _first_touch_mesh(Mesh2, to, m)
-Adapt.adapt_structure(to::FirstTouch, m::Mesh3) = _first_touch_mesh(Mesh3, to, m)
-_first_touch_mesh(M, to, m) = M(adapt(to, m.cells), first_touch_copy(m.cell_nodes, m.cell_nodes_range),
-    first_touch_copy(m.cell_faces, m.cell_faces_range), first_touch_copy(m.cell_neighbours, m.cell_faces_range),
-    first_touch_copy(m.cell_nsign, m.cell_faces_range), adapt(to, m.faces),
-    first_touch_copy(m.face_nodes, m.face_nodes_range), adapt(to, m.face_gDiff), adapt(to, m.boundaries),
-    adapt(to, m.nodes), first_touch_copy(m.node_cells, m.node_cells_range), adapt(to, m.get_float),
-    adapt(to, m.get_int), adapt(to, m.boundary_cellsID))
+    boundary_cellsID, boundary_cell_faces(boundary_cellsID)...)
 
 Base.show(io::IO, mesh::AbstractMesh) = begin
     if typeof(mesh) <: Mesh2

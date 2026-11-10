@@ -58,6 +58,7 @@ The list of turbulence models available is expected to expand. The following tur
   
 * Large Eddy Simulation (LES with implicit filtering)
   * Smagorinsky - classic eddy-viscosity sub-grid scale Smagorinsky model
+  * WALE - Wall-Adapting Local Eddy-viscosity sub-grid scale model
 
 ### Boundary conditions 
 * User defined functions
@@ -67,7 +68,9 @@ The list of turbulence models available is expected to expand. The following tur
 * Linear - second order schemes for gradients, laplacian and divergence terms
 * Upwind - first order upwind-biased scheme for divergence terms
 * LUST (divergence) - mixed order upwind-biased scheme for divergence terms
+* LinearUpwind and LimitedLinearUpwind (divergence) - second order upwind schemes (deferred correction), the latter bounded
 * Midpoint - skew-corrected scheme for gradient calculations
+* LeastSquares - inverse-distance weighted least-squares gradient scheme, exact for linear fields on skewed meshes
 * SteadyState - dummy scheme used to dispatch solvers for operation in steady mode
 * Euler - first order semi-implicit time scheme
 

@@ -102,6 +102,9 @@ end
     Uf::Vf 
     pf::Sf 
     sources::SS
+    mdotf::Sf   # face mass flux of the last run!, reused by a continued run
+    Umdot::V    # U and p that mdotf belongs to (any change to them invalidates it)
+    pmdot::S
 end
 
 original(mesh::AbstractMesh) = begin
@@ -109,7 +112,9 @@ original(mesh::AbstractMesh) = begin
     p = ScalarField(mesh)
     Uf = FaceVectorField(mesh)
     pf = FaceScalarField(mesh)
-    regular(U, p, Uf, pf, nothing)
+    mdotf = FaceScalarField(mesh)
+    fill!(mdotf.values, NaN) # no flux stored yet
+    regular(U, p, Uf, pf, nothing, mdotf, VectorField(mesh), ScalarField(mesh))
 end
 Adapt.@adapt_structure regular 
 

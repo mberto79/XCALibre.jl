@@ -32,26 +32,25 @@ end
 
 function delta_scaling(mesh::Mesh3, BCs) # Deal with 2D/3D FOAM grids
     scalar = ScalarFloat(mesh)
-    for BC ∈ BCs 
-        pmin, pmax = bounding_box(mesh)
+    for BC ∈ BCs
         if typeof(BC) <: Empty
-            n = KernelAbstractions.zeros(CPU(), Float64, 3)
-            pmin_cpu = KernelAbstractions.zeros(CPU(), Float64, 3)
-            pmax_cpu = KernelAbstractions.zeros(CPU(), Float64, 3)
-
-            copyto!(n, get_normal(mesh, BC)) # copy from device
-            copyto!(pmin_cpu, pmin) # copy from device
-            copyto!(pmax_cpu, pmax) # copy from device
-           
-            d1 = norm(pmin_cpu⋅n)
-            d2 = norm(pmax_cpu⋅n)
-            distance = d1 + d2
+            n = SVector{3}(Array(get_normal(mesh, BC))) # copy from device
+            distance = extent_along(mesh, n)
             @info "LES Delta: Empty boundary found (ID $(BC.ID)). Treat as 2D"
             @info "LES Delta: Distance between Empty patches $distance"
             return scalar(distance), scalar(0.5) # distance, power
         end
     end
     return scalar(1.0), scalar(1/3) # distance, power
+end
+
+# Extent of the mesh nodes along the unit vector n, max(x⋅n) - min(x⋅n): the distance between
+# the two Empty planes of a one-cell-thick mesh, wherever the mesh sits relative to the origin
+function extent_along(mesh, n::SVector{3,F}) where F
+    (; node_coords) = mesh
+    lo = mapreduce(x -> x ⋅ n, min, node_coords; init=typemax(F))
+    hi = mapreduce(x -> x ⋅ n, max, node_coords; init=typemin(F))
+    return hi - lo
 end
 
 function get_normal(mesh, BC)

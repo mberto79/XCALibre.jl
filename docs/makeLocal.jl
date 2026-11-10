@@ -6,12 +6,16 @@ using XCALibre
 
 ENV["GKSwstype"] = "100"
 
-# Generate a Documenter-friendly changelog from CHANGELOG.md
+# Generate a Documenter-friendly changelog from CHANGELOG.md plus unreleased entries
+include(joinpath(@__DIR__, "..", "changelog", "assemble.jl"))
+changelog_file = tempname() * ".md"
+# CI clones shallowly, so PR numbers cannot be looked up from history here
+write(changelog_file, with_section(release_section("Unreleased"; fill_links=false)))
 Changelog.generate(
     Changelog.Documenter(),
-    joinpath(@__DIR__, "..", "CHANGELOG.md"),
+    changelog_file,
     joinpath(@__DIR__, "src", "release_notes.md");
-    repo = "github.com/mberto79/XCALibre.jl",
+    repo = "mberto79/XCALibre.jl",
 )
 
 USER_GUIDE_PAGES = Any[

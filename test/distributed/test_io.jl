@@ -77,6 +77,15 @@ iterdir = "processor$rank/$iterations"
     @test maximum(i -> abs(Ud[i][3] - uz[i]), 1:n; init=0.0) < 1e-10
 end
 
+# a field without boundary conditions of its own (density, wall distance) is written zero-gradient
+@testset "decomposed OF writer, field without BCs (rank $rank)" begin
+    w = initialise_writer(OpenFOAM(), dm)
+    write_results(99, 99, dm, w, config.boundaries, ("rho", ScalarField(dm)))
+    txt = read("processor$rank/99/rho", String)
+    @test count("zeroGradient", txt) == length(config.boundaries.p)
+    @test occursin("type processor", txt) == !isempty(dm.procs)
+end
+
 # VTK has no decomposed writer: a write must error, never silently skip
 @testset "VTK on a distributed mesh errors (rank $rank)" begin
     w = initialise_writer(VTK(), dm)

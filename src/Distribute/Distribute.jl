@@ -23,13 +23,13 @@ import XCALibre.Fields: initialise!
 import XCALibre.Solvers: global_max, _base_mesh
 import XCALibre.Solvers
 import XCALibre.Calculate
-import XCALibre.Mesh: _get_float
+import XCALibre.Mesh: _get_float, bounding_box
 import XCALibre.ModelFramework: _A, _b, _rowptr, _colval, _nzval, get_phi, get_values
 import XCALibre.Solve
 import XCALibre.Solve: solve_equation!, solve_system!, residual, setReference!,
     implicit_relaxation!, make_symmetric!
 using XCALibre.IOFormats
-import XCALibre.IOFormats: initialise_writer, attach_state!, write_results, copy_to_cpu, copy_scalarfield_to_cpu, get_data
+import XCALibre.IOFormats: initialise_writer, attach_state!, write_results, copy_to_cpu, copy_scalarfield_to_cpu, get_data, _sync_polyMesh_order
 import XCALibre.Mesh: _get_backend
 
 include("Distribute_0_types.jl")
@@ -38,9 +38,12 @@ include("Distribute_2_halo.jl")
 include("Distribute_3_fields.jl")
 include("Distribute_4_linalg.jl")
 include("Distribute_5_solvers.jl")
+include("Distribute_5_mixed_precision.jl")
 include("Distribute_6_format.jl")
 include("Distribute_7_io.jl")
 include("Distribute_8_foam.jl")
 include("Distribute_9_repartition.jl")
+
+__init__() = (Solve._LOG_RANK[] = is_root)
 
 end # module

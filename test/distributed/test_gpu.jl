@@ -24,13 +24,13 @@ iterations = 300
 gmesh = rank == 0 ? cavity_mesh() : nothing
 ref = if rank == 0
     model_s, config_s = incompressible_case(gmesh, cavity_bcs; iterations)
-    simple!(model_s, config_s; pref=0.0)
+    res = simple!(model_s, config_s; pref=0.0)
     (collect(model_s.momentum.U.x.values), collect(model_s.momentum.U.y.values),
-     collect(model_s.momentum.p.values))
+     collect(model_s.momentum.p.values), res.p[1:6], res.Ux[1:6])
 else
     nothing
 end
-Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
+Us_x, Us_y, ps, hist_p, hist_ux = MPI.bcast(ref, comm; root=0)
 
 dm = distribute(gmesh; comm=comm)
 dm_dev = adapt(backend, dm)
@@ -68,8 +68,9 @@ if petsc_cuda
         @test duy < 1e-5
         @test dp < 1e-5
         @test all(abs(px[i] - Us_x[orig[i]]) < 1e-5 for i ∈ n+1:nloc)
-        @test maximum(residuals.p[iterations÷2:end]) < 1e-6
-        @test maximum(residuals.Ux[iterations÷2:end]) < 1e-6
+        # early residual history retraces the serial run (residuals are taken before each solve)
+        @test residuals.p[1:6] ≈ hist_p rtol = 1e-5
+        @test residuals.Ux[1:6] ≈ hist_ux rtol = 1e-5
     end
     rank == 0 && println("PSIMPLE GPU cavity n=$(MPI.Comm_size(comm)) dux=$dux duy=$duy dp=$dp")
 

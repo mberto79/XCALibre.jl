@@ -11,7 +11,7 @@ MPI.Init()
 comm = MPI.COMM_WORLD
 rank = MPI.Comm_rank(comm)
 
-# same setup as unit_test_laplace.jl, on either the global or a distributed mesh
+# same setup as unit/Discretise/test_laplace.jl, on either the global or a distributed mesh
 function assemble_T(mesh)
     hardware = Hardware(backend=CPU(), workgroup=64)
     model = Physics(

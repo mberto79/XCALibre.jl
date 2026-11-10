@@ -26,6 +26,8 @@ Constructor to allocate memory to store the Q-criterion over the calculation win
 - `start::Union{Real,Nothing}` optional keyword which specifies the start of the Q-criterion calculation window, for **steady** simulations, this is in **iterations**, for **transient** simulations it is in **flow time**.   
 - `stop::Union{Real,Nothing}` optional keyword which specifies the end iteration/time of the Q-criterion calculation window. Default value is the last iteration/timestep. 
 - `update_interval::Union{Real,Nothing}` optional keyword which specifies how often the Q-criterion is updated and stored (default value is 1 i.e Q-criterion updates every timestep/iteration). Note that the frequency of writing the post-processed fields is specified by the `write_interval` in `Configuration`. 
+
+Q is only computed inside the window. Outside it the stored field keeps its last computed value (zero before `start`), and that value is what the post-processed output files contain.
 """
 function Qcriterion(inputfield; name::String =  "Q-criterion", start::Union{Real,Nothing}=nothing, stop::Union{Real,Nothing}=nothing,update_interval::Union{Real,Nothing}=nothing)
     if inputfield isa VectorField
@@ -39,11 +41,15 @@ function Qcriterion(inputfield; name::String =  "Q-criterion", start::Union{Real
 end
 
 function runtime_postprocessing!(QC::Qcriterion{T,T1,T2,V},iter::Integer,n_iterations::Integer,S,time,config) where {T<:ScalarField,V,T1,T2}
-    magnitude2!(QC.S2, S, config)
-    Ω = Vorticity(S.U,S.gradU)
-    magnitude2!(QC.Ω2,Ω,config)
-    #here is where the Q-Crtiterion needs to be calculated and stored
-    QC.Q.values .=  0.5 .* (QC.Ω2.values .- QC.S2.values)      
+    # Honour the start/stop/update_interval window, as FieldAverage, FieldRMS,
+    # ReynoldsStress and Probe do. Outside the window Q keeps its last computed value
+    # (zero before `start`).
+    if must_calculate(QC,iter,n_iterations)
+        magnitude2!(QC.S2, S, config)
+        Ω = Vorticity(S.U,S.gradU)
+        magnitude2!(QC.Ω2,Ω,config)
+        QC.Q.values .=  0.5 .* (QC.Ω2.values .- QC.S2.values)
+    end
     return nothing
 end
 function convert_time_to_iterations(QC::Qcriterion, model,dt,iterations)

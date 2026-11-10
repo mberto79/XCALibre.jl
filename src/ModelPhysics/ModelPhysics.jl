@@ -14,15 +14,18 @@ using XCALibre.Multithread
 using XCALibre.Multithread: _sized
 using XCALibre.Mesh
 using XCALibre.Fields
-import XCALibre.Fields: field_values # not exported: kernel-argument helper
+import XCALibre.Fields: field_values, VectorValues # not exported: kernel-argument helpers
 using XCALibre.ModelFramework
 using XCALibre.Discretise
 using XCALibre.Solve
 using XCALibre.Solve: _index_type
 using XCALibre.Calculate
+import XCALibre.Discretise: _limit_tvd # not exported: TVD clip of LimitedLinearUpwind
+import XCALibre.Calculate: correct_interpolation!, _face_flux_tensor, _cell_coefficient, _boundary_sngrad, _patch_gradient
 using XCALibre.Simulate
 
 include("0_type_definition.jl")
+include("0_convection_gradient.jl")
 include("1_flow_types.jl")
 include("2_multiphase_sources.jl")
 include("2_fluid_models.jl")

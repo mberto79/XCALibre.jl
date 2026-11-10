@@ -15,7 +15,7 @@ const FILES = !isempty(ARGS) ? ARGS : ["test_partition.jl", "test_halo.jl", "tes
     "test_linear_upwind.jl", "test_reorder.jl", "test_least_squares.jl", "test_forces.jl",
     "test_bound.jl", "test_godunov.jl", "test_unsupported.jl", "test_mixed_precision.jl",
     "test_les_wale.jl", "test_bounding_box.jl", "test_crank_nicolson.jl", "test_postprocess.jl",
-    "test_krylov_breakdown.jl", "test_solve_warning.jl", "test_failure.jl"]
+    "test_krylov_breakdown.jl", "test_solve_warning.jl", "test_preconditioner_paths.jl", "test_failure.jl"]
 
 timings = Pair{String,Float64}[]
 @testset "gate session (rank $rank)" begin

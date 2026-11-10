@@ -5,7 +5,7 @@ using LinearAlgebra
 using SparseArrays
 const Krylov = XCALibre.Solve.Krylov
 
-# Serial BiCGStab uses the shadow vector c = M⁻¹(b - Ax0), as PETSc bcgs, not Krylov.jl's default c = b.
+# Serial Jacobi BiCGStab uses the shadow vector c = M⁻¹(b - Ax0), as PETSc bcgs, not Krylov.jl's default c = b.
 # A warm-started solve_system! must take exactly Krylov.jl's bicgstab iterates with that shadow,
 # and differ from the default's.
 

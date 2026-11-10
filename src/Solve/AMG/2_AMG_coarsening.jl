@@ -108,7 +108,7 @@ function _coarse_graph(strong)
     return coarse
 end
 
-_initial_candidates(coarsening::SmoothAggregation) = coarsening.near_nullspace
+_initial_candidates(coarsening::SmoothedAggregation) = coarsening.near_nullspace
 _initial_candidates(::AbstractAMGCoarsening) = nothing
 
 function _sa_filtered_matrix(A, strong)
@@ -420,7 +420,7 @@ function _near_nullspace_vector(A, candidate)
     if isnothing(candidate)
         return ones(T, n)
     end
-    length(candidate) == n || throw(ArgumentError("SmoothAggregation near_nullspace must match the matrix row count"))
+    length(candidate) == n || throw(ArgumentError("SmoothedAggregation near_nullspace must match the matrix row count"))
     return T.(collect(candidate))
 end
 
@@ -446,19 +446,66 @@ function _tentative_prolongation(agg, candidate)
     return sparse(I, J, V, n, nc), coarse_candidate
 end
 
-function build_prolongation(A, coarsening::SmoothAggregation, candidate=nothing, level_id=1)
+function build_prolongation(A, coarsening::SmoothedAggregation, candidate=nothing, level_id=1)
     n = _m(A)
     candidate_vec = _near_nullspace_vector(A, isnothing(candidate) ? coarsening.near_nullspace : candidate)
     n <= 2 && return collect(1:n), nothing, candidate_vec
-    strong = _sa_strength_graph(A, coarsening.strength_threshold)
+    strong = _sa_strength_graph(A, coarsening.threshold)
     agg, nagg = _standard_aggregates(strong)
     nagg < 1 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
-    P = _smooth_prolongation(A, P0, strong, coarsening.smoother_weight)
+    P = _smooth_prolongation(A, P0, strong, coarsening.weight)
     return agg, P, coarse_candidate
 end
 
-function _geometric_aggregates(A, merge_levels::Int)
+# pairing weight factor per matrix entry: couplings across faces facing y and z count 1% and 2% more, so
+# equal couplings (uniform cells) pair in one fixed direction however the cells are numbered
+_pairwise_bias(A, mesh::AbstractMesh) =
+    _pairwise_bias(A, mesh.cell_faces_range, mesh.cell_faces, mesh.cell_neighbours, mesh.face_normal)
+_pairwise_bias(A, _) = nothing
+function _pairwise_bias(A, cell_faces_range, cell_faces, cell_neighbours, face_normal)
+    ranges = Array(cell_faces_range)
+    length(ranges) == _m(A) || return nothing
+    faces, nbrs, normals = Array(cell_faces), Array(cell_neighbours), Array(face_normal)
+    rowptr, colval = _rowptr(A), _colval(A)
+    T = eltype(_nzval(A))
+    bias = ones(T, length(colval))
+    @inbounds for i in eachindex(ranges), k in ranges[i]
+        j = nbrs[k]
+        n = normals[faces[k]]
+        for p in rowptr[i]:(rowptr[i + 1] - 1)
+            colval[p] == j && (bias[p] = 1 + T(0.01) * abs(n[2]) + T(0.02) * abs(n[3]); break)
+        end
+    end
+    return bias
+end
+
+# bias of the coarse matrix Ac: each coarse coupling keeps the |a|-weighted mean bias of the fine couplings it sums
+_coarse_pairwise_bias(A, ::Nothing, agg, Ac) = nothing
+function _coarse_pairwise_bias(A, bias, agg, Ac)
+    rowptr, colval, nzval = _rowptr(A), _colval(A), _nzval(A)
+    T = eltype(bias)
+    Is, Js, W, D = Int[], Int[], T[], T[]
+    @inbounds for i in 1:_m(A), p in rowptr[i]:(rowptr[i + 1] - 1)
+        I, J = agg[i], agg[colval[p]]
+        I == J && continue
+        push!(Is, I); push!(Js, J); push!(W, abs(nzval[p]) * bias[p]); push!(D, abs(nzval[p]))
+    end
+    nc = _m(Ac)
+    Wt, Dt = sparse(Js, Is, W, nc, nc), sparse(Js, Is, D, nc, nc)  # column I holds coarse row I
+    crowptr, ccolval = _rowptr(Ac), _colval(Ac)
+    cbias = ones(T, length(ccolval))
+    @inbounds for I in 1:nc
+        r = Wt.colptr[I]:(Wt.colptr[I + 1] - 1)
+        for p in crowptr[I]:(crowptr[I + 1] - 1)
+            q = first(r) - 1 + searchsortedfirst(view(Wt.rowval, r), ccolval[p])
+            q <= last(r) && Wt.rowval[q] == ccolval[p] && Dt.nzval[q] > 0 && (cbias[p] = Wt.nzval[q] / Dt.nzval[q])
+        end
+    end
+    return cbias
+end
+
+function _pairwise_aggregates(A, merges::Int, bias=nothing)
     rowptr = _rowptr(A)
     colval = _colval(A)
     nzval = _nzval(A)
@@ -466,7 +513,7 @@ function _geometric_aggregates(A, merge_levels::Int)
     T = eltype(nzval)
     agg = collect(1:n)
     ncl = n
-    for _ in 1:merge_levels
+    for _ in 1:merges
         cnt = zeros(Int, ncl)
         @inbounds for i in 1:n
             cnt[agg[i]] += 1
@@ -492,14 +539,10 @@ function _geometric_aggregates(A, merge_levels::Int)
             for t in off[c]:(off[c + 1] - 1)
                 i = cells[t]
                 for p in rowptr[i]:(rowptr[i + 1] - 1)
-                    j = colval[p]
-                    cj = agg[j]
+                    cj = agg[colval[p]]
                     cj == c && continue
-                    if stamp[cj] != c
-                        stamp[cj] = c
-                        acc[cj] = zero(T)
-                    end
-                    acc[cj] += abs(nzval[p])
+                    stamp[cj] != c && (stamp[cj] = c; acc[cj] = zero(T))
+                    acc[cj] += isnothing(bias) ? abs(nzval[p]) : abs(nzval[p]) * bias[p]
                     if !merged[cj] && acc[cj] > bestw
                         bestw = acc[cj]
                         bestc = cj
@@ -522,11 +565,11 @@ function _geometric_aggregates(A, merge_levels::Int)
     return agg, ncl
 end
 
-function build_prolongation(A, coarsening::Geometric, _candidate=nothing, _level_id=1)
+function build_prolongation(A, coarsening::Pairwise, _candidate=nothing, _level_id=1; bias=nothing)
     n = _m(A)
     candidate_vec = _near_nullspace_vector(A, nothing)
     n <= 2 && return collect(1:n), nothing, candidate_vec
-    agg, nagg = _geometric_aggregates(A, coarsening.merge_levels)
+    agg, nagg = _pairwise_aggregates(A, coarsening.merges, bias)
     nagg < 1 && return agg, nothing, candidate_vec
     P0, coarse_candidate = _tentative_prolongation(agg, candidate_vec)
     return agg, P0, coarse_candidate
@@ -535,7 +578,7 @@ end
 function build_prolongation(A, coarsening::RugeStuben, _candidate=nothing, _level_id=1)
     n = _m(A)
     n <= 2 && return collect(1:n), nothing, nothing
-    strong = _rs_strength_graph(A, coarsening.strength_threshold)
+    strong = _rs_strength_graph(A, coarsening.threshold)
     splitting = _rs_coarse_fine_split(strong)
     P = _rs_direct_interpolation(A, strong, splitting)
     isnothing(P) && return splitting, nothing, nothing

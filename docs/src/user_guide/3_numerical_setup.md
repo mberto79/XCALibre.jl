@@ -180,17 +180,22 @@ Linear solvers in XCALibre.jl are provided by [Krylov.jl](https://github.com/Jul
 
 - `Bicgstab()` is a general purpose linear solver. Works well with non-symmetric matrices e.g. for `U`.
 - `Cg()` is particular strong with symmetric matrices e.g to solve the pressure equation.
-- `Gmres()` is a general solver. We have found it works best on the CPU backend.
+- `Gmres()` is a general solver, restarted every 30 iterations. We have found it works best on the CPU backend.
+- `Richardson()` repeats the preconditioner without Krylov acceleration. With `AMG(...)` it is a standalone multigrid solve.
+
+`solver` is always the outer iteration and `preconditioner` the method, including multigrid: AMG-preconditioned CG is `solver = Cg(), preconditioner = AMG()`.
+
+Every linear solve stops when ‖D⁻¹(b − Ax)‖₂ ≤ `atol` + `rtol`·‖D⁻¹(b − Ax₀)‖₂, where D is the absolute diagonal of A and x₀ the field before the solve, whatever the solver, preconditioner, precision (`MixedF32`, `MixedF16`) or backend (`AMG`, PETSc on distributed meshes). D⁻¹(b − Ax) is the correction one Jacobi step would make, so `atol` is in the units of the field (e.g. Pa for pressure) and does not depend on how the equation is scaled; changing the preconditioner does not change what `atol` and `rtol` mean. With `Jacobi()` the solve is the usual Jacobi-preconditioned one. With other preconditioners `Bicgstab()`, `Cgs()` and `Gmres()` scale by D⁻¹ on the left and apply the preconditioner on the right, and `Cg()` checks D⁻¹r each iteration. PETSc solves on distributed meshes follow the same rule: `Jacobi()` monitors D⁻¹r directly; `Bicgstab()` and `Gmres()` solve the row-scaled system, with AMG preconditioners (`AMG(...)`, `BoomerAMG()`) still built from A (the scaled matrix is applied on the fly, so no second copy is stored); `Cg()` and `Cgs()` with other preconditioners form D⁻¹r only once PETSc's own norm predicts the target is near, which costs a few extra matrix products per solve.
 
 `Bicgstab()` and `Cgs()` break down when the residual becomes orthogonal to their shadow vector, which can happen when the initial residual is nonzero in a few cells only and the matrix couples them one way (upwind convection). Such a solve is repeated from its initial guess with a fixed, dense shadow vector; if it breaks down again, the field keeps its previous values and a warning is printed. Distributed solves continue from the last iterate instead, which restarts BiCGStab with the current residual as the shadow vector.
 
 A linear solve that stops without meeting its `atol` or `rtol` prints a warning naming the method, the equation (its label on distributed meshes, e.g. `[p]`, or the vector component in serial runs), why it stopped, the number of iterations and the final residual norm, next to the tolerances, e.g.
 
 ```
-┌ Warning: Cg solve [p] did not converge in 1000 iterations (KSP_DIVERGED_ITS): KSP residual norm = 3.1e-7, atol = 1.0e-7, rtol = 0.0 (shown at most 10 times per equation)
+┌ Warning: Cg solve [p] did not converge in 1000 iterations (KSP_DIVERGED_ITS): ‖D⁻¹(b - Ax)‖₂ = 3.1e-7, atol = 1.0e-7, rtol = 0.0 (shown at most 10 times per equation)
 ```
 
-This covers every solve path: Krylov.jl (the reason is Krylov.jl's status, e.g. `maximum number of iterations exceeded`), `AMG`, mixed precision (`MixedF32`, `MixedF16`) and PETSc, where every negative `KSPConvergedReason` is reported (iteration limit, divergence, breakdown, indefinite preconditioner, NaN). Serial solves report ‖b − Ax‖₂ of the returned solution; PETSc solves report the norm their stopping test used (the preconditioned natural norm for `Cg`). When a mixed-precision solve refines its correction (`rtol` below what the low precision attains), the warning is given when the refinement ends without meeting `rtol`, with ‖b − Ax‖₂ in full precision, and not for the individual corrections. Each equation shows at most 10 such warnings; on a distributed mesh rank 0 prints them.
+This covers every solve path: Krylov.jl (the reason is Krylov.jl's status, e.g. `maximum number of iterations exceeded`), `AMG`, mixed precision (`MixedF32`, `MixedF16`) and PETSc, where every negative `KSPConvergedReason` is reported (iteration limit, divergence, breakdown, indefinite preconditioner, NaN). Every path reports ‖D⁻¹(b − Ax)‖₂ of the returned solution. When a mixed-precision solve refines its correction (`rtol` below what the low precision attains), the warning is given when the refinement ends without meeting `rtol`, with ‖D⁻¹(b − Ax)‖₂ in full precision, and not for the individual corrections. Each equation shows at most 10 such warnings; on a distributed mesh rank 0 prints them.
 
 For more information on these solvers you can review the excellent documentation provided by the [Krylov.jl](https://github.com/JuliaSmoothOptimizers/Krylov.jl) team. 
 
@@ -215,11 +220,28 @@ print_tree(PreconditionerType) # hide
 
 !!! note
 
-    Only the `Jacobi` and `NormDiagonal` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `Gmres()` on the CPU. Also notice that the implementations for `DILU` (experimental), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
+    Only the `Jacobi`, `NormDiagonal` and `AMG` preconditioners have GPU ready implementations. At present these have the most robust implementation and they can be used with both CPU and GPU backends. The other preconditioners can only be used on the CPU. Notice that on our tests the `LDL` preconditioner only works when paired with the `Gmres()` on the CPU. Also notice that the implementations for `DILU` (experimental), `IC0GPU` and `ILU0GPU` (NVIDIA only), should be considered experimental. Work on improving the offering of preconditioners is ongoing.
 
 !!! warning
 
     Internally the storage for sparse matrices was moved to the CSR format. Thus, temporarily, we have removed support for `LDL` and `ILU0` preconditioners while we work on CSR compatible implementations. 
+
+#### Where each preconditioner runs
+
+The same `SolverSetup` runs on every solve path. Where a preconditioner is not available, a named substitute runs instead and a warning is printed once; where nothing suitable exists, the run stops before solving with a message saying what to use. The serial columns apply to an ordinary mesh, the last one to a distributed mesh, where PETSc solves.
+
+| `preconditioner` | serial | serial `MixedF32()` | serial `MixedF16()` | distributed (PETSc) |
+|---|---|---|---|---|
+| `Jacobi()` | runs | runs | runs | runs (`jacobi`) |
+| `NormDiagonal()` | runs | runs | error: Jacobi only | substitute: Jacobi |
+| `DILU()`, `ILU0GPU()` | runs | runs | error: Jacobi only | substitute: per-rank block ILU(0) |
+| `IC0GPU()` | runs | runs | error: Jacobi only | substitute: per-rank block ICC(0) |
+| `AMG(...)` | runs (native AMG) | runs: coarse levels stored in Float32 | error | runs as PETSc's `gamg`, same settings; error for settings GAMG cannot express, such as `RugeStuben()` |
+| `BoomerAMG()` | error: needs PETSc, see below | error | error | runs (`hypre`) |
+
+The outer iteration has its own limits: the native AMG runs with `Cg()`, `Bicgstab()` or `Richardson()`; Krylov.jl and mixed-precision solves with `Cg()`, `Cgs()`, `Bicgstab()` or `Gmres()`; PETSc with all five. A substitute takes the default settings of the method it stands for. On a distributed mesh `petsc_options` can name any other PETSc preconditioner.
+
+Choose the algorithm, not the solve path: `AMG(...)` runs natively on a serial mesh and as PETSc's GAMG on a distributed one, with the same settings. `BoomerAMG()` always runs hypre through PETSc; on a serial mesh call `distribute(mesh)` first. `GAMG()` is deprecated in favour of `AMG(...)`.
 
 
 

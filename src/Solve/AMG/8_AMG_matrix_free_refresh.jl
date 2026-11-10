@@ -321,7 +321,7 @@ function refresh_matrix_free_hierarchy!(st::MatrixFreeHierarchy, plan::MatrixFre
             _launch_amg_kernel!(bk, wg, _amg_invert_diag_kernel!, lv.n, lv.invdiag)
             KernelAbstractions.synchronize(bk)
             lambda = _lambda_max_matfree!(st, l, plan.eig[l], plan.eig_warm[l], bk, wg)
-            lv.omega = min(omega_cap, T(2) - eps(T)) / T(lambda)
+            lv.omega = min(omega_cap, T(2) - eps(T)) / T(lambda); lv.lambda = lambda
             plan.eig_warm[l] = true
             _launch_amg_kernel!(bk, wg, _amg_compose_hop_kernel!, lv1.n, plan.comp_dst, plan.comp_s,
                                 lv.row_macro, lv.coarse_pos, lv.inv_sqrt_w)
@@ -350,10 +350,13 @@ function refresh_matrix_free_hierarchy!(st::MatrixFreeHierarchy, plan::MatrixFre
         _launch_amg_kernel!(bk, wg, _amg_invdiag_kernel!, lv.n, lv.invdiag, _nzval(lv.A), lv.diag_index)
         KernelAbstractions.synchronize(bk)
         lambda = _lambda_max_device!(lv, plan.eig[l], plan.eig_warm[l], bk, wg)
-        lv.omega = min(omega_cap, T(2) - eps(T)) / T(lambda)
+        lv.omega = min(omega_cap, T(2) - eps(T)) / T(lambda); lv.lambda = lambda
         plan.eig_warm[l] = true
     end
     KernelAbstractions.synchronize(bk)
+    c = st.coarse_inv[]
+    # a device smoother or Krylov coarse solve needs no host factorisation
+    c isa Union{_MFSmoothedCoarse,_MFKrylovCoarse} && return (_refresh_mf_coarse!(c, bk); st)
     copyto!(_nzval(plan.coarsest_host), Array(_nzval(plan.coarsest_csr)))
     coarse_csc = _csr_to_csc(plan.coarsest_host)
     st.coarse_fac[] = lu(coarse_csc)

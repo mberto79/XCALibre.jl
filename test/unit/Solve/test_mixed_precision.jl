@@ -54,7 +54,7 @@ end
     @test norm(x - mp_reference)/norm(mp_reference) < 1e-10
 end
 
-# BiCGStab takes the shadow vector M⁻¹r as in full-precision solves
+# BiCGStab takes the shadow vector b - Ax₀ (the correction's right-hand side) as in full-precision solves
 @testset "$p with Bicgstab refines to the Float64 solution" for p ∈ (MixedF32(), MixedF16())
     x = mp_solve_T(p, 20; solver=Bicgstab())
     @test norm(x - mp_reference)/norm(mp_reference) < 1e-10
@@ -70,7 +70,7 @@ end
     @test_throws ArgumentError mp_solve_T(MixedF16(), 1; preconditioner=DILU())
     @test SolverSetup(solver=Cg(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0).precision isa FullPrecision
     @test_throws ArgumentError SolverSetup(
-        solver=AMG(), preconditioner=Jacobi(), convergence=1e-7, relax=1.0, precision=MixedF16())
+        solver=Cg(), preconditioner=AMG(SmoothedAggregation()), convergence=1e-7, relax=1.0, precision=MixedF16())
 end
 
 @testset "half-precision XVector dot accumulates in Float32" begin

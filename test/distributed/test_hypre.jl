@@ -14,8 +14,8 @@ PETSc.initialize(petsclib)
 has_hypre = ext._petsc_has_pkg(petsclib, "hypre")
 
 @testset "hypre capability guards (rank $rank)" begin
-    # BoomerAMG is PETSc-only: serial constructor must refuse
-    @test_throws ErrorException Preconditioner{BoomerAMG}(nothing)
+    # BoomerAMG is PETSc-only: the serial path must refuse
+    @test_throws r"distribute\(mesh\)" XCALibre.Solve._check_serial(SolverSetup(solver=Cg(), preconditioner=BoomerAMG(), convergence=1e-7, relax=1.0))
     # the device-execution query answers false on a host-only or static hypre; device=true skips it
     @test ext._hypre_on_device(petsclib) isa Bool
     @test !BoomerAMG().device && BoomerAMG(device=true).device
@@ -50,16 +50,16 @@ else
     iterations = 300
     ref = rank == 0 ? begin
         model, config = incompressible_case(gmesh, cavity_bcs; iterations)
-        simple!(model, config; pref=0.0)
+        res = simple!(model, config; pref=0.0)
         (collect(model.momentum.U.x.values), collect(model.momentum.U.y.values),
-         collect(model.momentum.p.values))
+         collect(model.momentum.p.values), res.p[1:6])
     end : nothing
-    Us_x, Us_y, ps = MPI.bcast(ref, comm; root=0)
+    Us_x, Us_y, ps, hist_p = MPI.bcast(ref, comm; root=0)
 
     dm = distribute(gmesh; comm=comm)
     # tuned form exercises the curated kwarg -> -pc_hypre_boomeramg_strong_threshold expansion
     model, config = incompressible_case(dm, cavity_bcs; iterations,
-        p_precon=BoomerAMG(strong_threshold=0.7))
+        p_precon=BoomerAMG(threshold=0.7))
     residuals = run!(model, config; pref=0.0)
 
     dux, duy, dp = field_errors(dm, model, Us_x, Us_y, ps)
@@ -67,7 +67,8 @@ else
         @test dux < 1e-6
         @test duy < 1e-6
         @test dp < 1e-6
-        @test maximum(residuals.p[iterations÷2:end]) < 1e-6
+        # early residual history retraces the serial run whatever the preconditioner
+        @test residuals.p[1:6] ≈ hist_p rtol = 1e-5
     end
     rank == 0 && println("HYPRE cavity n=$(MPI.Comm_size(comm)) dux=$dux duy=$duy dp=$dp")
 end

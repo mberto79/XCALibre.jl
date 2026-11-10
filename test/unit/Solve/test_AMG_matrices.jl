@@ -1,6 +1,8 @@
 # Correctness + loose regression suite over named structured matrices
 
-using SparseArrays
+using XCALibre, Test, LinearAlgebra, SparseArrays, SparseMatricesCSR
+
+const SV = XCALibre.Solve
 
 # MATRIX BUILDERS
 
@@ -39,8 +41,8 @@ end
 
 function _make_config()
     setup = SolverSetup(
-        solver=AMG(),
-        preconditioner=Jacobi(),
+        solver=Cg(),
+        preconditioner=AMG(SmoothedAggregation()),
         convergence=1e-7,
         relax=1.0,
         rtol=1e-8,
@@ -55,15 +57,12 @@ function _make_config()
     )
 end
 
-function _solve_amg(A, b, solver, config; itmax=500)
-    ws = _workspace(solver, b)
-    ws = XCALibre.Solve.update!(ws, A, solver, config)
+function _solve_amg(A, b, solver, outer, config; itmax=500)
+    ws = _workspace(solver, b; solver=outer)
+    ws = SV.update!(ws, A, solver, config)
     x = zeros(eltype(b), length(b))
-    XCALibre.Solve._amg_solve_mode!(
-        ws, ws.hierarchy, solver, solver.mode,
-        ws.hierarchy.levels[1].A, b, x;
-        itmax=itmax, atol=1e-8, rtol=1e-8
-    )
+    SV._amg_solve_mode!(ws, ws.hierarchy, solver, outer, SV.outer_operator(ws.hierarchy, A), b, x;
+        itmax=itmax, atol=1e-8, rtol=1e-8)
     relres = norm(b - Array(parent(A)) * x) / norm(b)
     relres, ws
 end
@@ -76,44 +75,38 @@ const _config = _make_config()
     A, b = poisson1d()
 
     # A. CORRECTNESS (smoother sweep lives on poisson2d)
-    for mode in (Cg(), AMGSolver()),
-        coarsening in (SmoothAggregation(), RugeStuben(), Geometric()),
-        smoother in (AMGJacobi(),)
-        solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)
-        relres, _ = _solve_amg(A, b, solver, _config)
+    for outer in (Cg(), Richardson()), coarsening in (SmoothedAggregation(), RugeStuben(), Pairwise())
+        relres, _ = _solve_amg(A, b, AMG(coarsening; coarsest=8), outer, _config)
         @test relres < 1e-7
     end
 
-    # B. REGRESSION — default solver: Cg + SmoothAggregation + AMGJacobi, max_coarse_rows=8
-    reg_solver = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), max_coarse_rows=8)
-    _, ws_reg = _solve_amg(A, b, reg_solver, _config)
+    # B. REGRESSION: Cg + SmoothedAggregation + Jacobi, coarsest=8
+    reg_solver = AMG(SmoothedAggregation(); coarsest=8)
+    _, ws_reg = _solve_amg(A, b, reg_solver, Cg(), _config)
     recorded_p1d = 8 # loose regression baseline (observed 8)
     @test ws_reg.iterations <= 2 * recorded_p1d + 20
 
-    # C. OMEGA CONVENTION
-    ws_omega = _workspace(reg_solver, b)
-    ws_omega = XCALibre.Solve.update!(ws_omega, A, reg_solver, _config)
+    # C. WEIGHT CONVENTION
+    ws_omega = SV.update!(_workspace(reg_solver, b), A, reg_solver, _config)
     level = ws_omega.hierarchy.levels[1]
-    @test XCALibre.Solve._level_jacobi_omega(AMGJacobi(), level) ≈ 4 / (3 * level.lambda_max)
+    @test SV._level_jacobi_omega(Jacobi(), level) ≈ 4 / (3 * level.lambda_max)
 end
 
 @testset "poisson2d" begin
     A, b = poisson2d()
 
     # A. CORRECTNESS
-    # modes alternate along the grid so every (mode, coarsening) and (mode, smoother) pair is covered
-    grid = Iterators.product((SmoothAggregation(), RugeStuben(), Geometric()),
-                             (AMGJacobi(), AMGChebyshev(), AMGGaussSeidel(), AMGSOR(1.0)))
+    # outer iterations alternate along the grid so every (outer, coarsening) and (outer, smoother) pair is covered
+    grid = Iterators.product((SmoothedAggregation(), RugeStuben(), Pairwise()),
+                             (Jacobi(), Chebyshev(), SymGaussSeidel(), SSOR(1.0), GaussSeidel(), SOR(1.2)))
     for (i, (coarsening, smoother)) in enumerate(grid)
-        mode = isodd(i) ? Cg() : AMGSolver()
-        solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)
-        relres, _ = _solve_amg(A, b, solver, _config)
+        outer = isodd(i) ? Cg() : Richardson()
+        relres, _ = _solve_amg(A, b, AMG(coarsening; smoother, coarsest=8), outer, _config)
         @test relres < 1e-7
     end
 
     # B. REGRESSION
-    reg_solver = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), max_coarse_rows=8)
-    _, ws_reg = _solve_amg(A, b, reg_solver, _config)
+    _, ws_reg = _solve_amg(A, b, AMG(SmoothedAggregation(); coarsest=8), Cg(), _config)
     recorded_p2d = 8 # loose regression baseline (observed 8)
     @test ws_reg.iterations <= 2 * recorded_p2d + 20
 end
@@ -122,19 +115,53 @@ end
     A, b = anisotropic1d()
 
     # A. CORRECTNESS
-    for mode in (Cg(), AMGSolver()),
-        coarsening in (SmoothAggregation(), RugeStuben(), Geometric()),
-        smoother in (AMGJacobi(),)
-        solver = AMG(mode=mode, coarsening=coarsening, smoother=smoother, max_coarse_rows=8)
-        relres, _ = _solve_amg(A, b, solver, _config)
+    for outer in (Cg(), Richardson()), coarsening in (SmoothedAggregation(), RugeStuben(), Pairwise())
+        relres, _ = _solve_amg(A, b, AMG(coarsening; coarsest=8), outer, _config)
         @test relres < 1e-7
     end
 
     # B. REGRESSION
-    reg_solver = AMG(mode=Cg(), coarsening=SmoothAggregation(), smoother=AMGJacobi(), max_coarse_rows=8)
-    _, ws_reg = _solve_amg(A, b, reg_solver, _config)
+    _, ws_reg = _solve_amg(A, b, AMG(SmoothedAggregation(); coarsest=8), Cg(), _config)
     recorded_ani1d = 5 # loose regression baseline (observed 5)
     @test ws_reg.iterations <= 2 * recorded_ani1d + 20
+end
+
+@testset "sweeps" begin
+    # unequal pre/post and per-level growth; Cg tolerates the non-symmetric cycle through its flexible update
+    A, b = poisson2d(24)
+    for sweeps in (Sweeps(0, 2), Sweeps(1, 1; grow=1)), outer in (Cg(), Richardson())
+        relres, ws = _solve_amg(A, b, AMG(; sweeps, coarsest=8), outer, _config)
+        @test length(ws.hierarchy.levels) > 2
+        @test ws.converged && relres < 1e-7
+    end
+end
+
+# 2D upwind convection-diffusion: non-symmetric
+function convection2d(m=80)
+    n = m * m
+    rows, cols, vals = Int[], Int[], Float64[]
+    for r in 1:m, c in 1:m
+        k = (r-1)*m + c
+        push!(rows, k); push!(cols, k); push!(vals, 6.0)
+        if c > 1; push!(rows, k); push!(cols, k-1); push!(vals, -2.0); end # upwind side
+        if c < m; push!(rows, k); push!(cols, k+1); push!(vals, -1.0); end
+        if r > 1; push!(rows, k); push!(cols, k-m); push!(vals, -2.0); end
+        if r < m; push!(rows, k); push!(cols, k+m); push!(vals, -1.0); end
+    end
+    SparseXCSR(sparsecsr(rows, cols, vals, n, n)), ones(n)
+end
+
+@testset "default AMG()" begin
+    # 6400 rows > coarsest=4096: one Pairwise coarsening, then the coarsest solve
+    A, b = poisson2d(80)
+    relres, ws = _solve_amg(A, b, AMG(), Cg(), _config)
+    @test ws.hierarchy isa SV.MatrixFreeHierarchy && ws.hierarchy.coarse_n < size(A, 1)
+    @test ws.converged && relres < 1e-7
+    Ac, bc = convection2d(80)
+    relres, ws = _solve_amg(Ac, bc, AMG(), Bicgstab(), _config)
+    @test !ws.hierarchy.is_symmetric
+    @test ws.hierarchy.coarse_n < size(Ac, 1)
+    @test ws.converged && relres < 1e-7
 end
 
 @testset "amg index type" begin
@@ -149,7 +176,7 @@ end
     # oracle built from reference sparse P_l/A_l, across multiple coarsening depths.
     A, _ = poisson2d(24)
     for (ml, pre, post) in ((1, 2, 2), (2, 2, 2), (3, 2, 2), (2, 1, 1), (2, 0, 2))
-        res = XCALibre.Solve.validate_matrix_free_cycle(A, ml, CPU(); pre=pre, post=post, max_coarse=64)
+        res = SV.validate_matrix_free_cycle(A, ml, CPU(); pre=pre, post=post, max_coarse=64)
         @test res.relerr < 1e-12
         @test res.levels >= 2
         @test res.vram_saved_bytes > 0
@@ -162,23 +189,23 @@ end
     # (2) materially improve the stationary V-cycle (sc on converges where plain-additive stalls).
     A, _ = poisson2d(24)
     for (ml, pre, post) in ((1, 2, 2), (2, 2, 2), (3, 2, 2), (2, 1, 1))
-        res = XCALibre.Solve.validate_matrix_free_cycle(A, ml, CPU(); pre=pre, post=post, max_coarse=64,
+        res = SV.validate_matrix_free_cycle(A, ml, CPU(); pre=pre, post=post, max_coarse=64,
                                                scale_correction=true)
         @test res.relerr < 1e-12
     end
     Ac, _ = poisson2d(40)
-    off = XCALibre.Solve.validate_matrix_free_convergence(Ac, 2, CPU(); scale_correction=false, itmax=80)
-    on  = XCALibre.Solve.validate_matrix_free_convergence(Ac, 2, CPU(); scale_correction=true,  itmax=80)
+    off = SV.validate_matrix_free_convergence(Ac, 2, CPU(); scale_correction=false, itmax=80)
+    on  = SV.validate_matrix_free_convergence(Ac, 2, CPU(); scale_correction=true,  itmax=80)
     @test on.converged
     @test on.iters <= off.iters
     # fused_top>0 with sc: Ac comes from the matrix-free Galerkin chain -> must equal the
     # materialized sc cycle exactly (same operator, same sf)
     for k in (1, 2)
-        hk = XCALibre.Solve.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=64, fused_top=k, scale_correction=true)
-        h0 = XCALibre.Solve.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=64, fused_top=0, scale_correction=true)
+        hk = SV.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=64, fused_top=k, scale_correction=true)
+        h0 = SV.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=64, fused_top=0, scale_correction=true)
         bsc = rand(size(A, 1))
-        xk = Array(XCALibre.Solve.matrix_free_cycle!(hk.st, copy(bsc)))
-        x0 = Array(XCALibre.Solve.matrix_free_cycle!(h0.st, copy(bsc)))
+        xk = Array(SV.matrix_free_cycle!(hk.st, copy(bsc)))
+        x0 = Array(SV.matrix_free_cycle!(h0.st, copy(bsc)))
         @test maximum(abs.(xk .- x0)) / maximum(abs.(x0)) < 1e-12
     end
 end
@@ -188,7 +215,7 @@ end
     # materialized cycle EXACTLY (same operator), validating the prolong/restrict chain composition.
     A, _ = poisson2d(24)
     for ml in (2, 3), k in (1, 2)
-        res = XCALibre.Solve.validate_fused_operator(A, ml, CPU(), k; pre=2, post=2, max_coarse=64)
+        res = SV.validate_fused_operator(A, ml, CPU(), k; pre=2, post=2, max_coarse=64)
         @test res.relerr < 1e-12
         @test res.fused_top >= 1
         @test res.vram_erased_bytes > 0
@@ -201,13 +228,13 @@ end
     # values — this tests the frozen pattern is adequate for changed values, not just the arithmetic.
     A1, _ = poisson2d(24)
     A2 = deepcopy(A1)
-    let rp = XCALibre.Solve._rowptr(A2), cv = XCALibre.Solve._colval(A2), nz = XCALibre.Solve._nzval(A2)
-        for i in 1:XCALibre.Solve._m(A2), p in rp[i]:(rp[i+1]-1)
+    let rp = SV._rowptr(A2), cv = SV._colval(A2), nz = SV._nzval(A2)
+        for i in 1:SV._m(A2), p in rp[i]:(rp[i+1]-1)
             nz[p] *= (cv[p] == i ? 1.25 : 0.85)
         end
     end
     for ml in (1, 2, 3)
-        res = XCALibre.Solve.validate_refresh(A1, A2, ml, CPU(); max_coarse=64)
+        res = SV.validate_refresh(A1, A2, ml, CPU(); max_coarse=64)
         @test res.relerr < 1e-12
         @test res.omega_relerr < 1e-10
         @test res.levels >= 2
@@ -215,31 +242,31 @@ end
     # composed (fused top-k) levels refresh through the gathered member lists; a refresh is
     # bitwise repeatable (one work item per coarse row, no atomic adds)
     for ml in (2, 3), k in (1, 2)
-        res = XCALibre.Solve.validate_refresh(A1, A2, ml, CPU(); max_coarse=64, fused_top=k)
+        res = SV.validate_refresh(A1, A2, ml, CPU(); max_coarse=64, fused_top=k)
         @test res.relerr < 1e-12
         @test res.omega_relerr < 1e-10
     end
     B1, _ = poisson2d(96) # many workgroups per refresh launch
     B2 = deepcopy(B1)
-    XCALibre.Solve._nzval(B2) .*= 0.9
+    SV._nzval(B2) .*= 0.9
     for k in (0, 1)
-        h = XCALibre.Solve.build_matrix_free_hierarchy(B1, 2, CPU(); max_coarse=64, fused_top=k)
-        plan = XCALibre.Solve.build_refresh_plan(h)
-        coarse(h) = [(copy(Array(XCALibre.Solve._nzval(lv.A))), copy(Array(lv.invdiag))) for lv in h.st.levels]
-        XCALibre.Solve.refresh_matrix_free_hierarchy!(h.st, plan, B2)
-        first_values = (coarse(h), copy(Array(XCALibre.Solve._nzval(plan.coarsest_csr))))
+        h = SV.build_matrix_free_hierarchy(B1, 2, CPU(); max_coarse=64, fused_top=k)
+        plan = SV.build_refresh_plan(h)
+        coarse(h) = [(copy(Array(SV._nzval(lv.A))), copy(Array(lv.invdiag))) for lv in h.st.levels]
+        SV.refresh_matrix_free_hierarchy!(h.st, plan, B2)
+        first_values = (coarse(h), copy(Array(SV._nzval(plan.coarsest_csr))))
         @test all(1:20) do _
-            XCALibre.Solve.refresh_matrix_free_hierarchy!(h.st, plan, B2)
-            (coarse(h), Array(XCALibre.Solve._nzval(plan.coarsest_csr))) == first_values
+            SV.refresh_matrix_free_hierarchy!(h.st, plan, B2)
+            (coarse(h), Array(SV._nzval(plan.coarsest_csr))) == first_values
         end
     end
     # split precision (finest F64 / coarse F32): refresh must reproduce the F64 build to coarse-F32
     # accuracy and stay iteration-equivalent (the GPU type match is guarded in test_AMG.jl)
     let ml = 2
-        rm = XCALibre.Solve.validate_refresh(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
+        rm = SV.validate_refresh(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
         @test rm.relerr < 1e-5
-        c64 = XCALibre.Solve.validate_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float64)
-        c32 = XCALibre.Solve.validate_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
+        c64 = SV.validate_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float64)
+        c32 = SV.validate_refresh_convergence(A1, A2, ml, CPU(); max_coarse=64, coarse_storage=Float32)
         @test c32.converged && c32.iters <= c64.iters + 1
     end
 end
@@ -250,51 +277,146 @@ end
     # LU (large coarse). Per-cycle alloc must be constant; correctness preserved to ~eps either way.
     A, _ = poisson2d(24)
     for cmr in (512, 0)  # 512 -> GEMV branch (coarse_n=64<=512); 0 -> host-LU branch
-        al = XCALibre.Solve.measure_cycle_allocations(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
+        al = SV.measure_cycle_allocations(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
         @test al.constant
         @test al.branch == (cmr == 0 ? :host_lu : :gemv)
-        sp = XCALibre.Solve.validate_matrix_free_cycle(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
+        sp = SV.validate_matrix_free_cycle(A, 2, CPU(); max_coarse=64, coarse_max_rows=cmr)
         @test sp.relerr < 1e-12
     end
 end
 
 @testset "T1 F32 512^2 regression (P13 residual-form lock)" begin
-    # All-F32 Cg + Geometric + coarse_storage=F32: the residual-form Jacobi kernel keeps the F32 cycle stable.
+    # All-F32 Cg + Pairwise + Float32 coarse storage: the residual-form Jacobi kernel keeps the F32 cycle stable.
     # True residual floors at eps_f32*cond(512^2 Poisson), so assert on the reported convergence, not a recomputed one.
     Ad, _ = poisson2d(512)
     i, j, v = findnz(parent(Ad)); n = size(Ad, 1)
     Af = SparseXCSR(sparsecsr(i, j, Float32.(v), n, n))
     bf = ones(Float32, n)
-    s = AMG(mode=Cg(), coarsening=Geometric(merge_levels=2), smoother=AMGJacobi(),
-            coarse_storage=Float32, max_coarse_rows=1024)
+    s = SV._with_storage(AMG(Pairwise(2); coarsest=1024), Float32)
     ws = _workspace(s, bf)
-    ws = XCALibre.Solve.update!(ws, Af, s, _config)
-    @test eltype(XCALibre.Solve._nzval(ws.hierarchy.levels[1].A)) === Float32
+    ws = SV.update!(ws, Af, s, _config)
+    @test eltype(SV._nzval(ws.hierarchy.levels[1].A)) === Float32
     x = zeros(Float32, n)
-    XCALibre.Solve._amg_solve_mode!(ws, ws.hierarchy, s, s.mode,
-        ws.hierarchy.levels[1].A, bf, x; itmax=100, atol=0f0, rtol=1f-5)
+    SV._amg_solve_mode!(ws, ws.hierarchy, s, Cg(), SV.outer_operator(ws.hierarchy, Af), bf, x; itmax=100, atol=0f0, rtol=1f-5)
     @test ws.converged
     @test ws.iterations <= 40
     @test ws.last_relative_residual <= 1e-5
 end
 
-@testset "T2 CPU ignores fuse_levels" begin
-    # fuse_levels only triggers matrix-free on GPU. On CPU it must be silently ignored: same hierarchy
-    # kind (materialised) and BIT-IDENTICAL iteration count for fl=0 vs fl=3.
+@testset "T2 CPU fuse" begin
+    # fused coarse levels apply the same operator through the finer matrix: same iterations (±1) and solution
     A, b = poisson2d(64)
-    runfl(fl) = begin
-        s = AMG(mode=Cg(), coarsening=Geometric(merge_levels=2), smoother=AMGJacobi(),
-                max_coarse_rows=256, fuse_levels=fl)
-        ws = _workspace(s, b)
-        ws = XCALibre.Solve.update!(ws, A, s, _config)
+    runfl(fl; smoother=Jacobi()) = begin
+        s = AMG(Pairwise(1); smoother, coarsest=64, native=NativeAMG(fuse=fl))
+        ws = SV.update!(_workspace(s, b), A, s, _config)
         x = zeros(eltype(b), length(b))
-        XCALibre.Solve._amg_solve_mode!(ws, ws.hierarchy, s, s.mode,
-            ws.hierarchy.levels[1].A, b, x; itmax=200, atol=1e-8, rtol=1e-8)
-        ws
+        SV._amg_solve_mode!(ws, ws.hierarchy, s, Cg(), SV.outer_operator(ws.hierarchy, A), b, x; itmax=200, atol=1e-8, rtol=1e-8)
+        (ws=ws, x=x)
     end
-    ws0 = runfl(0); ws3 = runfl(3)
-    @test ws0.hierarchy isa XCALibre.Solve.AMGHierarchy
-    @test ws3.hierarchy isa XCALibre.Solve.AMGHierarchy
-    @test ws3.iterations == ws0.iterations
+    r0 = runfl(0)
+    @test r0.ws.hierarchy isa SV.MatrixFreeHierarchy && length(r0.ws.hierarchy.levels) > 3
+    for r in (runfl(1), runfl(2), runfl(2; smoother=Chebyshev()))
+        @test r.ws.converged
+        @test norm(b - Array(parent(A)) * r.x) / norm(b) < 1e-7
+    end
+    for fl in (1, 2)
+        r = runfl(fl)
+        @test r.ws.hierarchy.fused_top == fl
+        @test abs(r.ws.iterations - r0.ws.iterations) <= 1
+        @test norm(r.x - r0.x) / norm(r0.x) < 1e-8
+    end
+    @test_throws ArgumentError AMG(SmoothedAggregation(); native=NativeAMG(fuse=1))
+    @test_throws ArgumentError AMG(smoother=GaussSeidel(), native=NativeAMG(fuse=1))
 end
 
+# equal couplings pair across the faces the bias favours (here y), whatever the cell numbering,
+# so uniform 2D cells form 2×2 boxes after two pairing passes
+@testset "Pairwise face-normal bias builds box-shaped aggregates" begin
+    n = 16
+    for id in ((x, y) -> x + (y - 1) * n, (x, y) -> y + (x - 1) * n)
+        xy = Vector{NTuple{2,Int}}(undef, n^2)
+        foreach(c -> xy[id(c...)] = c, Iterators.product(1:n, 1:n))
+        nbrs = [Int[] for _ in 1:n^2]; fids = [Int[] for _ in 1:n^2]; normals = NTuple{3,Float64}[]
+        for (x, y) in xy, (dx, dy) in ((1, 0), (0, 1))
+            (x + dx > n || y + dy > n) && continue
+            push!(normals, (dx, dy, 0.0))
+            a, b = id(x, y), id(x + dx, y + dy)
+            push!(nbrs[a], b); push!(fids[a], length(normals)); push!(nbrs[b], a); push!(fids[b], length(normals))
+        end
+        I1, J1, V1 = Int[], Int[], Float64[]
+        for a in 1:n^2
+            push!(I1, a); push!(J1, a); push!(V1, 4)
+            foreach(b -> (push!(I1, a); push!(J1, b); push!(V1, -1)), nbrs[a])
+        end
+        A = SV._amg_matrix(SparseMatricesCSR.sparsecsr(I1, J1, V1, n^2, n^2))
+        lens = cumsum(vcat(0, length.(nbrs)))
+        bias = SV._pairwise_bias(A, [(lens[a] + 1):lens[a + 1] for a in 1:n^2], reduce(vcat, fids),
+            reduce(vcat, nbrs), normals)
+        @test SV._pairwise_bias(A, ()) === nothing
+        pairs, np = SV._pairwise_aggregates(A, 1, bias)
+        @test np == n^2 ÷ 2 && all(g -> allequal(first.(xy[findall(==(g), pairs)])), 1:np)
+        agg, nc = SV._pairwise_aggregates(A, 2, bias)
+        @test nc == n^2 ÷ 4
+        spans(c) = (extrema(first.(xy[c])), extrema(last.(xy[c])))
+        @test all(g -> (c = findall(==(g), agg); length(c) == 4 && all(e -> e[2] - e[1] == 1, spans(c))), 1:nc)
+    end
+end
+
+# uniform 3D cells with Pairwise(2): the first level pairs across z then y faces into 2×2 slabs, and the
+# first pass of the next level, through the coarse bias, pairs the slabs across x into 2×2×2 boxes
+@testset "Pairwise face-normal bias builds 2×2×2 boxes in 3D" begin
+    n = 8; N = n^3
+    for id in ((x, y, z) -> x + (y - 1) * n + (z - 1) * n^2, (x, y, z) -> z + (y - 1) * n + (x - 1) * n^2)
+        xyz = Vector{NTuple{3,Int}}(undef, N)
+        foreach(c -> xyz[id(c...)] = c, Iterators.product(1:n, 1:n, 1:n))
+        nbrs = [Int[] for _ in 1:N]; fids = [Int[] for _ in 1:N]; normals = NTuple{3,Float64}[]
+        for c in xyz, d in ((1, 0, 0), (0, 1, 0), (0, 0, 1))
+            e = c .+ d
+            any(>(n), e) && continue
+            push!(normals, Float64.(d))
+            a, b = id(c...), id(e...)
+            push!(nbrs[a], b); push!(fids[a], length(normals)); push!(nbrs[b], a); push!(fids[b], length(normals))
+        end
+        I1, J1, V1 = Int[], Int[], Float64[]
+        for a in 1:N
+            push!(I1, a); push!(J1, a); push!(V1, 6)
+            foreach(b -> (push!(I1, a); push!(J1, b); push!(V1, -1)), nbrs[a])
+        end
+        A = SV._amg_matrix(SparseMatricesCSR.sparsecsr(I1, J1, V1, N, N))
+        lens = cumsum(vcat(0, length.(nbrs)))
+        bias = SV._pairwise_bias(A, [(lens[a] + 1):lens[a + 1] for a in 1:N], reduce(vcat, fids),
+            reduce(vcat, nbrs), normals)
+        # extent of each aggregate along x, y, z (0 = one cell, 1 = two cells)
+        extent(c) = ntuple(k -> -(reverse(extrema(getindex.(xyz[c], k)))...), 3)
+        boxes(agg, nc, size, ext) =
+            all(g -> (c = findall(==(g), agg); length(c) == size && extent(c) == ext), 1:nc)
+
+        ops, _, aggs = SV.build_galerkin_operators(A, 2, 1, bias)
+        agg1 = aggs[1]; nc1 = maximum(agg1)
+        @test nc1 == N ÷ 4 && boxes(agg1, nc1, 4, (0, 1, 1))
+        bias2 = SV._coarse_pairwise_bias(A, bias, agg1, ops[2])
+        pairs2, np2 = SV._pairwise_aggregates(ops[2], 1, bias2)
+        @test np2 == N ÷ 8 && boxes(pairs2[agg1], np2, 8, (1, 1, 1))
+        # the same boxes form from three pairing passes on the finest level
+        agg3, nc3 = SV._pairwise_aggregates(A, 3, bias)
+        @test nc3 == N ÷ 8 && boxes(agg3, nc3, 8, (1, 1, 1))
+    end
+end
+
+# Smoothed/Iterative coarse solves on a GPU skip the host factorisation at build, as refresh does;
+# forced here on the CPU, where the build otherwise solves the coarsest level directly
+@testset "Pairwise build without a host coarse factor" begin
+    A, b = poisson2d(12)
+    for cs in (Smoothed(), Iterative())
+        h0 = SV.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=8)
+        h = SV.build_matrix_free_hierarchy(A, 2, CPU(); max_coarse=8, coarse_direct=false)
+        st = h.st
+        @test typeof(st) == typeof(h0.st)
+        @test size(st.coarse_fac[]) == (1, 1) && isempty(st.coarse_rhs_h) && st.coarse_n == h0.st.coarse_n
+        st.refresh_plan[] = SV.build_refresh_plan(h)
+        st.coarse_inv[] = SV._mf_device_coarse(cs, st, st.refresh_plan[].coarsest_csr, CPU())
+        SV.refresh_matrix_free_hierarchy!(st, st.refresh_plan[], SV._amg_matrix(A); coarse=true)
+        @test all(isfinite, SV.matrix_free_cycle!(st, b[st.cell_perm]))
+    end
+    @test SV._mf_coarse_direct(Smoothed(), CPU()) && SV._mf_coarse_direct(Direct(), CPU())
+end

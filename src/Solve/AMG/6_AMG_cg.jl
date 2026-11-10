@@ -84,11 +84,13 @@ function symmetry_report(A)
             structurally_missing = missing_pairs)
 end
 
-# Matches Krylov.jl stopping threshold so swapping Cg()<->AMG keeps tuned tolerances valid
-_amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = T(atol) + T(rtol) * r0norm
+# the stopping rule of every solve path, so swapping Cg()<->AMG keeps tuned tolerances valid
+_amg_eps(::Type{T}, atol, rtol, r0norm) where {T} = _stop_target(T(atol), T(rtol), r0norm)
 
-# scale_correction makes M nonlinear; flexible PR+ beta avoids the FR beta assumption
-_amg_cg_flexible(solver::AMG) = solver.scale_correction
+# scale_correction makes M nonlinear and unequal or one-way sweeps make it non-symmetric; flexible PR+
+# beta avoids the FR beta assumption
+_amg_cg_flexible(solver::AMG) = solver.native.scale_correction || solver.sweeps.pre != solver.sweeps.post ||
+    solver.smoother isa Union{GaussSeidel,SOR}
 
 # The report scalar-indexes, so it needs the HOST operator: handed the device matrix a
 # GPU run throws a CUDA scalar-indexing error in place of this ArgumentError. A
@@ -98,23 +100,23 @@ _host_operator(hierarchy::AMGHierarchy) =
 _host_operator(::AbstractAMGHierarchy) = nothing
 
 _cg_symmetry_error(::Nothing) = ArgumentError(
-    "AMG(mode=Cg()) requires a symmetric matrix.\n" *
-    "Use AMG(mode=AMGSolver()) or Bicgstab() for a non-symmetric operator.")
+    "AMG with solver=Cg() requires a symmetric matrix.\n" *
+    "Use solver=Bicgstab() or Richardson() for a non-symmetric operator.")
 
 function _cg_symmetry_error(A)
     r = symmetry_report(A)
     return ArgumentError(string(
-        "AMG(mode=Cg()) requires a symmetric matrix.\n",
+        "AMG with solver=Cg() requires a symmetric matrix.\n",
         "  worst |A[i,j]-A[j,i]| = ", r.worst_abs, "  at (", r.i, ",", r.j, ")\n",
         "  relative to local diagonal = ", r.worst_rel,
         "   (diag there ", r.diag_i, " / ", r.diag_j, ", max diag ", r.diag_max, ")\n",
         "  structurally missing transpose entries = ", r.structurally_missing, "\n\n",
         "A relative value near machine precision means the matrix IS symmetric and the\n",
         "test scale is wrong. A relative value of order 0.1-1 means it is genuinely\n",
-        "non-symmetric - use AMG(mode=AMGSolver()) or Bicgstab() instead."))
+        "non-symmetric - use solver=Bicgstab() or Richardson() instead."))
 end
 
-function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol)
+function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy, solver::AMG, A, b, x; itmax, atol, rtol, dscale=nothing)
     if !hierarchy.is_symmetric
         throw(_cg_symmetry_error(_host_operator(hierarchy)))
     end
@@ -126,14 +128,14 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
     flex = _amg_cg_flexible(solver)
     r_prev = workspace.correction
 
-    bnorm = max(norm(b), eps(T))
 
     _residual!(hierarchy, r, A, x, b)
     _reset_residual_history!(workspace)
-    rnorm = norm(r)
+    rnorm = _scaled_norm(r, dscale)
+    r0 = max(rnorm, floatmin(T)) # rel is relative to ‖D⁻¹r₀‖, in the stopping norm
     _push_residual_norm_history!(workspace, rnorm)
     ε = _amg_eps(T, atol, rtol, rnorm)
-    rel = rnorm / bnorm
+    rel = rnorm / r0
     initial_rel = rel
     if rnorm <= ε
         workspace.iterations = 0
@@ -174,9 +176,9 @@ function amg_cg_solve!(workspace::AMGWorkspace, hierarchy::AbstractAMGHierarchy,
         end
         flex && _copy_amg!(hierarchy, r_prev, r)
         _cg_step_amg!(hierarchy, x, r, p, q, α)
-        rnorm = norm(r)
+        rnorm = _scaled_norm(r, dscale)
         _push_residual_norm_history!(workspace, rnorm)
-        rel = rnorm / bnorm
+        rel = rnorm / r0
         if !isfinite(rnorm) || !isfinite(rel)
             break
         end

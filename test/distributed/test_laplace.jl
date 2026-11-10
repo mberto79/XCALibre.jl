@@ -44,8 +44,18 @@ kconv = findfirst(<=(conv), Rserial)
     @test all(abs(Tloc[i] - Tserial[orig[i]]) < 1e-6 for i ∈ n+1:nloc)
 
     # residual history: same convergence iteration; sub-tolerance values are solver noise,
-    # so only pre-convergence entries are compared (linear problem => usually none)
+    # so only pre-convergence entries are compared (the first is taken on the shared x₀)
     @test findfirst(<=(conv), residuals.T) == kconv
     @test residuals.T[kconv] <= conv
     @test all(isapprox.(residuals.T[1:kconv-1], Rserial[1:kconv-1]; rtol=1e-2))
+end
+
+# the residual is taken on x₀ before each solve, so the first one is the serial value whatever the
+# linear solver: Float64 and MixedF32 PETSc agree with serial Cg to summation order
+model32, config32 = laplace_case(dm, box_bcs; iterations=1, precision=MixedF32(), rtol=1e-3)
+residuals32 = run!(model32, config32)
+
+@testset "residual parity across backends (rank $rank)" begin
+    @test residuals.T[1] ≈ Rserial[1] rtol=1e-12
+    @test residuals32.T[1] ≈ Rserial[1] rtol=1e-12
 end

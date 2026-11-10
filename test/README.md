@@ -29,13 +29,13 @@
 - Cases: assert physics (convergence, reference values), not just "it ran"
 
 ## Index (tier -> folder -> file)
-unit/Mesh: test_mesh_conversion (readers, writers), test_foam_padded_neighbour, test_mesh_reorder, test_face_orientation, test_bounding_box
+unit/Mesh: test_mesh_conversion (readers, writers), test_foam_padded_neighbour, test_mesh_reorder, test_face_orientation, test_bounding_box, test_boundary_distance (boundary face delta), test_unv2d_geometry (centroids, face geometry consistency)
 unit/IOFormats: test_foam_writer_unset_bcs
 unit/Multithread: test_kernel_index_pattern (source scan: `@index` bound on its own)
 unit/Preprocess: test_setFields (region initialisation)
 unit/Calculate: test_wall_distance, test_least_squares, test_venkat_limiter
 unit/Discretise: test_physical_boundary_conditions, test_laplace (analytic), test_neumann_sign, test_robin, test_nonorthogonal_flux (flux continuity), test_boundary_accumulation (deterministic sums), test_linear_upwind, test_lustdc, test_lustlu, test_crank_nicolson (temporal order)
-unit/Solve: test_smoothers, test_DILU, test_amg_freeze, test_AMG, test_AMG_matrices, test_xvector, test_bicgstab_shadow, test_krylov_breakdown, test_mixed_precision
+unit/Solve: test_smoothers, test_DILU, test_amg_freeze, test_AMG, test_AMG_matrices, test_xvector, test_bicgstab_shadow, test_krylov_breakdown, test_solve_warning, test_mixed_precision, test_stop_criterion (one stopping rule on every path), test_residual_parity (same outer residual on every linear-solve path), test_preconditioner_paths (preconditioner per solve path)
 unit/Solvers: test_reconstruct (face fluxes), test_potential_flow, test_run_continuation, test_compressible_mass_flux, test_consistent_coupling (SIMPLEC), test_dt_consistent_flux, test_periodic_mass_flux, test_film_dt_consistency
 unit/ModelPhysics: test_wall_function_* and test_wall_production_density (wall functions), test_viscosity_models, test_parallel_cell_updates, test_lke_diffusion, test_lke_production, test_transpose_stress, test_viscous_work, test_kinetic_energy_flux, test_thermo_psi_time, test_fluidProperties (NIST), test_turbulence_float_types
 unit/Postprocess: test_field_average, test_field_rms, test_reynolds_stress, test_qcriterion_window, test_post_process_transient, test_post_process_steady, test_viscous_force_bcs, test_probe

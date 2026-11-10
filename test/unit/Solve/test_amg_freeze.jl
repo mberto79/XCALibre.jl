@@ -1,2 +1,4 @@
-@test BoomerAMG(freeze=7).freeze == 7 && GAMG(freeze=7).freeze == 7
-@test BoomerAMG().freeze == 10 && GAMG().freeze == 25
+using XCALibre, Test
+
+@test BoomerAMG(refresh=7).refresh == 7 && AMG(SmoothedAggregation(); refresh=7).refresh == 7
+@test BoomerAMG().refresh == 10 && AMG(SmoothedAggregation()).refresh == 5

@@ -195,10 +195,10 @@ end
 import XCALibre.Solve: _matvec!, _residual!, _prolongate_add!, _amg_jacobi!,
     _amg_finalize_device_levels, _amg_finalize_transfer_plans, _refresh_coarse_level!,
     _level_jacobi_omega, _launch_amg_kernel!,
-    _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AbstractAMGHierarchy, AMGLevel, AMGMatrixCSR, AMGJacobi,
+    _amg_weighted_diagonal_correction_kernel!, AMGHierarchy, AbstractAMGHierarchy, AMGLevel, AMGMatrixCSR, Jacobi,
     AMGRAPPlanCPU, _refresh_coarse_operators!, _refresh_level_device!, _refresh_coarse_cpu!,
     refresh_hierarchy!, _sync_device_levels_numeric!, _build_coarse_inverse!,
-    _build_host_coarse_inverse!, OnDevice, OnDeviceKrylov, OnDeviceJacobi, OnDeviceChebyshev
+    _build_host_coarse_inverse!, Direct
 
 # Wrap a device AMGMatrixCSR as CuSparseMatrixCSR, sharing nzVal so numeric refresh updates the operator
 function _amg_csr_to_cusparse(A::AMGMatrixCSR)
@@ -239,7 +239,7 @@ _prolongate_add!(hierarchy::AMGHierarchy, x, P::SPARSEGPU, coarse_x, tmp) =
     (mul!(x, P, coarse_x, one(eltype(x)), one(eltype(x))); x)  # x += P*coarse_x
 
 # Weighted Jacobi via cuSPARSE residual + diagonal correction (equivalent to the fused CSR sweep)
-function _amg_jacobi!(hierarchy::AMGHierarchy, smoother::AMGJacobi, level::AMGLevel, A::SPARSEGPU, b, loops)
+function _amg_jacobi!(hierarchy::AMGHierarchy, smoother::Jacobi, level::AMGLevel, A::SPARSEGPU, b, loops)
     omega = _level_jacobi_omega(smoother, level)
     for _ in 1:loops
         _residual!(hierarchy, level.tmp, A, level.x, b)
@@ -349,7 +349,7 @@ function _device_coarse_refresh!(hierarchy::AMGHierarchy, solver)
     # On-device coarse solvers (Krylov / fixed-sweep Jacobi / Chebyshev) solve the (large) coarsest
     # on device; skip the costly D->H + host refactor. Their coarsest diag/lambda are refreshed by
     # _build_coarse_inverse! after this call.
-    if !(solver.coarse_solve isa Union{OnDeviceKrylov,OnDeviceJacobi,OnDeviceChebyshev})
+    if solver.native.coarse isa Direct
         # Coarsest level is solved by direct LU on host: D->H its (tiny) nzval and refactor.
         host_coarse = hierarchy.host_levels[end].A
         copyto!(host_coarse.nzval, Array(_nzval(levels[end].A)))
@@ -360,7 +360,7 @@ end
 
 # coarsest operator densified and factored on device (Cholesky if SPD, else LU), no host copy; falls
 # back to the host dense inverse above the rebuild-cost cap or when factorisation fails (pure Neumann)
-function _build_coarse_inverse!(::BACKEND, hierarchy::AMGHierarchy, cs::OnDevice)
+function _build_coarse_inverse!(::BACKEND, hierarchy::AMGHierarchy, cs::Direct)
     coarseA = hierarchy.levels[end].A
     n = size(coarseA, 1)
     (n == 0 || n > cs.max_rows) && return _build_host_coarse_inverse!(hierarchy, cs.max_rows)

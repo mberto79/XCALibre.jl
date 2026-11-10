@@ -7,6 +7,7 @@ struct MixedPETScSolver{S,V,R,C} <: AbstractDistributedSolver
     nzval::V          # Float32 copy of A; owned rows are written
     r::R
     d::R
+    w::R              # D⁻¹r, whose global norm the refinement checks
     n_owned::Int
     atol::Float64
     rtol::Float64     # requested; PETSc solves each correction to at most Solve._attainable_rtol
@@ -33,7 +34,7 @@ function _distributed_solver(::MixedF32, eqn, dmesh, setup, config; kwargs...)
     petsc = PETScSolver(eqn, dmesh, inner; float_type=T, nzval, report, kwargs...)
     zeros_T() = KernelAbstractions.zeros(backend, T, n)
     comm = getfield(dmesh, :comm)
-    MixedPETScSolver(petsc, nzval, zeros_T(), zeros_T(), n, Float64(setup.atol), Float64(setup.rtol),
+    MixedPETScSolver(petsc, nzval, zeros_T(), zeros_T(), zeros_T(), n, Float64(setup.atol), Float64(setup.rtol),
         (; hardware=config.hardware), Solve._solve_name(setup, get(kwargs, :label, "")),
         MPI.Comm_rank(comm) == 0)
 end
@@ -41,12 +42,12 @@ end
 # as Solve.mixed_solve!: corrections until the global residual meets rtol, a single one unless rtol is
 # below what Float32 attains
 function _solve_owned!(deqn::DistributedEqn{E,<:MixedPETScSolver}, result, component) where E
-    s, eqn = deqn.solver, deqn.eqn
+    s = deqn.solver
     values = result.values
-    s.rtol ≥ Solve._attainable_rtol(MixedF32()) && (_correct!(deqn, result, component, nothing); return values)
+    _inner_rtol(s) == s.rtol && (_correct!(deqn, result, component, nothing); return values)
     rnorm = _correct!(deqn, result, component, 0.0)
     iterations = piterations(s.petsc)
-    target = max(s.atol, s.rtol*rnorm)
+    target = Solve._stop_target(s.atol, s.rtol, rnorm)
     for _ ∈ 2:Solve.MAX_REFINEMENTS
         _correct!(deqn, result, component, target) ≤ target && return values
         iterations += piterations(s.petsc)
@@ -54,12 +55,14 @@ function _solve_owned!(deqn::DistributedEqn{E,<:MixedPETScSolver}, result, compo
     # the last correction is checked without solving again
     rnorm = _correct!(deqn, result, component, target; solve=false)
     rnorm ≤ target || (s.root && Solve._warn_unconverged(s.name, Solve._refinement_reason(), iterations,
-        rnorm, "‖b - Ax‖₂", s, (:unconverged_solve, s.name)))
+        rnorm, "‖D⁻¹(b - Ax)‖₂", s, (:unconverged_solve, s.name)))
     values
 end
 
-# one correction unless the global ‖b - Ax‖ ≤ target (`nothing` skips the norm); returns that norm.
-# Ghosts are refreshed first since r = b - Ax reads them
+_inner_rtol(s::MixedPETScSolver) = max(s.rtol, Solve._attainable_rtol(MixedF32()))
+
+# one correction unless the global ‖D⁻¹(b - Ax)‖ meets target (`nothing`: the setup's own), stopping
+# where the serial correction does; returns that norm. Ghosts are refreshed first since r = b - Ax reads them
 function _correct!(deqn, result, component, target; solve=true)
     s, eqn = deqn.solver, deqn.eqn
     (; backend, workgroup) = s.config.hardware
@@ -67,12 +70,14 @@ function _correct!(deqn, result, component, target; solve=true)
     sync!(result, get_phi(eqn).mesh, s.config)
     A = _A(eqn)
     kernel! = _sized(Solve._mixed_residual!, backend, workgroup, s.n_owned)
-    kernel!(s.r, s.nzval, _rowptr(A), _colval(A), _nzval(A), values, _b(eqn, component))
-    rnorm = isnothing(target) ? 0.0 : sqrt(MPI.Allreduce(Float64(sum(abs2, s.r)), +, _comm(deqn)))
-    (!solve || !isnothing(target) && rnorm ≤ target) && return rnorm
+    kernel!(s.r, s.w, s.nzval, _rowptr(A), _colval(A), _nzval(A), eqn.equation.diag_nz, values, _b(eqn, component))
+    rnorm = sqrt(MPI.Allreduce(Float64(sum(abs2, s.w)), +, _comm(deqn)))
+    (!solve || Solve._skips_correction(rnorm, target, s)) && return rnorm
     fill!(s.d, zero(eltype(s.d)))
     # PETSc keeps the matrix between corrections of one solve; s.r stays its right-hand side
     (isnothing(target) || iszero(target)) && passemble!(s.petsc, s.nzval, s.r)
+    atol_c, rtol_c = Solve._correction_tol(s.atol, _inner_rtol(s), target, rnorm)
+    pset_tolerances!(s.petsc, atol_c, rtol_c, Solve._stop_target(atol_c, rtol_c, rnorm))
     psolve!(s.petsc, s.d)
     kernel! = _sized(Solve._add_correction!, backend, workgroup, s.n_owned)
     kernel!(values, s.d, one(eltype(values)))

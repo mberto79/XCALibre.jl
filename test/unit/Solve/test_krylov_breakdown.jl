@@ -30,7 +30,7 @@ function breakdown_solve(solver, precision; warm=false)
     apply_boundary_conditions!(T_eqn, config.boundaries.T, nothing, 0.0, config)
 
     # unit diagonal, couplings to lower-numbered cells only and b - Ax₀ = e₁, exact in every
-    # precision; the warm start x₀ = 1 keeps the shadow M⁻¹(b - Ax₀) localised as well
+    # precision; the warm start x₀ = 1 keeps the shadow b - Ax₀ localised as well
     A = XCALibre.ModelFramework._A(T_eqn)
     rowptr, colval, nzval = _rowptr(A), _colval(A), _nzval(A)
     for i ∈ eachindex(rowptr)[1:end-1], nzi ∈ rowptr[i]:(rowptr[i+1] - 1)

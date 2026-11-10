@@ -49,19 +49,15 @@ residuals = run!(model, config)
 
 On meshes with appreciable non-orthogonality, pass `ncorrectors` to run non-orthogonal correctors on the potential equation. Set it to zero for orthogonal meshes.
 
-## AMG solver
+## AMG preconditioner
 ---
 
-The `AMG` linear solver can be selected directly in `SolverSetup`. It supports `mode=AMGSolver()` for a standalone multigrid solve and `mode=Cg()` for AMG-preconditioned conjugate gradient on symmetric systems such as pressure equations. `mode` takes an instance, not a symbol: `mode=:cg` throws an `ArgumentError`.
+Algebraic multigrid is a preconditioner: `solver` picks the outer iteration and `preconditioner = AMG(...)` the multigrid. Use `solver = Cg()` for symmetric systems such as incompressible pressure, `solver = Bicgstab()` for non-symmetric ones (compressible pressure, momentum, scalars) and `solver = Richardson()` for plain V-cycles with no Krylov acceleration.
 
 ```julia
 SolverSetup(
-    solver = AMG(
-        mode = Cg(),
-        coarsening = SmoothAggregation(),
-        smoother = AMGJacobi()
-    ),
-    preconditioner = Jacobi(),
+    solver = Cg(),
+    preconditioner = AMG(),
     convergence = 1e-7,
     relax = 1.0,
     rtol = 0.0,
@@ -69,57 +65,80 @@ SolverSetup(
 )
 ```
 
-For non-symmetric systems use `mode=Bicgstab()`, which gives AMG-preconditioned stabilised biconjugate gradient. A typical case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded and therefore non-symmetric. `Cg()` rejects a non-symmetric matrix. `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` uses it for the pressure equation of a transonic RANS case.
+`AMG(coarsening; smoother, sweeps, coarsest, refresh, native)`:
 
-Choice of coarsening for non-symmetric operators: `Bicgstab()` has been tested with the default `SmoothAggregation()`. `RugeStuben()` and `Geometric()` are accepted but have not been validated on non-symmetric operators - `RugeStuben()` builds its strength of connection from each row's entries only, not from the transpose - so prefer the default unless you have checked the alternative on your case.
+- `coarsening`: how cells are grouped into coarse levels.
+  - `Pairwise(merges=2)` (default): each cell is paired with the neighbour it is most strongly coupled to, `merges` times per level, so each level has about a quarter of the rows of the one above. Couplings across faces facing y and z count 1% and 2% more, so equal couplings, as between uniform cells, pair in one fixed direction however the cells are numbered, building compact box-shaped aggregates. Transfers between levels are piecewise constant and kept as lists of each aggregate's cells, never as sparse matrices, with each level's cells renumbered so an aggregate's cells are contiguous. Cheap to build, light on memory and robust for non-symmetric matrices.
+  - `SmoothedAggregation(; threshold=0.0)`: larger aggregates with a smoothed interpolation; fewer iterations on hard symmetric problems at a higher setup and memory cost.
+  - `RugeStuben(; threshold=0.25)`: classical AMG, serial meshes only (on a distributed mesh use `BoomerAMG()`).
+- `smoother`: `Jacobi()` (default), `Chebyshev(; degree=3)`, and on the CPU `GaussSeidel()`, `SymGaussSeidel()`, `SOR(ω)`, `SSOR(ω)`. `Jacobi(weight=4/3)` relaxes each level by `weight/λmax`, with λmax the largest eigenvalue of D⁻¹A there; `SOR` and `SSOR` take the relaxation factor `ω` directly.
+- `sweeps`: smoother sweeps before and after the coarse correction on each level. `sweeps = 2` means two before and two after, `sweeps = (0, 2)` none before and two after, and `Sweeps(pre, post; grow, max)` adds `grow` sweeps per level down to at most `max`; more sweeps on coarse levels, where they are cheap, strengthen the cycle at little cost. Defaults to 2 for `Jacobi()` and 1 otherwise.
+- `coarsest = 4096`: coarsening stops once a level has at most this many rows.
+- `refresh = 5`: the coarse levels are recomputed from the current matrix every `refresh` solves. The aggregates and interpolation are kept while the sparsity pattern is unchanged; natively the finest level always uses the current matrix. Use `refresh = 1` to recompute every solve.
+- `native = NativeAMG(...)`: settings of XCALibre's own AMG, which a distributed mesh does not use (below).
 
-If `Bicgstab()` breaks down - the shadow residual going orthogonal, or the stabilising step collapsing - the half-step iterate is kept and the solve restarts with a fresh shadow residual, at most twice.
-
-`scale_correction` (on by default) is supported. It makes the V-cycle preconditioner depend on its input, but the solver is right-preconditioned, so the solution and residual it carries stay consistent, and convergence is confirmed against the true residual `b - A*x`.
+`SolverSetup(precision = MixedF32())` keeps the outer iteration and finest level in the equation's precision and stores the coarse levels in Float32, about halving the hierarchy's memory.
 
 ```julia
 SolverSetup(
-    solver = AMG(
-        mode = Bicgstab(),
-        smoother = AMGGaussSeidel(sweep = AMGForwardSweep())
-        ),
-    preconditioner=DILU(),
+    solver = Bicgstab(),
+    preconditioner = AMG(SmoothedAggregation(); smoother = SymGaussSeidel(), sweeps = (0, 2)),
     convergence = 1e-7,
     relax = 1.0,
     rtol = 0.0,
-    atol = 1e-5     
+    atol = 1e-5
 )
 ```
 
-### Solving the coarsest level
+`Cg()` rejects a non-symmetric matrix. A typical non-symmetric case is the pressure equation in compressible flow, where the implicit pressure convection is upwinded; `examples/2D_cylinder_transonic_RANS_AMG_BICGStab.jl` solves it with `Bicgstab()` and AMG. If `Bicgstab()` breaks down (the shadow residual going orthogonal, or the stabilising step collapsing) the half-step iterate is kept and the solve restarts with a fresh shadow residual, at most twice. `Cg()` switches to its flexible form when the V-cycle is not symmetric (`scale_correction`, unequal `pre` and `post`, or a forward-only smoother), which tolerates the non-symmetric preconditioner; a symmetric V-cycle remains the better partner for `Cg()`.
 
-The coarsest level of the hierarchy is small but is visited on every V-cycle, so on a GPU the
-default host round trip can dominate. `coarse_solve` selects how it is solved:
+!!! note "Earlier spellings"
+    Earlier keywords and types still work for now, each with a one-time deprecation warning naming the current spelling: `AMG(coarsening=..., pre_sweeps=..., coarse_refresh_interval=..., max_coarse_rows=..., coarse_solve=..., scale_correction=..., fuse_levels=...)`, `Geometric()`, `SmoothAggregation()`, `AMGJacobi()`, `AMGChebyshev()`, `AMGGaussSeidel()`, `AMGSOR()` and the `OnDevice*`/`OnHost` coarse solves. `SolverSetup(solver = AMG(mode = Cg()))` becomes `solver = Cg(), preconditioner = AMG(...)`, `AMGSolver()` is `Richardson()`, and `GAMG()` returns the `AMG()` of PETSc's GAMG defaults. `AMG(coarse_storage = Float32)` is now `precision = MixedF32()`.
 
-- `OnDevice(; max_rows = 512)` (default) — device-resident factorisation, no host round trip.
-  A coarsest level with more rows than `max_rows` falls back to the host, since the factor is
-  rebuilt on every coarse refresh.
-- `OnHost()` — always copy the coarsest right-hand side to the host and solve there. Also
-  written `coarse_solve = CPU()`.
-- `OnDeviceJacobi(; omega, iterations)` and `OnDeviceChebyshev(; degree, eig_ratio, lambda_scale)` — apply a
-  fixed number of smoother sweeps on the device instead of solving. Both are constant linear
-  operators, so they are valid with `mode = Cg()` as well as `mode = AMGSolver()`.
-- `OnDeviceKrylov(; solver, rtol, atol, itmax)` — run an inner Krylov solve on the device. An
-  inner Krylov solve is nonlinear in its right-hand side, which breaks the fixed-operator
-  assumption of preconditioned CG, so this one requires `mode = AMGSolver()` and is rejected with
-  `mode = Cg()`. Passing a GPU backend, as in `coarse_solve = CUDABackend()`, selects it.
+### Native settings
+
+`NativeAMG(; coarse=Direct(), scale_correction=true, fuse=0)`:
+
+- `coarse`: the coarsest-level solve, visited on every V-cycle.
+  - `Direct(; max_rows=512)` (default): exact solve. On a GPU the factor stays on the device while the coarsest level has at most `max_rows` rows, otherwise it is solved on the host; `max_rows = 0` always uses the host.
+  - `Smoothed(smoother=Chebyshev(degree=10); sweeps=1)`: fixed sweeps of `Jacobi()` or `Chebyshev()` on the device, a fixed linear operator valid with `Cg()`. Suits a large `coarsest` on a GPU.
+  - `Iterative(solver=Bicgstab(); rtol=1e-2, itmax=50)`: a Jacobi-preconditioned Krylov solve on the device. It depends on the right-hand side, so it needs `solver = Richardson()`.
+  - On a CPU backend every choice is a `Direct()` solve.
+- `scale_correction`: scales each coarse correction by `(r·c)/(c·Ac)`, the factor that minimises the error in the energy norm.
+- `fuse`: with `Pairwise()`, the number of coarse levels below the finest that are not stored but applied through the finer matrix. Saves memory at the cost of extra matrix products per V-cycle; worthwhile when the hierarchy does not fit on a GPU. Needs `Jacobi()` or `Chebyshev()`.
 
 ```julia
-AMG(mode = AMGSolver(), coarsening = SmoothAggregation(), smoother = AMGJacobi(),
-    coarse_solve = OnDeviceChebyshev(degree = 8))
+SolverSetup(solver = Richardson(), preconditioner = AMG(coarsest = 8000,
+    native = NativeAMG(coarse = Smoothed(Chebyshev(degree = 8)))), convergence = 1e-7, relax = 1.0)
 ```
 
-On a CPU backend every `OnDevice*` option behaves as `OnHost()`.
+### AMG on a distributed mesh
+
+On a distributed mesh `AMG(...)` runs as PETSc's GAMG with its settings translated:
+
+- `Pairwise()` → `-pc_gamg_agg_nsmooths 0` (unsmoothed aggregation); `SmoothedAggregation(; threshold)` → `-pc_gamg_agg_nsmooths 1 -pc_gamg_threshold <threshold>`. Aggressive coarsening is off (`-pc_gamg_aggressive_coarsening 0`) to mirror the native levels.
+- `Jacobi(; weight)` → Richardson with Jacobi and scale `weight/2`; `Chebyshev(; degree, eig_ratio, lambda_scale)` → PETSc's Chebyshev with Jacobi, degree as `-mg_levels_ksp_max_it`, bounds as `-mg_levels_ksp_chebyshev_esteig`; `GaussSeidel()`, `SymGaussSeidel()` → PETSc's SOR within each rank.
+- `sweeps` → `-mg_levels_ksp_max_it`, with a separate up smoother (`-pc_mg_distinct_smoothup`) when `pre ≠ post`.
+- `coarsest` → `-pc_gamg_coarse_eq_limit`; `refresh = N` → the preconditioner is held for `N` solves and its coarse operators recomputed on the next, keeping the interpolation (`-pc_gamg_reuse_interpolation`).
+- With any outer iteration other than `Cg()` the aggregation graph is symmetrised (`-pc_gamg_graph_symmetrize`), so non-symmetric matrices are supported.
+
+What differs from the native AMG:
+
+- GAMG builds its aggregates with its own (MIS) algorithm, not pairwise, so `Pairwise(merges)` is not used and hierarchies and iteration counts are close, not identical.
+- `Jacobi()` damps each level by `weight/λmax` natively; PETSc uses one scale, `weight/2`, exact for `λmax ≈ 2`.
+- Between refreshes PETSc applies the whole stored preconditioner, while the native AMG updates its finest level every solve.
+- `NativeAMG` settings are not used; when they differ from the defaults one info message lists them.
+
+Settings GAMG cannot express stop the run: `RugeStuben()` (use `BoomerAMG()`), `Sweeps(grow > 0)`, `Chebyshev()` with more than one sweep, `SOR`/`SSOR` with `ω ≠ 1`, and `SmoothedAggregation(weight, near_nullspace)`.
+
+The rules for every preconditioner are listed in the preconditioners section of the numerical setup page.
 
 ## Launching flow solvers
 ---
 
 In XCALibre.jl the `run!` function is used to start a simulation, which will dispatch to the appropriate flow solver for execution. Once the simulation is complete a `NamedTuple` containing residual information is returned for users to explore the convergence history of the simulation. 
+
+The residual of each field is the normalised residual `Σᵢ|bᵢ - (Ax)ᵢ| / Σᵢ|Aᵢᵢxᵢ|` of its assembled system, evaluated on the current field `x` just before the linear solve, so it measures how far the previous iteration's fields are from satisfying this iteration's equations. It does not depend on the linear solver, its preconditioner, precision or tolerances, nor on whether the run is serial, distributed or on a GPU. When the field is zero everywhere (a common initial pressure), the denominator is zero and the unnormalised `Σᵢ|bᵢ - (Ax)ᵢ|` is reported for that iteration.
 
 ```@docs; canonical=false
 run!()

@@ -18,7 +18,7 @@ using Krylov
 
 using XCALibre.Multithread
 using XCALibre.Multithread: _sized
-import XCALibre.Multithread: XVector, _foreach_chunk, _active_backend, _acc_type
+import XCALibre.Multithread: XVector, _foreach_chunk, _reduce_chunks, _active_backend, _acc_type
 using XCALibre.Mesh
 using XCALibre.Fields
 using XCALibre.ModelFramework
@@ -34,5 +34,6 @@ include("Solve_1_mixed_precision.jl")
 include("Solve_1_api.jl")
 include("Solve_2_lagged_terms.jl")
 include("AMG/AMG.jl")
+include("Solve_3_preconditioner_table.jl")
 
 end

@@ -46,7 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed `set_production!` evaluating the `KWallFunction` production against a hard-coded zero wall velocity, which overpredicts the shear at a moving or rotating wall. The wall velocity is now taken from `Uf` [#158](@ref)
 * Fixed the pressure flux at `Extrapolated` pressure patches not being propagated to the boundary mass flux. The patch's Laplacian contribution is assembled from the owner-cell pressure available at assembly time, so once the pressure equation is solved the boundary flux is stale. The correction is now deferred and applied for patches whose velocity boundary condition is pressure-adjustable [#158](@ref)
 * Fixed the non-orthogonal face correction being applied to the pressure equation but not to the mass flux, so continuity did not close on non-orthogonal meshes. The correction is now stored per face and subtracted from the mass flux [#158](@ref)
-* Fixed the density-based (`SupersonicFlow`) solver failing on GPU with a fixed time step (`adaptive=nothing`) because the time step was read from device memory by scalar indexing. It is now copied to the host once before the time loop [#258](@ref)
 
 ### Breaking
 * `assign` now requires every mesh boundary to be assigned exactly once and throws an `ArgumentError` naming any missing or duplicated patch. Previously only the number of boundary conditions was checked, so an assignment that named one patch twice and omitted another was accepted, leaving a patch without a boundary condition [#154](@ref)

@@ -784,14 +784,11 @@ function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_c
     end
 end
 
-"""Return fixed dt from `runtime.dt[1]` (no kernel launch)."""
-function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, config, dim_exp, iteration=1)
-    TF = eltype(workspace.dt_cell)
-    return TF(runtime.dt[1])
-end
+"""Return the fixed dt `dt0`, copied to the host once before the time loop (no kernel launch)."""
+compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, config, dim_exp, iteration, dt0) = dt0
 
 # Compute the CFL-limited global dt (minimum of the per-cell spectral-radius dt); update `runtime.dt` in place.
-function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, config, dim_exp, iteration=1)
+function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, config, dim_exp, iteration, dt0)
     TF = eltype(workspace.dt_cell)
     (; dt_cell, nu_eff) = workspace
     (; rho) = model.fluid
@@ -851,7 +848,7 @@ function _reduce_dt(::MeanDt, dt_cell, mesh)
 end
 
 # Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum.
-function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration=1)
+function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration, dt0)
     TF = eltype(workspace.dt_cell)
     (; maxCo, startCo, ramp) = runtime.adaptive
     frac = ramp > 0 ? min(one(TF), TF(iteration - 1) / TF(ramp)) : one(TF)
@@ -1611,6 +1608,7 @@ function GODUNOV(
     R_rhoE = ones(TF, iterations)
     force_log = _force_log(forces)
     local_dt  = runtime.adaptive isa LocalTimeStepping
+    dt0 = TF(Array(runtime.dt)[1]) # single device->host copy; runtime.dt may live on the GPU
 
     @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
 
@@ -1637,7 +1635,7 @@ function GODUNOV(
         R_rhoE[iteration] = rhoE_res
 
         # 3. Time step (adaptive CFL or fixed)
-        dt = compute_dt!(workspace, model, runtime, config, dim_exp, iteration)
+        dt = compute_dt!(workspace, model, runtime, config, dim_exp, iteration, dt0)
         dt_time = _time_increment(dt, mesh)   # local time stepping: dt is the per-cell array, time follows the minimum
         time += dt_time
 

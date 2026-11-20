@@ -137,7 +137,7 @@ function PISO(
         dt = time_step(dt_control)
         time += dt
         begin_time_flux!(tflux, mdotf, U, nothing, nothing, dt; pressure=(p, ∇p))
-        extrapolate_lagged!(lagged, time, config) # explicit terms at the time level of the scheme
+        extrapolate_lagged!(lagged, time, dt, config) # explicit terms at the time level of the scheme
 
         # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(

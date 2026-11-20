@@ -13,6 +13,7 @@ target_courant(::CourantCriterion, adaptive) = adaptive.maxCo
 
 # Mode (runtime.adaptive): update_dt!(ctrl, mode, model, config, iteration) sets, with
 # set_time_step!, the dt of `iteration` from the Courant numbers of ctrl
+
 # NEW SECTION: convective Courant number |U|/Δx, Δx = V^(1/d)
 
 struct ConvectiveCo <: CourantCriterion end

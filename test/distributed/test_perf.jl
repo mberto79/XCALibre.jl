@@ -63,7 +63,7 @@ end
 
 include(joinpath(@__DIR__, "psimple_case.jl"))
 import XCALibre.Solvers: SIMPLE, setup_incompressible_solvers, correct_mass_flux!,
-    max_courant_number!
+    TimeStepControl, ConvectiveCo, update_time_step!
 import XCALibre.Solve: make_symmetric!, unwrap_eqn, sync!
 
 gm2 = rank == 0 ? bfs_mesh() : nothing
@@ -93,8 +93,8 @@ p_prev = similar(p.values)
 copyto!(p_prev, p.values)
 make_symmetric!(p_eqn, config2)
 correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
-cCo = KernelAbstractions.zeros(backend, Float64, length(dm2.cells))
-max_courant_number!(cCo, model2, config2)
+dtc = TimeStepControl((ConvectiveCo(),), model2, config2)
+update_time_step!(dtc, model2, config2)
 sync!(U, dm2, config2)
 
 a_ueqn = @allocated usolve!()
@@ -102,7 +102,7 @@ a_peqn = @allocated psolve_eqn!()
 a_sym = @allocated make_symmetric!(p_eqn, config2)
 a_cmf = @allocated correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
 a_halo3 = @allocated sync!(U, dm2, config2)
-a_cour = @allocated max_courant_number!(cCo, model2, config2)
+a_cour = @allocated update_time_step!(dtc, model2, config2)
 
 println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
     "halo3=$a_halo3 courant=$a_cour")
@@ -125,7 +125,7 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
         Tuple{Float64,Float64,Float64}
     @test (@inferred solve_equation!(
         p_deqn, p, bcs2.p, config2.solvers.p, config2; ref=nothing)) isa Float64
-    @test (@inferred max_courant_number!(cCo, model2, config2)) isa Float64
+    @test (@inferred update_time_step!(dtc, model2, config2)) isa TimeStepControl
 end
 
 # NEW SECTION: communication budget per SIMPLE iteration

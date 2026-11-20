@@ -147,7 +147,8 @@ simulations. If not provided, a fixed time step is used.
 - `maxAlphaCo::AbstractFloat`: target maximum Alpha Courant number. The time step will be adjusted
   such that the computed Courant number approaches this value.
 - `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
-  current time step. Prevents excessively large reductions in a single update.
+  current time step. Prevents excessively large reductions in a single update. Not applied
+  by the explicit density-based solver (`Fluid{SupersonicFlow}`), whose step never exceeds the CFL limit.
 - `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
   current time step. Prevents excessive time-step growth.
 """

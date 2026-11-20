@@ -153,10 +153,9 @@ function CSIMPLE(
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     
-    dt_cpu = zeros(_get_float(mesh), 1)
-    copyto!(dt_cpu, config.runtime.dt)
+    dt_host = host_dt(runtime, _get_float(mesh))
     
-    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_host,iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -240,7 +239,7 @@ function CSIMPLE(
             )
 
         # Solve energy equation and update thermo properties
-        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
+        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_host, config)
         thermo_Psi!(model, Psi)
         thermo_Psi!(model, Psif, time, config)
 

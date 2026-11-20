@@ -58,6 +58,7 @@ const TIERS = [
         "unit/Solvers/test_compressible_mass_flux.jl",
         "unit/Solvers/test_consistent_coupling.jl",
         "unit/Solvers/test_dt_consistent_flux.jl",
+        "unit/Solvers/test_time_step_control.jl",
         "unit/Solvers/test_periodic_mass_flux.jl",
         "unit/Solvers/test_film_dt_consistency.jl",
         "unit/ModelPhysics/test_wall_function_empty_patch.jl",

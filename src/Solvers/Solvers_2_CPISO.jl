@@ -147,13 +147,10 @@ function CPISO(
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
-    (; iterations, write_interval, dt) = runtime
+    (; iterations, write_interval) = runtime
     (; backend) = hardware
 
-    dt_cpu = zeros(_get_float(mesh), 1)
-    copyto!(dt_cpu, config.runtime.dt)
-
-    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,host_dt(runtime, _get_float(mesh)),iterations)
     mdotf = get_flux(U_eqn, 2)
     mueff = get_flux(U_eqn, 3)
     mueffgradUt = get_source(U_eqn, 2)
@@ -198,7 +195,6 @@ function CPISO(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
 
 
     # Initial calculations
@@ -231,14 +227,16 @@ function CPISO(
         evaluate=() -> (eddy_viscosity!(turbulenceModel, model, S, time, config);
             update_effective_viscosity!(model, nueff, mueff, config)))
 
+    dt_control = TimeStepControl((ConvectiveCo(),), model, config)
+
     @info "Starting CPISO loops..."
 
     bar = _progress_bar(iterations, progress)
 
     for iteration ∈ 1:iterations
-        copyto!(dt_cpu, config.runtime.dt)
-        time += dt_cpu[1]
-        begin_time_flux!(tflux, mdotf, U, rho, nothing, dt_cpu[1]; pressure=(p, ∇p))
+        dt = time_step(dt_control)
+        time += dt
+        begin_time_flux!(tflux, mdotf, U, rho, nothing, dt; pressure=(p, ∇p))
         extrapolate_lagged!(lagged, time, config) # explicit terms at the time level of the scheme
 
         # gradU and mueff of the start-of-step velocity (updated by turbulence! below)
@@ -256,7 +254,7 @@ function CPISO(
             rho_prev=rho, time=time)
 
         # Energy after correctors so dp/dt = (p_corrected - prevP)/dt ≠ 0
-        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt_cpu[1], config)
+        energy!(energyModel, model, mdotf, ∇p, gradU, mueff, time, dt, config)
         thermo_Psi!(model, Psi); thermo_Psi!(model, Psif, time, config);
 
         # Pressure correction setup (outside corrector loop)
@@ -354,8 +352,8 @@ function CPISO(
         update_effective_viscosity!(model, nueff, mueff, config)
 
         
-        courant = max_courant_number!(cellsCourant, model, config)
-        update_dt!(config.runtime, courant)
+        update_time_step!(dt_control, model, config)
+        courant, = courant_numbers(dt_control)
 
         R_ux[iteration] = rx
         R_uy[iteration] = ry
@@ -364,7 +362,7 @@ function CPISO(
 
     isnothing(bar) || ProgressMeter.next!(
         bar, showvalues = [
-            (:time, iteration*dt_cpu[1]),
+            (:time, time),
             (:Courant, courant),
             (:Ux, R_ux[iteration]),
             (:Uy, R_uy[iteration]),

@@ -11,10 +11,8 @@ abstract type TimeStepLimit end
 # Courant number a criterion is held to under AdaptiveTimeStepping
 target_courant(::CourantCriterion, adaptive) = adaptive.maxCo
 
-# Time-stepping mode (runtime.adaptive, an AbstractTimeStepping or nothing):
-# update_dt!(ctrl, mode, model, config, iteration) sets the next dt with set_time_step!, from
-# the Courant numbers of ctrl; `iteration` is the iteration that the new dt will be used for.
-
+# Mode (runtime.adaptive): update_dt!(ctrl, mode, model, config, iteration) sets, with
+# set_time_step!, the dt of `iteration` from the Courant numbers of ctrl
 # NEW SECTION: convective Courant number |U|/Δx, Δx = V^(1/d)
 
 struct ConvectiveCo <: CourantCriterion end

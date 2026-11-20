@@ -11,6 +11,10 @@ abstract type TimeStepLimit end
 # Courant number a criterion is held to under AdaptiveTimeStepping
 target_courant(::CourantCriterion, adaptive) = adaptive.maxCo
 
+# Time-stepping mode (runtime.adaptive, an AbstractTimeStepping or nothing):
+# update_dt!(ctrl, mode, model, config, iteration) sets the next dt with set_time_step!, from
+# the Courant numbers of ctrl; `iteration` is the iteration that the new dt will be used for.
+
 # NEW SECTION: convective Courant number |U|/Δx, Δx = V^(1/d)
 
 struct ConvectiveCo <: CourantCriterion end
@@ -76,13 +80,13 @@ cell_time_step(ctrl::TimeStepControl) = _cell_time_step(ctrl, ctrl.adaptive)
 _cell_time_step(ctrl, ::LocalTimeStepping) = ctrl.rate
 _cell_time_step(ctrl, adaptive) = ctrl.dt
 
-# Courant numbers at the current dt, then the next dt from the time-stepping mode and the limits
-function update_time_step!(ctrl::TimeStepControl, model, config, iteration=1)
+# Courant numbers at the current dt, then the dt of `iteration` from the mode and the limits
+function update_time_step!(ctrl::TimeStepControl, model, config, iteration::Integer)
     if ctrl.monitor || !isnothing(ctrl.adaptive)
         ctrl.max_rate = map(c -> _max_rate!(ctrl.rate, c, model, config), ctrl.criteria)
         ctrl.courant = map(λ -> λ * ctrl.dt, ctrl.max_rate)
     end
-    _update_dt!(ctrl, ctrl.adaptive, model.domain, config, iteration)
+    update_dt!(ctrl, ctrl.adaptive, model, config, iteration)
     _limit_dt!(ctrl, model, config)
     return ctrl
 end
@@ -96,19 +100,20 @@ end
 # owned entries of a per-cell array (ghost entries come from partial face lists)
 _owned(v, mesh) = view(v, 1:n_owned_cells(mesh))
 
-_update_dt!(ctrl, ::Nothing, mesh, config, iteration) = nothing
+update_dt!(ctrl, ::Nothing, model, config, iteration) = nothing
 
-function _update_dt!(ctrl, a::AdaptiveTimeStepping, mesh, config, iteration)
+function update_dt!(ctrl, a::AdaptiveTimeStepping, model, config, iteration)
     TF = typeof(ctrl.dt)
     factor = minimum(map((c, Co) -> TF(target_courant(c, a)) / (Co + eps(TF)), ctrl.criteria, ctrl.courant))
     shrink = ctrl.explicit ? zero(TF) : TF(a.minShrink)
-    _set_dt!(ctrl, ctrl.dt * clamp(factor, shrink, TF(a.maxGrow)), config)
+    set_time_step!(ctrl, ctrl.dt * clamp(factor, shrink, TF(a.maxGrow)), config)
 end
 
 # cell steps cfl/λ, Courant number ramped from startCo to maxCo; runtime.dt takes the
 # turbulence step (min, mean or max of the cell steps)
-function _update_dt!(ctrl, a::LocalTimeStepping, mesh, config, iteration)
+function update_dt!(ctrl, a::LocalTimeStepping, model, config, iteration)
     TF = typeof(ctrl.dt)
+    mesh = model.domain
     frac = a.ramp > 0 ? min(one(TF), TF(iteration - 1) / TF(a.ramp)) : one(TF)
     cfl = TF(a.startCo + (a.maxCo - a.startCo) * frac)
     rate = ctrl.rate
@@ -130,11 +135,11 @@ _limit_dt!(ctrl, model, config) = _limit_dt!(ctrl, ctrl.limits, model, config)
 _limit_dt!(ctrl, ::Tuple{}, model, config) = nothing
 function _limit_dt!(ctrl, limits::Tuple, model, config)
     dt_max = global_min(minimum(map(l -> max_time_step(l, model, config), limits)), model.domain)
-    dt_max < ctrl.dt && _set_dt!(ctrl, typeof(ctrl.dt)(dt_max), config)
+    dt_max < ctrl.dt && set_time_step!(ctrl, typeof(ctrl.dt)(dt_max), config)
     return nothing
 end
 
-_set_dt!(ctrl, dt, config) = (ctrl.dt = dt; config.runtime.dt .= dt; nothing)
+set_time_step!(ctrl, dt, config) = (ctrl.dt = dt; config.runtime.dt .= dt; nothing)
 
 # host value of runtime.dt for set-up code that runs before a TimeStepControl exists
 host_dt(runtime, TF) = TF(Array(runtime.dt)[1])

@@ -352,7 +352,7 @@ function CPISO(
         update_effective_viscosity!(model, nueff, mueff, config)
 
         
-        update_time_step!(dt_control, model, config)
+        update_time_step!(dt_control, model, config, iteration + 1) # dt of the next iteration
         courant, = courant_numbers(dt_control)
 
         R_ux[iteration] = rx

@@ -10,6 +10,9 @@ export global_any, global_sum, global_min, n_owned_cells, global_cell_index
 export solve_equation!
 export AdaptiveTimeStepping, LocalTimeStepping
 
+# time-stepping modes passed as `Runtime(adaptive=...)`; `nothing` is a fixed time step
+abstract type AbstractTimeStepping end
+
 struct SolverSetup{
     F<:AbstractFloat,
     I<:Integer,
@@ -116,7 +119,7 @@ _set_preconditioner(::AbstractMixedPrecision, setup, eqn) = _inert_preconditione
 _set_preconditioner(::AbstractMixedPrecision, setup, eqn, BCs, config) =
     set_preconditioner(setup.preconditioner, eqn, BCs, config)
 
-struct AdaptiveTimeStepping{F<:AbstractFloat}
+struct AdaptiveTimeStepping{F<:AbstractFloat} <: AbstractTimeStepping
     maxCo::F
     maxAlphaCo::F
     minShrink::F
@@ -183,7 +186,7 @@ converged run does not depend on `dt` and the iterations are not a time history.
   `startCo` to `maxCo` (`0` = no ramp). Useful to start from a uniform field.
 - `turbulence_dt::Symbol`: the implicit turbulence equations take one time step, the `:min` (default), `:mean` or `:max` of the cell time steps of the iteration.
 """
-struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R<:Union{MinDt,MeanDt,MaxDt}}
+struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R<:Union{MinDt,MeanDt,MaxDt}} <: AbstractTimeStepping
     maxCo::F
     startCo::F
     ramp::I
@@ -199,7 +202,7 @@ function LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:mi
     LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), _turbulence_dt_rule(turbulence_dt))
 end
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping, LocalTimeStepping}}
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AbstractTimeStepping}}
     iterations::I
     dt::V
     write_interval::I

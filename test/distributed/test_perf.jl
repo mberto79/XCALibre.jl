@@ -94,7 +94,7 @@ copyto!(p_prev, p.values)
 make_symmetric!(p_eqn, config2)
 correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
 dtc = TimeStepControl((ConvectiveCo(),), model2, config2)
-update_time_step!(dtc, model2, config2)
+update_time_step!(dtc, model2, config2, 2)
 sync!(U, dm2, config2)
 
 a_ueqn = @allocated usolve!()
@@ -102,7 +102,7 @@ a_peqn = @allocated psolve_eqn!()
 a_sym = @allocated make_symmetric!(p_eqn, config2)
 a_cmf = @allocated correct_mass_flux!(mdotf, p_eqn, config2; previous=p_prev, time=1)
 a_halo3 = @allocated sync!(U, dm2, config2)
-a_cour = @allocated update_time_step!(dtc, model2, config2)
+a_cour = @allocated update_time_step!(dtc, model2, config2, 2)
 
 println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
     "halo3=$a_halo3 courant=$a_cour")
@@ -125,7 +125,7 @@ println("PERF5 rank=$rank ueqn=$a_ueqn peqn=$a_peqn sym=$a_sym cmf=$a_cmf " *
         Tuple{Float64,Float64,Float64}
     @test (@inferred solve_equation!(
         p_deqn, p, bcs2.p, config2.solvers.p, config2; ref=nothing)) isa Float64
-    @test (@inferred update_time_step!(dtc, model2, config2)) isa TimeStepControl
+    @test (@inferred update_time_step!(dtc, model2, config2, 2)) isa TimeStepControl
 end
 
 # NEW SECTION: communication budget per SIMPLE iteration

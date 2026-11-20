@@ -423,7 +423,7 @@ function MULTIPHASE(
         update_nueff!(nueff, nuf, model.turbulence, config)
         @. mueff.values = rhof.values * nueff.values
 
-        update_time_step!(dt_control, model, config)
+        update_time_step!(dt_control, model, config, iteration + 1) # dt of the next iteration
         courant, alphaCourant = courant_numbers(dt_control)
 
         R_ux[iteration]    = rx

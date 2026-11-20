@@ -335,7 +335,7 @@ function FilmModel(
         R_u[iteration] = max(rx, ry, rz)
         R_h[iteration] = rh
 
-        update_time_step!(dt_control, model, config)
+        update_time_step!(dt_control, model, config, iteration + 1) # dt of the next iteration
         limitingCourant = maximum(courant_numbers(dt_control))
         courant[iteration] = limitingCourant
 

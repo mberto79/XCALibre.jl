@@ -102,16 +102,14 @@ function FilmModel(
     (; rho, nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, boundaries, postprocess) = config
-    (; iterations, write_interval, dt) = runtime
+    (; iterations, write_interval) = runtime
     backend = config.hardware.backend
     
     TF = _get_float(mesh)
     n_cells = length(mesh.cells)
     capillaryDtFaces = KernelAbstractions.zeros(backend, TF, length(mesh.faces))
 
-    dt_cpu = zeros(TF, 1)
-
-    postprocess = convert_time_to_iterations(postprocess, model, dt, iterations)
+    postprocess = convert_time_to_iterations(postprocess, model, host_dt(runtime, TF), iterations)
     phif_U = get_flux(U_eqn, 2)
     phif = FaceScalarField(mesh)
     # Parabolic velocity profile correction (Meredith Eq 2 Dv): ∫u² dy = (6/5) h ū²
@@ -187,8 +185,6 @@ function FilmModel(
     R_u = zeros(TF, iterations)
     R_h = zeros(TF, iterations)
     courant = zeros(TF, iterations)
-    cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
-    cellsFilmCourant = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Initial calculations
     time = zero(TF) # assuming time = 0
@@ -210,10 +206,8 @@ function FilmModel(
         phif, filmVelocityFlux, mdotf, Uf, U, hf, w, wf,
         boundaries.U, boundaries.h, time, config, phif_U, profile_factor
     )
-    update_capillary_dt!(
-        config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
-    )
-    copyto!(dt_cpu, config.runtime.dt)
+    dt_control = TimeStepControl((ConvectiveCo(), FilmCo(phif, hf, coeffs.h_crit)), model, config;
+        limits=(CapillaryLimit(capillaryDtFaces, hf, wf, rho.values[1], coeffs),))
 
     update_film_viscous_source!(nu_h, nu, h, coeffs.h_floor, config)
     update_liquid_pressure!(PLf, P_hydrf, P_surff, Pg, config)
@@ -235,12 +229,8 @@ function FilmModel(
     #rh = 0
     rx = ry = rz = zero(TF)
     for iteration ∈ 1:iterations
-        min_capillary_dt = update_capillary_dt!(
-            config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
-        )
-        copyto!(dt_cpu, config.runtime.dt)
-        time += dt_cpu[1]
-        step_dt = dt_cpu[1]
+        step_dt = time_step(dt_control)
+        time += step_dt
 
         copyto!(h_old, h.values) # store previous h before inner loop
 
@@ -345,14 +335,9 @@ function FilmModel(
         R_u[iteration] = max(rx, ry, rz)
         R_h[iteration] = rh
 
-        maxCourant = max_courant_number!(cellsCourant, model, config)
-        maxFilmCourant = max_film_courant_number!(cellsFilmCourant, phif, hf, coeffs.h_crit, config)
-        limitingCourant = max(maxCourant, maxFilmCourant)
+        update_time_step!(dt_control, model, config, iteration + 1) # dt of the next iteration
+        limitingCourant = maximum(courant_numbers(dt_control))
         courant[iteration] = limitingCourant
-        update_dt!(config.runtime, limitingCourant)
-        update_capillary_dt!(
-            config.runtime, capillaryDtFaces, mesh, hf, wf, rho.values[1], coeffs, config
-        )
 
         isnothing(bar) || ProgressMeter.next!(
             bar, showvalues = [
@@ -1122,26 +1107,57 @@ end
     end
 end
 
-function update_capillary_dt!(runtime, capillaryDtFaces, mesh, hf, wf, rho, coeffs, config)
-    min_capillary_dt = capillary_time_step!(
-        capillaryDtFaces, mesh, hf, wf, rho, coeffs.σ, coeffs.h_crit, config
-    )
-    limit_capillary_dt!(runtime, min_capillary_dt, coeffs)
-    return min_capillary_dt
+# NEW SECTION: film time-step constraints
+
+# film Courant number Σ|φf|/(max(|hf|, h_crit) V)
+struct FilmCo{P,H,T} <: CourantCriterion
+    phif::P
+    hf::H
+    h_crit::T
+end
+
+function courant_rate!(rate, c::FilmCo, model, config)
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_film_rate!, backend, workgroup, length(rate))
+    kernel!(rate, c.phif, c.hf, c.h_crit, model.domain)
+end
+
+@kernel function _film_rate!(rate, phif, hf, h_crit, mesh)
+    cID = @index(Global)
+    @uniform (; cells, cell_faces) = mesh
+    @inbounds begin
+        flux_sum = zero(eltype(rate))
+        for i in cells[cID].faces_range
+            fID = cell_faces[i]
+            flux_sum += abs(phif[fID]) / max(abs(hf[fID]), h_crit)
+        end
+        rate[cID] = flux_sum / cells[cID].volume
+    end
+end
+
+# shallow-film capillary bound and the user cap coeffs.capillary_dt, both off when σ = 0
+struct CapillaryLimit{F,H,W,R,C} <: TimeStepLimit
+    dt_faces::F
+    hf::H
+    wf::W
+    rho::R
+    coeffs::C
+end
+
+function max_time_step(l::CapillaryLimit, model, config)
+    (; σ, h_crit, capillary_dt) = l.coeffs
+    TF = eltype(l.dt_faces)
+    σ > 0 || return TF(Inf)
+    dt_wave = capillary_time_step!(l.dt_faces, model.domain, l.hf, l.wf, l.rho, σ, h_crit, config)
+    dt_max = isfinite(dt_wave) && dt_wave > 0 ? TF(dt_wave) : TF(Inf)
+    return capillary_dt > 0 ? min(dt_max, TF(capillary_dt)) : dt_max
 end
 
 function capillary_time_step!(capillaryDtFaces, mesh, hf, wf, rho, σ, h_crit, config)
-    if σ <= 0
-        return oftype(rho, Inf)
-    end
-
-    (; hardware) = config
-    (; backend, workgroup) = hardware
-
+    (; backend, workgroup) = config.hardware
     ndrange = length(capillaryDtFaces)
     kernel! = _sized(_capillary_time_step!, backend, workgroup, ndrange)
     kernel!(capillaryDtFaces, mesh, hf, wf, rho, σ, h_crit, length(mesh.boundary_cellsID))
-
     return minimum(capillaryDtFaces)
 end
 
@@ -1156,29 +1172,6 @@ end
         else
             capillaryDtFaces[i] = oftype(hf[i], Inf)
         end
-    end
-end
-
-function limit_capillary_dt!(runtime::Runtime, min_capillary_dt, coeffs)
-    if coeffs.σ > 0
-        backend = KernelAbstractions.get_backend(runtime.dt)
-        kernel! = _sized(_limit_capillary_dt!, backend, 1, 1)
-        kernel!(runtime.dt, min_capillary_dt, coeffs.capillary_dt)
-    end
-end
-
-@kernel function _limit_capillary_dt!(dt, min_capillary_dt, capillary_dt)
-    i = @index(Global)
-
-    @inbounds begin
-        next_dt = dt[i]
-        if isfinite(min_capillary_dt) && min_capillary_dt > zero(min_capillary_dt)
-            next_dt = min(next_dt, min_capillary_dt)
-        end
-        if capillary_dt > zero(capillary_dt)
-            next_dt = min(next_dt, capillary_dt)
-        end
-        dt[i] = next_dt
     end
 end
 
@@ -1403,32 +1396,3 @@ end
     end
 end
 
-function max_film_courant_number!(cellsFilmCourant, phif, hf, h_crit, config)
-    (; mesh) = phif
-    (; hardware, runtime) = config
-    (; backend, workgroup) = hardware
-
-    ndrange = length(cellsFilmCourant)
-    kernel! = _sized(_max_film_courant_number!, backend, workgroup, ndrange)
-    kernel!(cellsFilmCourant, phif, hf, h_crit, runtime, mesh)
-    return maximum(cellsFilmCourant)
-end
-
-@kernel function _max_film_courant_number!(cellsFilmCourant, phif, hf, h_crit, runtime, mesh)
-    cID = @index(Global)
-
-    @uniform begin
-        cells = mesh.cells
-        cell_faces = mesh.cell_faces
-    end
-
-    @inbounds begin
-        flux_sum = zero(eltype(cellsFilmCourant))
-        for i in cells[cID].faces_range
-            fID = cell_faces[i]
-            h_scale = max(abs(hf[fID]), h_crit)
-            flux_sum += abs(phif[fID]) / h_scale
-        end
-        cellsFilmCourant[cID] = runtime.dt[1] * flux_sum / cells[cID].volume
-    end
-end

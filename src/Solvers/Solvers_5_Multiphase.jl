@@ -208,9 +208,7 @@ function MULTIPHASE(
 
     @info "Allocating working memory..."
 
-    dt_cpu = zeros(TF, 1)
-    copyto!(dt_cpu, runtime.dt)
-    postprocess = convert_time_to_iterations(postprocess, model, dt_cpu[1], iterations)
+    postprocess = convert_time_to_iterations(postprocess, model, host_dt(runtime, TF), iterations)
 
     mueff = get_flux(U_eqn, 3)
     rDf   = get_flux(p_eqn, 1)
@@ -287,8 +285,6 @@ function MULTIPHASE(
     R_uz    = ones(TF, iterations)
     R_p     = ones(TF, iterations)
     R_alpha = ones(TF, iterations)
-    cellsCourant      = KernelAbstractions.zeros(backend, TF, n_cells)
-    cellsAlphaCourant = KernelAbstractions.zeros(backend, TF, n_cells)
 
     time = zero(TF)
     interpolate!(Uf, U, config)
@@ -306,17 +302,19 @@ function MULTIPHASE(
     xdir, ydir, zdir = XDir(), YDir(), ZDir()
     tflux = TimeFlux(U_eqn, mesh, boundaries.U)
 
+    dt_control = TimeStepControl((ConvectiveCo(), InterfaceCo(alpha, mdotf)), model, config)
+
     @info "Starting multiphase solver..."
 
     bar = _progress_bar(iterations, progress)
 
     for iteration ∈ 1:iterations
 
-        copyto!(dt_cpu, config.runtime.dt)
-        time += dt_cpu[1]
+        dt = time_step(dt_control)
+        time += dt
 
         @. rho_prev.values = rho.values
-        begin_time_flux!(tflux, mdotf, U, rho, rhof, dt_cpu[1]) # old levels before the alpha update
+        begin_time_flux!(tflux, mdotf, U, rho, rhof, dt) # old levels before the alpha update
 
         if typeof(mp_model) <: Mixture
             @. U_prev.x.values = U.x.values
@@ -330,7 +328,7 @@ function MULTIPHASE(
             grad!(∇alpha, alphaf, alpha, boundaries.alpha, time, config)
             limit_gradient!(schemes.alpha.limiter, ∇alpha, alpha, config)
 
-            compute_DUmDt!(DUmDt, U, U_prev, ∇U, dt_cpu[1], config)
+            compute_DUmDt!(DUmDt, U, U_prev, ∇U, dt, config)
             compute_Ur!(Ur, alpha, rho, g_vec, DUmDt,
                         phases[main].rho, phases[secondary].rho, phases[main].mu,
                         diameter, tau_d_field, config)
@@ -346,7 +344,7 @@ function MULTIPHASE(
                        alpha_prev, alphaf_upwind, alphaf_HO, phirf, Urdotf, phiLf, phiHf, phiAf,
                        alpha_fluxf, div_alpha, div_mdotf,
                        Pplus, Pminus, Qplus, Qminus, Rplus, Rminus,
-                       alphaMaxLocal, alphaMinLocal, C_alpha, dt_cpu[1], time, config)
+                       alphaMaxLocal, alphaMinLocal, C_alpha, dt, time, config)
         ralpha = zero(TF)
 
         # Mixture property update from the new alpha
@@ -425,9 +423,8 @@ function MULTIPHASE(
         update_nueff!(nueff, nuf, model.turbulence, config)
         @. mueff.values = rhof.values * nueff.values
 
-        courant      = max_courant_number!(cellsCourant, model, config)
-        alphaCourant = max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt_cpu[1])
-        update_dt!(config.runtime, courant, alphaCourant)
+        update_time_step!(dt_control, model, config, iteration + 1) # dt of the next iteration
+        courant, alphaCourant = courant_numbers(dt_control)
 
         R_ux[iteration]    = rx
         R_uy[iteration]    = ry
@@ -437,7 +434,7 @@ function MULTIPHASE(
 
         isnothing(bar) || ProgressMeter.next!(
             bar, showvalues = [
-                (:dt, dt_cpu[1]),
+                (:dt, dt),
                 (:time, time),
                 (:Courant, courant),
                 (:AlphaCourant, alphaCourant),
@@ -461,6 +458,35 @@ function MULTIPHASE(
     store_flux!(model.momentum, mdotf)
     return (Ux=R_ux, Uy=R_uy, Uz=R_uz, p=R_p, alpha=R_alpha)
 end
+
+# NEW SECTION: interface Courant number Σ|ṁf|/V in cells near the interface, held to maxAlphaCo
+
+struct InterfaceCo{A,F} <: CourantCriterion
+    alpha::A
+    mdotf::F
+end
+
+target_courant(::InterfaceCo, adaptive) = adaptive.maxAlphaCo
+
+function courant_rate!(rate, c::InterfaceCo, model, config)
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_interface_rate!, backend, workgroup, length(rate))
+    kernel!(rate, c.alpha, c.mdotf, model.domain)
+end
+
+@kernel function _interface_rate!(rate, alpha, mdotf, mesh)
+    i = @index(Global)
+    @uniform (; cells, cell_faces) = mesh
+    @inbounds begin
+        flux = zero(eltype(rate))
+        for k ∈ cells[i].faces_range
+            flux += abs(mdotf[cell_faces[k]])
+        end
+        rate[i] = nearInterface(alpha[i]) * flux / cells[i].volume
+    end
+end
+
+@inline nearInterface(alpha) = ifelse((alpha > 0.01) & (alpha < 0.99), one(alpha), zero(alpha))
 
 
 

@@ -466,7 +466,7 @@ struct InterfaceCo{A,F} <: CourantCriterion
     mdotf::F
 end
 
-target_courant(::InterfaceCo, adaptive) = adaptive.maxAlphaCo
+target_courant(::InterfaceCo, mode) = mode.maxAlphaCo
 
 function courant_rate!(rate, c::InterfaceCo, model, config)
     (; backend, workgroup) = config.hardware

@@ -32,7 +32,7 @@ function run_case(time_stepping, adaptive; iterations=4000)
     schemes = (
         U = Schemes(gradient=Gauss), p = Schemes(gradient=Gauss), T = Schemes(gradient=Gauss),
         flux = HLLC(), time_stepping = time_stepping, reconstruction = MUSCL{VanLeer}())
-    runtime = Runtime(iterations=iterations, write_interval=-1, time_step=1e-7, adaptive=adaptive)
+    runtime = Runtime(iterations=iterations, write_interval=-1, time_step=adaptive)
     config = Configuration(solvers=(rho=(convergence=1e-15,),), schemes=schemes,
         runtime=runtime, hardware=hardware, boundaries=BCs)
     initialise!(model.momentum.U, velocity)
@@ -42,8 +42,8 @@ function run_case(time_stepping, adaptive; iterations=4000)
 end
 
 cases = [
-    "global dt, FEuler, CFL 0.5" => (FEuler(), AdaptiveTimeStepping(maxCo=0.5)),
-    "global dt, RK2, CFL 0.5"    => (RK2(),    AdaptiveTimeStepping(maxCo=0.5)),
+    "global dt, FEuler, CFL 0.5" => (FEuler(), AdaptiveTimeStepping(dt=1e-7, maxCo=0.5)),
+    "global dt, RK2, CFL 0.5"    => (RK2(),    AdaptiveTimeStepping(dt=1e-7, maxCo=0.5)),
     "LTS, RK2, CFL 0.5"          => (RK2(),    LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=200)),
     "LTS, RK3, CFL 1.0"          => (RK3(),    LocalTimeStepping(maxCo=1.0, startCo=0.1, ramp=200)),
 ]

@@ -134,10 +134,10 @@ end
 
 A constraint is one of two kinds, defined next to the solver that needs it:
 
-* `CourantCriterion`: implements `courant_rate!(rate, criterion, model, config)`, filling the cell rates λ (1/s) such that the cell Courant number is λ·dt. It is held to `adaptive.maxCo` unless it specialises `target_courant(criterion, adaptive)` (`InterfaceCo` uses `maxAlphaCo`).
+* `CourantCriterion`: implements `courant_rate!(rate, criterion, model, config)`, filling the cell rates λ (1/s) such that the cell Courant number is λ·dt. It is held to `mode.maxCo` unless it specialises `target_courant(criterion, mode)` (`InterfaceCo` uses `maxAlphaCo`).
 * `TimeStepLimit`: implements `max_time_step(limit, model, config)`, an upper bound on `dt` applied in every mode, fixed `dt` included (the film capillary limit).
 
-The time-stepping mode is `runtime.adaptive`: `nothing` (fixed `dt`), `AdaptiveTimeStepping`, `LocalTimeStepping`, or any subtype of `XCALibre.Solve.AbstractTimeStepping` that implements `update_dt!(ctrl, mode, model, config, iteration)` and sets the new step with `set_time_step!(ctrl, dt, config)`.
+The time-stepping mode is `runtime.mode`, set from `Runtime(time_step=...)`: `nothing` (a number was given: fixed `dt`), `AdaptiveTimeStepping`, `LocalTimeStepping`, or any subtype of `XCALibre.Solve.AbstractTimeStepping` that implements `update_dt!(ctrl, mode, model, config, iteration)` and sets the new step with `set_time_step!(ctrl, dt, config)`. The first step is `XCALibre.Solve.initial_time_step(mode)`, which reads the mode's `dt` field unless specialised. Steady solvers call `check_steady_runtime(model, runtime)`, which rejects a mode and warns on a non-integer `time_step`.
 
 Under `AdaptiveTimeStepping` the next step is `dt·clamp(min_k(Co_k^target/Co_k), minShrink, maxGrow)`. Explicit solvers pass `explicit=true`: the shrink is not clamped, so `dt` never exceeds the stability limit, and `LocalTimeStepping` is allowed (one criterion, then `cell_time_step(dt_control)` holds the per-cell steps). `monitor=false` skips the Courant numbers under a fixed `dt` when the solver does not report them. The rates are reduced over owned cells with `global_max`, which is the identity on a serial mesh, so the same code runs on solvers that are not yet distributed.
 

@@ -1191,7 +1191,7 @@ Explicit Godunov-type density-based solver for compressible flows, including sup
 - `reconstruction` — spatial reconstruction: `Upwind()` (1st order, default) or `MUSCL{L}()` (2nd order) where `L` is a slope limiter: `VanLeer`, `MinMod`, or `Superbee`
 - `time_stepping` — explicit time integration: `FEuler()` (1st order, default) or `RK2()` (2nd order SSP) or the steady multistage schemes `RK3()`, `RK4()`, `RK5()`
 
-`Runtime(adaptive=LocalTimeStepping(maxCo=..., ramp=...))` enables per-cell pseudo-time stepping (steady problems).
+`Runtime(time_step=LocalTimeStepping(maxCo=..., ramp=...))` enables per-cell pseudo-time stepping (steady problems).
 
 `forces=(patches=[:wall], interval=10)` records pressure and viscous force histories in `residuals.forces`.
 
@@ -1566,7 +1566,7 @@ function GODUNOV(
     R_rhoU = ones(TF, iterations)
     R_rhoE = ones(TF, iterations)
     force_log = _force_log(forces)
-    local_dt  = runtime.adaptive isa LocalTimeStepping
+    local_dt  = runtime.mode isa LocalTimeStepping
     dt_control = TimeStepControl((AcousticCo(workspace.nu_eff),), model, config; explicit=true, monitor=false)
 
     @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
@@ -1639,7 +1639,7 @@ function GODUNOV(
     end # time loop
 
     # normalised by the residual at the end of the Courant ramp (first iteration without LTS)
-    iter0 = local_dt ? min(runtime.adaptive.ramp + 1, iterations) : 1
+    iter0 = local_dt ? min(runtime.mode.ramp + 1, iterations) : 1
     function rel(R)
         i0 = findfirst(x -> isfinite(x) && x > 0, @view R[iter0:end])
         ref = isnothing(i0) ? one(TF) : R[iter0 + i0 - 1]

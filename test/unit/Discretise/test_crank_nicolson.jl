@@ -24,6 +24,7 @@ cn_hardware = Hardware(backend=CPU(), workgroup=1024)
 struct CNTimeSteps{V} <: XCALibre.Solve.AbstractTimeStepping
     dts::V
 end
+XCALibre.Solve.initial_time_step(s::CNTimeSteps) = s.dts[1]
 XCALibre.Solvers.update_dt!(ctrl, s::CNTimeSteps, model, config, iteration) =
     iteration <= length(s.dts) && XCALibre.Solvers.set_time_step!(ctrl, s.dts[iteration], config)
 
@@ -133,8 +134,7 @@ XCALibre.Solvers.update_dt!(ctrl, s::CNTimeSteps, model, config, iteration) =
         config = Configuration(solvers=(U=cn_tight(Bicgstab()), p=cn_tight(Cg()),
             k=cn_tight(Bicgstab()), omega=cn_tight(Bicgstab())), schemes=schemes,
             hardware=cn_hardware, boundaries=BCs,
-            runtime=Runtime(iterations=length(steps), write_interval=-1, time_step=steps[1],
-                adaptive=CNTimeSteps(steps)))
+            runtime=Runtime(iterations=length(steps), write_interval=-1, time_step=CNTimeSteps(steps)))
         U = model.momentum.U
         U.x.values .= sin.(2pi .* yc); U.y.values .= 0.0; U.z.values .= 0.0
         initialise!(model.momentum.p, 0.0)

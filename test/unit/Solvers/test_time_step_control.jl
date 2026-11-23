@@ -2,7 +2,7 @@ using XCALibre
 using Test
 import XCALibre.Solvers: TimeStepControl, ConvectiveCo, CourantCriterion, TimeStepLimit,
     courant_rate!, max_time_step, target_courant, update_time_step!, time_step, cell_time_step,
-    courant_numbers, update_dt!, set_time_step!
+    courant_numbers, update_dt!, set_time_step!, check_steady_runtime
 
 function ts_square_mesh(n=10)
     P, line = XCALibre.Point, XCALibre.line!
@@ -27,25 +27,27 @@ end
 max_time_step(l::FixedBound, model, config) = l.dt
 
 # mode: halves dt on even iterations
-struct HalveEven <: XCALibre.Solve.AbstractTimeStepping end
+struct HalveEven <: XCALibre.Solve.AbstractTimeStepping
+    dt::Float64
+end
 update_dt!(ctrl, ::HalveEven, model, config, iteration) =
     iseven(iteration) && set_time_step!(ctrl, time_step(ctrl)/2, config)
 
 # 10×10 unit square, Δx = 0.1, U = (2, 0, 0): convective rate |U|/Δx = 20 in every cell
-function ts_setup(dt, adaptive)
+function ts_setup(time_step; time=Transient())
     mesh = ts_square_mesh()
-    model = Physics(time=Transient(), fluid=Fluid{Incompressible}(nu=1e-3),
+    model = Physics(time=time, fluid=Fluid{Incompressible}(nu=1e-3),
         turbulence=RANS{Laminar}(), energy=Energy{Isothermal}(), domain=mesh)
     initialise!(model.momentum.U, [2.0, 0.0, 0.0])
     config = Configuration(solvers=(;), schemes=(;), boundaries=(;),
         hardware=Hardware(backend=CPU(), workgroup=1024),
-        runtime=Runtime(iterations=1, write_interval=-1, time_step=dt, adaptive=adaptive))
+        runtime=Runtime(iterations=1, write_interval=-1, time_step=time_step))
     return model, config
 end
 
 @testset "TimeStepControl" begin
     @testset "fixed dt" begin
-        model, config = ts_setup(0.01, nothing)
+        model, config = ts_setup(0.01)
         ctrl = TimeStepControl((ConvectiveCo(),), model, config)
         update_time_step!(ctrl, model, config, 2)
         @test time_step(ctrl) == 0.01 && cell_time_step(ctrl) == 0.01
@@ -57,7 +59,7 @@ end
     end
 
     @testset "adaptive, implicit: grow and shrink are clamped" begin
-        model, config = ts_setup(0.01, AdaptiveTimeStepping(maxCo=1.0, minShrink=0.5, maxGrow=1.2))
+        model, config = ts_setup(AdaptiveTimeStepping(dt=0.01, maxCo=1.0, minShrink=0.5, maxGrow=1.2))
         ctrl = TimeStepControl((ConvectiveCo(),), model, config)
         update_time_step!(ctrl, model, config, 2) # Co = 0.2: wants ×5, grows ×1.2
         @test time_step(ctrl) ≈ 0.012 && config.runtime.dt[1] ≈ 0.012
@@ -67,7 +69,7 @@ end
     end
 
     @testset "adaptive, explicit: never above the stability limit" begin
-        model, config = ts_setup(0.01, AdaptiveTimeStepping(maxCo=1.0, minShrink=0.5, maxGrow=1.2))
+        model, config = ts_setup(AdaptiveTimeStepping(dt=0.01, maxCo=1.0, minShrink=0.5, maxGrow=1.2))
         initialise!(model.momentum.U, [200.0, 0.0, 0.0])
         ctrl = TimeStepControl((ConvectiveCo(),), model, config; explicit=true)
         update_time_step!(ctrl, model, config, 2)
@@ -75,7 +77,7 @@ end
     end
 
     @testset "several criteria: the most restrictive wins, each at its own target" begin
-        model, config = ts_setup(0.01, AdaptiveTimeStepping(maxCo=1.0, maxAlphaCo=0.1, maxGrow=10.0))
+        model, config = ts_setup(AdaptiveTimeStepping(dt=0.01, maxCo=1.0, maxAlphaCo=0.1, maxGrow=10.0))
         ctrl = TimeStepControl((ConvectiveCo(), UniformRate(5.0)), model, config)
         update_time_step!(ctrl, model, config, 2)
         @test all(courant_numbers(ctrl) .≈ (0.2, 0.05))
@@ -83,17 +85,17 @@ end
     end
 
     @testset "limits apply in every mode" begin
-        model, config = ts_setup(0.01, nothing)
+        model, config = ts_setup(0.01)
         ctrl = TimeStepControl((ConvectiveCo(),), model, config; limits=(FixedBound(0.004),))
         @test time_step(ctrl) == 0.004 && config.runtime.dt[1] == 0.004
-        model, config = ts_setup(0.01, AdaptiveTimeStepping(maxCo=1.0, maxGrow=10.0))
+        model, config = ts_setup(AdaptiveTimeStepping(dt=0.01, maxCo=1.0, maxGrow=10.0))
         ctrl = TimeStepControl((ConvectiveCo(),), model, config; limits=(FixedBound(0.03),))
         update_time_step!(ctrl, model, config, 2)
         @test time_step(ctrl) ≈ 0.03
     end
 
     @testset "user-defined mode" begin
-        model, config = ts_setup(0.01, HalveEven())
+        model, config = ts_setup(HalveEven(0.01))
         ctrl = TimeStepControl((ConvectiveCo(),), model, config)
         update_time_step!(ctrl, model, config, 3)
         @test time_step(ctrl) == 0.01
@@ -104,7 +106,7 @@ end
 
     @testset "local time stepping" begin
         lts = LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=4)
-        model, config = ts_setup(0.01, lts)
+        model, config = ts_setup(lts)
         @test_throws ArgumentError TimeStepControl((ConvectiveCo(),), model, config)
         @test_throws ArgumentError TimeStepControl((ConvectiveCo(), UniformRate(1.0)), model, config; explicit=true)
         ctrl = TimeStepControl((ConvectiveCo(),), model, config; explicit=true)
@@ -114,10 +116,29 @@ end
     end
 
     @testset "update does not allocate per cell" begin
-        model, config = ts_setup(0.01, AdaptiveTimeStepping())
+        model, config = ts_setup(AdaptiveTimeStepping(dt=0.01))
         ctrl = TimeStepControl((ConvectiveCo(),), model, config)
         update_time_step!(ctrl, model, config, 2)
         @test (@inferred update_time_step!(ctrl, model, config, 2)) === ctrl
         @test (@allocated update_time_step!(ctrl, model, config, 2)) < 2_048
+    end
+
+    @testset "Runtime time_step forms" begin
+        @test Runtime(iterations=1, write_interval=-1, time_step=1).dt[1] === 1.0
+        @test isnothing(Runtime(iterations=1, write_interval=-1, time_step=1e-3).mode)
+        rt = Runtime(iterations=1, write_interval=-1, time_step=AdaptiveTimeStepping(dt=1e-3))
+        @test rt.dt[1] == 1e-3 && rt.mode isa AdaptiveTimeStepping
+        @test_throws UndefKeywordError AdaptiveTimeStepping(maxCo=0.5)
+        @test_throws ArgumentError Runtime(iterations=1, write_interval=-1, time_step=1e-3,
+            adaptive=AdaptiveTimeStepping(dt=1e-3))
+    end
+
+    @testset "steady runs: integer counter, no mode" begin
+        model, config = ts_setup(1; time=Steady())
+        @test_logs check_steady_runtime(model, config.runtime)
+        model, config = ts_setup(0.5; time=Steady())
+        @test_logs (:warn, r"iteration counter") check_steady_runtime(model, config.runtime)
+        model, config = ts_setup(AdaptiveTimeStepping(dt=0.01); time=Steady())
+        @test_throws ArgumentError check_steady_runtime(model, config.runtime)
     end
 end

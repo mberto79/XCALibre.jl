@@ -13,7 +13,7 @@ include(joinpath(@__DIR__, "godunov_case.jl"))
 
 backend = CUDABackend()
 bind_device!(backend; comm)
-kw = (iterations=30, adaptive=LocalTimeStepping(maxCo=0.8, startCo=0.2, ramp=10))
+kw = (iterations=30, time_step=LocalTimeStepping(maxCo=0.8, startCo=0.2, ramp=10))
 forces = (patches=[:cylinder], interval=5)
 
 gmesh = rank == 0 ? cylinder_mesh() : nothing

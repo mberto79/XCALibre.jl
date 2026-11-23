@@ -76,16 +76,11 @@ end
 solvers = (rho = (convergence = 1e-15,),)
 
 # ── sub-test runner ─────────────────────────────────────────────────────────
-function run_godunov_test(flux, reconstruction, time_stepping, adaptive; gradient=Gauss)
+function run_godunov_test(flux, reconstruction, time_stepping, time_step; gradient=Gauss)
     model = make_model(mesh_dev)
     BCs   = make_bcs(mesh_dev)
 
-    runtime = if adaptive === nothing
-        Runtime(iterations=30, write_interval=-1, time_step=1e-7)
-    else
-        Runtime(iterations=30, write_interval=-1, time_step=1e-7,
-                adaptive=adaptive)
-    end
+    runtime = Runtime(iterations=30, write_interval=-1, time_step=time_step)
 
     schemes = (
         U             = Schemes(gradient=gradient),
@@ -124,19 +119,19 @@ end
 # ── Unique scheme combinations ─────────────────────────────────────────────
 @testset "Scheme combinations" begin
     cases = [
-        ("Rusanov+Upwind",          Rusanov(), Upwind(),          FEuler(), nothing, Gauss),
-        ("HLLC+Upwind",             HLLC(),    Upwind(),          FEuler(), nothing, Gauss),
-        ("HLLC+default recon",      HLLC(),    nothing,           FEuler(), nothing, Gauss),
-        ("HLLC+MUSCL{VanLeer}",     HLLC(),    MUSCL{VanLeer}(),  FEuler(), nothing, Gauss),
-        ("HLLC+MUSCL{MinMod}",      HLLC(),    MUSCL{MinMod}(),   FEuler(), nothing, Gauss),
-        ("HLLC+MUSCL{Superbee}",    HLLC(),    MUSCL{Superbee}(), FEuler(), nothing, Gauss),
-        ("HLLC+MUSCL+LeastSquares", HLLC(),    MUSCL{VanLeer}(),  FEuler(), nothing, LeastSquares),
-        ("HLLC+MUSCL+RK2",          HLLC(),    MUSCL{VanLeer}(),  RK2(),    nothing, Gauss),
-        ("HLLC+MUSCL+adaptive",     HLLC(),    MUSCL{VanLeer}(),  FEuler(), AdaptiveTimeStepping(maxCo=0.3), Gauss),
+        ("Rusanov+Upwind",          Rusanov(), Upwind(),          FEuler(), 1e-7,    Gauss),
+        ("HLLC+Upwind",             HLLC(),    Upwind(),          FEuler(), 1e-7,    Gauss),
+        ("HLLC+default recon",      HLLC(),    nothing,           FEuler(), 1e-7,    Gauss),
+        ("HLLC+MUSCL{VanLeer}",     HLLC(),    MUSCL{VanLeer}(),  FEuler(), 1e-7,    Gauss),
+        ("HLLC+MUSCL{MinMod}",      HLLC(),    MUSCL{MinMod}(),   FEuler(), 1e-7,    Gauss),
+        ("HLLC+MUSCL{Superbee}",    HLLC(),    MUSCL{Superbee}(), FEuler(), 1e-7,    Gauss),
+        ("HLLC+MUSCL+LeastSquares", HLLC(),    MUSCL{VanLeer}(),  FEuler(), 1e-7,    LeastSquares),
+        ("HLLC+MUSCL+RK2",          HLLC(),    MUSCL{VanLeer}(),  RK2(),    1e-7,    Gauss),
+        ("HLLC+MUSCL+adaptive",     HLLC(),    MUSCL{VanLeer}(),  FEuler(), AdaptiveTimeStepping(dt=1e-7, maxCo=0.3), Gauss),
     ]
-    for (label, flux, recon, ts, adaptive, gradient) in cases
+    for (label, flux, recon, ts, time_step, gradient) in cases
         @testset "$label" begin
-            run_godunov_test(flux, recon, ts, adaptive; gradient)
+            run_godunov_test(flux, recon, ts, time_step; gradient)
         end
     end
 end
@@ -168,8 +163,7 @@ end
             U = Schemes(gradient=Gauss), p = Schemes(gradient=Gauss), T = Schemes(gradient=Gauss),
             flux = HLLC(), time_stepping = RK3(), reconstruction = Upwind(),
         )
-        runtime = Runtime(iterations=40, write_interval=-1, time_step=1e-7,
-                          adaptive=LocalTimeStepping(maxCo=0.5))
+        runtime = Runtime(iterations=40, write_interval=-1, time_step=LocalTimeStepping(maxCo=0.5))
         config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
                                hardware=hardware, boundaries=make_bcs(mesh_dev))
         initialise!(model.momentum.U, velocity)
@@ -222,8 +216,7 @@ end
                Extrapolated(:top), Extrapolated(:bottom)]))
     schemes = (U=Schemes(gradient=Gauss), p=Schemes(gradient=Gauss), T=Schemes(gradient=Gauss),
                flux=HLLC(), time_stepping=RK2(), reconstruction=Upwind())
-    runtime = Runtime(iterations=150, write_interval=-1, time_step=1e-7,
-                      adaptive=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=50))
+    runtime = Runtime(iterations=150, write_interval=-1, time_step=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=50))
     config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
                            hardware=hardware, boundaries=BCs)
     initialise!(model.momentum.U, vel)

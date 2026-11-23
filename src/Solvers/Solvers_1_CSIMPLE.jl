@@ -150,6 +150,7 @@ function CSIMPLE(
     mesh = model.domain
     p_model = p_eqn.model
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
+    check_steady_runtime(model, runtime)
     (; iterations, write_interval) = runtime
     (; backend) = hardware
     

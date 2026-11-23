@@ -9,9 +9,9 @@ abstract type CourantCriterion end
 abstract type TimeStepLimit end
 
 # Courant number a criterion is held to under AdaptiveTimeStepping
-target_courant(::CourantCriterion, adaptive) = adaptive.maxCo
+target_courant(::CourantCriterion, mode) = mode.maxCo
 
-# Mode (runtime.adaptive): update_dt!(ctrl, mode, model, config, iteration) sets, with
+# Mode (runtime.mode): update_dt!(ctrl, mode, model, config, iteration) sets, with
 # set_time_step!, the dt of `iteration` from the Courant numbers of ctrl
 
 # NEW SECTION: convective Courant number |U|/Δx, Δx = V^(1/d)
@@ -40,7 +40,7 @@ end
 mutable struct TimeStepControl{C<:Tuple,L<:Tuple,A,V<:AbstractVector,TF<:AbstractFloat,N}
     const criteria::C
     const limits::L
-    const adaptive::A
+    const mode::A
     const explicit::Bool
     const monitor::Bool
     const rate::V
@@ -53,17 +53,17 @@ end
 # monitor=false: no Courant numbers under fixed dt (nothing to adapt, nothing reported)
 function TimeStepControl(criteria::Tuple, model, config; limits::Tuple=(), explicit::Bool=false, monitor::Bool=true)
     (; runtime, hardware) = config
-    _check_mode(runtime.adaptive, criteria, limits, explicit)
+    _check_mode(runtime.mode, criteria, limits, explicit)
     TF = _get_float(model.domain)
     rate = KernelAbstractions.zeros(hardware.backend, TF, length(model.domain.cells))
     dt = TF(Array(runtime.dt)[1]) # the only device-to-host copy of dt
     zs = map(_ -> zero(TF), criteria)
-    ctrl = TimeStepControl(criteria, limits, runtime.adaptive, explicit, monitor, rate, dt, zs, zs)
+    ctrl = TimeStepControl(criteria, limits, runtime.mode, explicit, monitor, rate, dt, zs, zs)
     _limit_dt!(ctrl, model, config)
     return ctrl
 end
 
-_check_mode(adaptive, criteria, limits, explicit) = nothing
+_check_mode(mode, criteria, limits, explicit) = nothing
 function _check_mode(::LocalTimeStepping, criteria, limits, explicit)
     explicit || throw(ArgumentError("LocalTimeStepping is only supported by the explicit density-based solver"))
     length(criteria) == 1 && isempty(limits) ||
@@ -75,17 +75,17 @@ time_step(ctrl::TimeStepControl) = ctrl.dt
 courant_numbers(ctrl::TimeStepControl) = ctrl.courant
 
 # step of the explicit update: per cell under LocalTimeStepping, else the global dt
-cell_time_step(ctrl::TimeStepControl) = _cell_time_step(ctrl, ctrl.adaptive)
+cell_time_step(ctrl::TimeStepControl) = _cell_time_step(ctrl, ctrl.mode)
 _cell_time_step(ctrl, ::LocalTimeStepping) = ctrl.rate
-_cell_time_step(ctrl, adaptive) = ctrl.dt
+_cell_time_step(ctrl, mode) = ctrl.dt
 
 # Courant numbers at the current dt, then the dt of `iteration` from the mode and the limits
 function update_time_step!(ctrl::TimeStepControl, model, config, iteration::Integer)
-    if ctrl.monitor || !isnothing(ctrl.adaptive)
+    if ctrl.monitor || !isnothing(ctrl.mode)
         ctrl.max_rate = map(c -> _max_rate!(ctrl.rate, c, model, config), ctrl.criteria)
         ctrl.courant = map(λ -> λ * ctrl.dt, ctrl.max_rate)
     end
-    update_dt!(ctrl, ctrl.adaptive, model, config, iteration)
+    update_dt!(ctrl, ctrl.mode, model, config, iteration)
     _limit_dt!(ctrl, model, config)
     return ctrl
 end
@@ -142,3 +142,17 @@ set_time_step!(ctrl, dt, config) = (ctrl.dt = dt; config.runtime.dt .= dt; nothi
 
 # host value of runtime.dt for set-up code that runs before a TimeStepControl exists
 host_dt(runtime, TF) = TF(Array(runtime.dt)[1])
+
+# NEW SECTION: steady runs
+
+# steady solvers read dt as an iteration counter; a time-stepping mode would be ignored
+check_steady_runtime(model, runtime) = _check_steady_runtime(model.time, runtime, model.domain)
+_check_steady_runtime(time, runtime, mesh) = nothing
+function _check_steady_runtime(::Steady, runtime, mesh)
+    isnothing(runtime.mode) || throw(ArgumentError(
+        "$(nameof(typeof(runtime.mode))) needs a Transient() model; steady runs take an integer `time_step`"))
+    dt = host_dt(runtime, Float64)
+    isinteger(dt) || !is_report_rank(mesh) ||
+        @warn "Steady run: `time_step=$dt` is only an iteration counter; pass an integer (e.g. 1)"
+    return nothing
+end

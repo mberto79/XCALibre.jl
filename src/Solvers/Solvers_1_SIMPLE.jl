@@ -139,6 +139,7 @@ function SIMPLE(
     (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
+    check_steady_runtime(model, runtime)
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
 

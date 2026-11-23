@@ -31,7 +31,7 @@ function godunov_bcs(mesh, sst)
 end
 
 function godunov_case(mesh; sst=false, iterations=30, flux=HLLC(), reconstruction=MUSCL{VanLeer}(),
-        time_stepping=RK2(), adaptive=nothing, gradient=Gauss, backend=CPU())
+        time_stepping=RK2(), time_step=1e-7, gradient=Gauss, backend=CPU())
     model = Physics(
         time = Transient(),
         fluid = Fluid{SupersonicFlow}(nu=1e-5, cp=g_cp, gamma=g_gamma, Pr=0.7),
@@ -44,9 +44,7 @@ function godunov_case(mesh; sst=false, iterations=30, flux=HLLC(), reconstructio
     schemes = (U=Schemes(gradient=gradient), p=Schemes(gradient=gradient),
         T=Schemes(gradient=gradient), k=Schemes(), omega=Schemes(),
         flux=flux, reconstruction=reconstruction, time_stepping=time_stepping)
-    runtime = adaptive === nothing ?
-        Runtime(iterations=iterations, write_interval=-1, time_step=1e-7) :
-        Runtime(iterations=iterations, write_interval=-1, time_step=1e-7, adaptive=adaptive)
+    runtime = Runtime(iterations=iterations, write_interval=-1, time_step=time_step)
     config = Configuration(solvers=solvers, schemes=schemes, runtime=runtime,
         hardware=Hardware(backend=backend, workgroup=64), boundaries=godunov_bcs(mesh, sst))
     initialise!(model.momentum.U, [g_U, 0.0, 0.0])
@@ -95,8 +93,7 @@ function box_case(mesh; iterations=10, write_interval=-1)
         convergence=1e-15, relax=1.0, rtol=1e-13, atol=1e-16, itmax=2000)
     schemes = (U=Schemes(), p=Schemes(), T=Schemes(), k=Schemes(), omega=Schemes(),
         flux=Rusanov(), reconstruction=MUSCL{MinMod}(), time_stepping=RK2())
-    runtime = Runtime(iterations=iterations, write_interval=write_interval, time_step=1e-7,
-        adaptive=LocalTimeStepping(maxCo=0.5))
+    runtime = Runtime(iterations=iterations, write_interval=write_interval, time_step=LocalTimeStepping(maxCo=0.5))
     config = Configuration(solvers=(rho=(convergence=1e-15,), k=tight(), omega=tight()),
         schemes=schemes, runtime=runtime, hardware=Hardware(backend=CPU(), workgroup=64),
         boundaries=box_bcs(mesh))

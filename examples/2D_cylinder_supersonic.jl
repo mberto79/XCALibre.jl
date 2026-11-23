@@ -92,8 +92,7 @@ schemes = (
 runtime = Runtime(
     iterations     = 10000,
     write_interval = 100,
-    time_step      = 1e-7,
-    adaptive       = AdaptiveTimeStepping(maxCo=0.5)
+    time_step      = AdaptiveTimeStepping(dt=1e-7, maxCo=0.5)
 )
 
 config = Configuration(

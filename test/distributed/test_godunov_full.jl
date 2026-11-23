@@ -12,11 +12,11 @@ include(joinpath(@__DIR__, "godunov_case.jl"))
 
 cases = [
     ("Rusanov Upwind FEuler fixed dt", (flux=Rusanov(), reconstruction=Upwind(), time_stepping=FEuler())),
-    ("HLLC MUSCL RK2 adaptive dt", (adaptive=AdaptiveTimeStepping(maxCo=0.5),)),
+    ("HLLC MUSCL RK2 adaptive dt", (time_step=AdaptiveTimeStepping(dt=1e-7, maxCo=0.5),)),
     ("HLLC MUSCL RK3 LTS LeastSquares", (time_stepping=RK3(), gradient=LeastSquares,
-        adaptive=LocalTimeStepping(maxCo=0.8, startCo=0.2, ramp=10))),
+        time_step=LocalTimeStepping(maxCo=0.8, startCo=0.2, ramp=10))),
     ("SST HLLC MUSCL RK2 LTS", (sst=true, iterations=20,
-        adaptive=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=10, turbulence_dt=:mean))),
+        time_step=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=10, turbulence_dt=:mean))),
 ]
 gmesh = rank == 0 ? cylinder_mesh() : nothing
 dm = distribute(gmesh; comm=comm)

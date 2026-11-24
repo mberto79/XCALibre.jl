@@ -56,7 +56,7 @@ function PISO(
     (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
-    (; iterations, write_interval, dt) = runtime
+    (; iterations, write_interval) = runtime
     (; backend) = hardware
 
     # wrapped eqns solve through the seam; raw eqns are assembled/discretised in place
@@ -64,10 +64,7 @@ function PISO(
     U_eqn, p_eqn = unwrap_eqn(U_eqn), unwrap_eqn(p_eqn)
     distributed = is_distributed_mesh(mesh)
 
-    dt_cpu = zeros(_get_float(mesh), 1)
-    copyto!(dt_cpu, config.runtime.dt)
-
-    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,host_dt(runtime, _get_float(mesh)),iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)
@@ -104,7 +101,6 @@ function PISO(
     R_uy = ones(TF, iterations)
     R_uz = ones(TF, iterations)
     R_p = ones(TF, iterations)
-    cellsCourant = KernelAbstractions.zeros(backend, TF, n_cells)
 
     # Initial calculations
     time = zero(TF) # assuming time=0
@@ -130,16 +126,18 @@ function PISO(
     lagged = LaggedTerms(U_eqn, (mdotf, nueff, gradU.result, explicit_fields(turbulenceModel, model)...);
         evaluate=explicit_terms(turbulenceModel, model, S, nueff, nu, time, config))
 
+    dt_control = TimeStepControl((ConvectiveCo(),), model, config) # after restart, which may set dt
+
     @info "Starting PISO loops..."
 
     bar = _progress_bar(iterations, progress && !distributed)
 
 
     for iteration ∈ start+1:iterations
-        copyto!(dt_cpu, config.runtime.dt)
-        time += dt_cpu[1]
-        begin_time_flux!(tflux, mdotf, U, nothing, nothing, dt_cpu[1]; pressure=(p, ∇p))
-        extrapolate_lagged!(lagged, time, config) # explicit terms at the time level of the scheme
+        dt = time_step(dt_control)
+        time += dt
+        begin_time_flux!(tflux, mdotf, U, nothing, nothing, dt; pressure=(p, ∇p))
+        extrapolate_lagged!(lagged, time, dt, config) # explicit terms at the time level of the scheme
 
         # gradU and nueff of the start-of-step velocity (updated by turbulence! below)
         transpose_stress && transpose_stress!(
@@ -214,9 +212,8 @@ function PISO(
     update_nueff!(nueff, nu, model.turbulence, config)
 
 
-    courant = max_courant_number!(cellsCourant, model, config)
-
-    update_dt!(config.runtime, courant)
+    update_time_step!(dt_control, model, config, iteration + 1) # dt of the next iteration
+    courant, = courant_numbers(dt_control)
 
 
     R_ux[iteration] = rx
@@ -226,7 +223,7 @@ function PISO(
 
     isnothing(bar) || ProgressMeter.next!(
         bar, showvalues = [
-            (:dt, dt_cpu[1]),
+            (:dt, dt),
             (:time, time),
             (:Courant, courant),
             (:Ux, R_ux[iteration]),

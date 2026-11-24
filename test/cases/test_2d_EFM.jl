@@ -147,21 +147,21 @@ solvers = (
     )
 );
 
-adaptive = if EFM_ADAPTIVE
+time_step = if EFM_ADAPTIVE
     AdaptiveTimeStepping(
+        dt=Δt,
         maxCo=EFM_MAX_CO,
         minShrink=EFM_MIN_SHRINK,
         maxGrow=EFM_MAX_GROW
     )
 else
-    nothing
+    Δt
 end
 
 runtime = Runtime(
     iterations=EFM_ITERS,
-    time_step=Δt,
-    write_interval=EFM_WRITE_INTERVAL,
-    adaptive=adaptive
+    time_step=time_step,
+    write_interval=EFM_WRITE_INTERVAL
 )
 
 config = Configuration(

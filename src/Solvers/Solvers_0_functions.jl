@@ -485,113 +485,12 @@ end
     end
 end
 
-## COURANT NUMBER
+## GLOBAL REDUCTION SEAMS
 
 # global_max seam: serial = identity, Distribute = MPI.Allreduce(max). _base_mesh unwraps
 # a DistributedMesh so the Mesh2/Mesh3 courant kernel still dispatches on the concrete geometry.
 global_max(v, mesh) = v
 _base_mesh(mesh) = mesh
-
-max_courant_number!(cellsCourant, model, config) = begin
-    (; U) = model.momentum
-    (; mesh) = U
-    # (; cells) = mesh
-    (; hardware, runtime) = config
-    (; backend, workgroup) = hardware
-
-    ndrange = length(cellsCourant)
-    kernel! = _sized(_max_courant_number!, backend, workgroup, ndrange)
-    kernel!(cellsCourant, U, runtime, _base_mesh(mesh))
-    # # KernelAbstractions.synchronize(backend)
-    return global_max(maximum(cellsCourant), mesh)
-end
-
-@kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh3)
-    i = @index(Global)
-    @uniform cells = mesh.cells
-    dt = runtime.dt[1]
-    umag = norm(U[i])
-    volume = cells[i].volume
-    dx = volume^(one(volume)/typeof(volume)(3))
-    cellsCourant[i] = umag * dt / dx
-end
-
-@kernel function _max_courant_number!(cellsCourant, U, runtime, mesh::Mesh2)
-    i = @index(Global)
-    @uniform cells = mesh.cells
-    dt = runtime.dt[1]
-    umag = norm(U[i])
-    volume = cells[i].volume
-    dx = sqrt(volume)
-    cellsCourant[i] = umag * dt / dx
-end
-
-## ALPHA COURANT NUMBER
-
-max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, model, config, dt) = begin
-    (; U) = model.momentum
-    (; mesh) = U
-    (; hardware, runtime) = config
-    (; backend, workgroup) = hardware
-
-    ndrange = length(cellsAlphaCourant)
-    kernel! = _sized(_max_alpha_courant_number!, backend, workgroup, ndrange)
-    kernel!(cellsAlphaCourant, alpha, mdotf, runtime, dt, mesh)
-    # # KernelAbstractions.synchronize(backend)
-    return maximum(cellsAlphaCourant)
-end
-
-
-@kernel function _max_alpha_courant_number!(cellsAlphaCourant, alpha, mdotf, runtime, dt, mesh)
-    i = @index(Global)
-
-    @uniform cells = mesh.cells
-    @uniform cell_faces = mesh.cell_faces
-
-    # dt = runtime.dt
-    volume = cells[i].volume
-    alphaVal = alpha[i]
-
-    nearInterfaceVal = nearInterface(alphaVal)
-    sumAbsMdotf = zero(alphaVal)
-
-    fr = cells[i].faces_range
-    @inbounds for k in fr
-        pointer = cell_faces[k]
-        # faceID = mesh.faces[pointer]
-        sumAbsMdotf += abs(mdotf[pointer])
-    end
-
-    cellsAlphaCourant[i] = dt * nearInterfaceVal * sumAbsMdotf / volume
-end
-
-@inline nearInterface(alpha) = ifelse((alpha > 0.01) & (alpha < 0.99), one(alpha), zero(alpha)) #Combines the two functions below into one
-# @inline pos0(x) = ifelse(x >= zero(x), one(x), zero(x))
-# @inline nearInterface(α) = pos0(α - 0.01) * pos0(0.99 - α)
-
-
-update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, ::Any) = nothing
-update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, ::Any, ::Any) = nothing
-
-function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant)
-    (; maxCo, maxGrow, minShrink) = runtime.adaptive
-
-    courant_factor = maxCo / (courant + eps())
-    new_dt_factor = clamp(courant_factor, minShrink, maxGrow)
-    runtime.dt .= runtime.dt .* new_dt_factor
-end
-
-function update_dt!(runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, courant, alphaCourant)
-    (; maxCo, maxAlphaCo, maxGrow, minShrink) = runtime.adaptive
-
-    courant_factor = maxCo / (courant + eps())
-    alphaCourant_factor = maxAlphaCo / (alphaCourant + eps())
-    
-    new_dt_factor = min(courant_factor, alphaCourant_factor)
-    new_dt_factor = clamp(new_dt_factor, minShrink, maxGrow)
-
-    runtime.dt .= runtime.dt .* new_dt_factor
-end
 
 # NEW SECTION: restart hooks
 

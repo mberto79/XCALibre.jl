@@ -133,21 +133,21 @@ function LAPLACE(
     (; k, kf, cp, rho, rhocp, rDf) = model.solid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
+    check_steady_runtime(model, runtime)
     (; iterations, write_interval, dt) = runtime
     (; backend) = hardware
 
     distributed = is_distributed_mesh(mesh)
 
-    dt_cpu = zeros(_get_float(mesh), 1)
-    copyto!(dt_cpu, config.runtime.dt)
+    dt_host = host_dt(runtime, _get_float(mesh))
 
-    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_host,iterations)
     @info "Starting LAPLACE loops..."
     bar = _progress_bar(iterations, progress && !distributed)
 
     sync!(T, mesh, config) # prime ghosts (no-op serial)
     for iteration ∈ 1:iterations
-        time = iteration*dt_cpu[1]
+        time = iteration*dt_host
 
         rt = solve_equation!(T_eqn, T, boundaries.T, solvers, config; time=time)
 
@@ -172,7 +172,7 @@ function LAPLACE(
 
         isnothing(bar) || ProgressMeter.next!(
             bar, showvalues = [
-                (:time, iteration*dt_cpu[1]),
+                (:time, iteration*dt_host),
                 (:T_residual, R_T[iteration])
                 ]
             )

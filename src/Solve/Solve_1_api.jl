@@ -10,6 +10,12 @@ export global_any, global_sum, global_min, n_owned_cells, global_cell_index
 export solve_equation!
 export AdaptiveTimeStepping, LocalTimeStepping
 
+# time-stepping modes passed as `Runtime(time_step=...)`; a number is a fixed time step.
+# A mode gives its first time step with initial_time_step(mode) (default: field `dt`).
+abstract type AbstractTimeStepping end
+
+initial_time_step(mode::AbstractTimeStepping) = mode.dt
+
 struct SolverSetup{
     F<:AbstractFloat,
     I<:Integer,
@@ -116,7 +122,8 @@ _set_preconditioner(::AbstractMixedPrecision, setup, eqn) = _inert_preconditione
 _set_preconditioner(::AbstractMixedPrecision, setup, eqn, BCs, config) =
     set_preconditioner(setup.preconditioner, eqn, BCs, config)
 
-struct AdaptiveTimeStepping{F<:AbstractFloat}
+struct AdaptiveTimeStepping{F<:AbstractFloat} <: AbstractTimeStepping
+    dt::F
     maxCo::F
     maxAlphaCo::F
     minShrink::F
@@ -128,6 +135,7 @@ Adapt.@adapt_structure AdaptiveTimeStepping
     AdaptiveTimeStepping(; 
         # keyword arguments
 
+        dt,
         maxCo=0.75,
         maxAlphaCo=0.5,
         minShrink=0.1,
@@ -137,26 +145,30 @@ Adapt.@adapt_structure AdaptiveTimeStepping
 Constructs an `AdaptiveTimeStepping` object used to control automatic time-step adjustment
 based on the Courant number.
 
-This struct is passed optionally to `Runtime` and enables adaptive time stepping in transient
-simulations. If not provided, a fixed time step is used.
+Pass it to `Runtime` as `time_step` to enable adaptive time stepping in transient simulations.
+A number passed as `time_step` instead gives a fixed time step.
 
 # Input arguments
 
+- `dt::AbstractFloat`: initial time step (required). On restart, the time step saved with the
+  restart data is used instead.
 - `maxCo::AbstractFloat`: target maximum Courant number. The time step will be adjusted
   such that the computed Courant number approaches this value.
 - `maxAlphaCo::AbstractFloat`: target maximum Alpha Courant number. The time step will be adjusted
   such that the computed Courant number approaches this value.
 - `minShrink::AbstractFloat`: lower bound on the multiplicative factor applied to the
-  current time step. Prevents excessively large reductions in a single update.
+  current time step. Prevents excessively large reductions in a single update. Not applied
+  by the explicit density-based solver (`Fluid{SupersonicFlow}`), whose step never exceeds the CFL limit.
 - `maxGrow::AbstractFloat`: upper bound on the multiplicative factor applied to the
   current time step. Prevents excessive time-step growth.
 """
 AdaptiveTimeStepping(;
+    dt,
     maxCo=0.75,
     maxAlphaCo=0.5,
     minShrink=0.1,
     maxGrow=1.2
-) = AdaptiveTimeStepping(float(maxCo), float(maxAlphaCo), float(minShrink), float(maxGrow))
+) = AdaptiveTimeStepping(promote(float(dt), maxCo, maxAlphaCo, minShrink, maxGrow)...)
 
 # The reduction rule is a singleton type, not a `Symbol`, so that `LocalTimeStepping` is `isbits`
 # and can be passed to GPU kernels.
@@ -168,7 +180,7 @@ struct MaxDt end
     LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:min)
 
 Local (per-cell) pseudo-time stepping for the explicit density-based solver
-(`Fluid{SupersonicFlow}`, `godunov!`). Pass it as `adaptive` to `Runtime` to converge
+(`Fluid{SupersonicFlow}`, `godunov!`). Pass it to `Runtime` as `time_step` to converge
 steady problems faster: every cell advances with its own time step
 `dt_i = CFL / (0.5 Σ_f (|U_i·n_f| + a_i) A_f / V_i + ν_eff Σ_f A_f² / V_i²)`, so the result of a
 converged run does not depend on `dt` and the iterations are not a time history. It combines with
@@ -182,7 +194,7 @@ converged run does not depend on `dt` and the iterations are not a time history.
   `startCo` to `maxCo` (`0` = no ramp). Useful to start from a uniform field.
 - `turbulence_dt::Symbol`: the implicit turbulence equations take one time step, the `:min` (default), `:mean` or `:max` of the cell time steps of the iteration.
 """
-struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R<:Union{MinDt,MeanDt,MaxDt}}
+struct LocalTimeStepping{F<:AbstractFloat,I<:Integer,R<:Union{MinDt,MeanDt,MaxDt}} <: AbstractTimeStepping
     maxCo::F
     startCo::F
     ramp::I
@@ -198,33 +210,19 @@ function LocalTimeStepping(; maxCo=1.0, startCo=maxCo, ramp=0, turbulence_dt=:mi
     LocalTimeStepping(float(maxCo), float(startCo), Int(ramp), _turbulence_dt_rule(turbulence_dt))
 end
 
-struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AdaptiveTimeStepping, LocalTimeStepping}}
+# pseudo-time: every iteration sets dt from the cell steps before it is used
+initial_time_step(::LocalTimeStepping) = 1.0
+
+struct Runtime{I<:Integer,F<:AbstractFloat, V<:AbstractVector{F}, A<:Union{Nothing, AbstractTimeStepping}}
     iterations::I
     dt::V
     write_interval::I
-    adaptive::A
+    mode::A
 end
 Adapt.@adapt_structure Runtime
 
 """
-    Runtime(; 
-            # keyword arguments
-
-            iterations::I, 
-            write_interval::I, 
-            time_step::N,
-            adaptive::A
-        ) where {I<:Integer,N<:Number} = begin
-        
-        # returned Runtime struct
-        Runtime{I<:Integer,F<:AbstractFloat}
-            (
-                iterations=iterations, 
-                dt=time_step, 
-                write_interval=write_interval,
-                adaptive=adaptive
-            )
-    end
+    Runtime(; iterations::Integer, write_interval::Integer, time_step)
 
 This is a convenience function to set the top-level runtime information. The inputs are all keyword arguments and provide basic information to flow solvers just before running a simulation.
 
@@ -232,23 +230,31 @@ This is a convenience function to set the top-level runtime information. The inp
 
 - `iterations::Integer`: specifies the number of iterations in a simulation run.
 - `write_interval::Integer`: defines how often simulation results are written to file (on the current working directory). The interval is currently based on number of iterations. Set to `-1` to run without writing results to file.
-- `time_step::AbstractFloat`: the time step to use in the simulation. Notice that for steady solvers this is simply a counter and it is recommended to simply use `1`.
-- `adaptive::Union{Nothing, AdaptiveTimeStepping}`: optionally enables adaptive time stepping. Pass an `AdaptiveTimeStepping` object to automatically adjust `dt` based on the Courant number during transient simulations. Defaults to `nothing`, meaning a fixed time step is used.
+- `time_step`: how the simulation advances in time:
+  - an `Integer` for steady simulations, where it is simply an iteration counter (use `1`);
+  - a number for a fixed time step in transient simulations;
+  - `AdaptiveTimeStepping(dt=..., maxCo=...)` to adjust the time step from the Courant number in transient simulations;
+  - `LocalTimeStepping(...)` for local pseudo-time stepping with the density-based solver (`Fluid{SupersonicFlow}`).
 
-# Example
+# Examples
 
 ```julia
-runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)
+runtime = Runtime(iterations=2000, time_step=1, write_interval=2000)       # steady
+runtime = Runtime(iterations=1000, time_step=1e-3, write_interval=100)     # fixed time step
+runtime = Runtime(iterations=1000, write_interval=100,
+    time_step=AdaptiveTimeStepping(dt=1e-4, maxCo=0.75))                   # adaptive time step
 ```
 """
-Runtime(; iterations::I,
-          write_interval::I,
-          time_step::N,
-          adaptive=nothing) where {I<:Integer,N<:Number} = begin
-
-    val = float(time_step)
-    Runtime(iterations, [val], write_interval, adaptive)
+function Runtime(; iterations::I, write_interval::I, time_step, adaptive=nothing) where I<:Integer
+    isnothing(adaptive) || throw(ArgumentError(
+        "`Runtime(adaptive=...)` was removed: pass the mode as `time_step`, e.g. `time_step=AdaptiveTimeStepping(dt=1e-3, maxCo=0.5)`"))
+    Runtime(iterations, [_first_dt(time_step)], write_interval, _mode(time_step))
 end
+
+_first_dt(dt::Real) = float(dt)
+_first_dt(mode::AbstractTimeStepping) = float(initial_time_step(mode))
+_mode(::Real) = nothing
+_mode(mode::AbstractTimeStepping) = mode
 
 # Set schemes function definition with default set variables
 """

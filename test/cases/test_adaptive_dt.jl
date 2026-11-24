@@ -95,13 +95,14 @@ inlet_1 = boundary_average(:inlet, model.momentum.U, BCs.U, config; time=t_end)
 
 
 adaptive = AdaptiveTimeStepping(
+        dt=0.005,
         maxCo=0.25,
         minShrink=0.1,
         maxGrow=1.2
     )
     
 runtime = Runtime(
-    iterations=717, time_step=0.005, write_interval=10, adaptive=adaptive)
+    iterations=717, time_step=adaptive, write_interval=10)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)
@@ -118,13 +119,14 @@ outlet_result_2 = boundary_average(:outlet, model.momentum.U, BCs.U, config)
 
 
 adaptive = AdaptiveTimeStepping(
+        dt=0.005,
         maxCo=0.5,
         minShrink=0.1,
         maxGrow=1.2
     )
     
 runtime = Runtime(
-    iterations=359, time_step=0.005, write_interval=10, adaptive=adaptive)
+    iterations=359, time_step=adaptive, write_interval=10)
 
 config = Configuration(
     solvers=solvers, schemes=schemes, runtime=runtime, hardware=hardware, boundaries=BCs)

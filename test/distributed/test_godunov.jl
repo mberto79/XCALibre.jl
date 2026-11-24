@@ -13,4 +13,4 @@ include(joinpath(@__DIR__, "godunov_case.jl"))
 gmesh = rank == 0 ? cylinder_mesh() : nothing
 dm = distribute(gmesh; comm=comm)
 compare_godunov("HLLC MUSCL RK2 LTS mean dt",
-    (adaptive=LocalTimeStepping(maxCo=0.5, startCo=0.2, ramp=10, turbulence_dt=:mean),), gmesh, dm, comm)
+    (time_step=LocalTimeStepping(maxCo=0.5, startCo=0.2, ramp=10, turbulence_dt=:mean),), gmesh, dm, comm)

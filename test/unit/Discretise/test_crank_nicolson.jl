@@ -20,13 +20,13 @@ cn_order(e) = log2(e[1]/e[2])
 
 cn_hardware = Hardware(backend=CPU(), workgroup=1024)
 
-# prescribed time steps: the postprocess hook sets the time step of the next iteration
-struct CNTimeSteps{V}
+# prescribed time steps: a time-stepping mode giving the time step of each iteration
+struct CNTimeSteps{V} <: XCALibre.Solve.AbstractTimeStepping
     dts::V
 end
-XCALibre.Postprocess.convert_time_to_iterations(s::CNTimeSteps, model, dt, iterations) = s
-XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::Integer, S, time,
-    config) = (iter < length(s.dts) && fill!(config.runtime.dt, s.dts[iter + 1]); nothing)
+XCALibre.Solve.initial_time_step(s::CNTimeSteps) = s.dts[1]
+XCALibre.Solvers.update_dt!(ctrl, s::CNTimeSteps, model, config, iteration) =
+    iteration <= length(s.dts) && XCALibre.Solvers.set_time_step!(ctrl, s.dts[iteration], config)
 
 @testset "Crank-Nicolson temporal accuracy" begin
 
@@ -134,8 +134,7 @@ XCALibre.Postprocess.runtime_postprocessing!(s::CNTimeSteps, iter::Integer, n::I
         config = Configuration(solvers=(U=cn_tight(Bicgstab()), p=cn_tight(Cg()),
             k=cn_tight(Bicgstab()), omega=cn_tight(Bicgstab())), schemes=schemes,
             hardware=cn_hardware, boundaries=BCs,
-            runtime=Runtime(iterations=length(steps), write_interval=-1, time_step=steps[1]),
-            postprocess=CNTimeSteps(steps))
+            runtime=Runtime(iterations=length(steps), write_interval=-1, time_step=CNTimeSteps(steps)))
         U = model.momentum.U
         U.x.values .= sin.(2pi .* yc); U.y.values .= 0.0; U.z.values .= 0.0
         initialise!(model.momentum.p, 0.0)

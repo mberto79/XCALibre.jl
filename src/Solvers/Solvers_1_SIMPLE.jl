@@ -139,6 +139,7 @@ function SIMPLE(
     (; nu) = model.fluid
     mesh = model.domain
     (; solvers, schemes, runtime, hardware, boundaries, postprocess) = config
+    check_steady_runtime(model, runtime)
     (; iterations, write_interval,dt) = runtime
     (; backend) = hardware
 
@@ -149,10 +150,9 @@ function SIMPLE(
     distributed = is_distributed_mesh(mesh)
     is3d = _base_mesh(mesh) isa Mesh3
 
-    dt_cpu = zeros(_get_float(mesh), 1)
-    copyto!(dt_cpu, config.runtime.dt)
+    dt_host = host_dt(runtime, _get_float(mesh))
 
-    postprocess = convert_time_to_iterations(postprocess,model,dt_cpu[1],iterations)
+    postprocess = convert_time_to_iterations(postprocess,model,dt_host,iterations)
     mdotf = get_flux(U_eqn, 2)
     nueff = get_flux(U_eqn, 3)
     rDf = get_flux(p_eqn, 1)

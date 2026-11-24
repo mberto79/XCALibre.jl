@@ -146,7 +146,6 @@ struct GodunovWorkspace{SF<:ScalarField, VF<:VectorField, V<:AbstractVector}
     res_rhoUz::SF   # z-momentum residual accumulator
     res_rhoE::SF    # energy residual accumulator
     Mach::SF        # Mach number field
-    dt_cell::V      # per-cell adaptive time step
     nu_eff::V       # cell-level effective kinematic viscosity (nu + nut) for diffusive CFL
     # RK2 stage storage (W^n saved before stage-1 Euler update)
     rho_0::V        # ρ   at start of time step
@@ -784,30 +783,21 @@ function update_nu_eff_cell!(nu_eff, nu_mol, turb_model, backend, workgroup, n_c
     end
 end
 
-"""Return the fixed dt `dt0`, copied to the host once before the time loop (no kernel launch)."""
-compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,Nothing}, config, dim_exp, iteration, dt0) = dt0
+# NEW SECTION: acoustic Courant number
 
-# Compute the CFL-limited global dt (minimum of the per-cell spectral-radius dt); update `runtime.dt` in place.
-function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:AdaptiveTimeStepping}, config, dim_exp, iteration, dt0)
-    TF = eltype(workspace.dt_cell)
-    (; dt_cell, nu_eff) = workspace
-    (; rho) = model.fluid
-    (; U, p) = model.momentum
-    (; backend, workgroup) = config.hardware
-    kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
-    kernel!(dt_cell, rho, U, p, model.domain, model.fluid, TF(runtime.adaptive.maxCo), nu_eff)
-    dt = global_min(minimum(_owned(dt_cell, model.domain)), model.domain)
-    runtime.dt .= dt
-    return dt
+# spectral radius of the cell: convective (|U·n| + a) face sum and diffusive ν_eff Σ A²/V²
+# (= 2 d ν/dx² on a Cartesian cell)
+struct AcousticCo{V} <: CourantCriterion
+    nu_eff::V
 end
 
-# time step of cell i: a scalar (global dt) or a per-cell array (local time stepping)
-@inline _dt_at(dt::Number, i) = dt
-@inline _dt_at(dt::AbstractArray, i) = @inbounds dt[i]
+function courant_rate!(rate, c::AcousticCo, model, config)
+    (; backend, workgroup) = config.hardware
+    kernel! = _sized(_acoustic_rate!, backend, workgroup, length(rate))
+    kernel!(rate, model.fluid.rho, model.momentum.U, model.momentum.p, model.domain, model.fluid, c.nu_eff)
+end
 
-# Local time step from the spectral radius of the cell: convective part from the face sums,
-# diffusive part from ν_eff Σ A²/V² (= 2 d ν/dx² on a Cartesian cell, as in the global CFL)
-@kernel function _compute_dt_local!(dt_cell, rho, U, p, mesh, fluid, cfl, nu_eff)
+@kernel function _acoustic_rate!(rate, rho, U, p, mesh, fluid, nu_eff)
     i = @index(Global)
 
     @uniform begin
@@ -827,41 +817,13 @@ end
             conv += (abs(Ui ⋅ normal) + ai) * area
             visc += area * area
         end
-        lambda = TF(0.5) * conv / Vi + nu_eff[i] * visc / (Vi * Vi)
-        dt_cell[i] = cfl / (lambda + TF(1e-30))
+        rate[i] = TF(0.5) * conv / Vi + nu_eff[i] * visc / (Vi * Vi)
     end
 end
 
-# owned entries of a per-cell array (ghost entries come from partial face lists)
-_owned(v, mesh) = view(v, 1:n_owned_cells(mesh))
-
-_time_increment(dt::Number, mesh) = dt
-_time_increment(dt::AbstractArray, mesh) = global_min(minimum(_owned(dt, mesh)), mesh)
-
-# reduction of the per-cell dt over the owned cells of every rank
-_reduce_dt(::MinDt, dt_cell, mesh) = global_min(minimum(_owned(dt_cell, mesh)), mesh)
-_reduce_dt(::MaxDt, dt_cell, mesh) = global_max(maximum(_owned(dt_cell, mesh)), mesh)
-function _reduce_dt(::MeanDt, dt_cell, mesh)
-    dt = _owned(dt_cell, mesh)
-    sums = global_sum([sum(dt), length(dt)], mesh)
-    return sums[1] / sums[2]
-end
-
-# Local time stepping: fill `workspace.dt_cell` with per-cell dt (Courant ramp); `runtime.dt` holds the minimum.
-function compute_dt!(workspace, model, runtime::Runtime{<:Any,<:Any,<:Any,<:LocalTimeStepping}, config, dim_exp, iteration, dt0)
-    TF = eltype(workspace.dt_cell)
-    (; maxCo, startCo, ramp) = runtime.adaptive
-    frac = ramp > 0 ? min(one(TF), TF(iteration - 1) / TF(ramp)) : one(TF)
-    cfl = TF(startCo + (maxCo - startCo) * frac)
-    (; dt_cell, nu_eff) = workspace
-    (; rho) = model.fluid
-    (; U, p) = model.momentum
-    (; backend, workgroup) = config.hardware
-    kernel! = _sized(_compute_dt_local!, backend, workgroup, length(model.domain.cells))
-    kernel!(dt_cell, rho, U, p, model.domain, model.fluid, cfl, nu_eff)
-    runtime.dt .= _reduce_dt(runtime.adaptive.turbulence_dt, dt_cell, model.domain)
-    return dt_cell
-end
+# time step of cell i: a scalar (global dt) or a per-cell array (local time stepping)
+@inline _dt_at(dt::Number, i) = dt
+@inline _dt_at(dt::AbstractArray, i) = @inbounds dt[i]
 
 @kernel function _forward_euler!(rho, rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, cells, dt)
     i = @index(Global)
@@ -1229,7 +1191,7 @@ Explicit Godunov-type density-based solver for compressible flows, including sup
 - `reconstruction` — spatial reconstruction: `Upwind()` (1st order, default) or `MUSCL{L}()` (2nd order) where `L` is a slope limiter: `VanLeer`, `MinMod`, or `Superbee`
 - `time_stepping` — explicit time integration: `FEuler()` (1st order, default) or `RK2()` (2nd order SSP) or the steady multistage schemes `RK3()`, `RK4()`, `RK5()`
 
-`Runtime(adaptive=LocalTimeStepping(maxCo=..., ramp=...))` enables per-cell pseudo-time stepping (steady problems).
+`Runtime(time_step=LocalTimeStepping(maxCo=..., ramp=...))` enables per-cell pseudo-time stepping (steady problems).
 
 `forces=(patches=[:wall], interval=10)` records pressure and viscous force histories in `residuals.forces`.
 
@@ -1293,7 +1255,6 @@ function _setup_godunov(model, config; output=VTK(), progress=true, forces=nothi
     res_rhoUz = ScalarField(mesh)
     res_rhoE = ScalarField(mesh)
     Mach     = ScalarField(mesh)
-    dt_cell      = KernelAbstractions.zeros(backend, TF, n_cells)
     nu_eff_cell  = KernelAbstractions.zeros(backend, TF, n_cells)
     rho_0    = KernelAbstractions.zeros(backend, TF, n_cells)
     rhoUx_0  = KernelAbstractions.zeros(backend, TF, n_cells)
@@ -1302,7 +1263,7 @@ function _setup_godunov(model, config; output=VTK(), progress=true, forces=nothi
     rhoE_0   = KernelAbstractions.zeros(backend, TF, n_cells)
 
     workspace = GodunovWorkspace(
-        rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach, dt_cell,
+        rhoU, rhoE, res_rho, res_rhoUx, res_rhoUy, res_rhoUz, res_rhoE, Mach,
         nu_eff_cell, rho_0, rhoUx_0, rhoUy_0, rhoUz_0, rhoE_0
     )
 
@@ -1566,8 +1527,6 @@ function GODUNOV(
     n_cells = length(mesh.cells)
     TF = _get_float(mesh)
 
-    dim_exp = _base_mesh(mesh) isa Mesh2 ? TF(0.5) : TF(1/3)   # dx = V^dim_exp
-
     outputWriter = initialise_writer(output, model.domain)
 
     (; gradU) = S
@@ -1607,8 +1566,8 @@ function GODUNOV(
     R_rhoU = ones(TF, iterations)
     R_rhoE = ones(TF, iterations)
     force_log = _force_log(forces)
-    local_dt  = runtime.adaptive isa LocalTimeStepping
-    dt0 = TF(Array(runtime.dt)[1]) # single device->host copy; runtime.dt may live on the GPU
+    local_dt  = runtime.mode isa LocalTimeStepping
+    dt_control = TimeStepControl((AcousticCo(workspace.nu_eff),), model, config; explicit=true, monitor=false)
 
     @info "Starting GODUNOV time loop ($(typeof(time_scheme)))..."
 
@@ -1635,8 +1594,9 @@ function GODUNOV(
         R_rhoE[iteration] = rhoE_res
 
         # 3. Time step (adaptive CFL or fixed)
-        dt = compute_dt!(workspace, model, runtime, config, dim_exp, iteration, dt0)
-        dt_time = _time_increment(dt, mesh)   # local time stepping: dt is the per-cell array, time follows the minimum
+        update_time_step!(dt_control, model, config, iteration)
+        dt = cell_time_step(dt_control)
+        dt_time = time_step(dt_control)   # local time stepping: time follows the smallest cell step
         time += dt_time
 
         # 4. Advance W^n → W^{n+1} (FEuler: single update; RK2: two-stage SSP)
@@ -1679,7 +1639,7 @@ function GODUNOV(
     end # time loop
 
     # normalised by the residual at the end of the Courant ramp (first iteration without LTS)
-    iter0 = local_dt ? min(runtime.adaptive.ramp + 1, iterations) : 1
+    iter0 = local_dt ? min(runtime.mode.ramp + 1, iterations) : 1
     function rel(R)
         i0 = findfirst(x -> isfinite(x) && x > 0, @view R[iter0:end])
         ref = isnothing(i0) ? one(TF) : R[iter0 + i0 - 1]

@@ -33,8 +33,8 @@ BCs = assign(region=mesh_dist, (
 schemes = (
     U = Schemes(gradient=Gauss), p = Schemes(gradient=Gauss), T = Schemes(gradient=Gauss),
     flux = HLLC(), time_stepping = RK2(), reconstruction = MUSCL{VanLeer}())
-runtime = Runtime(iterations=2000, write_interval=-1, time_step=1e-7,
-    adaptive=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=200))
+runtime = Runtime(iterations=2000, write_interval=-1,
+    time_step=LocalTimeStepping(maxCo=0.5, startCo=0.1, ramp=200))
 config = Configuration(solvers=(rho=(convergence=1e-15,),), schemes=schemes,
     runtime=runtime, hardware=hardware, boundaries=BCs)
 

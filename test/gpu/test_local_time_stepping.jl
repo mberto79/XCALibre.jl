@@ -12,7 +12,7 @@ gamma = 1.4; cp = 1005.0; Pr = 0.7; nu = 1e-5; T_inf = 300.0; p_inf = 101325.0
 a_inf = sqrt(gamma * cp * (1 - 1/gamma) * T_inf)
 velocity = [1.2 * a_inf, 0.0, 0.0]
 
-function run_case(backend, adaptive, time_stepping)
+function run_case(backend, time_step, time_stepping)
     mesh = adapt(backend, host)
     model = Physics(time=Transient(), fluid=Fluid{SupersonicFlow}(nu=nu, cp=cp, gamma=gamma, Pr=Pr),
         turbulence=LES{Smagorinsky}(), energy=Energy{SensibleEnthalpy}(Tref=0.0), domain=mesh)
@@ -28,7 +28,7 @@ function run_case(backend, adaptive, time_stepping)
     schemes = (U=Schemes(gradient=Gauss), p=Schemes(gradient=Gauss), T=Schemes(gradient=Gauss),
         flux=HLLC(), time_stepping=time_stepping, reconstruction=MUSCL{VanLeer}())
     config = Configuration(solvers=(rho=(convergence=1e-15,),), schemes=schemes,
-        runtime=Runtime(iterations=20, write_interval=-1, time_step=1e-7, adaptive=adaptive),
+        runtime=Runtime(iterations=20, write_interval=-1, time_step=time_step),
         hardware=Hardware(backend=backend, workgroup=backend isa CPU ? 1024 : 32), boundaries=BCs)
     initialise!(model.momentum.U, velocity)
     initialise!(model.momentum.p, p_inf)
@@ -58,10 +58,10 @@ end
 
 # fixed dt reads runtime.dt (a device array) once on the host: regression for scalar indexing on GPU
 @testset "godunov! with fixed and global adaptive dt on GPU" begin
-    for adaptive in (nothing, AdaptiveTimeStepping(maxCo=0.5)), ts in (FEuler(), RK2())
-        @testset "$(typeof(adaptive)) $(typeof(ts))" begin
-            rc, rhoc = run_case(CPU(), adaptive, ts)
-            rg, rhog = run_case(CUDABackend(), adaptive, ts)
+    for time_step in (1e-7, AdaptiveTimeStepping(dt=1e-7, maxCo=0.5)), ts in (FEuler(), RK2())
+        @testset "$(typeof(time_step)) $(typeof(ts))" begin
+            rc, rhoc = run_case(CPU(), time_step, ts)
+            rg, rhog = run_case(CUDABackend(), time_step, ts)
             @test all(isfinite, rg.rho)
             @test maximum(abs.(rhog .- rhoc)) < 1e-8 * maximum(rhoc)
         end

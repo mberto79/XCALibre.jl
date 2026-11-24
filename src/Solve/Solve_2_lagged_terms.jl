@@ -2,7 +2,7 @@ export LaggedTerms, extrapolate_lagged!
 
 """
     LaggedTerms(eqn, fields; evaluate=nothing, levels=())
-    extrapolate_lagged!(lagged::LaggedTerms, time, config)
+    extrapolate_lagged!(lagged::LaggedTerms, time, [dt,] config)
 
 Explicitly treated (lagged) fields of a transient solver, such as the convecting face flux, the
 effective viscosity and the velocity gradient, which the solver recomputes later in each step.
@@ -49,14 +49,18 @@ _advance_levels!(lagged, time, config) = foreach(lagged.levels) do (eqn, f, rho)
     time_level!(unwrap_eqn(eqn).model.terms[1], f, rho, time, config)
 end
 
-function extrapolate_lagged!(lagged::LaggedTerms{A,C,Nothing}, time, config) where {A,C}
+# dt: host value of the step's time step (read from runtime.dt when not given)
+extrapolate_lagged!(lagged::LaggedTerms, time, config) =
+    extrapolate_lagged!(lagged, time, Float64(Array(config.runtime.dt)[1]), config)
+
+function extrapolate_lagged!(lagged::LaggedTerms{A,C,Nothing}, time, dt, config) where {A,C}
     _advance_levels!(lagged, time, config)
     _update_copies!(lagged)
 end
 
 # xⁿ⁺¹ ≈ xⁿ + (Δtⁿ/Δtⁿ⁻¹)(xⁿ - xⁿ⁻¹); the first step keeps xⁿ
-function extrapolate_lagged!(lagged::LaggedTerms, time, config)
-    dt = Float64(Array(config.runtime.dt)[1])
+function extrapolate_lagged!(lagged::LaggedTerms, time, dt, config)
+    dt = Float64(dt)
     (; arrays, previous, current) = lagged
     _advance_levels!(lagged, time, config)
     lagged.dt[2] == 0 && !isnothing(lagged.evaluate) && lagged.evaluate()

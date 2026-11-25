@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added the test grid `test/grids/OF_graded_channel`, a 700-cell 2-D OpenFOAM channel with streamwise grading for transient tests. [#237](@ref)
 * The density-based solver `godunov!` runs on distributed meshes with all flux, reconstruction and time-stepping schemes and the `Laminar`, `KOmega` and `KOmegaSST` models. [#222](@ref)
 * Added a characteristic far-field treatment in `godunov!` for patches where `U`, `p` and `T` are all `Dirichlet` or `DirichletFunction`, so acoustic waves leave the domain. [#217](@ref)
-* Added local pseudo-time stepping `Runtime(adaptive=LocalTimeStepping(maxCo, startCo, ramp))` and the Jameson multistage schemes `RK3()`, `RK4()` and `RK5()`, with `rhoU` and `rhoE` residuals and force histories. [#216](@ref)
+* Added local pseudo-time stepping `Runtime(time_step=LocalTimeStepping(maxCo, startCo, ramp))` and the Jameson multistage schemes `RK3()`, `RK4()` and `RK5()`, with `rhoU` and `rhoE` residuals and force histories. [#216](@ref)
 * Added the `LeastSquares` gradient scheme, selected with `Schemes(gradient=...)`, which is exact for linear fields on skewed meshes; it is off by default. [#215](@ref)
 * Added consistent (SIMPLEC) coupling with `run!(model, config; consistent=true)` for `simple!` and `csimple!`; it is off by default. [#147](@ref)
 * Added the second-order upwind divergence schemes `LinearUpwind` and `LimitedLinearUpwind`, which keep the matrix diagonally dominant; other equations fall back to `Upwind` with a warning. [#169](@ref)
@@ -37,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Added `distribute(FOAMCase(dir))` to read a `decomposePar` case, and `repartition` to rebalance a distributed mesh. [#162](@ref)
 * Added `is_root`, which is true on rank 0 and in serial runs. [#162](@ref)
 * Added `BoomerAMG` and `GAMG` pressure preconditioners for distributed solves, and `petsc_options` on `run!`. [#162](@ref)
+* `BoomerAMG()` takes typed keywords (`threshold`, `coarsen`, `interpolation`, `max_interp`, `aggressive`, `smoother`, `sweeps`, `refresh`). [#255](@ref)
 * Distributed solves map `Cgs` to PETSc `cgs`, and `DILU`, `ILU0GPU` and `IC0GPU` to per-rank block ILU(0) or ICC(0) with a warning; `PETSc.set_petscint!(Int32)` selects 32-bit indices. [#162](@ref)
 * Distributed GPU runs detect whether MPI is CUDA-aware and stage through host memory with a warning when it is not. [#162](@ref)
 * Added the `wall_distance` keyword for `KOmegaSST` and `KOmegaLKE`, with `MeshWave()` (the new default) or `Poisson()`. [#170](@ref)
@@ -63,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The explicit viscous stress and `div!` of cell tensors run faster on GPUs, with unchanged results. [#187](@ref)
 * `xcal_foreach` on `CPU(static=true)` uses fixed chunks matching the threaded SpMV and vector operations. [#167](@ref)
 * Threaded loops start their chunk tasks as a tree, which speeds up many-thread solves; results are unchanged. [#191](@ref)
-* `activate_multithread(backend::CPU)` defaults `nthreads` back to 1, as Krylov vector operations use Julia threads rather than BLAS. [#162](@ref)
+* `activate_multithread(backend::CPU)` defaults `nthreads` to 1 (was `Threads.nthreads()`), as Krylov vector operations use Julia threads rather than BLAS. [#162](@ref)
 * The multiphase and thin-film solvers no longer print an `@time` summary of their iteration loop. [#162](@ref)
 * `run!` with a negative `write_interval` builds no output writer, reducing run start-up cost. [#162](@ref)
 * Kernels compile once for any mesh size, patch count or rank count. [#162](@ref)
@@ -77,6 +78,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * The AMG hierarchy uses the index type of the equation matrix. [#162](@ref)
 * Global cell and face ids of distributed meshes are `Int64`. [#162](@ref)
 * The explicit viscous stress takes boundary-face gradients from the boundary condition. [#181](@ref), [#186](@ref)
+* `AMG()` defaults to `Pairwise()` coarsening and `refresh=5` (was `SmoothAggregation()` and `coarse_refresh_interval=1`). [#255](@ref)
+* `Pairwise()` defaults to `merges=2`; the deprecated `Geometric()` keeps 1. [#256](@ref)
+* `NativeAMG(fuse=n)` counts the coarse levels applied through the finer matrix; the deprecated `fuse_levels=n` maps to `fuse=n-1`. [#256](@ref)
+* `NativeAMG(fuse)` with a coarsening other than `Pairwise()`, or a smoother other than `Jacobi()` or `Chebyshev()`, now throws. [#256](@ref)
+* `potential_flow!` starts from rest by default (`from_rest=true`); `from_rest=false` keeps the previous behaviour. [#182](@ref)
+* `KOmegaSST` and `KOmegaLKE` default to the `MeshWave()` wall distance, changing their results; `wall_distance=Poisson()` restores the previous method. [#170](@ref)
+* PETSc.jl 0.4.14 and 0.5 are both supported, resolved by Julia version. [#165](@ref)
+* Results change by design with the corrected mass flux of runs with `ncorrectors > 0` [#199](@ref), transient `piso!`, `cpiso!` and `multiphase!` [#225](@ref), compressible viscous heating [#194](@ref), `KOmegaLKE` production [#172](@ref), and the explicit viscous stress [#180](@ref).
+* Turbulence models on `Float32` meshes compute in `Float32`, so their results change. [#176](@ref)
 
 ### Fixed
 * The boundary face `delta`, and with it the wall-function distance `wall_normal_distance`, is the distance from the owner cell centre to the nearest point of the face, set once when the mesh geometry is built by `FOAM3D_mesh`, `UNV3D_mesh`, `UNV2D_mesh` and the 2D block mesher. It equals `(Cf - C)·n` when the normal from the cell centre meets the face, and on skewed near-wall cells it no longer collapses towards zero, which made `y+` vanish and the wall value of `omega` grow by orders of magnitude. [#247](@ref)
@@ -142,29 +152,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 * `Runtime` no longer takes `adaptive`; the time-stepping mode is passed as `time_step`: an integer (steady), a number (fixed time step), `AdaptiveTimeStepping(dt=..., maxCo=...)` or `LocalTimeStepping(...)`. `AdaptiveTimeStepping` now requires the initial time step `dt`. [#260](@ref)
-* `NativeAMG(fuse=n)` now counts the coarse levels applied through the finer matrix (was `n - 1`). [#256](@ref)
-* `NativeAMG(fuse)` with a coarsening other than `Pairwise()`, or a smoother other than `Jacobi()` or `Chebyshev()`, now throws. [#256](@ref)
-* `Pairwise()` defaults to `merges=2` (was 1). [#256](@ref)
-* `AMG(coarsening; smoother, sweeps, coarsest, refresh, native=NativeAMG(coarse, scale_correction, fuse))` replaces `pre_sweeps`, `post_sweeps`, `max_coarse_rows`, `coarse_refresh_interval`, `coarse_solve` and `fuse_levels`. Old keywords still work, with a warning. [#255](@ref)
-* AMG types renamed: `Pairwise`, `SmoothedAggregation`, `Jacobi(weight)`, `Chebyshev`, `GaussSeidel`, `SymGaussSeidel`, `SOR`, `SSOR`, `Direct`, `Smoothed`, `Iterative`. Old names still work, with a warning. [#255](@ref)
-* `AMG()` defaults to `Pairwise()` coarsening and `refresh=5`. [#255](@ref)
 * `AMG(coarse_storage=Float32)` is now `SolverSetup(precision=MixedF32())`. [#255](@ref)
-* `BoomerAMG()` takes typed keywords (`threshold`, `coarsen`, `interpolation`, `max_interp`, `aggressive`, `smoother`, `sweeps`, `refresh`); `freeze` is `refresh`. [#255](@ref)
-* `CrankNicolson` is the trapezoidal rule inside `Time` and raises an `ArgumentError` in `multiphase!`, `filmModel!`, `godunov!` and steady solvers. [#226](@ref)
-* Results change by design with the corrected mass flux of runs with `ncorrectors > 0` [#199](@ref), transient `piso!`, `cpiso!` and `multiphase!` [#225](@ref), compressible viscous heating [#194](@ref), `KOmegaLKE` production [#172](@ref), and the explicit viscous stress [#180](@ref).
-* Turbulence models on `Float32` meshes compute in `Float32`, so their results change. [#176](@ref)
-* Distributed VTK output raises an error. [#162](@ref)
-* `activate_multithread(backend::CPU)` defaults `nthreads` to 1. [#162](@ref)
-* `potential_flow!` starts from rest by default (`from_rest=true`); `from_rest=false` keeps the previous behaviour. [#182](@ref)
-* `KOmegaSST` and `KOmegaLKE` default to the `MeshWave()` wall distance, changing their results; `wall_distance=Poisson()` restores the previous method. [#170](@ref)
 * `setField_Box!`, `setField_Circle2D!`, `setField_Sphere3D!` and `setField_Expression!` take a required `config` keyword and run on CPU and GPU. [#137](@ref)
 * Hand-written boundary-condition functors and `scheme!` methods take `cells` and `faces` and must index them. [#162](@ref)
 * The `Mesh2` and `Mesh3` type parameters changed, so code dispatching on them must be updated; `mesh.cell_nsign` is `Int8`. [#162](@ref)
-* PETSc.jl 0.4.14 and 0.5 are both supported, resolved by Julia version. [#165](@ref)
 * `MPI` and `Metis` are hard dependencies. [#162](@ref)
 * Mesh readers default to `integer_type=Int32`; meshes exceeding 2^31 need `integer_type=Int64`. [#162](@ref)
 
 ### Deprecated
+* `AMG(coarsening; smoother, sweeps, coarsest, refresh, native=NativeAMG(coarse, scale_correction, fuse))` replaces `pre_sweeps`, `post_sweeps`, `max_coarse_rows`, `coarse_refresh_interval`, `coarse_solve` and `fuse_levels`. Old keywords still work, with a warning. [#255](@ref)
+* AMG types renamed: `Pairwise`, `SmoothedAggregation`, `Jacobi(weight)`, `Chebyshev`, `GaussSeidel`, `SymGaussSeidel`, `SOR`, `SSOR`, `Direct`, `Smoothed`, `Iterative`. Old names still work, with a warning. [#255](@ref)
 * `GAMG(...)` returns the `AMG(...)` of PETSc's GAMG defaults. [#255](@ref)
 * `SolverSetup(solver=AMG(mode=...))` runs as `solver=<mode>, preconditioner=AMG(...)`; `AMGSolver()` is now `Richardson()`. [#244](@ref)
 
